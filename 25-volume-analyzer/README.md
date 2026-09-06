@@ -1,34 +1,41 @@
-# Volume Analyzer — اندیکاتورهای Volume Analyzer
+# Volume Analyzer
 
-> تحلیل‌گر حجم — زون‌های قدرت حجم و داشبورد
+> Volume analyzers - volume power zones and dashboards.
 
-[⬅ بازگشت به فهرست اصلی](../README.md) | [TradingView Pine Scripts](https://github.com/morindok/duck/tree/main/indicators/25-volume-analyzer)
+[Back to main index](../README.md)
 
-## 📂 فهرست اندیکاتورهای این دسته
+## Indicators in this category
 
-- [Fibonacci Volumetric MA Ribbon](Fibonacci Volumetric MA Ribbon.md) — آموزش و نحوه استفاده از **Fibonacci Volumetric MA Ribbon**
-- [Liquidity Zones by BITMOON618](Liquidity Zones by BITMOON618.md) — آموزش و نحوه استفاده از **Liquidity Zones by BITMOON618**
-- [MTF Symmetrical Gap Volume Colored](MTF Symmetrical Gap Volume Colored.md) — آموزش و نحوه استفاده از **MTF Symmetrical Gap Volume Colored**
-- [Symmetric Fib Volume Dashboard](Symmetric Fib Volume Dashboard.md) — آموزش و نحوه استفاده از **Symmetric Fib Volume Dashboard**
-- [Uniqe Crypto Volume Change Route by BITMOON618](Uniqe Crypto Volume Change Route by BITMOON618.md) — آموزش و نحوه استفاده از **Uniqe Crypto Volume Change Route by BITMOON618**
-- [Volume Change Route by BITMOON618](Volume Change Route by BITMOON618.md) — آموزش و نحوه استفاده از **Volume Change Route by BITMOON618**
-- [Volume Multi Currency Analyzer](Volume Multi Currency Analyzer.md) — آموزش و نحوه استفاده از **Volume Multi Currency Analyzer**
-- [Volume Power Zones Live V2 by BITMOON618](Volume Power Zones Live V2 by BITMOON618.md) — آموزش و نحوه استفاده از **Volume Power Zones Live V2 by BITMOON618**
-- [Volume Power Zones Live V3 by BITMOON618](Volume Power Zones Live V3 by BITMOON618.md) — آموزش و نحوه استفاده از **Volume Power Zones Live V3 by BITMOON618**
-- [Volume Power Zones Live V4 by BITMOON618](Volume Power Zones Live V4 by BITMOON618.md) — آموزش و نحوه استفاده از **Volume Power Zones Live V4 by BITMOON618**
-- [Volume Power Zones Live by BITMOON618](Volume Power Zones Live by BITMOON618.md) — آموزش و نحوه استفاده از **Volume Power Zones Live by BITMOON618**
+| Indicator | Tutorial | Source File |
+|-----------|----------|-------------|
+| Fibonacci-Volumetric-MA-Ribbon | [Guide](Fibonacci-Volumetric-MA-Ribbon.md) | `Fibonacci-Volumetric-MA-Ribbon.txt` |
+| Liquidity-Zones-by-BITMOON618 | [Guide](Liquidity-Zones-by-BITMOON618.md) | `Liquidity-Zones-by-BITMOON618.txt` |
+| MTF-Symmetrical-Gap-Volume-Colored | [Guide](MTF-Symmetrical-Gap-Volume-Colored.md) | `MTF-Symmetrical-Gap-Volume-Colored.txt` |
+| Symmetric-Fib-Volume-Dashboard | [Guide](Symmetric-Fib-Volume-Dashboard.md) | `Symmetric-Fib-Volume-Dashboard.txt` |
+| Uniqe-Crypto-Volume-Change-Route-by-BITMOON618 | [Guide](Uniqe-Crypto-Volume-Change-Route-by-BITMOON618.md) | `Uniqe-Crypto-Volume-Change-Route-by-BITMOON618.txt` |
+| Volume-Change-Route-by-BITMOON618 | [Guide](Volume-Change-Route-by-BITMOON618.md) | `Volume-Change-Route-by-BITMOON618.txt` |
+| Volume-Multi-Currency-Analyzer | [Guide](Volume-Multi-Currency-Analyzer.md) | `Volume-Multi-Currency-Analyzer.txt` |
+| Volume-Power-Zones-Live-V2-by-BITMOON618 | [Guide](Volume-Power-Zones-Live-V2-by-BITMOON618.md) | `Volume-Power-Zones-Live-V2-by-BITMOON618.txt` |
+| Volume-Power-Zones-Live-V3-by-BITMOON618 | [Guide](Volume-Power-Zones-Live-V3-by-BITMOON618.md) | `Volume-Power-Zones-Live-V3-by-BITMOON618.txt` |
+| Volume-Power-Zones-Live-V4-by-BITMOON618 | [Guide](Volume-Power-Zones-Live-V4-by-BITMOON618.md) | `Volume-Power-Zones-Live-V4-by-BITMOON618.pine` |
+| Volume-Power-Zones-Live-by-BITMOON618 | [Guide](Volume-Power-Zones-Live-by-BITMOON618.md) | `Volume-Power-Zones-Live-by-BITMOON618.txt` |
 
-## 🎓 آموزش عمومی
+## How to install
 
-### نصب در TradingView (Pine Script)
-1. فایل `.txt` مربوطه را باز کرده و کل کد را کپی کنید.
-2. در TradingView وارد **Pine Editor** شوید.
-3. کد را Paste کنید و **Add to Chart** بزنید.
-4. تنظیمات را از آیکون چرخ‌دنده روی اندیکاتور تغییر دهید.
+### TradingView (Pine Script)
 
-### اجرای اسکریپت‌های Python
-1. `pip install -r requirements.txt` (در صورت وجود)
-2. `python <اسم-فایل>.py` را اجرا کنید.
+1. Open the indicator `.txt` file and copy the entire code.
+2. In TradingView, open the **Pine Editor**.
+3. Paste the code and click **Add to Chart**.
+4. Adjust inputs via the settings gear on the indicator.
 
-## 🔑 کلمات کلیدی
-Volume Analyzer, tradingview indicator, pine script, crypto trading, تحلیل تکنیکال, اندیکاتور تریدینگ ویو, سیگنال خرید و فروش
+### Python scripts
+
+```bash
+pip install -r requirements.txt  # if present
+python <script>.py
+```
+
+## Keywords
+
+volume analyzer, tradingview indicator, pine script, crypto trading, technical analysis, buy sell signals

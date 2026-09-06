@@ -1,40 +1,47 @@
-# Super Mirror — اندیکاتورهای Super Mirror
+# Super Mirror
 
-> ابَرمیرور — بازتاب قیمت، اسیلاتور و تحلیل زمان
+> Super Mirror - price reflection, oscillator and time analysis.
 
-[⬅ بازگشت به فهرست اصلی](../README.md) | [TradingView Pine Scripts](https://github.com/morindok/duck/tree/main/indicators/22-super-mirror)
+[Back to main index](../README.md)
 
-## 📂 فهرست اندیکاتورهای این دسته
+## Indicators in this category
 
-- [BOS Oscilator Boxes](BOS Oscilator Boxes.md) — آموزش و نحوه استفاده از **BOS Oscilator Boxes**
-- [Fibo Time Analyzer](Fibo Time Analyzer.md) — آموزش و نحوه استفاده از **Fibo Time Analyzer**
-- [MOP-Ultimate](MOP-Ultimate.md) — آموزش و نحوه استفاده از **MOP Ultimate**
-- [Mirror Pivot](Mirror Pivot.md) — آموزش و نحوه استفاده از **Mirror Pivot**
-- [SMO RSI by BITMOON618](SMO RSI by BITMOON618.md) — آموزش و نحوه استفاده از **SMO RSI by BITMOON618**
-- [SMO STOCH{](SMO STOCH{.md) — آموزش و نحوه استفاده از **SMO STOCH{**
-- [Super Mirror - Signals](Super Mirror - Signals.md) — آموزش و نحوه استفاده از **Super Mirror   Signals**
-- [Super Mirror Auto Points](Super Mirror Auto Points.md) — آموزش و نحوه استفاده از **Super Mirror Auto Points**
-- [Super Mirror Oscilator](Super Mirror Oscilator.md) — آموزش و نحوه استفاده از **Super Mirror Oscilator**
-- [Super Mirror Spirals - V2](Super Mirror Spirals - V2.md) — آموزش و نحوه استفاده از **Super Mirror Spirals   V2**
-- [Super Mirror Spirals](Super Mirror Spirals.md) — آموزش و نحوه استفاده از **Super Mirror Spirals**
-- [Super Mirror Time Moving Oscilator](Super Mirror Time Moving Oscilator.md) — آموزش و نحوه استفاده از **Super Mirror Time Moving Oscilator**
-- [Super Mirror Time Moving](Super Mirror Time Moving.md) — آموزش و نحوه استفاده از **Super Mirror Time Moving**
-- [Super Mirror v2 by BITMOON618](Super Mirror v2 by BITMOON618.md) — آموزش و نحوه استفاده از **Super Mirror v2 by BITMOON618**
-- [Super Mirror v3 by BITMOON618](Super Mirror v3 by BITMOON618.md) — آموزش و نحوه استفاده از **Super Mirror v3 by BITMOON618**
-- [Super Mirror](Super Mirror.md) — آموزش و نحوه استفاده از **Super Mirror**
-- [Time Analyzer](Time Analyzer.md) — آموزش و نحوه استفاده از **Time Analyzer**
+| Indicator | Tutorial | Source File |
+|-----------|----------|-------------|
+| BOS-Oscilator-Boxes | [Guide](BOS-Oscilator-Boxes.md) | `BOS-Oscilator-Boxes.txt` |
+| Fibo-Time-Analyzer | [Guide](Fibo-Time-Analyzer.md) | `Fibo-Time-Analyzer.txt` |
+| MOP-Ultimate | [Guide](MOP-Ultimate.md) | `MOP-Ultimate.txt` |
+| Mirror-Pivot | [Guide](Mirror-Pivot.md) | `Mirror-Pivot.txt` |
+| SMO-RSI-by-BITMOON618 | [Guide](SMO-RSI-by-BITMOON618.md) | `SMO-RSI-by-BITMOON618.txt` |
+| SMO-STOCH | [Guide](SMO-STOCH.md) | `SMO-STOCH.txt` |
+| Super-Mirror-Auto-Points | [Guide](Super-Mirror-Auto-Points.md) | `Super-Mirror-Auto-Points.txt` |
+| Super-Mirror-Oscilator | [Guide](Super-Mirror-Oscilator.md) | `Super-Mirror-Oscilator.txt` |
+| Super-Mirror-Signals | [Guide](Super-Mirror-Signals.md) | `Super-Mirror-Signals.txt` |
+| Super-Mirror-Spirals-V2 | [Guide](Super-Mirror-Spirals-V2.md) | `Super-Mirror-Spirals-V2.txt` |
+| Super-Mirror-Spirals | [Guide](Super-Mirror-Spirals.md) | `Super-Mirror-Spirals.txt` |
+| Super-Mirror-Time-Moving-Oscilator | [Guide](Super-Mirror-Time-Moving-Oscilator.md) | `Super-Mirror-Time-Moving-Oscilator.txt` |
+| Super-Mirror-Time-Moving | [Guide](Super-Mirror-Time-Moving.md) | `Super-Mirror-Time-Moving.txt` |
+| Super-Mirror-v2-by-BITMOON618 | [Guide](Super-Mirror-v2-by-BITMOON618.md) | `Super-Mirror-v2-by-BITMOON618.txt` |
+| Super-Mirror-v3-by-BITMOON618 | [Guide](Super-Mirror-v3-by-BITMOON618.md) | `Super-Mirror-v3-by-BITMOON618.txt` |
+| Super-Mirror | [Guide](Super-Mirror.md) | `Super-Mirror.txt` |
+| Time-Analyzer | [Guide](Time-Analyzer.md) | `Time-Analyzer.txt` |
 
-## 🎓 آموزش عمومی
+## How to install
 
-### نصب در TradingView (Pine Script)
-1. فایل `.txt` مربوطه را باز کرده و کل کد را کپی کنید.
-2. در TradingView وارد **Pine Editor** شوید.
-3. کد را Paste کنید و **Add to Chart** بزنید.
-4. تنظیمات را از آیکون چرخ‌دنده روی اندیکاتور تغییر دهید.
+### TradingView (Pine Script)
 
-### اجرای اسکریپت‌های Python
-1. `pip install -r requirements.txt` (در صورت وجود)
-2. `python <اسم-فایل>.py` را اجرا کنید.
+1. Open the indicator `.txt` file and copy the entire code.
+2. In TradingView, open the **Pine Editor**.
+3. Paste the code and click **Add to Chart**.
+4. Adjust inputs via the settings gear on the indicator.
 
-## 🔑 کلمات کلیدی
-Super Mirror, tradingview indicator, pine script, crypto trading, تحلیل تکنیکال, اندیکاتور تریدینگ ویو, سیگنال خرید و فروش
+### Python scripts
+
+```bash
+pip install -r requirements.txt  # if present
+python <script>.py
+```
+
+## Keywords
+
+super mirror, tradingview indicator, pine script, crypto trading, technical analysis, buy sell signals

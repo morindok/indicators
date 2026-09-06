@@ -1,24 +1,28 @@
 # morindok_footprint_pro_v2
 
-> دسته: [Time Machine](README.md) — ماشین زمان — بازتاب تاریخی قیمت و پروجکشن
+> Category: [Time Machine](README.md) - Time Machine - historical price reflection and projection.
 
-فایل اصلی: [`morindok_footprint_pro_v2.pine`](morindok_footprint_pro_v2.pine)
+Source file: [`morindok_footprint_pro_v2.pine`](morindok_footprint_pro_v2.pine)
 
-## 📖 معرفی
-**morindok_footprint_pro_v2** یکی از اندیکاتورهای دسته «Time Machine» است. ماشین زمان — بازتاب تاریخی قیمت و پروجکشن
+## Overview
 
-## 🚀 نحوه استفاده
-1. محتوای فایل را کپی کنید.
-2. در TradingView → **Pine Editor** → Paste.
-3. **Add to Chart** و سپس تنظیم ورودی‌ها.
+**morindok_footprint_pro_v2** belongs to the *Time Machine* category. Time Machine - historical price reflection and projection.
 
-## 💡 نکات آموزشی
-- ابتدا روی تایم‌فریم روزانه (D1) تست کنید تا رفتار اندیکاتور را بشناسید.
-- سیگنال‌ها را با حمایت/مقاومت یا حجم تأیید کنید.
-- بعضی نسخه‌ها Repaint دارند؛ در بک‌تست دقت کنید.
-- برای مدیریت ریسک، همیشه حد ضرر تعیین کنید.
+## How to use
 
-## ⚠️ سلب مسئولیت
-این ابزارها صرفاً آموزشی هستند و توصیه سرمایه‌گذاری نیستند.
+1. Copy the file contents.
+2. In TradingView, open **Pine Editor** and paste the code.
+3. Click **Add to Chart**, then configure the inputs.
 
-🔗 [همه دسته‌ها](../README.md)
+## Tips
+
+- Start on the daily (D1) timeframe to learn its behavior.
+- Confirm signals with support/resistance or volume.
+- Some versions may repaint; verify during backtesting.
+- Always use a stop-loss for risk management.
+
+## Disclaimer
+
+These tools are for **educational purposes only** and are not financial advice.
+
+[All categories](../README.md)

@@ -1,51 +1,56 @@
-# 📊 BITMOON618 Indicators Collection — مجموعه کامل اندیکاتورهای تریدینگ ویو
+# TradingView & Python Indicators Collection
 
-> کالکشن جامع **۲۸ دسته** و **صدها اندیکاتور و ابزار تحلیل تکنیکال** شامل Pine Script (TradingView) و Python — اسپیرال، میرور، گن، ایچیموکو، حجم، فوت‌پرینت، Smart Money و سیگنال‌های خودکار.
+> A comprehensive collection of **28 categories** and **hundreds of technical analysis indicators** - Pine Script (TradingView) and Python: spirals, mirrors, Gann, Ichimoku, volume, footprint, Smart Money and automated signals.
 
-![Category](https://img.shields.io/badge/Categories-28-blue) ![Type](https://img.shields.io/badge/Type-Pine%20Script%20%2B%20Python-green) ![License](https://img.shields.io/badge/Use-Educational-orange)
+![Categories](https://img.shields.io/badge/Categories-28-blue) ![Type](https://img.shields.io/badge/Type-Pine%20Script%20%2B%20Python-green) ![License](https://img.shields.io/badge/Use-Educational-orange)
 
-## 🚀 شروع سریع
-- **اندیکاتور TradingView:** کد فایل را در Pine Editor کپی و Add to Chart کنید.
-- **ابزار Python:** `python file.py` — نیاز به Python 3.10+
+## Quick start
 
-## 📚 فهرست دسته‌بندی‌ها
+- **TradingView indicator:** copy the file code into Pine Editor and click Add to Chart.
+- **Python tool:** `python script.py` - requires Python 3.10+
 
-| دسته | توضیحات | تعداد فایل |
-|------|---------|-----------|
-| [Alpha Line](01-alpha-line/) | خط آلفا — خط داینامیک حمایت/مقاومت مبتنی بر ریاضیات فیبوناچی | 1 |
-| [Boxes & Zones](02-boxes-zones/) | باکس‌ها و زون‌های کلیدی بازار — تشخیص نواحی تجمیع و توزیع | 1 |
-| [Bitmoon System](03-bitmoon-system/) | سیستم کامل Bitmoon — ترکیب میرور، سیگنال و اسیلاتور | 2 |
-| [Detrend Price](04-detrend-price/) | حذف روند از قیمت (Detrend) برای دیدن چرخه‌های خالص | 9 |
-| [Dragon System](05-dragon-system/) | سیستم اژدها — تحلیل‌گر روند و قدرت بازار | 3 |
-| [Fibo Flat](06-fibo-flat/) | سطح تخت فیبوناچی و خط تجمعی برای نقاط برگشت | 2 |
-| [Footprinting](07-footprinting/) | فوت‌پرینت و تحلیل سفارشات — ریزساختار بازار | 2 |
-| [Gannzilla](08-gannzilla/) | ابزارهای W.D. Gann — مربع ۹، ماشین گن، مدل‌های اتمی | 16 |
-| [Geometric Pivots](09-geometric-pivots/) | پیوت‌های هندسی و مسیر قیمتی | 2 |
-| [Ichimoku](10-ichimoku/) | سیستم ایچیموکو طلایی و نسخه‌های سیگنال‌ده | 4 |
-| [IchiMoving](11-ichimoving/) | ترکیب ایچیموکو با میانگین‌های متحرک | 1 |
-| [MA Convergence & Divergence](12-ma-convergence-divergence/) | همگرایی و واگرایی میانگین‌های متحرک | 1 |
-| [Magical Ruler](13-magical-ruler/) | خط‌کش جادویی — اندازه‌گیری پروجکشن قیمتی | 2 |
-| [Parallel Lines](14-parallel-lines/) | خطوط موازی زنده و شبکه هارمونیک مارکوف-بیز | 7 |
-| [Core Powerful Tools](15-core-powerful/) | مجموعه‌ی اصلی و قدرتمند — میرور، اسپیرال، سیستمی | 65 |
-| [Python Tools](16-python-tools/) | ابزارهای پایتون — کلاک، اسپیرال، فوت‌پرینت، گن، شبکه عصبی | 747 |
-| [Quant](17-quant/) | ابزارهای کمّی و مدل‌های پیش‌بینی | 4 |
-| [Rulers](18-rulers/) | خط‌کش‌های هندسی قیمتی | 2 |
-| [Simple Base](19-simple-base/) | اندیکاتورهای پایه — اشکال، اسپیرال، شمارنده تیک | 60 |
-| [Spiral Analyzer](20-spiral-analyzer/) | تحلیل‌گر اسپیرال — پیش‌بینی پیوت با لوگاریتمیک اسپیرال | 4 |
-| [Strategy](21-strategy/) | استراتژی‌های معاملاتی — نقدینگی و Smart Money | 1 |
-| [Super Mirror](22-super-mirror/) | ابَرمیرور — بازتاب قیمت، اسیلاتور و تحلیل زمان | 17 |
-| [Time Machine](23-time-machine/) | ماشین زمان — بازتاب تاریخی قیمت و پروجکشن | 5 |
-| [Trend Lines](24-trend-lines/) | خطوط روند مبتنی بر میانگین متحرک | 1 |
-| [Volume Analyzer](25-volume-analyzer/) | تحلیل‌گر حجم — زون‌های قدرت حجم و داشبورد | 11 |
-| [Volume](26-volume/) | کندل‌های حجمی و پروفایل حجم-میانگین | 2 |
-| [Voting System](27-voting-system/) | سیستم رأی‌گیری چند اندیکاتوره برای تأیید سیگنال | 1 |
-| [Signals](28-signals/) | اندیکاتورهای سیگنال‌ده — برگشت میرور و سیستم LookBack | 3 |
+## Categories
 
-## 🎓 آموزش
-هر اندیکاتور یک فایل مستندات `.md` اختصاصی دارد: معرفی، نصب، نحوه استفاده و نکات معاملاتی.
+| # | Category | Description | Files |
+|---|----------|-------------|------:|
+| 1 | [Alpha Line](01-alpha-line/) | Dynamic support/resistance line based on Fibonacci mathematics. | 1 |
+| 2 | [Boxes & Zones](02-boxes-zones/) | Key market boxes and zones - accumulation and distribution areas. | 1 |
+| 3 | [Bitmoon System](03-bitmoon-system/) | Complete Bitmoon system combining mirror, signals and oscillators. | 2 |
+| 4 | [Detrend Price](04-detrend-price/) | Removing trend from price to reveal pure cycles. | 9 |
+| 5 | [Dragon System](05-dragon-system/) | Dragon trend and strength analysis system. | 3 |
+| 6 | [Fibo Flat](06-fibo-flat/) | Fibonacci flat levels and cumulative line for reversal points. | 2 |
+| 7 | [Footprinting](07-footprinting/) | Order-flow footprint and market microstructure analysis. | 2 |
+| 8 | [Gannzilla](08-gannzilla/) | W.D. Gann tools - Square of 9, Gann Machine, Atomic Models. | 16 |
+| 9 | [Geometric Pivots](09-geometric-pivots/) | Geometric pivots and price path projection. | 2 |
+| 10 | [Ichimoku](10-ichimoku/) | Golden Ichimoku system and signal versions. | 4 |
+| 11 | [IchiMoving](11-ichimoving/) | Ichimoku combined with moving averages. | 1 |
+| 12 | [MA Convergence & Divergence](12-ma-convergence-divergence/) | Moving average convergence/divergence analysis. | 1 |
+| 13 | [Magical Ruler](13-magical-ruler/) | Magic ruler for price projection measurement. | 2 |
+| 14 | [Parallel Lines](14-parallel-lines/) | Live parallel lines and Markov-Bayesian harmonic network. | 7 |
+| 15 | [Core Powerful Tools](15-core-powerful/) | Core toolkit - mirror, spiral and system indicators. | 65 |
+| 16 | [Python Tools](16-python-tools/) | Python utilities - clock, spiral, footprint, Gann, neural tools. | 295 |
+| 17 | [Quant](17-quant/) | Quantitative tools and prediction models. | 4 |
+| 18 | [Rulers](18-rulers/) | Geometric price rulers. | 2 |
+| 19 | [Simple Base](19-simple-base/) | Base indicators - shapes, spirals, tick counters. | 60 |
+| 20 | [Spiral Analyzer](20-spiral-analyzer/) | Spiral analyzer - logarithmic spiral pivot forecasting. | 4 |
+| 21 | [Strategy](21-strategy/) | Trading strategies - liquidity and Smart Money concepts. | 1 |
+| 22 | [Super Mirror](22-super-mirror/) | Super Mirror - price reflection, oscillator and time analysis. | 17 |
+| 23 | [Time Machine](23-time-machine/) | Time Machine - historical price reflection and projection. | 5 |
+| 24 | [Trend Lines](24-trend-lines/) | Moving-average based trend lines. | 1 |
+| 25 | [Volume Analyzer](25-volume-analyzer/) | Volume analyzers - volume power zones and dashboards. | 11 |
+| 26 | [Volume](26-volume/) | Volume candles and volume-MA profile tools. | 2 |
+| 27 | [Voting System](27-voting-system/) | Multi-indicator voting system for signal confirmation. | 1 |
+| 28 | [Signals](28-signals/) | Signal indicators - mirror reversal and LookBack systems. | 3 |
+| 29 | [git](git/) |  | 1301 |
 
-## 🔍 کلمات کلیدی
-`tradingview indicators` `pine script strategies` `crypto trading tools` `gann square of 9` `ichimoku` `volume profile` `smart money concepts` `spiral trading` `اندیکاتور تریدینگ ویو` `سیستم معاملاتی` `تحلیل تکنیکال کریپتو` `سیگنال خرید فروش`
+## Tutorials
 
-## ⚖️ License / سلب مسئولیت
-تمام محتوا برای مقاصد **آموزشی** است و توصیه مالی محسوب نمی‌شود.
+Every indicator has its own `.md` guide: overview, installation, usage and trading tips.
+
+## Keywords
+
+`tradingview indicators` `pine script strategies` `crypto trading tools` `gann square of 9` `ichimoku` `volume profile` `smart money concepts` `spiral trading` `technical analysis` `buy sell signals`
+
+## License / Disclaimer
+
+All content is provided for **educational purposes only** and does not constitute financial advice.

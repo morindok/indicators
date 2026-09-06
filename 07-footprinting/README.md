@@ -1,25 +1,32 @@
-# Footprinting — اندیکاتورهای Footprinting
+# Footprinting
 
-> فوت‌پرینت و تحلیل سفارشات — ریزساختار بازار
+> Order-flow footprint and market microstructure analysis.
 
-[⬅ بازگشت به فهرست اصلی](../README.md) | [TradingView Pine Scripts](https://github.com/morindok/duck/tree/main/indicators/07-footprinting)
+[Back to main index](../README.md)
 
-## 📂 فهرست اندیکاتورهای این دسته
+## Indicators in this category
 
-- [foot printing](foot printing.md) — آموزش و نحوه استفاده از **foot printing**
-- [footprint_pro by BITMOON618](footprint_pro by BITMOON618.md) — آموزش و نحوه استفاده از **footprint_pro by BITMOON618**
+| Indicator | Tutorial | Source File |
+|-----------|----------|-------------|
+| foot-printing | [Guide](foot-printing.md) | `foot-printing.txt` |
+| footprint_pro-by-BITMOON618 | [Guide](footprint_pro-by-BITMOON618.md) | `footprint_pro-by-BITMOON618.txt` |
 
-## 🎓 آموزش عمومی
+## How to install
 
-### نصب در TradingView (Pine Script)
-1. فایل `.txt` مربوطه را باز کرده و کل کد را کپی کنید.
-2. در TradingView وارد **Pine Editor** شوید.
-3. کد را Paste کنید و **Add to Chart** بزنید.
-4. تنظیمات را از آیکون چرخ‌دنده روی اندیکاتور تغییر دهید.
+### TradingView (Pine Script)
 
-### اجرای اسکریپت‌های Python
-1. `pip install -r requirements.txt` (در صورت وجود)
-2. `python <اسم-فایل>.py` را اجرا کنید.
+1. Open the indicator `.txt` file and copy the entire code.
+2. In TradingView, open the **Pine Editor**.
+3. Paste the code and click **Add to Chart**.
+4. Adjust inputs via the settings gear on the indicator.
 
-## 🔑 کلمات کلیدی
-Footprinting, tradingview indicator, pine script, crypto trading, تحلیل تکنیکال, اندیکاتور تریدینگ ویو, سیگنال خرید و فروش
+### Python scripts
+
+```bash
+pip install -r requirements.txt  # if present
+python <script>.py
+```
+
+## Keywords
+
+footprinting, tradingview indicator, pine script, crypto trading, technical analysis, buy sell signals

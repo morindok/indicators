@@ -1,770 +1,325 @@
-# Python Tools — اندیکاتورهای Python Tools
+# Python Tools
 
-> ابزارهای پایتون — کلاک، اسپیرال، فوت‌پرینت، گن، شبکه عصبی
+> Python utilities - clock, spiral, footprint, Gann, neural tools.
 
-[⬅ بازگشت به فهرست اصلی](../README.md) | [TradingView Pine Scripts](https://github.com/morindok/duck/tree/main/indicators/16-python-tools)
+[Back to main index](../README.md)
 
-## 📂 فهرست اندیکاتورهای این دسته
+## Indicators in this category
 
-- [3D Analyzer by BITMOON618](3D Analyzer/3D Analyzer by BITMOON618.md) — آموزش و نحوه استفاده از **3D Analyzer by BITMOON618**
-- [3D net](3D Price/3D net.md) — آموزش و نحوه استفاده از **3D net**
-- [3D price](3D price.md) — آموزش و نحوه استفاده از **3D price**
-- [BTC Solar System Predictor v2 by BITMOON618](BTC Solar System Predictor v2 by BITMOON618.md) — آموزش و نحوه استفاده از **BTC Solar System Predictor v2 by BITMOON618**
-- [BTC Solar System Predictor v3](BTC Solar System Predictor v3.md) — آموزش و نحوه استفاده از **BTC Solar System Predictor v3**
-- [BTC Solar System Predictor v4](BTC Solar System Predictor v4.md) — آموزش و نحوه استفاده از **BTC Solar System Predictor v4**
-- [BTC Solar System Predictor](BTC Solar System Predictor.md) — آموزش و نحوه استفاده از **BTC Solar System Predictor**
-- [BTC Solar System](BTC Solar System.md) — آموزش و نحوه استفاده از **BTC Solar System**
-- [Btc Orelation Predictor System](Btc Orelation Predictor System.md) — آموزش و نحوه استفاده از **Btc Orelation Predictor System**
-- [Circle Price](Circle Price.md) — آموزش و نحوه استفاده از **Circle Price**
-- [Circle System by BITMOON618](Circle System by BITMOON618.md) — آموزش و نحوه استفاده از **Circle System by BITMOON618**
-- [Advanced Bybit Chrono-Analyzer](Clock/Advanced Bybit Chrono-Analyzer.md) — آموزش و نحوه استفاده از **Advanced Bybit Chrono Analyzer**
-- [Chrono Clock with Winrate](Clock/Chrono Clock with Winrate.md) — آموزش و نحوه استفاده از **Chrono Clock with Winrate**
-- [Chrono-Clock Pro v2 Cycle of Orbits](Clock/Chrono-Clock Pro v2 Cycle of Orbits.md) — آموزش و نحوه استفاده از **Chrono Clock Pro v2 Cycle of Orbits**
-- [Chrono-Clock Pro v2](Clock/Chrono-Clock Pro v2.md) — آموزش و نحوه استفاده از **Chrono Clock Pro v2**
-- [Chrono-Clock Pro](Clock/Chrono-Clock Pro.md) — آموزش و نحوه استفاده از **Chrono Clock Pro**
-- [Chrono-Gravitas v2.0](Clock/Chrono-Gravitas v2.0.md) — آموزش و نحوه استفاده از **Chrono Gravitas v2.0**
-- [Chrono-Gravitas v3.0](Clock/Chrono-Gravitas v3.0.md) — آموزش و نحوه استفاده از **Chrono Gravitas v3.0**
-- [Chrono-Gravitas v4.0](Clock/Chrono-Gravitas v4.0.md) — آموزش و نحوه استفاده از **Chrono Gravitas v4.0**
-- [Chrono-Gravitas v5.0](Clock/Chrono-Gravitas v5.0.md) — آموزش و نحوه استفاده از **Chrono Gravitas v5.0**
-- [Multi-Disk Timeline Pro + Live Scanner](Clock/Crono Disk/Multi-Disk Timeline Pro + Live Scanner.md) — آموزش و نحوه استفاده از **Multi Disk Timeline Pro + Live Scanner**
-- [chrono_disc_timeline](Clock/Crono Disk/chrono_disc_timeline.md) — آموزش و نحوه استفاده از **chrono_disc_timeline**
-- [chrono_matrix_3d](Clock/Crono Disk/chrono_matrix_3d.md) — آموزش و نحوه استفاده از **chrono_matrix_3d**
-- [earth_disk_timeline_sr](Clock/Crono Disk/earth_disk_timeline_sr.md) — آموزش و نحوه استفاده از **earth_disk_timeline_sr**
-- [earth_disk_timeline_v2](Clock/Crono Disk/earth_disk_timeline_v2.md) — آموزش و نحوه استفاده از **earth_disk_timeline_v2**
-- [Bybit Multi-Timeframe Spiral Mechanics Chart (Dash + Plotly)](Clock/New folder/Bybit Multi-Timeframe Spiral Mechanics Chart (Dash + Plotly).md) — آموزش و نحوه استفاده از **Bybit Multi Timeframe Spiral Mechanics Chart (Dash + Plotly)**
-- [Temporal Resonance Engine v8](Clock/New folder/Temporal Resonance Engine v8.md) — آموزش و نحوه استفاده از **Temporal Resonance Engine v8**
-- [Price Clock](Clock/Price Clock.md) — آموزش و نحوه استفاده از **Price Clock**
-- [Spiral Clock v1](Clock/Spiral Clock v1.md) — آموزش و نحوه استفاده از **Spiral Clock v1**
-- [Spiral Clock v2](Clock/Spiral Clock v2.md) — آموزش و نحوه استفاده از **Spiral Clock v2**
-- [Spiral Clock v3 - Backtest](Clock/Spiral Clock v3 - Backtest.md) — آموزش و نحوه استفاده از **Spiral Clock v3   Backtest**
-- [Spiral Clock v3](Clock/Spiral Clock v3.md) — آموزش و نحوه استفاده از **Spiral Clock v3**
-- [Temporal Resonance Engine v4 by BITMOON618](Clock/Temporal Resonance Engine v4 by BITMOON618.md) — آموزش و نحوه استفاده از **Temporal Resonance Engine v4 by BITMOON618**
-- [Temporal Resonance Engine v5 by BITMOON618](Clock/Temporal Resonance Engine v5 by BITMOON618.md) — آموزش و نحوه استفاده از **Temporal Resonance Engine v5 by BITMOON618**
-- [Temporal Resonance Engine v7 by BITMOON618](Clock/Temporal Resonance Engine v7 by BITMOON618.md) — آموزش و نحوه استفاده از **Temporal Resonance Engine v7 by BITMOON618**
-- [chrono_clock_pro winrate](Clock/chrono_clock_pro winrate.md) — آموزش و نحوه استفاده از **chrono_clock_pro winrate**
-- [chrono_clock_pro](Clock/chrono_clock_pro.md) — آموزش و نحوه استفاده از **chrono_clock_pro**
-- [Bybit Chrono-Orbital Solar System — Time Travel Edition](Clock/orbitals/Bybit Chrono-Orbital Solar System — Time Travel Edition.md) — آموزش و نحوه استفاده از **Bybit Chrono Orbital Solar System — Time Travel Edition**
-- [Bybit Chrono-Orbital Solar System](Clock/orbitals/Bybit Chrono-Orbital Solar System.md) — آموزش و نحوه استفاده از **Bybit Chrono Orbital Solar System**
-- [Ma Orbitals V2](Clock/orbitals/Ma Orbitals V2.md) — آموزش و نحوه استفاده از **Ma Orbitals V2**
-- [Ma Orbitals](Clock/orbitals/Ma Orbitals.md) — آموزش و نحوه استفاده از **Ma Orbitals**
-- [Timeframe Spiral Resonance](Clock/orbitals/Timeframe Spiral Resonance.md) — آموزش و نحوه استفاده از **Timeframe Spiral Resonance**
-- [Annual Spiral + 🔱 Golden Angle + ⚡ φ²-Turn Signal System](Clock/spiral/Annual Spiral + 🔱 Golden Angle + ⚡ φ²-Turn Signal System.md) — آموزش و نحوه استفاده از **Annual Spiral + 🔱 Golden Angle + ⚡ φ² Turn Signal System**
-- [Bybit Multi-Timeframe Circle Analyzer - Time Travel Edition](Clock/spiral/Bybit Multi-Timeframe Circle Analyzer - Time Travel Edition.md) — آموزش و نحوه استفاده از **Bybit Multi Timeframe Circle Analyzer   Time Travel Edition**
-- [Bybit Multi-Timeframe Spiral Analyzer - Time Travel Edition](Clock/spiral/Bybit Multi-Timeframe Spiral Analyzer - Time Travel Edition.md) — آموزش و نحوه استفاده از **Bybit Multi Timeframe Spiral Analyzer   Time Travel Edition**
-- [Bybit Spiral Timeframes Dashboard](Clock/spiral/Bybit Spiral Timeframes Dashboard.md) — آموزش و نحوه استفاده از **Bybit Spiral Timeframes Dashboard**
-- [Golden Fractal Spiral](Clock/spiral/Golden Fractal Spiral.md) — آموزش و نحوه استفاده از **Golden Fractal Spiral**
-- [Golden Spiral Chain by BITMOON618](Clock/spiral/Golden Spiral Chain by BITMOON618.md) — آموزش و نحوه استفاده از **Golden Spiral Chain by BITMOON618**
-- [Golden Spiral Fractal SR - Backtest](Clock/spiral/Golden Spiral Fractal SR - Backtest.md) — آموزش و نحوه استفاده از **Golden Spiral Fractal SR   Backtest**
-- [Golden Spiral Fractal SR - v2](Clock/spiral/Golden Spiral Fractal SR - v2.md) — آموزش و نحوه استفاده از **Golden Spiral Fractal SR   v2**
-- [Golden Spiral Fractal SR](Clock/spiral/Golden Spiral Fractal SR.md) — آموزش و نحوه استفاده از **Golden Spiral Fractal SR**
-- [Golden Spiral Fractal Timeframe Analyzer](Clock/spiral/Golden Spiral Fractal Timeframe Analyzer.md) — آموزش و نحوه استفاده از **Golden Spiral Fractal Timeframe Analyzer**
-- [Hierarchical Spiral + Fibonacci Orbits](Clock/spiral/Hierarchical Spiral + Fibonacci Orbits.md) — آموزش و نحوه استفاده از **Hierarchical Spiral + Fibonacci Orbits**
-- [Hierarchical Spiral + Signals + Cross Signals](Clock/spiral/Hierarchical Spiral + Signals + Cross Signals.md) — آموزش و نحوه استفاده از **Hierarchical Spiral + Signals + Cross Signals**
-- [Time Frame Orbits v2](Clock/spiral/Time Frame Orbits v2.md) — آموزش و نحوه استفاده از **Time Frame Orbits v2**
-- [TimeFrame Orbit System](Clock/spiral/TimeFrame Orbit System.md) — آموزش و نحوه استفاده از **TimeFrame Orbit System**
-- [Bybit Footprint Chart 2](Footprinting/Bybit Footprint Chart 2.md) — آموزش و نحوه استفاده از **Bybit Footprint Chart 2**
-- [Bybit Footprint Chart 3](Footprinting/Bybit Footprint Chart 3.md) — آموزش و نحوه استفاده از **Bybit Footprint Chart 3**
-- [Bybit Footprint Chart 4](Footprinting/Bybit Footprint Chart 4.md) — آموزش و نحوه استفاده از **Bybit Footprint Chart 4**
-- [Bybit Footprint Chart](Footprinting/Bybit Footprint Chart.md) — آموزش و نحوه استفاده از **Bybit Footprint Chart**
-- [Footprint System V1 Trade System](Footprinting/Footprint System V1 Trade System.md) — آموزش و نحوه استفاده از **Footprint System V1 Trade System**
-- [Footprinting System v2 {Morindok] by BITMOON618](Footprinting/Footprinting System v2 {Morindok] by BITMOON618.md) — آموزش و نحوه استفاده از **Footprinting System v2 {Morindok] by BITMOON618**
-- [Footprinting System v3](Footprinting/Footprinting System v3.md) — آموزش و نحوه استفاده از **Footprinting System v3**
-- [Footprinting System{Morindok] by BITMOON618](Footprinting/Footprinting System{Morindok] by BITMOON618.md) — آموزش و نحوه استفاده از **Footprinting System{Morindok] by BITMOON618**
-- [Volume Profile - v2](Footprinting/Volume Profile - v2.md) — آموزش و نحوه استفاده از **Volume Profile   v2**
-- [Volume Profile](Footprinting/Volume Profile.md) — آموزش و نحوه استفاده از **Volume Profile**
-- [Cube Gann](Gann/Cube Gann.md) — آموزش و نحوه استفاده از **Cube Gann**
-- [Gann Tagnet Spirals - V2](Gann/Gann Tagnet Spirals - V2.md) — آموزش و نحوه استفاده از **Gann Tagnet Spirals   V2**
-- [Gann Tagnet Spirals - v3](Gann/Gann Tagnet Spirals - v3.md) — آموزش و نحوه استفاده از **Gann Tagnet Spirals   v3**
-- [Gann Tagnet Spirals - v4](Gann/Gann Tagnet Spirals - v4.md) — آموزش و نحوه استفاده از **Gann Tagnet Spirals   v4**
-- [Gann Tagnet Spirals - v5](Gann/Gann Tagnet Spirals - v5.md) — آموزش و نحوه استفاده از **Gann Tagnet Spirals   v5**
-- [Gann Tagnet Spirals](Gann/Gann Tagnet Spirals.md) — آموزش و نحوه استفاده از **Gann Tagnet Spirals**
-- [Gann Time Machine Back](Gann/Gann Time Machine Back.md) — آموزش و نحوه استفاده از **Gann Time Machine Back**
-- [Gann Time Machine Live](Gann/Gann Time Machine Live.md) — آموزش و نحوه استفاده از **Gann Time Machine Live**
-- [Multiplier Finder](Gann/Multiplier Finder.md) — آموزش و نحوه استفاده از **Multiplier Finder**
-- [Quantum Gann R.S](Gann/Quantum Gann R.S.md) — آموزش و نحوه استفاده از **Quantum Gann R.S**
-- [Time Price Tagnet Machine](Gann/Time Price Tagnet Machine.md) — آموزش و نحوه استفاده از **Time Price Tagnet Machine**
-- [lW](Gann/lW.md) — آموزش و نحوه استفاده از **lW**
-- [chronogann_square](Gann/new gann/v1/chronogann_square.md) — آموزش و نحوه استفاده از **chronogann_square**
-- [ChronoGann Dynamic Square](Gann/new gann/v2/ChronoGann Dynamic Square.md) — آموزش و نحوه استفاده از **ChronoGann Dynamic Square**
-- [bybit_connector](Gann/new gann/v3/bybit_connector.md) — آموزش و نحوه استفاده از **bybit_connector**
-- [chrono_engine](Gann/new gann/v3/chrono_engine.md) — آموزش و نحوه استفاده از **chrono_engine**
-- [config](Gann/new gann/v3/config.md) — آموزش و نحوه استفاده از **config**
-- [gann_matrix](Gann/new gann/v3/gann_matrix.md) — آموزش و نحوه استفاده از **gann_matrix**
-- [main](Gann/new gann/v3/main.md) — آموزش و نحوه استفاده از **main**
-- [quantum_gann_dash](Gann/new gann/v4/quantum_gann_dash.md) — آموزش و نحوه استفاده از **quantum_gann_dash**
-- [note](Gann/note.md) — آموزش و نحوه استفاده از **note**
-- [Gravity Surface](Gravity Surface.md) — آموزش و نحوه استفاده از **Gravity Surface**
-- [HFT Model](HFT Model.md) — آموزش و نحوه استفاده از **HFT Model**
-- [Harmonic Circles](Harmonic Circles.md) — آموزش و نحوه استفاده از **Harmonic Circles**
-- [Kelly Cartesion](Kelly Cartesion.md) — آموزش و نحوه استفاده از **Kelly Cartesion**
-- [add_backtest](Living Brain/3.2/add_backtest.md) — آموزش و نحوه استفاده از **add_backtest**
-- [living_brain](Living Brain/3.2/living_brain.md) — آموزش و نحوه استفاده از **living_brain**
-- [Living Brain](Living Brain/Living Brain.md) — آموزش و نحوه استفاده از **Living Brain**
-- [living_brain](Living Brain/v1.1/living_brain.md) — آموزش و نحوه استفاده از **living_brain**
-- [Living Brain](Living Brain/v1/Living Brain.md) — آموزش و نحوه استفاده از **Living Brain**
-- [Living Brain](Living Brain/v10/10.4/Living Brain.md) — آموزش و نحوه استفاده از **Living Brain**
-- [hive_dna_state](Living Brain/v10/10.4/hive_dna_state.md) — آموزش و نحوه استفاده از **hive_dna_state**
-- [HIVE SCALPER-SNIPER PRO](Living Brain/v10/HIVE SCALPER-SNIPER PRO.md) — آموزش و نحوه استفاده از **HIVE SCALPER SNIPER PRO**
-- [HIVE_SCALPER-SNIPER_PRO](Living Brain/v10/v10.1/HIVE_SCALPER-SNIPER_PRO.md) — آموزش و نحوه استفاده از **HIVE_SCALPER SNIPER_PRO**
-- [HIVE_PRO_V3_10K](Living Brain/v10/v10.2/HIVE_PRO_V3_10K.md) — آموزش و نحوه استفاده از **HIVE_PRO_V3_10K**
-- [hive_dna_state](Living Brain/v10/v10.2/hive_dna_state.md) — آموزش و نحوه استفاده از **hive_dna_state**
-- [HIVE SCALPER-SNIPER PRO GENETIC EDITION](Living Brain/v10/v10.3/HIVE SCALPER-SNIPER PRO GENETIC EDITION.md) — آموزش و نحوه استفاده از **HIVE SCALPER SNIPER PRO GENETIC EDITION**
-- [hive_dna_state](Living Brain/v10/v10.5/hive_dna_state.md) — آموزش و نحوه استفاده از **hive_dna_state**
-- [hive_scalper_sniper_pro](Living Brain/v10/v10.5/hive_scalper_sniper_pro.md) — آموزش و نحوه استفاده از **hive_scalper_sniper_pro**
-- [hive_scalper_sniper_pro_v4](Living Brain/v10/v10.6/hive_scalper_sniper_pro_v4.md) — آموزش و نحوه استفاده از **hive_scalper_sniper_pro_v4**
-- [HIVE QUANTUM SCALPER PRO v6 — GENERATIONAL CONSCIOUSNESS](Living Brain/v10/v10.7/10.7.1/HIVE QUANTUM SCALPER PRO v6 — GENERATIONAL CONSCIOUSNESS.md) — آموزش و نحوه استفاده از **HIVE QUANTUM SCALPER PRO v6 — GENERATIONAL CONSCIOUSNESS**
-- [HIVE PREDATOR v9.1](Living Brain/v10/v10.7/10.7.1/v1/HIVE PREDATOR v9.1.md) — آموزش و نحوه استفاده از **HIVE PREDATOR v9.1**
-- [hive_predator_v12_fixed](Living Brain/v10/v10.7/10.7.1/v2/hive_predator_v12_fixed.md) — آموزش و نحوه استفاده از **hive_predator_v12_fixed**
-- [hive_institutional_config](Living Brain/v10/v10.7/10.7.2/hive_institutional_config.md) — آموزش و نحوه استفاده از **hive_institutional_config**
-- [hive_institutional_v7](Living Brain/v10/v10.7/10.7.2/hive_institutional_v7.md) — آموزش و نحوه استفاده از **hive_institutional_v7**
-- [HIVE INSTITUTIONAL SCALPER](Living Brain/v10/v10.7/10.7.3/HIVE INSTITUTIONAL SCALPER.md) — آموزش و نحوه استفاده از **HIVE INSTITUTIONAL SCALPER**
-- [hive_synapse_v10](Living Brain/v10/v10.7/10.7.4/hive_synapse_v10.md) — آموزش و نحوه استفاده از **hive_synapse_v10**
-- [hive_alpha_v11](Living Brain/v10/v10.7/10.7.5/hive_alpha_v11.md) — آموزش و نحوه استفاده از **hive_alpha_v11**
-- [hive_alpha_v11_fixed](Living Brain/v10/v10.7/10.7.6/hive_alpha_v11_fixed.md) — آموزش و نحوه استفاده از **hive_alpha_v11_fixed**
-- [hive_quantum_consciousness_v5](Living Brain/v10/v10.7/hive_quantum_consciousness_v5.md) — آموزش و نحوه استفاده از **hive_quantum_consciousness_v5**
-- [hive_quantum_v5_state](Living Brain/v10/v10.7/hive_quantum_v5_state.md) — آموزش و نحوه استفاده از **hive_quantum_v5_state**
-- [Living Digital Trading Organism](Living Brain/v11/Living Digital Trading Organism.md) — آموزش و نحوه استفاده از **Living Digital Trading Organism**
-- [HIVE SCALPER-SNIPER PRO](Living Brain/v12/HIVE SCALPER-SNIPER PRO.md) — آموزش و نحوه استفاده از **HIVE SCALPER SNIPER PRO**
-- [Digital trading organism](Living Brain/v13/Digital trading organism.md) — آموزش و نحوه استفاده از **Digital trading organism**
-- [digital_organism_trader](Living Brain/v14/digital_organism_trader.md) — آموزش و نحوه استفاده از **digital_organism_trader**
-- [digital_organism_trader](Living Brain/v15/digital_organism_trader.md) — آموزش و نحوه استفاده از **digital_organism_trader**
-- [Living Brain](Living Brain/v2/Living Brain.md) — آموزش و نحوه استفاده از **Living Brain**
-- [living_brain](Living Brain/v3.1/living_brain.md) — آموزش و نحوه استفاده از **living_brain**
-- [living_brain](Living Brain/v3.3/living_brain.md) — آموزش و نحوه استفاده از **living_brain**
-- [Living Brain](Living Brain/v3/Living Brain.md) — آموزش و نحوه استفاده از **Living Brain**
-- [Living Brain](Living Brain/v4 nahadi/Living Brain.md) — آموزش و نحوه استفاده از **Living Brain**
-- [Living Brain](Living Brain/v5/Living Brain.md) — آموزش و نحوه استفاده از **Living Brain**
-- [Living Brain](Living Brain/v6/Living Brain.md) — آموزش و نحوه استفاده از **Living Brain**
-- [Living Brain](Living Brain/v7/Living Brain.md) — آموزش و نحوه استفاده از **Living Brain**
-- [Living Brain](Living Brain/v8 smart money/Living Brain.md) — آموزش و نحوه استفاده از **Living Brain**
-- [Living Brain](Living Brain/v9/Living Brain.md) — آموزش و نحوه استفاده از **Living Brain**
-- [3D Divergence](MA/3D Divergence.md) — آموزش و نحوه استفاده از **3D Divergence**
-- [HH,LL 3D](MA/HH,LL 3D.md) — آموزش و نحوه استفاده از **HH,LL 3D**
-- [MA - RSI 3D Analyzer V2 by BITMOON618](MA/MA - RSI 3D Analyzer V2 by BITMOON618.md) — آموزش و نحوه استفاده از **MA   RSI 3D Analyzer V2 by BITMOON618**
-- [MA - RSI 3D Analyzer V3 by BITMOON618](MA/MA - RSI 3D Analyzer V3 by BITMOON618.md) — آموزش و نحوه استفاده از **MA   RSI 3D Analyzer V3 by BITMOON618**
-- [MA - RSI 3D Analyzer V4 by BITMOON618](MA/MA - RSI 3D Analyzer V4 by BITMOON618.md) — آموزش و نحوه استفاده از **MA   RSI 3D Analyzer V4 by BITMOON618**
-- [MA - RSI 3D Analyzer by BITMOON618 - Copy](MA/MA - RSI 3D Analyzer by BITMOON618 - Copy.md) — آموزش و نحوه استفاده از **MA   RSI 3D Analyzer by BITMOON618   Copy**
-- [MFI System - v1](MFI System - v1.md) — آموزش و نحوه استفاده از **MFI System   v1**
-- [MFI System - v2](MFI System - v2.md) — آموزش و نحوه استفاده از **MFI System   v2**
-- [Money Flow System - v3 by BITMOON618](Money Flow System - v3 by BITMOON618.md) — آموزش و نحوه استفاده از **Money Flow System   v3 by BITMOON618**
-- [README](Neural Network/README.md) — آموزش و نحوه استفاده از **README**
-- [app](Neural Network/app.md) — آموزش و نحوه استفاده از **app**
-- [app_state](Neural Network/app_state.md) — آموزش و نحوه استفاده از **app_state**
-- [config](Neural Network/config.md) — آموزش و نحوه استفاده از **config**
-- [data_feed](Neural Network/data_feed.md) — آموزش و نحوه استفاده از **data_feed**
-- [engine](Neural Network/engine.md) — آموزش و نحوه استفاده از **engine**
-- [features](Neural Network/features.md) — آموزش و نحوه استفاده از **features**
-- [neural_net](Neural Network/neural_net.md) — آموزش و نحوه استفاده از **neural_net**
-- [path_simulator](Neural Network/path_simulator.md) — آموزش و نحوه استفاده از **path_simulator**
-- [requirements](Neural Network/requirements.md) — آموزش و نحوه استفاده از **requirements**
-- [SPY Vol Surface Stress Simulation](SPY Vol Surface Stress Simulation.md) — آموزش و نحوه استفاده از **SPY Vol Surface Stress Simulation**
-- [Spiral Analyzer](Spiral Analyzer.md) — آموزش و نحوه استفاده از **Spiral Analyzer**
-- [Spiral Predictor - v2](Spiral Predictor - v2.md) — آموزش و نحوه استفاده از **Spiral Predictor   v2**
-- [Spiral Predictor](Spiral Predictor.md) — آموزش و نحوه استفاده از **Spiral Predictor**
-- [Start](Super Analyzer/Morindok_VolumeFlow/Start.md) — آموزش و نحوه استفاده از **Start**
-- [app](Super Analyzer/Morindok_VolumeFlow/app.md) — آموزش و نحوه استفاده از **app**
-- [requirements](Super Analyzer/Morindok_VolumeFlow/requirements.md) — آموزش و نحوه استفاده از **requirements**
-- [start](Super Analyzer/Morindok_VolumeFlow/start.md) — آموزش و نحوه استفاده از **start**
-- [راهنما](Super Analyzer/Morindok_VolumeFlow/راهنما.md) — آموزش و نحوه استفاده از **راهنما**
-- [README](Super Analyzer/Order Flow System/README.md) — آموزش و نحوه استفاده از **README**
-- [app](Super Analyzer/Order Flow System/app.md) — آموزش و نحوه استفاده از **app**
-- [bybit_engine](Super Analyzer/Order Flow System/bybit_engine.md) — آموزش و نحوه استفاده از **bybit_engine**
-- [requirements](Super Analyzer/Order Flow System/requirements.md) — آموزش و نحوه استفاده از **requirements**
-- [signals_engine](Super Analyzer/Order Flow System/signals_engine.md) — آموزش و نحوه استفاده از **signals_engine**
-- [Start](Super Analyzer/Scalping System V1/Start.md) — آموزش و نحوه استفاده از **Start**
-- [app](Super Analyzer/Scalping System V1/app.md) — آموزش و نحوه استفاده از **app**
-- [requirements](Super Analyzer/Scalping System V1/requirements.md) — آموزش و نحوه استفاده از **requirements**
-- [start](Super Analyzer/Scalping System V1/start.md) — آموزش و نحوه استفاده از **start**
-- [راهنما](Super Analyzer/Scalping System V1/راهنما.md) — آموزش و نحوه استفاده از **راهنما**
-- [Smart Volume Flow V1](Super Analyzer/Smart Volume Flow V1.md) — آموزش و نحوه استفاده از **Smart Volume Flow V1**
-- [Super OrderFlow Analyzer System by BITMOON618](Super Analyzer/Super OrderFlow Analyzer System by BITMOON618.md) — آموزش و نحوه استفاده از **Super OrderFlow Analyzer System by BITMOON618**
-- [Super Scalping System V1](Super Analyzer/Super Scalping System V1.md) — آموزش و نحوه استفاده از **Super Scalping System V1**
-- [Tick Data Analyzer by BITMOON618](Super Analyzer/Tick Data Analyzer by BITMOON618.md) — آموزش و نحوه استفاده از **Tick Data Analyzer by BITMOON618**
-- [Tick Data Analyzer v2 by BITMOON618 - Copy](Super Analyzer/Tick Data Analyzer v2 by BITMOON618 - Copy.md) — آموزش و نحوه استفاده از **Tick Data Analyzer v2 by BITMOON618   Copy**
-- [Tick Data Analyzer v3 by BITMOON618](Super Analyzer/Tick Data Analyzer v3 by BITMOON618.md) — آموزش و نحوه استفاده از **Tick Data Analyzer v3 by BITMOON618**
-- [Start](Super Analyzer/Volume Flow V2/Start.md) — آموزش و نحوه استفاده از **Start**
-- [app](Super Analyzer/Volume Flow V2/app.md) — آموزش و نحوه استفاده از **app**
-- [requirements](Super Analyzer/Volume Flow V2/requirements.md) — آموزش و نحوه استفاده از **requirements**
-- [start](Super Analyzer/Volume Flow V2/start.md) — آموزش و نحوه استفاده از **start**
-- [راهنما](Super Analyzer/Volume Flow V2/راهنما.md) — آموزش و نحوه استفاده از **راهنما**
-- [Volume Flow by BITMOON618](Super Analyzer/Volume Flow by BITMOON618.md) — آموزش و نحوه استفاده از **Volume Flow by BITMOON618**
-- [trendline_volume_analyzer](Volume/trendline_volume_analyzer.md) — آموزش و نحوه استفاده از **trendline_volume_analyzer**
-- [README](bio trader/bio trader v2/README.md) — آموزش و نحوه استفاده از **README**
-- [app](bio trader/bio trader v2/app.md) — آموزش و نحوه استفاده از **app**
-- [style](bio trader/bio trader v2/assets/style.md) — آموزش و نحوه استفاده از **style**
-- [bio_memory](bio trader/bio trader v2/bio_memory.md) — آموزش و نحوه استفاده از **bio_memory**
-- [biotrader](bio trader/bio trader v2/biotrader.md) — آموزش و نحوه استفاده از **biotrader**
-- [connect_tradingview](bio trader/bio trader v2/connect_tradingview.md) — آموزش و نحوه استفاده از **connect_tradingview**
-- [multimodal_2500](bio trader/bio trader v2/multimodal_2500.md) — آموزش و نحوه استفاده از **multimodal_2500**
-- [neural_2500](bio trader/bio trader v2/neural_2500.md) — آموزش و نحوه استفاده از **neural_2500**
-- [record_screen](bio trader/bio trader v2/record_screen.md) — آموزش و نحوه استفاده از **record_screen**
-- [requirements](bio trader/bio trader v2/requirements.md) — آموزش و نحوه استفاده از **requirements**
-- [share_screen](bio trader/bio trader v2/share_screen.md) — آموزش و نحوه استفاده از **share_screen**
-- [test_biotrader](bio trader/bio trader v2/test_biotrader.md) — آموزش و نحوه استفاده از **test_biotrader**
-- [README](bio trader/bio trader/README.md) — آموزش و نحوه استفاده از **README**
-- [app](bio trader/bio trader/app.md) — آموزش و نحوه استفاده از **app**
-- [style](bio trader/bio trader/assets/style.md) — آموزش و نحوه استفاده از **style**
-- [biotrader](bio trader/bio trader/biotrader.md) — آموزش و نحوه استفاده از **biotrader**
-- [requirements](bio trader/bio trader/requirements.md) — آموزش و نحوه استفاده از **requirements**
-- [test_biotrader](bio trader/bio trader/test_biotrader.md) — آموزش و نحوه استفاده از **test_biotrader**
-- [bybit_whale_scalper](bybit_whale_scalper.md) — آموزش و نحوه استفاده از **bybit_whale_scalper**
-- [jins](jins/jins.md) — آموزش و نحوه استفاده از **jins**
-- [Nostradamus Digital Organism](nostradamoos/Nostradamus Digital Organism.md) — آموزش و نحوه استفاده از **Nostradamus Digital Organism**
-- [Dockerfile](organism/Kimi_Agent_Untitled Chat/app/Dockerfile.md) — آموزش و نحوه استفاده از **Dockerfile**
-- [app](organism/Kimi_Agent_Untitled Chat/app/app.md) — آموزش و نحوه استفاده از **app**
-- [index](organism/Kimi_Agent_Untitled Chat/app/index.md) — آموزش و نحوه استفاده از **index**
-- [package-lock](organism/Kimi_Agent_Untitled Chat/app/package-lock.md) — آموزش و نحوه استفاده از **package lock**
-- [requirements](organism/Kimi_Agent_Untitled Chat/app/requirements.md) — آموزش و نحوه استفاده از **requirements**
-- [ارگانیسم_دیجیتال_فیبوناچی](organism/Kimi_Agent_Untitled Chat/ارگانیسم_دیجیتال_فیبوناچی.md) — آموزش و نحوه استفاده از **ارگانیسم_دیجیتال_فیبوناچی**
-- [Smart Organism](organism/v1/Smart Organism.md) — آموزش و نحوه استفاده از **Smart Organism**
-- [workspace](organism/v10/.idea/workspace.md) — آموزش و نحوه استفاده از **workspace**
-- [document](organism/v10/document.md) — آموزش و نحوه استفاده از **document**
-- [organism_2500](organism/v10/organism_2500.md) — آموزش و نحوه استفاده از **organism_2500**
-- [organism_2500_identity](organism/v10/organism_2500_identity.md) — آموزش و نحوه استفاده از **organism_2500_identity**
-- [organism_2500_state](organism/v10/organism_2500_state.md) — آموزش و نحوه استفاده از **organism_2500_state**
-- [workspace](organism/v11/.idea/workspace.md) — آموزش و نحوه استفاده از **workspace**
-- [organism2500](organism/v11/organism2500.md) — آموزش و نحوه استفاده از **organism2500**
-- [organism2500](organism/v12/organism2500.md) — آموزش و نحوه استفاده از **organism2500**
-- [organism](organism/v13/organism.md) — آموزش و نحوه استفاده از **organism**
-- [README](organism/v14/organism_2500_superaware/organism_2500_superaware/README.md) — آموزش و نحوه استفاده از **README**
-- [__init__](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [affect](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/affect.md) — آموزش و نحوه استفاده از **affect**
-- [awareness_legacy](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/awareness_legacy.md) — آموزش و نحوه استفاده از **awareness_legacy**
-- [body](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/body.md) — آموزش و نحوه استفاده از **body**
-- [cli](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/cli.md) — آموزش و نحوه استفاده از **cli**
-- [concepts](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/concepts.md) — آموزش و نحوه استفاده از **concepts**
-- [__init__](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [attention](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/attention.md) — آموزش و نحوه استفاده از **attention**
-- [core](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/core.md) — آموزش و نحوه استفاده از **core**
-- [homeostasis](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/homeostasis.md) — آموزش و نحوه استفاده از **homeostasis**
-- [integration](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/integration.md) — آموزش و نحوه استفاده از **integration**
-- [metacognition](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/metacognition.md) — آموزش و نحوه استفاده از **metacognition**
-- [predictive](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/predictive.md) — آموزش و نحوه استفاده از **predictive**
-- [workspace](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/workspace.md) — آموزش و نحوه استفاده از **workspace**
-- [database](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/database.md) — آموزش و نحوه استفاده از **database**
-- [decision](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/decision.md) — آموزش و نحوه استفاده از **decision**
-- [genome](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/genome.md) — آموزش و نحوه استفاده از **genome**
-- [identity](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/identity.md) — آموزش و نحوه استفاده از **identity**
-- [imagination](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/imagination.md) — آموزش و نحوه استفاده از **imagination**
-- [integrity](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/integrity.md) — آموزش و نحوه استفاده از **integrity**
-- [internet](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/internet.md) — آموزش و نحوه استفاده از **internet**
-- [language](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/language.md) — آموزش و نحوه استفاده از **language**
-- [memory](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/memory.md) — آموزش و نحوه استفاده از **memory**
-- [organism_core](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/organism_core.md) — آموزش و نحوه استفاده از **organism_core**
-- [substrate](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/substrate.md) — آموزش و نحوه استفاده از **substrate**
-- [thought](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/thought.md) — آموزش و نحوه استفاده از **thought**
-- [utils](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/utils.md) — آموزش و نحوه استفاده از **utils**
-- [visualization](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/visualization.md) — آموزش و نحوه استفاده از **visualization**
-- [requirements](organism/v14/organism_2500_superaware/organism_2500_superaware/requirements.md) — آموزش و نحوه استفاده از **requirements**
-- [run](organism/v14/organism_2500_superaware/organism_2500_superaware/run.md) — آموزش و نحوه استفاده از **run**
-- [digital_organism_2500](organism/v15/digital_organism_2500.md) — آموزش و نحوه استفاده از **digital_organism_2500**
-- [requirements](organism/v15/requirements.md) — آموزش و نحوه استفاده از **requirements**
-- [run_chat](organism/v15/run_chat.md) — آموزش و نحوه استفاده از **run_chat**
-- [run_chat_dashboard](organism/v15/run_chat_dashboard.md) — آموزش و نحوه استفاده از **run_chat_dashboard**
-- [run_organism](organism/v15/run_organism.md) — آموزش و نحوه استفاده از **run_organism**
-- [Living Brain](organism/v16/Living Brain.md) — آموزش و نحوه استفاده از **Living Brain**
-- [Project_Default](organism/v17/.idea/inspectionProfiles/Project_Default.md) — آموزش و نحوه استفاده از **Project_Default**
-- [profiles_settings](organism/v17/.idea/inspectionProfiles/profiles_settings.md) — آموزش و نحوه استفاده از **profiles_settings**
-- [misc](organism/v17/.idea/misc.md) — آموزش و نحوه استفاده از **misc**
-- [modules](organism/v17/.idea/modules.md) — آموزش و نحوه استفاده از **modules**
-- [untitled](organism/v17/.idea/untitled.md) — آموزش و نحوه استفاده از **untitled**
-- [v17](organism/v17/.idea/v17.md) — آموزش و نحوه استفاده از **v17**
-- [workspace](organism/v17/.idea/workspace.md) — آموزش و نحوه استفاده از **workspace**
-- [digital_organism](organism/v17/digital_organism/.idea/digital_organism.md) — آموزش و نحوه استفاده از **digital_organism**
-- [Project_Default](organism/v17/digital_organism/.idea/inspectionProfiles/Project_Default.md) — آموزش و نحوه استفاده از **Project_Default**
-- [profiles_settings](organism/v17/digital_organism/.idea/inspectionProfiles/profiles_settings.md) — آموزش و نحوه استفاده از **profiles_settings**
-- [misc](organism/v17/digital_organism/.idea/misc.md) — آموزش و نحوه استفاده از **misc**
-- [modules](organism/v17/digital_organism/.idea/modules.md) — آموزش و نحوه استفاده از **modules**
-- [untitled](organism/v17/digital_organism/.idea/untitled.md) — آموزش و نحوه استفاده از **untitled**
-- [workspace](organism/v17/digital_organism/.idea/workspace.md) — آموزش و نحوه استفاده از **workspace**
-- [AUTHORS](organism/v17/digital_organism/venv/Lib/site-packages/pip-25.0.1.dist-info/AUTHORS.md) — آموزش و نحوه استفاده از **AUTHORS**
-- [INSTALLER](organism/v17/digital_organism/venv/Lib/site-packages/pip-25.0.1.dist-info/INSTALLER.md) — آموزش و نحوه استفاده از **INSTALLER**
-- [LICENSE](organism/v17/digital_organism/venv/Lib/site-packages/pip-25.0.1.dist-info/LICENSE.md) — آموزش و نحوه استفاده از **LICENSE**
-- [METADATA](organism/v17/digital_organism/venv/Lib/site-packages/pip-25.0.1.dist-info/METADATA.md) — آموزش و نحوه استفاده از **METADATA**
-- [RECORD](organism/v17/digital_organism/venv/Lib/site-packages/pip-25.0.1.dist-info/RECORD.md) — آموزش و نحوه استفاده از **RECORD**
-- [WHEEL](organism/v17/digital_organism/venv/Lib/site-packages/pip-25.0.1.dist-info/WHEEL.md) — آموزش و نحوه استفاده از **WHEEL**
-- [entry_points](organism/v17/digital_organism/venv/Lib/site-packages/pip-25.0.1.dist-info/entry_points.md) — آموزش و نحوه استفاده از **entry_points**
-- [top_level](organism/v17/digital_organism/venv/Lib/site-packages/pip-25.0.1.dist-info/top_level.md) — آموزش و نحوه استفاده از **top_level**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [__main__](organism/v17/digital_organism/venv/Lib/site-packages/pip/__main__.md) — آموزش و نحوه استفاده از **__main__**
-- [__pip-runner__](organism/v17/digital_organism/venv/Lib/site-packages/pip/__pip-runner__.md) — آموزش و نحوه استفاده از **__pip runner__**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [build_env](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/build_env.md) — آموزش و نحوه استفاده از **build_env**
-- [cache](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/cache.md) — آموزش و نحوه استفاده از **cache**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/cli/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [autocompletion](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/cli/autocompletion.md) — آموزش و نحوه استفاده از **autocompletion**
-- [base_command](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/cli/base_command.md) — آموزش و نحوه استفاده از **base_command**
-- [cmdoptions](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/cli/cmdoptions.md) — آموزش و نحوه استفاده از **cmdoptions**
-- [command_context](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/cli/command_context.md) — آموزش و نحوه استفاده از **command_context**
-- [index_command](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/cli/index_command.md) — آموزش و نحوه استفاده از **index_command**
-- [main](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/cli/main.md) — آموزش و نحوه استفاده از **main**
-- [main_parser](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/cli/main_parser.md) — آموزش و نحوه استفاده از **main_parser**
-- [parser](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/cli/parser.md) — آموزش و نحوه استفاده از **parser**
-- [progress_bars](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/cli/progress_bars.md) — آموزش و نحوه استفاده از **progress_bars**
-- [req_command](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/cli/req_command.md) — آموزش و نحوه استفاده از **req_command**
-- [spinners](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/cli/spinners.md) — آموزش و نحوه استفاده از **spinners**
-- [status_codes](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/cli/status_codes.md) — آموزش و نحوه استفاده از **status_codes**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [cache](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/cache.md) — آموزش و نحوه استفاده از **cache**
-- [check](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/check.md) — آموزش و نحوه استفاده از **check**
-- [completion](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/completion.md) — آموزش و نحوه استفاده از **completion**
-- [configuration](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/configuration.md) — آموزش و نحوه استفاده از **configuration**
-- [debug](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/debug.md) — آموزش و نحوه استفاده از **debug**
-- [download](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/download.md) — آموزش و نحوه استفاده از **download**
-- [freeze](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/freeze.md) — آموزش و نحوه استفاده از **freeze**
-- [hash](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/hash.md) — آموزش و نحوه استفاده از **hash**
-- [help](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/help.md) — آموزش و نحوه استفاده از **help**
-- [index](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/index.md) — آموزش و نحوه استفاده از **index**
-- [inspect](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/inspect.md) — آموزش و نحوه استفاده از **inspect**
-- [install](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/install.md) — آموزش و نحوه استفاده از **install**
-- [list](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/list.md) — آموزش و نحوه استفاده از **list**
-- [search](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/search.md) — آموزش و نحوه استفاده از **search**
-- [show](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/show.md) — آموزش و نحوه استفاده از **show**
-- [uninstall](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/uninstall.md) — آموزش و نحوه استفاده از **uninstall**
-- [wheel](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/commands/wheel.md) — آموزش و نحوه استفاده از **wheel**
-- [configuration](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/configuration.md) — آموزش و نحوه استفاده از **configuration**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/distributions/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [base](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/distributions/base.md) — آموزش و نحوه استفاده از **base**
-- [installed](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/distributions/installed.md) — آموزش و نحوه استفاده از **installed**
-- [sdist](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/distributions/sdist.md) — آموزش و نحوه استفاده از **sdist**
-- [wheel](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/distributions/wheel.md) — آموزش و نحوه استفاده از **wheel**
-- [exceptions](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/exceptions.md) — آموزش و نحوه استفاده از **exceptions**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/index/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [collector](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/index/collector.md) — آموزش و نحوه استفاده از **collector**
-- [package_finder](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/index/package_finder.md) — آموزش و نحوه استفاده از **package_finder**
-- [sources](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/index/sources.md) — آموزش و نحوه استفاده از **sources**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/locations/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [_distutils](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/locations/_distutils.md) — آموزش و نحوه استفاده از **_distutils**
-- [_sysconfig](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/locations/_sysconfig.md) — آموزش و نحوه استفاده از **_sysconfig**
-- [base](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/locations/base.md) — آموزش و نحوه استفاده از **base**
-- [main](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/main.md) — آموزش و نحوه استفاده از **main**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/metadata/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [_json](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/metadata/_json.md) — آموزش و نحوه استفاده از **_json**
-- [base](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/metadata/base.md) — آموزش و نحوه استفاده از **base**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/metadata/importlib/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [_compat](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/metadata/importlib/_compat.md) — آموزش و نحوه استفاده از **_compat**
-- [_dists](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/metadata/importlib/_dists.md) — آموزش و نحوه استفاده از **_dists**
-- [_envs](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/metadata/importlib/_envs.md) — آموزش و نحوه استفاده از **_envs**
-- [pkg_resources](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/metadata/pkg_resources.md) — آموزش و نحوه استفاده از **pkg_resources**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/models/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [candidate](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/models/candidate.md) — آموزش و نحوه استفاده از **candidate**
-- [direct_url](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/models/direct_url.md) — آموزش و نحوه استفاده از **direct_url**
-- [format_control](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/models/format_control.md) — آموزش و نحوه استفاده از **format_control**
-- [index](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/models/index.md) — آموزش و نحوه استفاده از **index**
-- [installation_report](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/models/installation_report.md) — آموزش و نحوه استفاده از **installation_report**
-- [link](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/models/link.md) — آموزش و نحوه استفاده از **link**
-- [scheme](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/models/scheme.md) — آموزش و نحوه استفاده از **scheme**
-- [search_scope](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/models/search_scope.md) — آموزش و نحوه استفاده از **search_scope**
-- [selection_prefs](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/models/selection_prefs.md) — آموزش و نحوه استفاده از **selection_prefs**
-- [target_python](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/models/target_python.md) — آموزش و نحوه استفاده از **target_python**
-- [wheel](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/models/wheel.md) — آموزش و نحوه استفاده از **wheel**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/network/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [auth](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/network/auth.md) — آموزش و نحوه استفاده از **auth**
-- [cache](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/network/cache.md) — آموزش و نحوه استفاده از **cache**
-- [download](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/network/download.md) — آموزش و نحوه استفاده از **download**
-- [lazy_wheel](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/network/lazy_wheel.md) — آموزش و نحوه استفاده از **lazy_wheel**
-- [session](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/network/session.md) — آموزش و نحوه استفاده از **session**
-- [utils](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/network/utils.md) — آموزش و نحوه استفاده از **utils**
-- [xmlrpc](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/network/xmlrpc.md) — آموزش و نحوه استفاده از **xmlrpc**
-- [build_tracker](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/operations/build/build_tracker.md) — آموزش و نحوه استفاده از **build_tracker**
-- [metadata](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/operations/build/metadata.md) — آموزش و نحوه استفاده از **metadata**
-- [metadata_editable](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/operations/build/metadata_editable.md) — آموزش و نحوه استفاده از **metadata_editable**
-- [metadata_legacy](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/operations/build/metadata_legacy.md) — آموزش و نحوه استفاده از **metadata_legacy**
-- [wheel](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/operations/build/wheel.md) — آموزش و نحوه استفاده از **wheel**
-- [wheel_editable](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/operations/build/wheel_editable.md) — آموزش و نحوه استفاده از **wheel_editable**
-- [wheel_legacy](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/operations/build/wheel_legacy.md) — آموزش و نحوه استفاده از **wheel_legacy**
-- [check](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/operations/check.md) — آموزش و نحوه استفاده از **check**
-- [freeze](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/operations/freeze.md) — آموزش و نحوه استفاده از **freeze**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/operations/install/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [editable_legacy](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/operations/install/editable_legacy.md) — آموزش و نحوه استفاده از **editable_legacy**
-- [wheel](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/operations/install/wheel.md) — آموزش و نحوه استفاده از **wheel**
-- [prepare](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/operations/prepare.md) — آموزش و نحوه استفاده از **prepare**
-- [pyproject](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/pyproject.md) — آموزش و نحوه استفاده از **pyproject**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/req/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [constructors](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/req/constructors.md) — آموزش و نحوه استفاده از **constructors**
-- [req_file](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/req/req_file.md) — آموزش و نحوه استفاده از **req_file**
-- [req_install](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/req/req_install.md) — آموزش و نحوه استفاده از **req_install**
-- [req_set](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/req/req_set.md) — آموزش و نحوه استفاده از **req_set**
-- [req_uninstall](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/req/req_uninstall.md) — آموزش و نحوه استفاده از **req_uninstall**
-- [base](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/resolution/base.md) — آموزش و نحوه استفاده از **base**
-- [resolver](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/resolution/legacy/resolver.md) — آموزش و نحوه استفاده از **resolver**
-- [base](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/resolution/resolvelib/base.md) — آموزش و نحوه استفاده از **base**
-- [candidates](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/resolution/resolvelib/candidates.md) — آموزش و نحوه استفاده از **candidates**
-- [factory](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/resolution/resolvelib/factory.md) — آموزش و نحوه استفاده از **factory**
-- [found_candidates](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/resolution/resolvelib/found_candidates.md) — آموزش و نحوه استفاده از **found_candidates**
-- [provider](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/resolution/resolvelib/provider.md) — آموزش و نحوه استفاده از **provider**
-- [reporter](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/resolution/resolvelib/reporter.md) — آموزش و نحوه استفاده از **reporter**
-- [requirements](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/resolution/resolvelib/requirements.md) — آموزش و نحوه استفاده از **requirements**
-- [resolver](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/resolution/resolvelib/resolver.md) — آموزش و نحوه استفاده از **resolver**
-- [self_outdated_check](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/self_outdated_check.md) — آموزش و نحوه استفاده از **self_outdated_check**
-- [_jaraco_text](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/_jaraco_text.md) — آموزش و نحوه استفاده از **_jaraco_text**
-- [_log](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/_log.md) — آموزش و نحوه استفاده از **_log**
-- [appdirs](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/appdirs.md) — آموزش و نحوه استفاده از **appdirs**
-- [compat](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/compat.md) — آموزش و نحوه استفاده از **compat**
-- [compatibility_tags](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/compatibility_tags.md) — آموزش و نحوه استفاده از **compatibility_tags**
-- [datetime](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/datetime.md) — آموزش و نحوه استفاده از **datetime**
-- [deprecation](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/deprecation.md) — آموزش و نحوه استفاده از **deprecation**
-- [direct_url_helpers](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/direct_url_helpers.md) — آموزش و نحوه استفاده از **direct_url_helpers**
-- [egg_link](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/egg_link.md) — آموزش و نحوه استفاده از **egg_link**
-- [entrypoints](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/entrypoints.md) — آموزش و نحوه استفاده از **entrypoints**
-- [filesystem](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/filesystem.md) — آموزش و نحوه استفاده از **filesystem**
-- [filetypes](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/filetypes.md) — آموزش و نحوه استفاده از **filetypes**
-- [glibc](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/glibc.md) — آموزش و نحوه استفاده از **glibc**
-- [hashes](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/hashes.md) — آموزش و نحوه استفاده از **hashes**
-- [logging](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/logging.md) — آموزش و نحوه استفاده از **logging**
-- [misc](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/misc.md) — آموزش و نحوه استفاده از **misc**
-- [packaging](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/packaging.md) — آموزش و نحوه استفاده از **packaging**
-- [retry](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/retry.md) — آموزش و نحوه استفاده از **retry**
-- [setuptools_build](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/setuptools_build.md) — آموزش و نحوه استفاده از **setuptools_build**
-- [subprocess](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/subprocess.md) — آموزش و نحوه استفاده از **subprocess**
-- [temp_dir](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/temp_dir.md) — آموزش و نحوه استفاده از **temp_dir**
-- [unpacking](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/unpacking.md) — آموزش و نحوه استفاده از **unpacking**
-- [urls](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/urls.md) — آموزش و نحوه استفاده از **urls**
-- [virtualenv](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/virtualenv.md) — آموزش و نحوه استفاده از **virtualenv**
-- [wheel](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/utils/wheel.md) — آموزش و نحوه استفاده از **wheel**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/vcs/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [bazaar](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/vcs/bazaar.md) — آموزش و نحوه استفاده از **bazaar**
-- [git](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/vcs/git.md) — آموزش و نحوه استفاده از **git**
-- [mercurial](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/vcs/mercurial.md) — آموزش و نحوه استفاده از **mercurial**
-- [subversion](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/vcs/subversion.md) — آموزش و نحوه استفاده از **subversion**
-- [versioncontrol](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/vcs/versioncontrol.md) — آموزش و نحوه استفاده از **versioncontrol**
-- [wheel_builder](organism/v17/digital_organism/venv/Lib/site-packages/pip/_internal/wheel_builder.md) — آموزش و نحوه استفاده از **wheel_builder**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/cachecontrol/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [_cmd](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/cachecontrol/_cmd.md) — آموزش و نحوه استفاده از **_cmd**
-- [adapter](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/cachecontrol/adapter.md) — آموزش و نحوه استفاده از **adapter**
-- [cache](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/cachecontrol/cache.md) — آموزش و نحوه استفاده از **cache**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/cachecontrol/caches/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [file_cache](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/cachecontrol/caches/file_cache.md) — آموزش و نحوه استفاده از **file_cache**
-- [redis_cache](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/cachecontrol/caches/redis_cache.md) — آموزش و نحوه استفاده از **redis_cache**
-- [controller](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/cachecontrol/controller.md) — آموزش و نحوه استفاده از **controller**
-- [filewrapper](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/cachecontrol/filewrapper.md) — آموزش و نحوه استفاده از **filewrapper**
-- [heuristics](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/cachecontrol/heuristics.md) — آموزش و نحوه استفاده از **heuristics**
-- [serialize](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/cachecontrol/serialize.md) — آموزش و نحوه استفاده از **serialize**
-- [wrapper](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/cachecontrol/wrapper.md) — آموزش و نحوه استفاده از **wrapper**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/certifi/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [__main__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/certifi/__main__.md) — آموزش و نحوه استفاده از **__main__**
-- [core](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/certifi/core.md) — آموزش و نحوه استفاده از **core**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/distlib/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [compat](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/distlib/compat.md) — آموزش و نحوه استفاده از **compat**
-- [database](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/distlib/database.md) — آموزش و نحوه استفاده از **database**
-- [index](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/distlib/index.md) — آموزش و نحوه استفاده از **index**
-- [locators](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/distlib/locators.md) — آموزش و نحوه استفاده از **locators**
-- [manifest](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/distlib/manifest.md) — آموزش و نحوه استفاده از **manifest**
-- [markers](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/distlib/markers.md) — آموزش و نحوه استفاده از **markers**
-- [metadata](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/distlib/metadata.md) — آموزش و نحوه استفاده از **metadata**
-- [resources](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/distlib/resources.md) — آموزش و نحوه استفاده از **resources**
-- [scripts](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/distlib/scripts.md) — آموزش و نحوه استفاده از **scripts**
-- [util](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/distlib/util.md) — آموزش و نحوه استفاده از **util**
-- [version](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/distlib/version.md) — آموزش و نحوه استفاده از **version**
-- [wheel](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/distlib/wheel.md) — آموزش و نحوه استفاده از **wheel**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/distro/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [__main__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/distro/__main__.md) — آموزش و نحوه استفاده از **__main__**
-- [distro](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/distro/distro.md) — آموزش و نحوه استفاده از **distro**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/idna/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [codec](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/idna/codec.md) — آموزش و نحوه استفاده از **codec**
-- [compat](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/idna/compat.md) — آموزش و نحوه استفاده از **compat**
-- [core](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/idna/core.md) — آموزش و نحوه استفاده از **core**
-- [idnadata](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/idna/idnadata.md) — آموزش و نحوه استفاده از **idnadata**
-- [intranges](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/idna/intranges.md) — آموزش و نحوه استفاده از **intranges**
-- [package_data](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/idna/package_data.md) — آموزش و نحوه استفاده از **package_data**
-- [uts46data](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/idna/uts46data.md) — آموزش و نحوه استفاده از **uts46data**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/msgpack/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [exceptions](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/msgpack/exceptions.md) — آموزش و نحوه استفاده از **exceptions**
-- [ext](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/msgpack/ext.md) — آموزش و نحوه استفاده از **ext**
-- [fallback](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/msgpack/fallback.md) — آموزش و نحوه استفاده از **fallback**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/packaging/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [_elffile](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/packaging/_elffile.md) — آموزش و نحوه استفاده از **_elffile**
-- [_manylinux](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/packaging/_manylinux.md) — آموزش و نحوه استفاده از **_manylinux**
-- [_musllinux](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/packaging/_musllinux.md) — آموزش و نحوه استفاده از **_musllinux**
-- [_parser](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/packaging/_parser.md) — آموزش و نحوه استفاده از **_parser**
-- [_structures](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/packaging/_structures.md) — آموزش و نحوه استفاده از **_structures**
-- [_tokenizer](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/packaging/_tokenizer.md) — آموزش و نحوه استفاده از **_tokenizer**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/packaging/licenses/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [_spdx](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/packaging/licenses/_spdx.md) — آموزش و نحوه استفاده از **_spdx**
-- [markers](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/packaging/markers.md) — آموزش و نحوه استفاده از **markers**
-- [metadata](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/packaging/metadata.md) — آموزش و نحوه استفاده از **metadata**
-- [requirements](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/packaging/requirements.md) — آموزش و نحوه استفاده از **requirements**
-- [specifiers](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/packaging/specifiers.md) — آموزش و نحوه استفاده از **specifiers**
-- [tags](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/packaging/tags.md) — آموزش و نحوه استفاده از **tags**
-- [utils](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/packaging/utils.md) — آموزش و نحوه استفاده از **utils**
-- [version](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/packaging/version.md) — آموزش و نحوه استفاده از **version**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pkg_resources/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/platformdirs/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [__main__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/platformdirs/__main__.md) — آموزش و نحوه استفاده از **__main__**
-- [android](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/platformdirs/android.md) — آموزش و نحوه استفاده از **android**
-- [api](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/platformdirs/api.md) — آموزش و نحوه استفاده از **api**
-- [macos](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/platformdirs/macos.md) — آموزش و نحوه استفاده از **macos**
-- [unix](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/platformdirs/unix.md) — آموزش و نحوه استفاده از **unix**
-- [version](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/platformdirs/version.md) — آموزش و نحوه استفاده از **version**
-- [windows](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/platformdirs/windows.md) — آموزش و نحوه استفاده از **windows**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [__main__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/__main__.md) — آموزش و نحوه استفاده از **__main__**
-- [cmdline](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/cmdline.md) — آموزش و نحوه استفاده از **cmdline**
-- [console](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/console.md) — آموزش و نحوه استفاده از **console**
-- [filter](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/filter.md) — آموزش و نحوه استفاده از **filter**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/filters/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [formatter](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/formatter.md) — آموزش و نحوه استفاده از **formatter**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/formatters/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [_mapping](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/formatters/_mapping.md) — آموزش و نحوه استفاده از **_mapping**
-- [bbcode](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/formatters/bbcode.md) — آموزش و نحوه استفاده از **bbcode**
-- [groff](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/formatters/groff.md) — آموزش و نحوه استفاده از **groff**
-- [html](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/formatters/html.md) — آموزش و نحوه استفاده از **html**
-- [img](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/formatters/img.md) — آموزش و نحوه استفاده از **img**
-- [irc](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/formatters/irc.md) — آموزش و نحوه استفاده از **irc**
-- [latex](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/formatters/latex.md) — آموزش و نحوه استفاده از **latex**
-- [other](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/formatters/other.md) — آموزش و نحوه استفاده از **other**
-- [pangomarkup](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/formatters/pangomarkup.md) — آموزش و نحوه استفاده از **pangomarkup**
-- [rtf](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/formatters/rtf.md) — آموزش و نحوه استفاده از **rtf**
-- [svg](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/formatters/svg.md) — آموزش و نحوه استفاده از **svg**
-- [terminal](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/formatters/terminal.md) — آموزش و نحوه استفاده از **terminal**
-- [terminal256](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/formatters/terminal256.md) — آموزش و نحوه استفاده از **terminal256**
-- [lexer](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/lexer.md) — آموزش و نحوه استفاده از **lexer**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/lexers/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [_mapping](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/lexers/_mapping.md) — آموزش و نحوه استفاده از **_mapping**
-- [python](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/lexers/python.md) — آموزش و نحوه استفاده از **python**
-- [modeline](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/modeline.md) — آموزش و نحوه استفاده از **modeline**
-- [plugin](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/plugin.md) — آموزش و نحوه استفاده از **plugin**
-- [regexopt](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/regexopt.md) — آموزش و نحوه استفاده از **regexopt**
-- [scanner](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/scanner.md) — آموزش و نحوه استفاده از **scanner**
-- [sphinxext](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/sphinxext.md) — آموزش و نحوه استفاده از **sphinxext**
-- [style](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/style.md) — آموزش و نحوه استفاده از **style**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/styles/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [_mapping](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/styles/_mapping.md) — آموزش و نحوه استفاده از **_mapping**
-- [token](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/token.md) — آموزش و نحوه استفاده از **token**
-- [unistring](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/unistring.md) — آموزش و نحوه استفاده از **unistring**
-- [util](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pygments/util.md) — آموزش و نحوه استفاده از **util**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pyproject_hooks/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [_impl](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pyproject_hooks/_impl.md) — آموزش و نحوه استفاده از **_impl**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pyproject_hooks/_in_process/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [_in_process](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.md) — آموزش و نحوه استفاده از **_in_process**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [__version__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/__version__.md) — آموزش و نحوه استفاده از **__version__**
-- [_internal_utils](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/_internal_utils.md) — آموزش و نحوه استفاده از **_internal_utils**
-- [adapters](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/adapters.md) — آموزش و نحوه استفاده از **adapters**
-- [api](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/api.md) — آموزش و نحوه استفاده از **api**
-- [auth](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/auth.md) — آموزش و نحوه استفاده از **auth**
-- [certs](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/certs.md) — آموزش و نحوه استفاده از **certs**
-- [compat](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/compat.md) — آموزش و نحوه استفاده از **compat**
-- [cookies](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/cookies.md) — آموزش و نحوه استفاده از **cookies**
-- [exceptions](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/exceptions.md) — آموزش و نحوه استفاده از **exceptions**
-- [help](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/help.md) — آموزش و نحوه استفاده از **help**
-- [hooks](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/hooks.md) — آموزش و نحوه استفاده از **hooks**
-- [models](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/models.md) — آموزش و نحوه استفاده از **models**
-- [packages](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/packages.md) — آموزش و نحوه استفاده از **packages**
-- [sessions](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/sessions.md) — آموزش و نحوه استفاده از **sessions**
-- [status_codes](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/status_codes.md) — آموزش و نحوه استفاده از **status_codes**
-- [structures](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/structures.md) — آموزش و نحوه استفاده از **structures**
-- [utils](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/requests/utils.md) — آموزش و نحوه استفاده از **utils**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/resolvelib/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [collections_abc](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/resolvelib/compat/collections_abc.md) — آموزش و نحوه استفاده از **collections_abc**
-- [providers](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/resolvelib/providers.md) — آموزش و نحوه استفاده از **providers**
-- [reporters](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/resolvelib/reporters.md) — آموزش و نحوه استفاده از **reporters**
-- [resolvers](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/resolvelib/resolvers.md) — آموزش و نحوه استفاده از **resolvers**
-- [structs](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/resolvelib/structs.md) — آموزش و نحوه استفاده از **structs**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [__main__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/__main__.md) — آموزش و نحوه استفاده از **__main__**
-- [_cell_widths](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_cell_widths.md) — آموزش و نحوه استفاده از **_cell_widths**
-- [_emoji_codes](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_emoji_codes.md) — آموزش و نحوه استفاده از **_emoji_codes**
-- [_emoji_replace](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_emoji_replace.md) — آموزش و نحوه استفاده از **_emoji_replace**
-- [_export_format](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_export_format.md) — آموزش و نحوه استفاده از **_export_format**
-- [_extension](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_extension.md) — آموزش و نحوه استفاده از **_extension**
-- [_fileno](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_fileno.md) — آموزش و نحوه استفاده از **_fileno**
-- [_inspect](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_inspect.md) — آموزش و نحوه استفاده از **_inspect**
-- [_log_render](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_log_render.md) — آموزش و نحوه استفاده از **_log_render**
-- [_loop](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_loop.md) — آموزش و نحوه استفاده از **_loop**
-- [_null_file](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_null_file.md) — آموزش و نحوه استفاده از **_null_file**
-- [_palettes](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_palettes.md) — آموزش و نحوه استفاده از **_palettes**
-- [_pick](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_pick.md) — آموزش و نحوه استفاده از **_pick**
-- [_ratio](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_ratio.md) — آموزش و نحوه استفاده از **_ratio**
-- [_spinners](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_spinners.md) — آموزش و نحوه استفاده از **_spinners**
-- [_stack](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_stack.md) — آموزش و نحوه استفاده از **_stack**
-- [_timer](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_timer.md) — آموزش و نحوه استفاده از **_timer**
-- [_win32_console](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_win32_console.md) — آموزش و نحوه استفاده از **_win32_console**
-- [_windows](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_windows.md) — آموزش و نحوه استفاده از **_windows**
-- [_windows_renderer](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_windows_renderer.md) — آموزش و نحوه استفاده از **_windows_renderer**
-- [_wrap](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/_wrap.md) — آموزش و نحوه استفاده از **_wrap**
-- [abc](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/abc.md) — آموزش و نحوه استفاده از **abc**
-- [align](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/align.md) — آموزش و نحوه استفاده از **align**
-- [ansi](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/ansi.md) — آموزش و نحوه استفاده از **ansi**
-- [bar](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/bar.md) — آموزش و نحوه استفاده از **bar**
-- [box](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/box.md) — آموزش و نحوه استفاده از **box**
-- [cells](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/cells.md) — آموزش و نحوه استفاده از **cells**
-- [color](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/color.md) — آموزش و نحوه استفاده از **color**
-- [color_triplet](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/color_triplet.md) — آموزش و نحوه استفاده از **color_triplet**
-- [columns](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/columns.md) — آموزش و نحوه استفاده از **columns**
-- [console](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/console.md) — آموزش و نحوه استفاده از **console**
-- [constrain](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/constrain.md) — آموزش و نحوه استفاده از **constrain**
-- [containers](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/containers.md) — آموزش و نحوه استفاده از **containers**
-- [control](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/control.md) — آموزش و نحوه استفاده از **control**
-- [default_styles](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/default_styles.md) — آموزش و نحوه استفاده از **default_styles**
-- [diagnose](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/diagnose.md) — آموزش و نحوه استفاده از **diagnose**
-- [emoji](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/emoji.md) — آموزش و نحوه استفاده از **emoji**
-- [errors](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/errors.md) — آموزش و نحوه استفاده از **errors**
-- [file_proxy](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/file_proxy.md) — آموزش و نحوه استفاده از **file_proxy**
-- [filesize](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/filesize.md) — آموزش و نحوه استفاده از **filesize**
-- [highlighter](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/highlighter.md) — آموزش و نحوه استفاده از **highlighter**
-- [json](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/json.md) — آموزش و نحوه استفاده از **json**
-- [jupyter](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/jupyter.md) — آموزش و نحوه استفاده از **jupyter**
-- [layout](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/layout.md) — آموزش و نحوه استفاده از **layout**
-- [live](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/live.md) — آموزش و نحوه استفاده از **live**
-- [live_render](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/live_render.md) — آموزش و نحوه استفاده از **live_render**
-- [logging](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/logging.md) — آموزش و نحوه استفاده از **logging**
-- [markup](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/markup.md) — آموزش و نحوه استفاده از **markup**
-- [measure](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/measure.md) — آموزش و نحوه استفاده از **measure**
-- [padding](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/padding.md) — آموزش و نحوه استفاده از **padding**
-- [pager](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/pager.md) — آموزش و نحوه استفاده از **pager**
-- [palette](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/palette.md) — آموزش و نحوه استفاده از **palette**
-- [panel](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/panel.md) — آموزش و نحوه استفاده از **panel**
-- [pretty](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/pretty.md) — آموزش و نحوه استفاده از **pretty**
-- [progress](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/progress.md) — آموزش و نحوه استفاده از **progress**
-- [progress_bar](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/progress_bar.md) — آموزش و نحوه استفاده از **progress_bar**
-- [prompt](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/prompt.md) — آموزش و نحوه استفاده از **prompt**
-- [protocol](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/protocol.md) — آموزش و نحوه استفاده از **protocol**
-- [region](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/region.md) — آموزش و نحوه استفاده از **region**
-- [repr](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/repr.md) — آموزش و نحوه استفاده از **repr**
-- [rule](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/rule.md) — آموزش و نحوه استفاده از **rule**
-- [scope](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/scope.md) — آموزش و نحوه استفاده از **scope**
-- [screen](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/screen.md) — آموزش و نحوه استفاده از **screen**
-- [segment](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/segment.md) — آموزش و نحوه استفاده از **segment**
-- [spinner](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/spinner.md) — آموزش و نحوه استفاده از **spinner**
-- [status](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/status.md) — آموزش و نحوه استفاده از **status**
-- [style](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/style.md) — آموزش و نحوه استفاده از **style**
-- [styled](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/styled.md) — آموزش و نحوه استفاده از **styled**
-- [syntax](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/syntax.md) — آموزش و نحوه استفاده از **syntax**
-- [table](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/table.md) — آموزش و نحوه استفاده از **table**
-- [terminal_theme](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/terminal_theme.md) — آموزش و نحوه استفاده از **terminal_theme**
-- [text](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/text.md) — آموزش و نحوه استفاده از **text**
-- [theme](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/theme.md) — آموزش و نحوه استفاده از **theme**
-- [themes](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/themes.md) — آموزش و نحوه استفاده از **themes**
-- [traceback](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/traceback.md) — آموزش و نحوه استفاده از **traceback**
-- [tree](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/rich/tree.md) — آموزش و نحوه استفاده از **tree**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/tomli/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [_parser](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/tomli/_parser.md) — آموزش و نحوه استفاده از **_parser**
-- [_re](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/tomli/_re.md) — آموزش و نحوه استفاده از **_re**
-- [_types](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/tomli/_types.md) — آموزش و نحوه استفاده از **_types**
-- [py](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/tomli/py.md) — آموزش و نحوه استفاده از **py**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/truststore/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [_api](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/truststore/_api.md) — آموزش و نحوه استفاده از **_api**
-- [_macos](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/truststore/_macos.md) — آموزش و نحوه استفاده از **_macos**
-- [_openssl](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/truststore/_openssl.md) — آموزش و نحوه استفاده از **_openssl**
-- [_ssl_constants](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/truststore/_ssl_constants.md) — آموزش و نحوه استفاده از **_ssl_constants**
-- [_windows](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/truststore/_windows.md) — آموزش و نحوه استفاده از **_windows**
-- [typing_extensions](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/typing_extensions.md) — آموزش و نحوه استفاده از **typing_extensions**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [_collections](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/_collections.md) — آموزش و نحوه استفاده از **_collections**
-- [_version](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/_version.md) — آموزش و نحوه استفاده از **_version**
-- [connection](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/connection.md) — آموزش و نحوه استفاده از **connection**
-- [connectionpool](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/connectionpool.md) — آموزش و نحوه استفاده از **connectionpool**
-- [_appengine_environ](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/contrib/_appengine_environ.md) — آموزش و نحوه استفاده از **_appengine_environ**
-- [bindings](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/contrib/_securetransport/bindings.md) — آموزش و نحوه استفاده از **bindings**
-- [low_level](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/contrib/_securetransport/low_level.md) — آموزش و نحوه استفاده از **low_level**
-- [appengine](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/contrib/appengine.md) — آموزش و نحوه استفاده از **appengine**
-- [ntlmpool](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/contrib/ntlmpool.md) — آموزش و نحوه استفاده از **ntlmpool**
-- [pyopenssl](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/contrib/pyopenssl.md) — آموزش و نحوه استفاده از **pyopenssl**
-- [securetransport](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/contrib/securetransport.md) — آموزش و نحوه استفاده از **securetransport**
-- [socks](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/contrib/socks.md) — آموزش و نحوه استفاده از **socks**
-- [exceptions](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/exceptions.md) — آموزش و نحوه استفاده از **exceptions**
-- [fields](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/fields.md) — آموزش و نحوه استفاده از **fields**
-- [filepost](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/filepost.md) — آموزش و نحوه استفاده از **filepost**
-- [makefile](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/packages/backports/makefile.md) — آموزش و نحوه استفاده از **makefile**
-- [weakref_finalize](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/packages/backports/weakref_finalize.md) — آموزش و نحوه استفاده از **weakref_finalize**
-- [six](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/packages/six.md) — آموزش و نحوه استفاده از **six**
-- [poolmanager](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/poolmanager.md) — آموزش و نحوه استفاده از **poolmanager**
-- [request](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/request.md) — آموزش و نحوه استفاده از **request**
-- [response](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/response.md) — آموزش و نحوه استفاده از **response**
-- [__init__](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/util/__init__.md) — آموزش و نحوه استفاده از **__init__**
-- [connection](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/util/connection.md) — آموزش و نحوه استفاده از **connection**
-- [proxy](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/util/proxy.md) — آموزش و نحوه استفاده از **proxy**
-- [queue](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/util/queue.md) — آموزش و نحوه استفاده از **queue**
-- [request](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/util/request.md) — آموزش و نحوه استفاده از **request**
-- [response](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/util/response.md) — آموزش و نحوه استفاده از **response**
-- [retry](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/util/retry.md) — آموزش و نحوه استفاده از **retry**
-- [ssl_](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/util/ssl_.md) — آموزش و نحوه استفاده از **ssl_**
-- [ssl_match_hostname](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/util/ssl_match_hostname.md) — آموزش و نحوه استفاده از **ssl_match_hostname**
-- [ssltransport](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/util/ssltransport.md) — آموزش و نحوه استفاده از **ssltransport**
-- [timeout](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/util/timeout.md) — آموزش و نحوه استفاده از **timeout**
-- [url](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/util/url.md) — آموزش و نحوه استفاده از **url**
-- [wait](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/urllib3/util/wait.md) — آموزش و نحوه استفاده از **wait**
-- [vendor](organism/v17/digital_organism/venv/Lib/site-packages/pip/_vendor/vendor.md) — آموزش و نحوه استفاده از **vendor**
-- [py](organism/v17/digital_organism/venv/Lib/site-packages/pip/py.md) — آموزش و نحوه استفاده از **py**
-- [Activate](organism/v17/digital_organism/venv/Scripts/Activate.md) — آموزش و نحوه استفاده از **Activate**
-- [activate](organism/v17/digital_organism/venv/Scripts/activate.md) — آموزش و نحوه استفاده از **activate**
-- [activate](organism/v17/digital_organism/venv/Scripts/activate.md) — آموزش و نحوه استفاده از **activate**
-- [activate](organism/v17/digital_organism/venv/Scripts/activate.md) — آموزش و نحوه استفاده از **activate**
-- [deactivate](organism/v17/digital_organism/venv/Scripts/deactivate.md) — آموزش و نحوه استفاده از **deactivate**
-- [pyvenv](organism/v17/digital_organism/venv/pyvenv.md) — آموزش و نحوه استفاده از **pyvenv**
-- [untitled](organism/v17/digital_organism/venv/untitled.md) — آموزش و نحوه استفاده از **untitled**
-- [cognition](organism/v18/cognition/cognition.md) — آموزش و نحوه استفاده از **cognition**
-- [config](organism/v18/config.md) — آموزش و نحوه استفاده از **config**
-- [neural_substrate](organism/v18/core/neural_substrate.md) — آموزش و نحوه استفاده از **neural_substrate**
-- [organism](organism/v18/core/organism.md) — آموزش و نحوه استفاده از **organism**
-- [types](organism/v18/core/types.md) — آموزش و نحوه استفاده از **types**
-- [database](organism/v18/database/database.md) — آموزش و نحوه استفاده از **database**
-- [genome](organism/v18/evolution/genome.md) — آموزش و نحوه استفاده از **genome**
-- [imagination](organism/v18/imagination/imagination.md) — آموزش و نحوه استفاده از **imagination**
-- [language](organism/v18/language/language.md) — آموزش و نحوه استفاده از **language**
-- [llm_brain](organism/v18/language/llm_brain.md) — آموزش و نحوه استفاده از **llm_brain**
-- [memory_systems](organism/v18/memory/memory_systems.md) — آموزش و نحوه استفاده از **memory_systems**
-- [config](organism/v18/models/config.md) — آموزش و نحوه استفاده از **config**
-- [generation_config](organism/v18/models/generation_config.md) — آموزش و نحوه استفاده از **generation_config**
-- [merges](organism/v18/models/merges.md) — آموزش و نحوه استفاده از **merges**
-- [tokenizer](organism/v18/models/tokenizer.md) — آموزش و نحوه استفاده از **tokenizer**
-- [tokenizer_config](organism/v18/models/tokenizer_config.md) — آموزش و نحوه استفاده از **tokenizer_config**
-- [vocab](organism/v18/models/vocab.md) — آموزش و نحوه استفاده از **vocab**
-- [perception](organism/v18/perception/perception.md) — آموزش و نحوه استفاده از **perception**
-- [quantum_architecture](organism/v18/quantum_architecture.md) — آموزش و نحوه استفاده از **quantum_architecture**
-- [requirements](organism/v18/requirements.md) — آموزش و نحوه استفاده از **requirements**
-- [run](organism/v18/run.md) — آموزش و نحوه استفاده از **run**
-- [dash_app](organism/v18/web_ui/dash_app.md) — آموزش و نحوه استفاده از **dash_app**
-- [Smart Organism](organism/v2/Smart Organism.md) — آموزش و نحوه استفاده از **Smart Organism**
-- [Smart Organism](organism/v3/Smart Organism.md) — آموزش و نحوه استفاده از **Smart Organism**
-- [AGI](organism/v4/AGI.md) — آموزش و نحوه استفاده از **AGI**
-- [brain](organism/v5/brain.md) — آموزش و نحوه استفاده از **brain**
-- [index](organism/v7/app/index.md) — آموزش و نحوه استفاده از **index**
-- [revolutionary_digital_organism](organism/v8/revolutionary_digital_organism.md) — آموزش و نحوه استفاده از **revolutionary_digital_organism**
-- [zendeh_maghz](organism/v9/zendeh_maghz.md) — آموزش و نحوه استفاده از **zendeh_maghz**
-- [Golden Spiral Fractal v7 - Golden Angle Engine](profitable/137.5/Golden Spiral Fractal v7 - Golden Angle Engine.md) — آموزش و نحوه استفاده از **Golden Spiral Fractal v7   Golden Angle Engine**
-- [Golden Spiral Fractal LIVE Trader v3](profitable/Golden Spiral Fractal LIVE Trader v3.md) — آموزش و نحوه استفاده از **Golden Spiral Fractal LIVE Trader v3**
-- [Golden Spiral Fractal v5.1](profitable/Quantum Spiral/Golden Spiral Fractal v5.1.md) — آموزش و نحوه استفاده از **Golden Spiral Fractal v5.1**
-- [Regime-Aware Pro Trader V2](profitable/Regime-Aware Pro Trader V2.md) — آموزش و نحوه استفاده از **Regime Aware Pro Trader V2**
-- [Regime-Aware Pro Trader](profitable/Regime-Aware Pro Trader.md) — آموزش و نحوه استفاده از **Regime Aware Pro Trader**
-- [Trading System](profitable/Secret/Trading System.md) — آموزش و نحوه استفاده از **Trading System**
-- [Golden Spiral Chain](profitable/Spiral Chain/Golden Spiral Chain.md) — آموزش و نحوه استفاده از **Golden Spiral Chain**
-- [Quantum Fibonacci-Cycle](profitable/quant/Quantum Fibonacci-Cycle.md) — آموزش و نحوه استفاده از **Quantum Fibonacci Cycle**
-- [Project_Default](projects/.idea/inspectionProfiles/Project_Default.md) — آموزش و نحوه استفاده از **Project_Default**
-- [profiles_settings](projects/.idea/inspectionProfiles/profiles_settings.md) — آموزش و نحوه استفاده از **profiles_settings**
-- [misc](projects/.idea/misc.md) — آموزش و نحوه استفاده از **misc**
-- [modules](projects/.idea/modules.md) — آموزش و نحوه استفاده از **modules**
-- [projects](projects/.idea/projects.md) — آموزش و نحوه استفاده از **projects**
-- [untitled](projects/.idea/untitled.md) — آموزش و نحوه استفاده از **untitled**
-- [workspace](projects/.idea/workspace.md) — آموزش و نحوه استفاده از **workspace**
-- [main](projects/main.md) — آموزش و نحوه استفاده از **main**
-- [corpus](projects/organism_memory/corpus.md) — آموزش و نحوه استفاده از **corpus**
-- [organism_state](projects/organism_memory/organism_state.md) — آموزش و نحوه استفاده از **organism_state**
-- [Project_Default](pythonProject/.idea/inspectionProfiles/Project_Default.md) — آموزش و نحوه استفاده از **Project_Default**
-- [profiles_settings](pythonProject/.idea/inspectionProfiles/profiles_settings.md) — آموزش و نحوه استفاده از **profiles_settings**
-- [misc](pythonProject/.idea/misc.md) — آموزش و نحوه استفاده از **misc**
-- [modules](pythonProject/.idea/modules.md) — آموزش و نحوه استفاده از **modules**
-- [pythonProject](pythonProject/.idea/pythonProject.md) — آموزش و نحوه استفاده از **pythonProject**
-- [workspace](pythonProject/.idea/workspace.md) — آموزش و نحوه استفاده از **workspace**
-- [main](pythonProject/main.md) — آموزش و نحوه استفاده از **main**
-- [quant](quant/v1/quant.md) — آموزش و نحوه استفاده از **quant**
-- [claude_quant](quant/v2/claude_quant.md) — آموزش و نحوه استفاده از **claude_quant**
-- [bybit_whale_scalper](scalper/bybit_whale_scalper.md) — آموزش و نحوه استفاده از **bybit_whale_scalper**
-- [timesFM](timesFM.md) — آموزش و نحوه استفاده از **timesFM**
+| Indicator | Tutorial | Source File |
+|-----------|----------|-------------|
+| 3D-Analyzer-by-BITMOON618 | [Guide](3D-Analyzer/3D-Analyzer-by-BITMOON618.md) | `3D-Analyzer/3D-Analyzer-by-BITMOON618.txt` |
+| 3D-net | [Guide](3D-Price/3D-net.md) | `3D-Price/3D-net.txt` |
+| 3D-price | [Guide](3D-price.md) | `3D-price.txt` |
+| BTC-Solar-System-Predictor-v2-by-BITMOON618 | [Guide](BTC-Solar-System-Predictor-v2-by-BITMOON618.md) | `BTC-Solar-System-Predictor-v2-by-BITMOON618.txt` |
+| BTC-Solar-System-Predictor-v3 | [Guide](BTC-Solar-System-Predictor-v3.md) | `BTC-Solar-System-Predictor-v3.txt` |
+| BTC-Solar-System-Predictor-v4 | [Guide](BTC-Solar-System-Predictor-v4.md) | `BTC-Solar-System-Predictor-v4.txt` |
+| BTC-Solar-System-Predictor | [Guide](BTC-Solar-System-Predictor.md) | `BTC-Solar-System-Predictor.txt` |
+| BTC-Solar-System | [Guide](BTC-Solar-System.md) | `BTC-Solar-System.txt` |
+| Btc-Orelation-Predictor-System | [Guide](Btc-Orelation-Predictor-System.md) | `Btc-Orelation-Predictor-System.txt` |
+| Circle-Price | [Guide](Circle-Price.md) | `Circle-Price.txt` |
+| Circle-System-by-BITMOON618 | [Guide](Circle-System-by-BITMOON618.md) | `Circle-System-by-BITMOON618.txt` |
+| Advanced-Bybit-Chrono-Analyzer | [Guide](Clock/Advanced-Bybit-Chrono-Analyzer.md) | `Clock/Advanced-Bybit-Chrono-Analyzer.py` |
+| Chrono-Clock-Pro-v2-Cycle-of-Orbits | [Guide](Clock/Chrono-Clock-Pro-v2-Cycle-of-Orbits.md) | `Clock/Chrono-Clock-Pro-v2-Cycle-of-Orbits.txt` |
+| Chrono-Clock-Pro-v2 | [Guide](Clock/Chrono-Clock-Pro-v2.md) | `Clock/Chrono-Clock-Pro-v2.py` |
+| Chrono-Clock-Pro | [Guide](Clock/Chrono-Clock-Pro.md) | `Clock/Chrono-Clock-Pro.txt` |
+| Chrono-Clock-with-Winrate | [Guide](Clock/Chrono-Clock-with-Winrate.md) | `Clock/Chrono-Clock-with-Winrate.py` |
+| Chrono-Gravitas-v2.0 | [Guide](Clock/Chrono-Gravitas-v2.0.md) | `Clock/Chrono-Gravitas-v2.0.txt` |
+| Chrono-Gravitas-v3.0 | [Guide](Clock/Chrono-Gravitas-v3.0.md) | `Clock/Chrono-Gravitas-v3.0.py` |
+| Chrono-Gravitas-v4.0 | [Guide](Clock/Chrono-Gravitas-v4.0.md) | `Clock/Chrono-Gravitas-v4.0.py` |
+| Chrono-Gravitas-v5.0 | [Guide](Clock/Chrono-Gravitas-v5.0.md) | `Clock/Chrono-Gravitas-v5.0.py` |
+| Multi-Disk-Timeline-Pro-Live-Scanner | [Guide](Clock/Crono-Disk/Multi-Disk-Timeline-Pro-Live-Scanner.md) | `Clock/Crono-Disk/Multi-Disk-Timeline-Pro-Live-Scanner.txt` |
+| chrono_disc_timeline | [Guide](Clock/Crono-Disk/chrono_disc_timeline.md) | `Clock/Crono-Disk/chrono_disc_timeline.py` |
+| chrono_matrix_3d | [Guide](Clock/Crono-Disk/chrono_matrix_3d.md) | `Clock/Crono-Disk/chrono_matrix_3d.py` |
+| earth_disk_timeline_sr | [Guide](Clock/Crono-Disk/earth_disk_timeline_sr.md) | `Clock/Crono-Disk/earth_disk_timeline_sr.py` |
+| earth_disk_timeline_v2 | [Guide](Clock/Crono-Disk/earth_disk_timeline_v2.md) | `Clock/Crono-Disk/earth_disk_timeline_v2.py` |
+| Bybit-Multi-Timeframe-Spiral-Mechanics-Chart-Dash-Plotly | [Guide](Clock/New-folder/Bybit-Multi-Timeframe-Spiral-Mechanics-Chart-Dash-Plotly.md) | `Clock/New-folder/Bybit-Multi-Timeframe-Spiral-Mechanics-Chart-Dash-Plotly.txt` |
+| Temporal-Resonance-Engine-v8 | [Guide](Clock/New-folder/Temporal-Resonance-Engine-v8.md) | `Clock/New-folder/Temporal-Resonance-Engine-v8.py` |
+| Price-Clock | [Guide](Clock/Price-Clock.md) | `Clock/Price-Clock.txt` |
+| Spiral-Clock-v1 | [Guide](Clock/Spiral-Clock-v1.md) | `Clock/Spiral-Clock-v1.txt` |
+| Spiral-Clock-v2 | [Guide](Clock/Spiral-Clock-v2.md) | `Clock/Spiral-Clock-v2.py` |
+| Spiral-Clock-v3-Backtest | [Guide](Clock/Spiral-Clock-v3-Backtest.md) | `Clock/Spiral-Clock-v3-Backtest.py` |
+| Spiral-Clock-v3 | [Guide](Clock/Spiral-Clock-v3.md) | `Clock/Spiral-Clock-v3.py` |
+| Temporal-Resonance-Engine-v4-by-BITMOON618 | [Guide](Clock/Temporal-Resonance-Engine-v4-by-BITMOON618.md) | `Clock/Temporal-Resonance-Engine-v4-by-BITMOON618.py` |
+| Temporal-Resonance-Engine-v5-by-BITMOON618 | [Guide](Clock/Temporal-Resonance-Engine-v5-by-BITMOON618.md) | `Clock/Temporal-Resonance-Engine-v5-by-BITMOON618.py` |
+| Temporal-Resonance-Engine-v7-by-BITMOON618 | [Guide](Clock/Temporal-Resonance-Engine-v7-by-BITMOON618.md) | `Clock/Temporal-Resonance-Engine-v7-by-BITMOON618.py` |
+| chrono_clock_pro-winrate | [Guide](Clock/chrono_clock_pro-winrate.md) | `Clock/chrono_clock_pro-winrate.py` |
+| chrono_clock_pro | [Guide](Clock/chrono_clock_pro.md) | `Clock/chrono_clock_pro.py` |
+| Bybit-Chrono-Orbital-Solar-System-Time-Travel-Edition | [Guide](Clock/orbitals/Bybit-Chrono-Orbital-Solar-System-Time-Travel-Edition.md) | `Clock/orbitals/Bybit-Chrono-Orbital-Solar-System-Time-Travel-Edition.txt` |
+| Bybit-Chrono-Orbital-Solar-System | [Guide](Clock/orbitals/Bybit-Chrono-Orbital-Solar-System.md) | `Clock/orbitals/Bybit-Chrono-Orbital-Solar-System.txt` |
+| Ma-Orbitals-V2 | [Guide](Clock/orbitals/Ma-Orbitals-V2.md) | `Clock/orbitals/Ma-Orbitals-V2.py` |
+| Ma-Orbitals | [Guide](Clock/orbitals/Ma-Orbitals.md) | `Clock/orbitals/Ma-Orbitals.py` |
+| Timeframe-Spiral-Resonance | [Guide](Clock/orbitals/Timeframe-Spiral-Resonance.md) | `Clock/orbitals/Timeframe-Spiral-Resonance.txt` |
+| Annual-Spiral-Golden-Angle-Turn-Signal-System | [Guide](Clock/spiral/Annual-Spiral-Golden-Angle-Turn-Signal-System.md) | `Clock/spiral/Annual-Spiral-Golden-Angle-Turn-Signal-System.txt` |
+| Bybit-Multi-Timeframe-Circle-Analyzer-Time-Travel-Edition | [Guide](Clock/spiral/Bybit-Multi-Timeframe-Circle-Analyzer-Time-Travel-Edition.md) | `Clock/spiral/Bybit-Multi-Timeframe-Circle-Analyzer-Time-Travel-Edition.txt` |
+| Bybit-Multi-Timeframe-Spiral-Analyzer-Time-Travel-Edition | [Guide](Clock/spiral/Bybit-Multi-Timeframe-Spiral-Analyzer-Time-Travel-Edition.md) | `Clock/spiral/Bybit-Multi-Timeframe-Spiral-Analyzer-Time-Travel-Edition.txt` |
+| Bybit-Spiral-Timeframes-Dashboard | [Guide](Clock/spiral/Bybit-Spiral-Timeframes-Dashboard.md) | `Clock/spiral/Bybit-Spiral-Timeframes-Dashboard.txt` |
+| Golden-Fractal-Spiral | [Guide](Clock/spiral/Golden-Fractal-Spiral.md) | `Clock/spiral/Golden-Fractal-Spiral.py` |
+| Golden-Spiral-Chain-by-BITMOON618 | [Guide](Clock/spiral/Golden-Spiral-Chain-by-BITMOON618.md) | `Clock/spiral/Golden-Spiral-Chain-by-BITMOON618.py` |
+| Golden-Spiral-Fractal-SR-Backtest | [Guide](Clock/spiral/Golden-Spiral-Fractal-SR-Backtest.md) | `Clock/spiral/Golden-Spiral-Fractal-SR-Backtest.py` |
+| Golden-Spiral-Fractal-SR-v2 | [Guide](Clock/spiral/Golden-Spiral-Fractal-SR-v2.md) | `Clock/spiral/Golden-Spiral-Fractal-SR-v2.py` |
+| Golden-Spiral-Fractal-SR | [Guide](Clock/spiral/Golden-Spiral-Fractal-SR.md) | `Clock/spiral/Golden-Spiral-Fractal-SR.py` |
+| Golden-Spiral-Fractal-Timeframe-Analyzer | [Guide](Clock/spiral/Golden-Spiral-Fractal-Timeframe-Analyzer.md) | `Clock/spiral/Golden-Spiral-Fractal-Timeframe-Analyzer.txt` |
+| Hierarchical-Spiral-Fibonacci-Orbits | [Guide](Clock/spiral/Hierarchical-Spiral-Fibonacci-Orbits.md) | `Clock/spiral/Hierarchical-Spiral-Fibonacci-Orbits.txt` |
+| Hierarchical-Spiral-Signals-Cross-Signals | [Guide](Clock/spiral/Hierarchical-Spiral-Signals-Cross-Signals.md) | `Clock/spiral/Hierarchical-Spiral-Signals-Cross-Signals.txt` |
+| Time-Frame-Orbits-v2 | [Guide](Clock/spiral/Time-Frame-Orbits-v2.md) | `Clock/spiral/Time-Frame-Orbits-v2.txt` |
+| TimeFrame-Orbit-System | [Guide](Clock/spiral/TimeFrame-Orbit-System.md) | `Clock/spiral/TimeFrame-Orbit-System.py` |
+| Bybit-Footprint-Chart-2 | [Guide](Footprinting/Bybit-Footprint-Chart-2.md) | `Footprinting/Bybit-Footprint-Chart-2.txt` |
+| Bybit-Footprint-Chart-3 | [Guide](Footprinting/Bybit-Footprint-Chart-3.md) | `Footprinting/Bybit-Footprint-Chart-3.py` |
+| Bybit-Footprint-Chart-4 | [Guide](Footprinting/Bybit-Footprint-Chart-4.md) | `Footprinting/Bybit-Footprint-Chart-4.py` |
+| Bybit-Footprint-Chart | [Guide](Footprinting/Bybit-Footprint-Chart.md) | `Footprinting/Bybit-Footprint-Chart.txt` |
+| Footprint-System-V1-Trade-System | [Guide](Footprinting/Footprint-System-V1-Trade-System.md) | `Footprinting/Footprint-System-V1-Trade-System.py` |
+| Footprinting-System-Morindok-by-BITMOON618 | [Guide](Footprinting/Footprinting-System-Morindok-by-BITMOON618.md) | `Footprinting/Footprinting-System-Morindok-by-BITMOON618.txt` |
+| Footprinting-System-v2-Morindok-by-BITMOON618 | [Guide](Footprinting/Footprinting-System-v2-Morindok-by-BITMOON618.md) | `Footprinting/Footprinting-System-v2-Morindok-by-BITMOON618.txt` |
+| Footprinting-System-v3 | [Guide](Footprinting/Footprinting-System-v3.md) | `Footprinting/Footprinting-System-v3.txt` |
+| Volume-Profile-v2 | [Guide](Footprinting/Volume-Profile-v2.md) | `Footprinting/Volume-Profile-v2.txt` |
+| Volume-Profile | [Guide](Footprinting/Volume-Profile.md) | `Footprinting/Volume-Profile.txt` |
+| Cube-Gann | [Guide](Gann/Cube-Gann.md) | `Gann/Cube-Gann.txt` |
+| Gann-Tagnet-Spirals-V2 | [Guide](Gann/Gann-Tagnet-Spirals-V2.md) | `Gann/Gann-Tagnet-Spirals-V2.txt` |
+| Gann-Tagnet-Spirals-v3 | [Guide](Gann/Gann-Tagnet-Spirals-v3.md) | `Gann/Gann-Tagnet-Spirals-v3.txt` |
+| Gann-Tagnet-Spirals-v4 | [Guide](Gann/Gann-Tagnet-Spirals-v4.md) | `Gann/Gann-Tagnet-Spirals-v4.txt` |
+| Gann-Tagnet-Spirals-v5 | [Guide](Gann/Gann-Tagnet-Spirals-v5.md) | `Gann/Gann-Tagnet-Spirals-v5.txt` |
+| Gann-Tagnet-Spirals | [Guide](Gann/Gann-Tagnet-Spirals.md) | `Gann/Gann-Tagnet-Spirals.txt` |
+| Gann-Time-Machine-Back | [Guide](Gann/Gann-Time-Machine-Back.md) | `Gann/Gann-Time-Machine-Back.txt` |
+| Gann-Time-Machine-Live | [Guide](Gann/Gann-Time-Machine-Live.md) | `Gann/Gann-Time-Machine-Live.txt` |
+| Multiplier-Finder | [Guide](Gann/Multiplier-Finder.md) | `Gann/Multiplier-Finder.txt` |
+| Quantum-Gann-R.S | [Guide](Gann/Quantum-Gann-R.S.md) | `Gann/Quantum-Gann-R.S.txt` |
+| Time-Price-Tagnet-Machine | [Guide](Gann/Time-Price-Tagnet-Machine.md) | `Gann/Time-Price-Tagnet-Machine.txt` |
+| lW | [Guide](Gann/lW.md) | `Gann/lW.txt` |
+| chronogann_square | [Guide](Gann/new-gann/v1/chronogann_square.md) | `Gann/new-gann/v1/chronogann_square.py` |
+| ChronoGann-Dynamic-Square | [Guide](Gann/new-gann/v2/ChronoGann-Dynamic-Square.md) | `Gann/new-gann/v2/ChronoGann-Dynamic-Square.py` |
+| bybit_connector | [Guide](Gann/new-gann/v3/bybit_connector.md) | `Gann/new-gann/v3/bybit_connector.py` |
+| chrono_engine | [Guide](Gann/new-gann/v3/chrono_engine.md) | `Gann/new-gann/v3/chrono_engine.py` |
+| config | [Guide](Gann/new-gann/v3/config.md) | `Gann/new-gann/v3/config.py` |
+| gann_matrix | [Guide](Gann/new-gann/v3/gann_matrix.md) | `Gann/new-gann/v3/gann_matrix.py` |
+| main | [Guide](Gann/new-gann/v3/main.md) | `Gann/new-gann/v3/main.py` |
+| quantum_gann_dash | [Guide](Gann/new-gann/v4/quantum_gann_dash.md) | `Gann/new-gann/v4/quantum_gann_dash.py` |
+| note | [Guide](Gann/note.md) | `Gann/note.txt` |
+| Gravity-Surface | [Guide](Gravity-Surface.md) | `Gravity-Surface.txt` |
+| HFT-Model | [Guide](HFT-Model.md) | `HFT-Model.py` |
+| Harmonic-Circles | [Guide](Harmonic-Circles.md) | `Harmonic-Circles.txt` |
+| Kelly-Cartesion | [Guide](Kelly-Cartesion.md) | `Kelly-Cartesion.txt` |
+| add_backtest | [Guide](Living-Brain/3.2/add_backtest.md) | `Living-Brain/3.2/add_backtest.py` |
+| living_brain | [Guide](Living-Brain/3.2/living_brain.md) | `Living-Brain/3.2/living_brain.py` |
+| Living-Brain | [Guide](Living-Brain/Living-Brain.md) | `Living-Brain/Living-Brain.py` |
+| living_brain | [Guide](Living-Brain/v1.1/living_brain.md) | `Living-Brain/v1.1/living_brain.py` |
+| Living-Brain | [Guide](Living-Brain/v1/Living-Brain.md) | `Living-Brain/v1/Living-Brain.py` |
+| Living-Brain | [Guide](Living-Brain/v10/10.4/Living-Brain.md) | `Living-Brain/v10/10.4/Living-Brain.py` |
+| hive_dna_state | [Guide](Living-Brain/v10/10.4/hive_dna_state.md) | `Living-Brain/v10/10.4/hive_dna_state.json` |
+| HIVE-SCALPER-SNIPER-PRO | [Guide](Living-Brain/v10/HIVE-SCALPER-SNIPER-PRO.md) | `Living-Brain/v10/HIVE-SCALPER-SNIPER-PRO.py` |
+| HIVE_SCALPER-SNIPER_PRO | [Guide](Living-Brain/v10/v10.1/HIVE_SCALPER-SNIPER_PRO.md) | `Living-Brain/v10/v10.1/HIVE_SCALPER-SNIPER_PRO.py` |
+| HIVE_PRO_V3_10K | [Guide](Living-Brain/v10/v10.2/HIVE_PRO_V3_10K.md) | `Living-Brain/v10/v10.2/HIVE_PRO_V3_10K.py` |
+| hive_dna_state | [Guide](Living-Brain/v10/v10.2/hive_dna_state.md) | `Living-Brain/v10/v10.2/hive_dna_state.json` |
+| HIVE-SCALPER-SNIPER-PRO-GENETIC-EDITION | [Guide](Living-Brain/v10/v10.3/HIVE-SCALPER-SNIPER-PRO-GENETIC-EDITION.md) | `Living-Brain/v10/v10.3/HIVE-SCALPER-SNIPER-PRO-GENETIC-EDITION.py` |
+| hive_dna_state | [Guide](Living-Brain/v10/v10.5/hive_dna_state.md) | `Living-Brain/v10/v10.5/hive_dna_state.json` |
+| hive_scalper_sniper_pro | [Guide](Living-Brain/v10/v10.5/hive_scalper_sniper_pro.md) | `Living-Brain/v10/v10.5/hive_scalper_sniper_pro.py` |
+| hive_scalper_sniper_pro_v4 | [Guide](Living-Brain/v10/v10.6/hive_scalper_sniper_pro_v4.md) | `Living-Brain/v10/v10.6/hive_scalper_sniper_pro_v4.py` |
+| HIVE-QUANTUM-SCALPER-PRO-v6-GENERATIONAL-CONSCIOUSNESS | [Guide](Living-Brain/v10/v10.7/10.7.1/HIVE-QUANTUM-SCALPER-PRO-v6-GENERATIONAL-CONSCIOUSNESS.md) | `Living-Brain/v10/v10.7/10.7.1/HIVE-QUANTUM-SCALPER-PRO-v6-GENERATIONAL-CONSCIOUSNESS.py` |
+| HIVE-PREDATOR-v9.1 | [Guide](Living-Brain/v10/v10.7/10.7.1/v1/HIVE-PREDATOR-v9.1.md) | `Living-Brain/v10/v10.7/10.7.1/v1/HIVE-PREDATOR-v9.1.py` |
+| hive_predator_v12_fixed | [Guide](Living-Brain/v10/v10.7/10.7.1/v2/hive_predator_v12_fixed.md) | `Living-Brain/v10/v10.7/10.7.1/v2/hive_predator_v12_fixed.py` |
+| hive_institutional_config | [Guide](Living-Brain/v10/v10.7/10.7.2/hive_institutional_config.md) | `Living-Brain/v10/v10.7/10.7.2/hive_institutional_config.json` |
+| hive_institutional_v7 | [Guide](Living-Brain/v10/v10.7/10.7.2/hive_institutional_v7.md) | `Living-Brain/v10/v10.7/10.7.2/hive_institutional_v7.py` |
+| HIVE-INSTITUTIONAL-SCALPER | [Guide](Living-Brain/v10/v10.7/10.7.3/HIVE-INSTITUTIONAL-SCALPER.md) | `Living-Brain/v10/v10.7/10.7.3/HIVE-INSTITUTIONAL-SCALPER.py` |
+| hive_synapse_v10 | [Guide](Living-Brain/v10/v10.7/10.7.4/hive_synapse_v10.md) | `Living-Brain/v10/v10.7/10.7.4/hive_synapse_v10.py` |
+| hive_alpha_v11 | [Guide](Living-Brain/v10/v10.7/10.7.5/hive_alpha_v11.md) | `Living-Brain/v10/v10.7/10.7.5/hive_alpha_v11.py` |
+| hive_alpha_v11_fixed | [Guide](Living-Brain/v10/v10.7/10.7.6/hive_alpha_v11_fixed.md) | `Living-Brain/v10/v10.7/10.7.6/hive_alpha_v11_fixed.py` |
+| hive_quantum_consciousness_v5 | [Guide](Living-Brain/v10/v10.7/hive_quantum_consciousness_v5.md) | `Living-Brain/v10/v10.7/hive_quantum_consciousness_v5.py` |
+| hive_quantum_v5_state | [Guide](Living-Brain/v10/v10.7/hive_quantum_v5_state.md) | `Living-Brain/v10/v10.7/hive_quantum_v5_state.json` |
+| Living-Digital-Trading-Organism | [Guide](Living-Brain/v11/Living-Digital-Trading-Organism.md) | `Living-Brain/v11/Living-Digital-Trading-Organism.py` |
+| HIVE-SCALPER-SNIPER-PRO | [Guide](Living-Brain/v12/HIVE-SCALPER-SNIPER-PRO.md) | `Living-Brain/v12/HIVE-SCALPER-SNIPER-PRO.py` |
+| Digital-trading-organism | [Guide](Living-Brain/v13/Digital-trading-organism.md) | `Living-Brain/v13/Digital-trading-organism.py` |
+| digital_organism_trader | [Guide](Living-Brain/v14/digital_organism_trader.md) | `Living-Brain/v14/digital_organism_trader.py` |
+| digital_organism_trader | [Guide](Living-Brain/v15/digital_organism_trader.md) | `Living-Brain/v15/digital_organism_trader.py` |
+| Living-Brain | [Guide](Living-Brain/v2/Living-Brain.md) | `Living-Brain/v2/Living-Brain.py` |
+| living_brain | [Guide](Living-Brain/v3.1/living_brain.md) | `Living-Brain/v3.1/living_brain.py` |
+| living_brain | [Guide](Living-Brain/v3.3/living_brain.md) | `Living-Brain/v3.3/living_brain.py` |
+| Living-Brain | [Guide](Living-Brain/v3/Living-Brain.md) | `Living-Brain/v3/Living-Brain.py` |
+| Living-Brain | [Guide](Living-Brain/v4-nahadi/Living-Brain.md) | `Living-Brain/v4-nahadi/Living-Brain.py` |
+| Living-Brain | [Guide](Living-Brain/v5/Living-Brain.md) | `Living-Brain/v5/Living-Brain.py` |
+| Living-Brain | [Guide](Living-Brain/v6/Living-Brain.md) | `Living-Brain/v6/Living-Brain.py` |
+| Living-Brain | [Guide](Living-Brain/v7/Living-Brain.md) | `Living-Brain/v7/Living-Brain.py` |
+| Living-Brain | [Guide](Living-Brain/v8-smart-money/Living-Brain.md) | `Living-Brain/v8-smart-money/Living-Brain.py` |
+| Living-Brain | [Guide](Living-Brain/v9/Living-Brain.md) | `Living-Brain/v9/Living-Brain.py` |
+| 3D-Divergence | [Guide](MA/3D-Divergence.md) | `MA/3D-Divergence.py` |
+| HH-LL-3D | [Guide](MA/HH-LL-3D.md) | `MA/HH-LL-3D.py` |
+| MA-RSI-3D-Analyzer-V2-by-BITMOON618 | [Guide](MA/MA-RSI-3D-Analyzer-V2-by-BITMOON618.md) | `MA/MA-RSI-3D-Analyzer-V2-by-BITMOON618.py` |
+| MA-RSI-3D-Analyzer-V3-by-BITMOON618 | [Guide](MA/MA-RSI-3D-Analyzer-V3-by-BITMOON618.md) | `MA/MA-RSI-3D-Analyzer-V3-by-BITMOON618.py` |
+| MA-RSI-3D-Analyzer-V4-by-BITMOON618 | [Guide](MA/MA-RSI-3D-Analyzer-V4-by-BITMOON618.md) | `MA/MA-RSI-3D-Analyzer-V4-by-BITMOON618.py` |
+| MA-RSI-3D-Analyzer-by-BITMOON618-Copy | [Guide](MA/MA-RSI-3D-Analyzer-by-BITMOON618-Copy.md) | `MA/MA-RSI-3D-Analyzer-by-BITMOON618-Copy.py` |
+| MFI-System-v1 | [Guide](MFI-System-v1.md) | `MFI-System-v1.txt` |
+| MFI-System-v2 | [Guide](MFI-System-v2.md) | `MFI-System-v2.txt` |
+| Money-Flow-System-v3-by-BITMOON618 | [Guide](Money-Flow-System-v3-by-BITMOON618.md) | `Money-Flow-System-v3-by-BITMOON618.txt` |
+| app | [Guide](Neural-Network/app.md) | `Neural-Network/app.py` |
+| app_state | [Guide](Neural-Network/app_state.md) | `Neural-Network/app_state.py` |
+| config | [Guide](Neural-Network/config.md) | `Neural-Network/config.py` |
+| data_feed | [Guide](Neural-Network/data_feed.md) | `Neural-Network/data_feed.py` |
+| engine | [Guide](Neural-Network/engine.md) | `Neural-Network/engine.py` |
+| features | [Guide](Neural-Network/features.md) | `Neural-Network/features.py` |
+| neural_net | [Guide](Neural-Network/neural_net.md) | `Neural-Network/neural_net.py` |
+| path_simulator | [Guide](Neural-Network/path_simulator.md) | `Neural-Network/path_simulator.py` |
+| requirements | [Guide](Neural-Network/requirements.md) | `Neural-Network/requirements.txt` |
+| SPY-Vol-Surface-Stress-Simulation | [Guide](SPY-Vol-Surface-Stress-Simulation.md) | `SPY-Vol-Surface-Stress-Simulation.txt` |
+| Spiral-Analyzer | [Guide](Spiral-Analyzer.md) | `Spiral-Analyzer.txt` |
+| Spiral-Predictor-v2 | [Guide](Spiral-Predictor-v2.md) | `Spiral-Predictor-v2.txt` |
+| Spiral-Predictor | [Guide](Spiral-Predictor.md) | `Spiral-Predictor.txt` |
+| Start | [Guide](Super-Analyzer/Morindok_VolumeFlow/Start.md) | `Super-Analyzer/Morindok_VolumeFlow/Start.bat` |
+| app | [Guide](Super-Analyzer/Morindok_VolumeFlow/app.md) | `Super-Analyzer/Morindok_VolumeFlow/app.py` |
+| requirements | [Guide](Super-Analyzer/Morindok_VolumeFlow/requirements.md) | `Super-Analyzer/Morindok_VolumeFlow/requirements.txt` |
+| start | [Guide](Super-Analyzer/Morindok_VolumeFlow/start.md) | `Super-Analyzer/Morindok_VolumeFlow/start.sh` |
+| untitled | [Guide](Super-Analyzer/Morindok_VolumeFlow/untitled.md) | `Super-Analyzer/Morindok_VolumeFlow/untitled.txt` |
+| app | [Guide](Super-Analyzer/Order-Flow-System/app.md) | `Super-Analyzer/Order-Flow-System/app.py` |
+| bybit_engine | [Guide](Super-Analyzer/Order-Flow-System/bybit_engine.md) | `Super-Analyzer/Order-Flow-System/bybit_engine.py` |
+| requirements | [Guide](Super-Analyzer/Order-Flow-System/requirements.md) | `Super-Analyzer/Order-Flow-System/requirements.txt` |
+| signals_engine | [Guide](Super-Analyzer/Order-Flow-System/signals_engine.md) | `Super-Analyzer/Order-Flow-System/signals_engine.py` |
+| Start | [Guide](Super-Analyzer/Scalping-System-V1/Start.md) | `Super-Analyzer/Scalping-System-V1/Start.bat` |
+| app | [Guide](Super-Analyzer/Scalping-System-V1/app.md) | `Super-Analyzer/Scalping-System-V1/app.py` |
+| requirements | [Guide](Super-Analyzer/Scalping-System-V1/requirements.md) | `Super-Analyzer/Scalping-System-V1/requirements.txt` |
+| start | [Guide](Super-Analyzer/Scalping-System-V1/start.md) | `Super-Analyzer/Scalping-System-V1/start.sh` |
+| untitled | [Guide](Super-Analyzer/Scalping-System-V1/untitled.md) | `Super-Analyzer/Scalping-System-V1/untitled.txt` |
+| Smart-Volume-Flow-V1 | [Guide](Super-Analyzer/Smart-Volume-Flow-V1.md) | `Super-Analyzer/Smart-Volume-Flow-V1.txt` |
+| Super-OrderFlow-Analyzer-System-by-BITMOON618 | [Guide](Super-Analyzer/Super-OrderFlow-Analyzer-System-by-BITMOON618.md) | `Super-Analyzer/Super-OrderFlow-Analyzer-System-by-BITMOON618.txt` |
+| Super-Scalping-System-V1 | [Guide](Super-Analyzer/Super-Scalping-System-V1.md) | `Super-Analyzer/Super-Scalping-System-V1.txt` |
+| Tick-Data-Analyzer-by-BITMOON618 | [Guide](Super-Analyzer/Tick-Data-Analyzer-by-BITMOON618.md) | `Super-Analyzer/Tick-Data-Analyzer-by-BITMOON618.txt` |
+| Tick-Data-Analyzer-v2-by-BITMOON618-Copy | [Guide](Super-Analyzer/Tick-Data-Analyzer-v2-by-BITMOON618-Copy.md) | `Super-Analyzer/Tick-Data-Analyzer-v2-by-BITMOON618-Copy.py` |
+| Tick-Data-Analyzer-v3-by-BITMOON618 | [Guide](Super-Analyzer/Tick-Data-Analyzer-v3-by-BITMOON618.md) | `Super-Analyzer/Tick-Data-Analyzer-v3-by-BITMOON618.py` |
+| Start | [Guide](Super-Analyzer/Volume-Flow-V2/Start.md) | `Super-Analyzer/Volume-Flow-V2/Start.bat` |
+| app | [Guide](Super-Analyzer/Volume-Flow-V2/app.md) | `Super-Analyzer/Volume-Flow-V2/app.py` |
+| requirements | [Guide](Super-Analyzer/Volume-Flow-V2/requirements.md) | `Super-Analyzer/Volume-Flow-V2/requirements.txt` |
+| start | [Guide](Super-Analyzer/Volume-Flow-V2/start.md) | `Super-Analyzer/Volume-Flow-V2/start.sh` |
+| untitled | [Guide](Super-Analyzer/Volume-Flow-V2/untitled.md) | `Super-Analyzer/Volume-Flow-V2/untitled.txt` |
+| Volume-Flow-by-BITMOON618 | [Guide](Super-Analyzer/Volume-Flow-by-BITMOON618.md) | `Super-Analyzer/Volume-Flow-by-BITMOON618.txt` |
+| trendline_volume_analyzer | [Guide](Volume/trendline_volume_analyzer.md) | `Volume/trendline_volume_analyzer.py` |
+| app | [Guide](bio-trader/bio-trader-v2/app.md) | `bio-trader/bio-trader-v2/app.py` |
+| style | [Guide](bio-trader/bio-trader-v2/assets/style.md) | `bio-trader/bio-trader-v2/assets/style.css` |
+| bio_memory | [Guide](bio-trader/bio-trader-v2/bio_memory.md) | `bio-trader/bio-trader-v2/bio_memory.py` |
+| biotrader | [Guide](bio-trader/bio-trader-v2/biotrader.md) | `bio-trader/bio-trader-v2/biotrader.py` |
+| connect_tradingview | [Guide](bio-trader/bio-trader-v2/connect_tradingview.md) | `bio-trader/bio-trader-v2/connect_tradingview.py` |
+| multimodal_2500 | [Guide](bio-trader/bio-trader-v2/multimodal_2500.md) | `bio-trader/bio-trader-v2/multimodal_2500.py` |
+| neural_2500 | [Guide](bio-trader/bio-trader-v2/neural_2500.md) | `bio-trader/bio-trader-v2/neural_2500.py` |
+| record_screen | [Guide](bio-trader/bio-trader-v2/record_screen.md) | `bio-trader/bio-trader-v2/record_screen.py` |
+| requirements | [Guide](bio-trader/bio-trader-v2/requirements.md) | `bio-trader/bio-trader-v2/requirements.txt` |
+| share_screen | [Guide](bio-trader/bio-trader-v2/share_screen.md) | `bio-trader/bio-trader-v2/share_screen.py` |
+| test_biotrader | [Guide](bio-trader/bio-trader-v2/test_biotrader.md) | `bio-trader/bio-trader-v2/test_biotrader.py` |
+| app | [Guide](bio-trader/bio-trader/app.md) | `bio-trader/bio-trader/app.py` |
+| style | [Guide](bio-trader/bio-trader/assets/style.md) | `bio-trader/bio-trader/assets/style.css` |
+| biotrader | [Guide](bio-trader/bio-trader/biotrader.md) | `bio-trader/bio-trader/biotrader.py` |
+| requirements | [Guide](bio-trader/bio-trader/requirements.md) | `bio-trader/bio-trader/requirements.txt` |
+| test_biotrader | [Guide](bio-trader/bio-trader/test_biotrader.md) | `bio-trader/bio-trader/test_biotrader.py` |
+| bybit_whale_scalper | [Guide](bybit_whale_scalper.md) | `bybit_whale_scalper.py` |
+| jins | [Guide](jins/jins.md) | `jins/jins.py` |
+| Nostradamus-Digital-Organism | [Guide](nostradamoos/Nostradamus-Digital-Organism.md) | `nostradamoos/Nostradamus-Digital-Organism.py` |
+| Dockerfile | [Guide](organism/Kimi_Agent_Untitled-Chat/app/Dockerfile.md) | `organism/Kimi_Agent_Untitled-Chat/app/Dockerfile` |
+| app | [Guide](organism/Kimi_Agent_Untitled-Chat/app/app.md) | `organism/Kimi_Agent_Untitled-Chat/app/app.py` |
+| index | [Guide](organism/Kimi_Agent_Untitled-Chat/app/index.md) | `organism/Kimi_Agent_Untitled-Chat/app/index.html` |
+| package-lock | [Guide](organism/Kimi_Agent_Untitled-Chat/app/package-lock.md) | `organism/Kimi_Agent_Untitled-Chat/app/package-lock.json` |
+| requirements | [Guide](organism/Kimi_Agent_Untitled-Chat/app/requirements.md) | `organism/Kimi_Agent_Untitled-Chat/app/requirements.txt` |
+| untitled | [Guide](organism/Kimi_Agent_Untitled-Chat/untitled.md) | `organism/Kimi_Agent_Untitled-Chat/untitled.py` |
+| Smart-Organism | [Guide](organism/v1/Smart-Organism.md) | `organism/v1/Smart-Organism.py` |
+| document | [Guide](organism/v10/document.md) | `organism/v10/document.pdf` |
+| organism_2500 | [Guide](organism/v10/organism_2500.md) | `organism/v10/organism_2500.py` |
+| organism_2500_identity | [Guide](organism/v10/organism_2500_identity.md) | `organism/v10/organism_2500_identity.json` |
+| organism_2500_state | [Guide](organism/v10/organism_2500_state.md) | `organism/v10/organism_2500_state.json` |
+| organism2500 | [Guide](organism/v11/organism2500.md) | `organism/v11/organism2500.py` |
+| organism2500 | [Guide](organism/v12/organism2500.md) | `organism/v12/organism2500.txt` |
+| organism | [Guide](organism/v13/organism.md) | `organism/v13/organism.py` |
+| affect | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/affect.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/affect.py` |
+| awareness_legacy | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/awareness_legacy.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/awareness_legacy.py` |
+| body | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/body.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/body.py` |
+| cli | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/cli.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/cli.py` |
+| concepts | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/concepts.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/concepts.py` |
+| attention | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/attention.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/attention.py` |
+| core | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/core.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/core.py` |
+| homeostasis | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/homeostasis.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/homeostasis.py` |
+| init | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/init.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/init.py` |
+| integration | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/integration.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/integration.py` |
+| metacognition | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/metacognition.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/metacognition.py` |
+| predictive | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/predictive.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/predictive.py` |
+| workspace | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/workspace.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/workspace.py` |
+| database | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/database.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/database.py` |
+| decision | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/decision.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/decision.py` |
+| genome | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/genome.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/genome.py` |
+| identity | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/identity.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/identity.py` |
+| imagination | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/imagination.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/imagination.py` |
+| init | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/init.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/init.py` |
+| integrity | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/integrity.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/integrity.py` |
+| internet | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/internet.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/internet.py` |
+| language | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/language.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/language.py` |
+| memory | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/memory.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/memory.py` |
+| organism_core | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/organism_core.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/organism_core.py` |
+| substrate | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/substrate.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/substrate.py` |
+| thought | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/thought.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/thought.py` |
+| utils | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/utils.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/utils.py` |
+| visualization | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/visualization.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/organism/visualization.py` |
+| requirements | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/requirements.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/requirements.txt` |
+| run | [Guide](organism/v14/organism_2500_superaware/organism_2500_superaware/run.md) | `organism/v14/organism_2500_superaware/organism_2500_superaware/run.py` |
+| digital_organism_2500 | [Guide](organism/v15/digital_organism_2500.md) | `organism/v15/digital_organism_2500.py` |
+| requirements | [Guide](organism/v15/requirements.md) | `organism/v15/requirements.txt` |
+| run_chat | [Guide](organism/v15/run_chat.md) | `organism/v15/run_chat.bat` |
+| run_chat_dashboard | [Guide](organism/v15/run_chat_dashboard.md) | `organism/v15/run_chat_dashboard.bat` |
+| run_organism | [Guide](organism/v15/run_organism.md) | `organism/v15/run_organism.bat` |
+| Living-Brain | [Guide](organism/v16/Living-Brain.md) | `organism/v16/Living-Brain.py` |
+| cognition | [Guide](organism/v18/cognition/cognition.md) | `organism/v18/cognition/cognition.py` |
+| config | [Guide](organism/v18/config.md) | `organism/v18/config.yaml` |
+| neural_substrate | [Guide](organism/v18/core/neural_substrate.md) | `organism/v18/core/neural_substrate.py` |
+| organism | [Guide](organism/v18/core/organism.md) | `organism/v18/core/organism.py` |
+| types | [Guide](organism/v18/core/types.md) | `organism/v18/core/types.py` |
+| database | [Guide](organism/v18/database/database.md) | `organism/v18/database/database.py` |
+| genome | [Guide](organism/v18/evolution/genome.md) | `organism/v18/evolution/genome.py` |
+| imagination | [Guide](organism/v18/imagination/imagination.md) | `organism/v18/imagination/imagination.py` |
+| language | [Guide](organism/v18/language/language.md) | `organism/v18/language/language.py` |
+| llm_brain | [Guide](organism/v18/language/llm_brain.md) | `organism/v18/language/llm_brain.py` |
+| memory_systems | [Guide](organism/v18/memory/memory_systems.md) | `organism/v18/memory/memory_systems.py` |
+| config | [Guide](organism/v18/models/config.md) | `organism/v18/models/config.json` |
+| generation_config | [Guide](organism/v18/models/generation_config.md) | `organism/v18/models/generation_config.json` |
+| merges | [Guide](organism/v18/models/merges.md) | `organism/v18/models/merges.txt` |
+| tokenizer | [Guide](organism/v18/models/tokenizer.md) | `organism/v18/models/tokenizer.json` |
+| tokenizer_config | [Guide](organism/v18/models/tokenizer_config.md) | `organism/v18/models/tokenizer_config.json` |
+| vocab | [Guide](organism/v18/models/vocab.md) | `organism/v18/models/vocab.json` |
+| perception | [Guide](organism/v18/perception/perception.md) | `organism/v18/perception/perception.py` |
+| quantum_architecture | [Guide](organism/v18/quantum_architecture.md) | `organism/v18/quantum_architecture.py` |
+| requirements | [Guide](organism/v18/requirements.md) | `organism/v18/requirements.txt` |
+| run | [Guide](organism/v18/run.md) | `organism/v18/run.py` |
+| dash_app | [Guide](organism/v18/web_ui/dash_app.md) | `organism/v18/web_ui/dash_app.py` |
+| Smart-Organism | [Guide](organism/v2/Smart-Organism.md) | `organism/v2/Smart-Organism.py` |
+| Smart-Organism | [Guide](organism/v3/Smart-Organism.md) | `organism/v3/Smart-Organism.py` |
+| AGI | [Guide](organism/v4/AGI.md) | `organism/v4/AGI.py` |
+| brain | [Guide](organism/v5/brain.md) | `organism/v5/brain.py` |
+| index | [Guide](organism/v7/app/index.md) | `organism/v7/app/index.html` |
+| revolutionary_digital_organism | [Guide](organism/v8/revolutionary_digital_organism.md) | `organism/v8/revolutionary_digital_organism.py` |
+| zendeh_maghz | [Guide](organism/v9/zendeh_maghz.md) | `organism/v9/zendeh_maghz.py` |
+| Golden-Spiral-Fractal-v7-Golden-Angle-Engine | [Guide](profitable/137.5/Golden-Spiral-Fractal-v7-Golden-Angle-Engine.md) | `profitable/137.5/Golden-Spiral-Fractal-v7-Golden-Angle-Engine.txt` |
+| Golden-Spiral-Fractal-LIVE-Trader-v3 | [Guide](profitable/Golden-Spiral-Fractal-LIVE-Trader-v3.md) | `profitable/Golden-Spiral-Fractal-LIVE-Trader-v3.py` |
+| Golden-Spiral-Fractal-v5.1 | [Guide](profitable/Quantum-Spiral/Golden-Spiral-Fractal-v5.1.md) | `profitable/Quantum-Spiral/Golden-Spiral-Fractal-v5.1.txt` |
+| Regime-Aware-Pro-Trader-V2 | [Guide](profitable/Regime-Aware-Pro-Trader-V2.md) | `profitable/Regime-Aware-Pro-Trader-V2.txt` |
+| Regime-Aware-Pro-Trader | [Guide](profitable/Regime-Aware-Pro-Trader.md) | `profitable/Regime-Aware-Pro-Trader.txt` |
+| Trading-System | [Guide](profitable/Secret/Trading-System.md) | `profitable/Secret/Trading-System.py` |
+| Golden-Spiral-Chain | [Guide](profitable/Spiral-Chain/Golden-Spiral-Chain.md) | `profitable/Spiral-Chain/Golden-Spiral-Chain.txt` |
+| Quantum-Fibonacci-Cycle | [Guide](profitable/quant/Quantum-Fibonacci-Cycle.md) | `profitable/quant/Quantum-Fibonacci-Cycle.txt` |
+| main | [Guide](projects/main.md) | `projects/main.py` |
+| corpus | [Guide](projects/organism_memory/corpus.md) | `projects/organism_memory/corpus.txt` |
+| organism_state | [Guide](projects/organism_memory/organism_state.md) | `projects/organism_memory/organism_state.json` |
+| main | [Guide](pythonProject/main.md) | `pythonProject/main.py` |
+| quant | [Guide](quant/v1/quant.md) | `quant/v1/quant.py` |
+| claude_quant | [Guide](quant/v2/claude_quant.md) | `quant/v2/claude_quant.py` |
+| bybit_whale_scalper | [Guide](scalper/bybit_whale_scalper.md) | `scalper/bybit_whale_scalper.py` |
+| timesFM | [Guide](timesFM.md) | `timesFM.txt` |
 
-## 🎓 آموزش عمومی
+## How to install
 
-### نصب در TradingView (Pine Script)
-1. فایل `.txt` مربوطه را باز کرده و کل کد را کپی کنید.
-2. در TradingView وارد **Pine Editor** شوید.
-3. کد را Paste کنید و **Add to Chart** بزنید.
-4. تنظیمات را از آیکون چرخ‌دنده روی اندیکاتور تغییر دهید.
+### TradingView (Pine Script)
 
-### اجرای اسکریپت‌های Python
-1. `pip install -r requirements.txt` (در صورت وجود)
-2. `python <اسم-فایل>.py` را اجرا کنید.
+1. Open the indicator `.txt` file and copy the entire code.
+2. In TradingView, open the **Pine Editor**.
+3. Paste the code and click **Add to Chart**.
+4. Adjust inputs via the settings gear on the indicator.
 
-## 🔑 کلمات کلیدی
-Python Tools, tradingview indicator, pine script, crypto trading, تحلیل تکنیکال, اندیکاتور تریدینگ ویو, سیگنال خرید و فروش
+### Python scripts
+
+```bash
+pip install -r requirements.txt  # if present
+python <script>.py
+```
+
+## Keywords
+
+python tools, tradingview indicator, pine script, crypto trading, technical analysis, buy sell signals

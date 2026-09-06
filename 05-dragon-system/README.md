@@ -1,26 +1,33 @@
-# Dragon System — اندیکاتورهای Dragon System
+# Dragon System
 
-> سیستم اژدها — تحلیل‌گر روند و قدرت بازار
+> Dragon trend and strength analysis system.
 
-[⬅ بازگشت به فهرست اصلی](../README.md) | [TradingView Pine Scripts](https://github.com/morindok/duck/tree/main/indicators/05-dragon-system)
+[Back to main index](../README.md)
 
-## 📂 فهرست اندیکاتورهای این دسته
+## Indicators in this category
 
-- [Diamond System Trend Analyzer by @BITMOON618](Diamond System Trend Analyzer by @BITMOON618.md) — آموزش و نحوه استفاده از **Diamond System Trend Analyzer by @BITMOON618**
-- [Dragon Strength Pro](Dragon Strength Pro.md) — آموزش و نحوه استفاده از **Dragon Strength Pro**
-- [POT by BITMOON618](POT by BITMOON618.md) — آموزش و نحوه استفاده از **POT by BITMOON618**
+| Indicator | Tutorial | Source File |
+|-----------|----------|-------------|
+| Diamond-System-Trend-Analyzer-by-BITMOON618 | [Guide](Diamond-System-Trend-Analyzer-by-BITMOON618.md) | `Diamond-System-Trend-Analyzer-by-BITMOON618.txt` |
+| Dragon-Strength-Pro | [Guide](Dragon-Strength-Pro.md) | `Dragon-Strength-Pro.txt` |
+| POT-by-BITMOON618 | [Guide](POT-by-BITMOON618.md) | `POT-by-BITMOON618.txt` |
 
-## 🎓 آموزش عمومی
+## How to install
 
-### نصب در TradingView (Pine Script)
-1. فایل `.txt` مربوطه را باز کرده و کل کد را کپی کنید.
-2. در TradingView وارد **Pine Editor** شوید.
-3. کد را Paste کنید و **Add to Chart** بزنید.
-4. تنظیمات را از آیکون چرخ‌دنده روی اندیکاتور تغییر دهید.
+### TradingView (Pine Script)
 
-### اجرای اسکریپت‌های Python
-1. `pip install -r requirements.txt` (در صورت وجود)
-2. `python <اسم-فایل>.py` را اجرا کنید.
+1. Open the indicator `.txt` file and copy the entire code.
+2. In TradingView, open the **Pine Editor**.
+3. Paste the code and click **Add to Chart**.
+4. Adjust inputs via the settings gear on the indicator.
 
-## 🔑 کلمات کلیدی
-Dragon System, tradingview indicator, pine script, crypto trading, تحلیل تکنیکال, اندیکاتور تریدینگ ویو, سیگنال خرید و فروش
+### Python scripts
+
+```bash
+pip install -r requirements.txt  # if present
+python <script>.py
+```
+
+## Keywords
+
+dragon system, tradingview indicator, pine script, crypto trading, technical analysis, buy sell signals

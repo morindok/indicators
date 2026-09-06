@@ -1,27 +1,34 @@
-# Quant — اندیکاتورهای Quant
+# Quant
 
-> ابزارهای کمّی و مدل‌های پیش‌بینی
+> Quantitative tools and prediction models.
 
-[⬅ بازگشت به فهرست اصلی](../README.md) | [TradingView Pine Scripts](https://github.com/morindok/duck/tree/main/indicators/17-quant)
+[Back to main index](../README.md)
 
-## 📂 فهرست اندیکاتورهای این دسته
+## Indicators in this category
 
-- [Quant Space Predictor by BITMOON618](Quant Space Predictor by BITMOON618.md) — آموزش و نحوه استفاده از **Quant Space Predictor by BITMOON618**
-- [Quantum Fractal Probability Grid - Liquidity Engine](Quantum Fractal Probability Grid - Liquidity Engine.md) — آموزش و نحوه استفاده از **Quantum Fractal Probability Grid   Liquidity Engine**
-- [Quantum Spider Web - Operational Path](Quantum Spider Web - Operational Path.md) — آموزش و نحوه استفاده از **Quantum Spider Web   Operational Path**
-- [Quantum Spider Web Matrix by BITMOON618](Quantum Spider Web Matrix by BITMOON618.md) — آموزش و نحوه استفاده از **Quantum Spider Web Matrix by BITMOON618**
+| Indicator | Tutorial | Source File |
+|-----------|----------|-------------|
+| Quant-Space-Predictor-by-BITMOON618 | [Guide](Quant-Space-Predictor-by-BITMOON618.md) | `Quant-Space-Predictor-by-BITMOON618.txt` |
+| Quantum-Fractal-Probability-Grid-Liquidity-Engine | [Guide](Quantum-Fractal-Probability-Grid-Liquidity-Engine.md) | `Quantum-Fractal-Probability-Grid-Liquidity-Engine.txt` |
+| Quantum-Spider-Web-Matrix-by-BITMOON618 | [Guide](Quantum-Spider-Web-Matrix-by-BITMOON618.md) | `Quantum-Spider-Web-Matrix-by-BITMOON618.txt` |
+| Quantum-Spider-Web-Operational-Path | [Guide](Quantum-Spider-Web-Operational-Path.md) | `Quantum-Spider-Web-Operational-Path.txt` |
 
-## 🎓 آموزش عمومی
+## How to install
 
-### نصب در TradingView (Pine Script)
-1. فایل `.txt` مربوطه را باز کرده و کل کد را کپی کنید.
-2. در TradingView وارد **Pine Editor** شوید.
-3. کد را Paste کنید و **Add to Chart** بزنید.
-4. تنظیمات را از آیکون چرخ‌دنده روی اندیکاتور تغییر دهید.
+### TradingView (Pine Script)
 
-### اجرای اسکریپت‌های Python
-1. `pip install -r requirements.txt` (در صورت وجود)
-2. `python <اسم-فایل>.py` را اجرا کنید.
+1. Open the indicator `.txt` file and copy the entire code.
+2. In TradingView, open the **Pine Editor**.
+3. Paste the code and click **Add to Chart**.
+4. Adjust inputs via the settings gear on the indicator.
 
-## 🔑 کلمات کلیدی
-Quant, tradingview indicator, pine script, crypto trading, تحلیل تکنیکال, اندیکاتور تریدینگ ویو, سیگنال خرید و فروش
+### Python scripts
+
+```bash
+pip install -r requirements.txt  # if present
+python <script>.py
+```
+
+## Keywords
+
+quant, tradingview indicator, pine script, crypto trading, technical analysis, buy sell signals

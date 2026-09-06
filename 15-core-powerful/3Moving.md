@@ -1,24 +1,28 @@
 # 3Moving
 
-> دسته: [Core Powerful Tools](README.md) — مجموعه‌ی اصلی و قدرتمند — میرور، اسپیرال، سیستمی
+> Category: [Core Powerful Tools](README.md) - Core toolkit - mirror, spiral and system indicators.
 
-فایل اصلی: [`3Moving.txt`](3Moving.txt)
+Source file: [`3Moving.txt`](3Moving.txt)
 
-## 📖 معرفی
-**3Moving** یکی از اندیکاتورهای دسته «Core Powerful Tools» است. مجموعه‌ی اصلی و قدرتمند — میرور، اسپیرال، سیستمی
+## Overview
 
-## 🚀 نحوه استفاده
-1. محتوای فایل را کپی کنید.
-2. در TradingView → **Pine Editor** → Paste.
-3. **Add to Chart** و سپس تنظیم ورودی‌ها.
+**3Moving** belongs to the *Core Powerful Tools* category. Core toolkit - mirror, spiral and system indicators.
 
-## 💡 نکات آموزشی
-- ابتدا روی تایم‌فریم روزانه (D1) تست کنید تا رفتار اندیکاتور را بشناسید.
-- سیگنال‌ها را با حمایت/مقاومت یا حجم تأیید کنید.
-- بعضی نسخه‌ها Repaint دارند؛ در بک‌تست دقت کنید.
-- برای مدیریت ریسک، همیشه حد ضرر تعیین کنید.
+## How to use
 
-## ⚠️ سلب مسئولیت
-این ابزارها صرفاً آموزشی هستند و توصیه سرمایه‌گذاری نیستند.
+1. Copy the file contents.
+2. In TradingView, open **Pine Editor** and paste the code.
+3. Click **Add to Chart**, then configure the inputs.
 
-🔗 [همه دسته‌ها](../README.md)
+## Tips
+
+- Start on the daily (D1) timeframe to learn its behavior.
+- Confirm signals with support/resistance or volume.
+- Some versions may repaint; verify during backtesting.
+- Always use a stop-loss for risk management.
+
+## Disclaimer
+
+These tools are for **educational purposes only** and are not financial advice.
+
+[All categories](../README.md)

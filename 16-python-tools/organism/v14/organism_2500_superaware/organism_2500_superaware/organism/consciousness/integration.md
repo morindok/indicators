@@ -1,26 +1,30 @@
 # integration
 
-> دسته: [Python Tools](README.md) — ابزارهای پایتون — کلاک، اسپیرال، فوت‌پرینت، گن، شبکه عصبی
+> Category: [Python Tools](README.md) - Python utilities - clock, spiral, footprint, Gann, neural tools.
 
-فایل اصلی: [`organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/integration.py`](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/integration.py)
+Source file: [`organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/integration.py`](organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/integration.py)
 
-## 📖 معرفی
-**integration** یکی از اندیکاتورهای دسته «Python Tools» است. ابزارهای پایتون — کلاک، اسپیرال، فوت‌پرینت، گن، شبکه عصبی
+## Overview
 
-## 🚀 نحوه استفاده
+**integration** belongs to the *Python Tools* category. Python utilities - clock, spiral, footprint, Gann, neural tools.
+
+## How to use
+
 ```bash
 python "organism/v14/organism_2500_superaware/organism_2500_superaware/organism/consciousness/integration.py"
 ```
 
-پیش‌نیازها: Python 3.10+ و کتابخانه‌های ذکرشده در سرآیند فایل.
+Requires Python 3.10+ and the libraries listed in the file header.
 
-## 💡 نکات آموزشی
-- ابتدا روی تایم‌فریم روزانه (D1) تست کنید تا رفتار اندیکاتور را بشناسید.
-- سیگنال‌ها را با حمایت/مقاومت یا حجم تأیید کنید.
-- بعضی نسخه‌ها Repaint دارند؛ در بک‌تست دقت کنید.
-- برای مدیریت ریسک، همیشه حد ضرر تعیین کنید.
+## Tips
 
-## ⚠️ سلب مسئولیت
-این ابزارها صرفاً آموزشی هستند و توصیه سرمایه‌گذاری نیستند.
+- Start on the daily (D1) timeframe to learn its behavior.
+- Confirm signals with support/resistance or volume.
+- Some versions may repaint; verify during backtesting.
+- Always use a stop-loss for risk management.
 
-🔗 [همه دسته‌ها](../README.md)
+## Disclaimer
+
+These tools are for **educational purposes only** and are not financial advice.
+
+[All categories](../README.md)

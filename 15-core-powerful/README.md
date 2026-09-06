@@ -1,88 +1,95 @@
-# Core Powerful Tools — اندیکاتورهای Core Powerful Tools
+# Core Powerful Tools
 
-> مجموعه‌ی اصلی و قدرتمند — میرور، اسپیرال، سیستمی
+> Core toolkit - mirror, spiral and system indicators.
 
-[⬅ بازگشت به فهرست اصلی](../README.md) | [TradingView Pine Scripts](https://github.com/morindok/duck/tree/main/indicators/15-core-powerful)
+[Back to main index](../README.md)
 
-## 📂 فهرست اندیکاتورهای این دسته
+## Indicators in this category
 
-- [01 Customize pattern](01 Customize pattern.md) — آموزش و نحوه استفاده از **01 Customize pattern**
-- [01 Pattern](01 Pattern.md) — آموزش و نحوه استفاده از **01 Pattern**
-- [3Moving](3Moving.md) — آموزش و نحوه استفاده از **3Moving**
-- [Bitmoon System Pro - V2](Bitmoon System/Bitmoon System Pro - V2.md) — آموزش و نحوه استفاده از **Bitmoon System Pro   V2**
-- [Bitmoon System Pro](Bitmoon System/Bitmoon System Pro.md) — آموزش و نحوه استفاده از **Bitmoon System Pro**
-- [Bmoon System Golden Cloud](Bitmoon System/Bmoon System Golden Cloud.md) — آموزش و نحوه استفاده از **Bmoon System Golden Cloud**
-- [Bmoon System Moving](Bitmoon System/Bmoon System Moving.md) — آموزش و نحوه استفاده از **Bmoon System Moving**
-- [Mirror Oscilator V2 by BITMOON618](Bitmoon System/Mirror Oscilator V2 by BITMOON618.md) — آموزش و نحوه استفاده از **Mirror Oscilator V2 by BITMOON618**
-- [Mirror System Signals](Bitmoon System/Mirror System Signals.md) — آموزش و نحوه استفاده از **Mirror System Signals**
-- [Tagnet Circles by @BITMOON618- Live](Circle System/Tagnet Circles by @BITMOON618- Live.md) — آموزش و نحوه استفاده از **Tagnet Circles by @BITMOON618  Live**
-- [Tagnet Circles by @BITMOON618](Circle System/Tagnet Circles by @BITMOON618.md) — آموزش و نحوه استفاده از **Tagnet Circles by @BITMOON618**
-- [FFS Line](FFS Line.md) — آموزش و نحوه استفاده از **FFS Line**
-- [Fractal Levels](Fractal Levels/Fractal Levels.md) — آموزش و نحوه استفاده از **Fractal Levels**
-- [Fractal Symmetric to trend](Fractal Levels/Fractal Symmetric to trend.md) — آموزش و نحوه استفاده از **Fractal Symmetric to trend**
-- [Symmetric Fractals](Fractal Levels/Symmetric Fractals.md) — آموزش و نحوه استفاده از **Symmetric Fractals**
-- [Fracta Mirror Levels](Fractal Mirror Levels/Fracta Mirror Levels.md) — آموزش و نحوه استفاده از **Fracta Mirror Levels**
-- [Golden Spiral](Golden Spiral.md) — آموزش و نحوه استفاده از **Golden Spiral**
-- [Hyper Fibo System Signal](Hyper System/Hyper Fibo System Signal.md) — آموزش و نحوه استفاده از **Hyper Fibo System Signal**
-- [Hyper Fibo System V3](Hyper System/Hyper Fibo System V3.md) — آموزش و نحوه استفاده از **Hyper Fibo System V3**
-- [Hyper Fibo System](Hyper System/Hyper Fibo System.md) — آموزش و نحوه استفاده از **Hyper Fibo System**
-- [Hyper Mirror System](Hyper System/Hyper Mirror System.md) — آموزش و نحوه استفاده از **Hyper Mirror System**
-- [Hyper Symmetric MA](Hyper System/Hyper Symmetric MA.md) — آموزش و نحوه استفاده از **Hyper Symmetric MA**
-- [Hyper System - Copy](Hyper System/Hyper System - Copy.md) — آموزش و نحوه استفاده از **Hyper System   Copy**
-- [Hyper System -V4 Lines](Hyper System/Hyper System -V4 Lines.md) — آموزش و نحوه استفاده از **Hyper System  V4 Lines**
-- [Hyper System V2](Hyper System/Hyper System V2.md) — آموزش و نحوه استفاده از **Hyper System V2**
-- [Fast Sym Ma](Ma Codes/Fast Sym Ma.md) — آموزش و نحوه استفاده از **Fast Sym Ma**
-- [Fibo Ma](Ma Codes/Fibo Ma.md) — آموزش و نحوه استفاده از **Fibo Ma**
-- [Fibo Mas](Ma Codes/Fibo Mas.md) — آموزش و نحوه استفاده از **Fibo Mas**
-- [Mirror MAs](Ma Codes/Mirror MAs.md) — آموزش و نحوه استفاده از **Mirror MAs**
-- [Price Cycles](Ma Codes/Price Cycles.md) — آموزش و نحوه استفاده از **Price Cycles**
-- [Time Machine v2](Ma Codes/Time Machine v2.md) — آموزش و نحوه استفاده از **Time Machine v2**
-- [Time Machine v3](Ma Codes/Time Machine v3.md) — آموزش و نحوه استفاده از **Time Machine v3**
-- [Time Machine](Ma Codes/Time Machine.md) — آموزش و نحوه استفاده از **Time Machine**
-- [forward mas](Ma Codes/forward mas.md) — آموزش و نحوه استفاده از **forward mas**
-- [Bitmoon System Pro Signals}](Mirror Moon/Bitmoon System Pro Signals}.md) — آموزش و نحوه استفاده از **Bitmoon System Pro Signals}**
-- [Bitmoon System Pro V1](Mirror Moon/Bitmoon System Pro V1.md) — آموزش و نحوه استفاده از **Bitmoon System Pro V1**
-- [Bitmoon System Pro V3](Mirror Moon/Bitmoon System Pro V3.md) — آموزش و نحوه استفاده از **Bitmoon System Pro V3**
-- [Bitmoon System Pro v2](Mirror Moon/Bitmoon System Pro v2.md) — آموزش و نحوه استفاده از **Bitmoon System Pro v2**
-- [Mirror Layers V2](Mirror Moon/Mirror Layers V2.md) — آموزش و نحوه استفاده از **Mirror Layers V2**
-- [Mirror Layers](Mirror Moon/Mirror Layers.md) — آموزش و نحوه استفاده از **Mirror Layers**
-- [Mirror Moon](Mirror Moon/Mirror Moon.md) — آموزش و نحوه استفاده از **Mirror Moon**
-- [Moon Layers V3 Signal](Mirror Moon/Moon Layers V3 Signal.md) — آموزش و نحوه استفاده از **Moon Layers V3 Signal**
-- [Mirror System Signals](Mirror System Signals.md) — آموزش و نحوه استفاده از **Mirror System Signals**
-- [Mirror System Sloped SImple - Reversal Signals](Mirror System Sloped SImple - Reversal Signals.md) — آموزش و نحوه استفاده از **Mirror System Sloped SImple   Reversal Signals**
-- [Mirror System Sloped SImple - pro - Copy](Mirror System Sloped SImple - pro - Copy.md) — آموزش و نحوه استفاده از **Mirror System Sloped SImple   pro   Copy**
-- [Moving Box by BITMOON618 - V2](Moving Box by BITMOON618 - V2.md) — آموزش و نحوه استفاده از **Moving Box by BITMOON618   V2**
-- [Moving Box by BITMOON618 - V3](Moving Box by BITMOON618 - V3.md) — آموزش و نحوه استفاده از **Moving Box by BITMOON618   V3**
-- [Moving Box by BITMOON618](Moving Box by BITMOON618.md) — آموزش و نحوه استفاده از **Moving Box by BITMOON618**
-- [Attraction Reg Predictor](Predictors/Attraction Reg Predictor.md) — آموزش و نحوه استفاده از **Attraction Reg Predictor**
-- [Spiral Fractal](Spiral Fractal.md) — آموزش و نحوه استفاده از **Spiral Fractal**
-- [Spiral Map](Spiral Map.md) — آموزش و نحوه استفاده از **Spiral Map**
-- [Spiral Mirror](Spiral Mirror.md) — آموزش و نحوه استفاده از **Spiral Mirror**
-- [Spiral Symmetric](Spiral Symmetric.md) — آموزش و نحوه استفاده از **Spiral Symmetric**
-- [Symmetric Height Spiral](Symmetric Height Spiral.md) — آموزش و نحوه استفاده از **Symmetric Height Spiral**
-- [Symmetrical Fibo Levels Prices -Reversal](Symmetrical Fibo Levels Prices -Reversal.md) — آموزش و نحوه استفاده از **Symmetrical Fibo Levels Prices  Reversal**
-- [Symmetrical Fibo Levels Prices](Symmetrical Fibo Levels Prices.md) — آموزش و نحوه استفاده از **Symmetrical Fibo Levels Prices**
-- [Symmetrical Golden Shapes - Copy](Symmetrical Golden Shapes - Copy.md) — آموزش و نحوه استفاده از **Symmetrical Golden Shapes   Copy**
-- [Symmetrical Golden Shapes V2 - Reversal Signal](Symmetrical Golden Shapes V2 - Reversal Signal.md) — آموزش و نحوه استفاده از **Symmetrical Golden Shapes V2   Reversal Signal**
-- [Symmetrical Golden Shapes V2](Symmetrical Golden Shapes V2.md) — آموزش و نحوه استفاده از **Symmetrical Golden Shapes V2**
-- [Symmetrical Golden Shapes V3 - Reversal Signal](Symmetrical Golden Shapes V3 - Reversal Signal.md) — آموزش و نحوه استفاده از **Symmetrical Golden Shapes V3   Reversal Signal**
-- [Fibo Time](Time Analyses/Fibo Time.md) — آموزش و نحوه استفاده از **Fibo Time**
-- [Time Analyzer](Time Analyses/Time Analyzer.md) — آموزش و نحوه استفاده از **Time Analyzer**
-- [Time Moving](Time Moving.md) — آموزش و نحوه استفاده از **Time Moving**
-- [Universal System](Universal System.md) — آموزش و نحوه استفاده از **Universal System**
-- [Zero-Lag Fractal Moving](Zero-Lag Fractal Moving.md) — آموزش و نحوه استفاده از **Zero Lag Fractal Moving**
+| Indicator | Tutorial | Source File |
+|-----------|----------|-------------|
+| 01-Customize-pattern | [Guide](01-Customize-pattern.md) | `01-Customize-pattern.txt` |
+| 01-Pattern | [Guide](01-Pattern.md) | `01-Pattern.txt` |
+| 3Moving | [Guide](3Moving.md) | `3Moving.txt` |
+| Bitmoon-System-Pro-V2 | [Guide](Bitmoon-System/Bitmoon-System-Pro-V2.md) | `Bitmoon-System/Bitmoon-System-Pro-V2.txt` |
+| Bitmoon-System-Pro | [Guide](Bitmoon-System/Bitmoon-System-Pro.md) | `Bitmoon-System/Bitmoon-System-Pro.txt` |
+| Bmoon-System-Golden-Cloud | [Guide](Bitmoon-System/Bmoon-System-Golden-Cloud.md) | `Bitmoon-System/Bmoon-System-Golden-Cloud.txt` |
+| Bmoon-System-Moving | [Guide](Bitmoon-System/Bmoon-System-Moving.md) | `Bitmoon-System/Bmoon-System-Moving.txt` |
+| Mirror-Oscilator-V2-by-BITMOON618 | [Guide](Bitmoon-System/Mirror-Oscilator-V2-by-BITMOON618.md) | `Bitmoon-System/Mirror-Oscilator-V2-by-BITMOON618.txt` |
+| Mirror-System-Signals | [Guide](Bitmoon-System/Mirror-System-Signals.md) | `Bitmoon-System/Mirror-System-Signals.txt` |
+| Tagnet-Circles-by-BITMOON618-Live | [Guide](Circle-System/Tagnet-Circles-by-BITMOON618-Live.md) | `Circle-System/Tagnet-Circles-by-BITMOON618-Live.txt` |
+| Tagnet-Circles-by-BITMOON618 | [Guide](Circle-System/Tagnet-Circles-by-BITMOON618.md) | `Circle-System/Tagnet-Circles-by-BITMOON618.txt` |
+| FFS-Line | [Guide](FFS-Line.md) | `FFS-Line.txt` |
+| Fractal-Levels | [Guide](Fractal-Levels/Fractal-Levels.md) | `Fractal-Levels/Fractal-Levels.txt` |
+| Fractal-Symmetric-to-trend | [Guide](Fractal-Levels/Fractal-Symmetric-to-trend.md) | `Fractal-Levels/Fractal-Symmetric-to-trend.txt` |
+| Symmetric-Fractals | [Guide](Fractal-Levels/Symmetric-Fractals.md) | `Fractal-Levels/Symmetric-Fractals.txt` |
+| Fracta-Mirror-Levels | [Guide](Fractal-Mirror-Levels/Fracta-Mirror-Levels.md) | `Fractal-Mirror-Levels/Fracta-Mirror-Levels.txt` |
+| Golden-Spiral | [Guide](Golden-Spiral.md) | `Golden-Spiral.pine` |
+| Hyper-Fibo-System-Signal | [Guide](Hyper-System/Hyper-Fibo-System-Signal.md) | `Hyper-System/Hyper-Fibo-System-Signal.txt` |
+| Hyper-Fibo-System-V3 | [Guide](Hyper-System/Hyper-Fibo-System-V3.md) | `Hyper-System/Hyper-Fibo-System-V3.txt` |
+| Hyper-Fibo-System | [Guide](Hyper-System/Hyper-Fibo-System.md) | `Hyper-System/Hyper-Fibo-System.txt` |
+| Hyper-Mirror-System | [Guide](Hyper-System/Hyper-Mirror-System.md) | `Hyper-System/Hyper-Mirror-System.txt` |
+| Hyper-Symmetric-MA | [Guide](Hyper-System/Hyper-Symmetric-MA.md) | `Hyper-System/Hyper-Symmetric-MA.txt` |
+| Hyper-System-Copy | [Guide](Hyper-System/Hyper-System-Copy.md) | `Hyper-System/Hyper-System-Copy.txt` |
+| Hyper-System-V2 | [Guide](Hyper-System/Hyper-System-V2.md) | `Hyper-System/Hyper-System-V2.txt` |
+| Hyper-System-V4-Lines | [Guide](Hyper-System/Hyper-System-V4-Lines.md) | `Hyper-System/Hyper-System-V4-Lines.txt` |
+| Fast-Sym-Ma | [Guide](Ma-Codes/Fast-Sym-Ma.md) | `Ma-Codes/Fast-Sym-Ma.txt` |
+| Fibo-Ma | [Guide](Ma-Codes/Fibo-Ma.md) | `Ma-Codes/Fibo-Ma.txt` |
+| Fibo-Mas | [Guide](Ma-Codes/Fibo-Mas.md) | `Ma-Codes/Fibo-Mas.txt` |
+| Mirror-MAs | [Guide](Ma-Codes/Mirror-MAs.md) | `Ma-Codes/Mirror-MAs.txt` |
+| Price-Cycles | [Guide](Ma-Codes/Price-Cycles.md) | `Ma-Codes/Price-Cycles.txt` |
+| Time-Machine-v2 | [Guide](Ma-Codes/Time-Machine-v2.md) | `Ma-Codes/Time-Machine-v2.txt` |
+| Time-Machine-v3 | [Guide](Ma-Codes/Time-Machine-v3.md) | `Ma-Codes/Time-Machine-v3.txt` |
+| Time-Machine | [Guide](Ma-Codes/Time-Machine.md) | `Ma-Codes/Time-Machine.txt` |
+| forward-mas | [Guide](Ma-Codes/forward-mas.md) | `Ma-Codes/forward-mas.txt` |
+| Bitmoon-System-Pro-Signals | [Guide](Mirror-Moon/Bitmoon-System-Pro-Signals.md) | `Mirror-Moon/Bitmoon-System-Pro-Signals.txt` |
+| Bitmoon-System-Pro-V1 | [Guide](Mirror-Moon/Bitmoon-System-Pro-V1.md) | `Mirror-Moon/Bitmoon-System-Pro-V1.txt` |
+| Bitmoon-System-Pro-V3 | [Guide](Mirror-Moon/Bitmoon-System-Pro-V3.md) | `Mirror-Moon/Bitmoon-System-Pro-V3.txt` |
+| Bitmoon-System-Pro-v2 | [Guide](Mirror-Moon/Bitmoon-System-Pro-v2.md) | `Mirror-Moon/Bitmoon-System-Pro-v2.txt` |
+| Mirror-Layers-V2 | [Guide](Mirror-Moon/Mirror-Layers-V2.md) | `Mirror-Moon/Mirror-Layers-V2.txt` |
+| Mirror-Layers | [Guide](Mirror-Moon/Mirror-Layers.md) | `Mirror-Moon/Mirror-Layers.txt` |
+| Mirror-Moon | [Guide](Mirror-Moon/Mirror-Moon.md) | `Mirror-Moon/Mirror-Moon.txt` |
+| Moon-Layers-V3-Signal | [Guide](Mirror-Moon/Moon-Layers-V3-Signal.md) | `Mirror-Moon/Moon-Layers-V3-Signal.txt` |
+| Mirror-System-Signals | [Guide](Mirror-System-Signals.md) | `Mirror-System-Signals.txt` |
+| Mirror-System-Sloped-SImple-Reversal-Signals | [Guide](Mirror-System-Sloped-SImple-Reversal-Signals.md) | `Mirror-System-Sloped-SImple-Reversal-Signals.txt` |
+| Mirror-System-Sloped-SImple-pro-Copy | [Guide](Mirror-System-Sloped-SImple-pro-Copy.md) | `Mirror-System-Sloped-SImple-pro-Copy.txt` |
+| Moving-Box-by-BITMOON618-V2 | [Guide](Moving-Box-by-BITMOON618-V2.md) | `Moving-Box-by-BITMOON618-V2.txt` |
+| Moving-Box-by-BITMOON618-V3 | [Guide](Moving-Box-by-BITMOON618-V3.md) | `Moving-Box-by-BITMOON618-V3.txt` |
+| Moving-Box-by-BITMOON618 | [Guide](Moving-Box-by-BITMOON618.md) | `Moving-Box-by-BITMOON618.txt` |
+| Attraction-Reg-Predictor | [Guide](Predictors/Attraction-Reg-Predictor.md) | `Predictors/Attraction-Reg-Predictor.txt` |
+| Spiral-Fractal | [Guide](Spiral-Fractal.md) | `Spiral-Fractal.txt` |
+| Spiral-Map | [Guide](Spiral-Map.md) | `Spiral-Map.txt` |
+| Spiral-Mirror | [Guide](Spiral-Mirror.md) | `Spiral-Mirror.txt` |
+| Spiral-Symmetric | [Guide](Spiral-Symmetric.md) | `Spiral-Symmetric.txt` |
+| Symmetric-Height-Spiral | [Guide](Symmetric-Height-Spiral.md) | `Symmetric-Height-Spiral.txt` |
+| Symmetrical-Fibo-Levels-Prices-Reversal | [Guide](Symmetrical-Fibo-Levels-Prices-Reversal.md) | `Symmetrical-Fibo-Levels-Prices-Reversal.txt` |
+| Symmetrical-Fibo-Levels-Prices | [Guide](Symmetrical-Fibo-Levels-Prices.md) | `Symmetrical-Fibo-Levels-Prices.txt` |
+| Symmetrical-Golden-Shapes-Copy | [Guide](Symmetrical-Golden-Shapes-Copy.md) | `Symmetrical-Golden-Shapes-Copy.txt` |
+| Symmetrical-Golden-Shapes-V2-Reversal-Signal | [Guide](Symmetrical-Golden-Shapes-V2-Reversal-Signal.md) | `Symmetrical-Golden-Shapes-V2-Reversal-Signal.txt` |
+| Symmetrical-Golden-Shapes-V2 | [Guide](Symmetrical-Golden-Shapes-V2.md) | `Symmetrical-Golden-Shapes-V2.txt` |
+| Symmetrical-Golden-Shapes-V3-Reversal-Signal | [Guide](Symmetrical-Golden-Shapes-V3-Reversal-Signal.md) | `Symmetrical-Golden-Shapes-V3-Reversal-Signal.txt` |
+| Fibo-Time | [Guide](Time-Analyses/Fibo-Time.md) | `Time-Analyses/Fibo-Time.txt` |
+| Time-Analyzer | [Guide](Time-Analyses/Time-Analyzer.md) | `Time-Analyses/Time-Analyzer.txt` |
+| Time-Moving | [Guide](Time-Moving.md) | `Time-Moving.txt` |
+| Universal-System | [Guide](Universal-System.md) | `Universal-System.txt` |
+| Zero-Lag-Fractal-Moving | [Guide](Zero-Lag-Fractal-Moving.md) | `Zero-Lag-Fractal-Moving.txt` |
 
-## 🎓 آموزش عمومی
+## How to install
 
-### نصب در TradingView (Pine Script)
-1. فایل `.txt` مربوطه را باز کرده و کل کد را کپی کنید.
-2. در TradingView وارد **Pine Editor** شوید.
-3. کد را Paste کنید و **Add to Chart** بزنید.
-4. تنظیمات را از آیکون چرخ‌دنده روی اندیکاتور تغییر دهید.
+### TradingView (Pine Script)
 
-### اجرای اسکریپت‌های Python
-1. `pip install -r requirements.txt` (در صورت وجود)
-2. `python <اسم-فایل>.py` را اجرا کنید.
+1. Open the indicator `.txt` file and copy the entire code.
+2. In TradingView, open the **Pine Editor**.
+3. Paste the code and click **Add to Chart**.
+4. Adjust inputs via the settings gear on the indicator.
 
-## 🔑 کلمات کلیدی
-Core Powerful Tools, tradingview indicator, pine script, crypto trading, تحلیل تکنیکال, اندیکاتور تریدینگ ویو, سیگنال خرید و فروش
+### Python scripts
+
+```bash
+pip install -r requirements.txt  # if present
+python <script>.py
+```
+
+## Keywords
+
+core powerful tools, tradingview indicator, pine script, crypto trading, technical analysis, buy sell signals

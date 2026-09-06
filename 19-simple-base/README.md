@@ -1,83 +1,90 @@
-# Simple Base — اندیکاتورهای Simple Base
+# Simple Base
 
-> اندیکاتورهای پایه — اشکال، اسپیرال، شمارنده تیک
+> Base indicators - shapes, spirals, tick counters.
 
-[⬅ بازگشت به فهرست اصلی](../README.md) | [TradingView Pine Scripts](https://github.com/morindok/duck/tree/main/indicators/19-simple-base)
+[Back to main index](../README.md)
 
-## 📂 فهرست اندیکاتورهای این دسته
+## Indicators in this category
 
-- [2Point Selelctor](2Point Selelctor.md) — آموزش و نحوه استفاده از **2Point Selelctor**
-- [3Mas Symmetric](3Mas Symmetric.md) — آموزش و نحوه استفاده از **3Mas Symmetric**
-- [Bmoon System Order Block - V2](Bmoon System Order Block - V2.md) — آموزش و نحوه استفاده از **Bmoon System Order Block   V2**
-- [Bmoon System Order Block](Bmoon System Order Block.md) — آموزش و نحوه استفاده از **Bmoon System Order Block**
-- [Bmoon System Pivot Finder - V2](Bmoon System Pivot Finder - V2.md) — آموزش و نحوه استفاده از **Bmoon System Pivot Finder   V2**
-- [Bmoon System Pivot Finder - V3](Bmoon System Pivot Finder - V3.md) — آموزش و نحوه استفاده از **Bmoon System Pivot Finder   V3**
-- [Bmoon System Pivot Finder](Bmoon System Pivot Finder.md) — آموزش و نحوه استفاده از **Bmoon System Pivot Finder**
-- [Bmoon System V5 - Signals](Bmoon System V5 - Signals.md) — آموزش و نحوه استفاده از **Bmoon System V5   Signals**
-- [Bmoon System V5](Bmoon System V5.md) — آموزش و نحوه استفاده از **Bmoon System V5**
-- [Fibo Box Steps](Boxes/Fibo Box Steps.md) — آموزش و نحوه استفاده از **Fibo Box Steps**
-- [Curve](Curve.md) — آموزش و نحوه استفاده از **Curve**
-- [Fractal Symmetric Circles](Fractal Symmetric Circles.md) — آموزش و نحوه استفاده از **Fractal Symmetric Circles**
-- [Gannzilla Chart by BITMOON618](Gannzilla/Gannzilla Chart by BITMOON618.md) — آموزش و نحوه استفاده از **Gannzilla Chart by BITMOON618**
-- [Golden Price](Golden Price.md) — آموزش و نحوه استفاده از **Golden Price**
-- [HTF Sessions by BITMOON618](HTF Sessions by BITMOON618.md) — آموزش و نحوه استفاده از **HTF Sessions by BITMOON618**
-- [Live Tick Counter by @BITMOON618 - Copy](Live Tick Countrer/Live Tick Counter by @BITMOON618 - Copy.md) — آموزش و نحوه استفاده از **Live Tick Counter by @BITMOON618   Copy**
-- [Live Tick Counter by @BITMOON618 V2 - Copy](Live Tick Countrer/Live Tick Counter by @BITMOON618 V2 - Copy.md) — آموزش و نحوه استفاده از **Live Tick Counter by @BITMOON618 V2   Copy**
-- [Live Tick Counter by @BITMOON618 V3 - Copy](Live Tick Countrer/Live Tick Counter by @BITMOON618 V3 - Copy.md) — آموزش و نحوه استفاده از **Live Tick Counter by @BITMOON618 V3   Copy**
-- [Live Tick Counter by @BITMOON618 V4](Live Tick Countrer/Live Tick Counter by @BITMOON618 V4.md) — آموزش و نحوه استفاده از **Live Tick Counter by @BITMOON618 V4**
-- [Live Tick Counter v6](Live Tick Countrer/Live Tick Counter v6.md) — آموزش و نحوه استفاده از **Live Tick Counter v6**
-- [Next Candle Predictor - v2](Live Tick Countrer/Next Candle Predictor - v2.md) — آموزش و نحوه استفاده از **Next Candle Predictor   v2**
-- [Next Candle Predictor](Live Tick Countrer/Next Candle Predictor.md) — آموزش و نحوه استفاده از **Next Candle Predictor**
-- [Mirror Oscilator Price](Mirror Oscilator Price.md) — آموزش و نحوه استفاده از **Mirror Oscilator Price**
-- [Mirror Oscilator by BITMOON618](Mirror Oscilator by BITMOON618.md) — آموزش و نحوه استفاده از **Mirror Oscilator by BITMOON618**
-- [Mirror Oscilator](Mirror Oscilator.md) — آموزش و نحوه استفاده از **Mirror Oscilator**
-- [Offset Prices V2](Offset Prices V2.md) — آموزش و نحوه استفاده از **Offset Prices V2**
-- [Offset Prices](Offset Prices.md) — آموزش و نحوه استفاده از **Offset Prices**
-- [Price Mirror PolyLine - 2Points](Price Mirror PolyLine - 2Points.md) — آموزش و نحوه استفاده از **Price Mirror PolyLine   2Points**
-- [Price Mirror PolyLine](Price Mirror PolyLine.md) — آموزش و نحوه استفاده از **Price Mirror PolyLine**
-- [Reflection Channel](Reflection Channel.md) — آموزش و نحوه استفاده از **Reflection Channel**
-- [Cone](Shapes 4d/Cone.md) — آموزش و نحوه استفاده از **Cone**
-- [Cube](Shapes 4d/Cube.md) — آموزش و نحوه استفاده از **Cube**
-- [Cylinder](Shapes 4d/Cylinder.md) — آموزش و نحوه استفاده از **Cylinder**
-- [HyperCube by BITMOON618](Shapes 4d/HyperCube by BITMOON618.md) — آموزش و نحوه استفاده از **HyperCube by BITMOON618**
-- [Icosahedron](Shapes 4d/Icosahedron.md) — آموزش و نحوه استفاده از **Icosahedron**
-- [Octahedron](Shapes 4d/Octahedron.md) — آموزش و نحوه استفاده از **Octahedron**
-- [Pyramid](Shapes 4d/Pyramid.md) — آموزش و نحوه استفاده از **Pyramid**
-- [Sphere](Shapes 4d/Sphere.md) — آموزش و نحوه استفاده از **Sphere**
-- [Tetrahedron](Shapes 4d/Tetrahedron.md) — آموزش و نحوه استفاده از **Tetrahedron**
-- [Torus](Shapes 4d/Torus.md) — آموزش و نحوه استفاده از **Torus**
-- [Simple Time Mirror Fractals -Signals](Simple Time Mirror Fractals -Signals.md) — آموزش و نحوه استفاده از **Simple Time Mirror Fractals  Signals**
-- [Simple Time Mirror Fractals](Simple Time Mirror Fractals.md) — آموزش و نحوه استفاده از **Simple Time Mirror Fractals**
-- [Spiral Pro by BITMOON618](Spiral Pro by BITMOON618.md) — آموزش و نحوه استفاده از **Spiral Pro by BITMOON618**
-- [Convergenc Spirals](Spiral Symmetric/Convergenc Spirals.md) — آموزش و نحوه استفاده از **Convergenc Spirals**
-- [Just Spirals](Spiral Symmetric/Just Spirals.md) — آموزش و نحوه استفاده از **Just Spirals**
-- [Spiral Symmetric - v3](Spiral Symmetric/Spiral Symmetric - v3.md) — آموزش و نحوه استفاده از **Spiral Symmetric   v3**
-- [Spiral Symmetric Signals{Morindok](Spiral Symmetric/Spiral Symmetric Signals{Morindok.md) — آموزش و نحوه استفاده از **Spiral Symmetric Signals{Morindok**
-- [Spiral Symmetric V2](Spiral Symmetric/Spiral Symmetric V2.md) — آموزش و نحوه استفاده از **Spiral Symmetric V2**
-- [Spiral Symmetric](Spiral Symmetric/Spiral Symmetric.md) — آموزش و نحوه استفاده از **Spiral Symmetric**
-- [Hhll Spirals](Spiral Symmetric/Spirals/Hhll Spirals.md) — آموزش و نحوه استفاده از **Hhll Spirals**
-- [Spiral Path](Spiral Symmetric/Spirals/Spiral Path.md) — آموزش و نحوه استفاده از **Spiral Path**
-- [Spiral Trend Exhaustion (STE) - Pro by @BITMOON618](Spiral Symmetric/Spirals/Spiral Trend Exhaustion (STE) - Pro by @BITMOON618.md) — آموزش و نحوه استفاده از **Spiral Trend Exhaustion (STE)   Pro by @BITMOON618**
-- [Strategy Spiral Symmetric](Spiral Symmetric/Strategy Spiral Symmetric.md) — آموزش و نحوه استفاده از **Strategy Spiral Symmetric**
-- [Universal System Spirals](Spiral Symmetric/Universal System Spirals.md) — آموزش و نحوه استفاده از **Universal System Spirals**
-- [Step Line](Step Line.md) — آموزش و نحوه استفاده از **Step Line**
-- [Tagnet Circle Mirror](Tagnet Circle Mirror.md) — آموزش و نحوه استفاده از **Tagnet Circle Mirror**
-- [Tagnet Circles](Tagnet Circles.md) — آموزش و نحوه استفاده از **Tagnet Circles**
-- [Time Machine](Time Machine 2/Time Machine.md) — آموزش و نحوه استفاده از **Time Machine**
-- [Zero-Lag Ma by BITMOON618](Zero-Lag Ma by BITMOON618.md) — آموزش و نحوه استفاده از **Zero Lag Ma by BITMOON618**
-- [symmetry 4 points](symmetry 4 points.md) — آموزش و نحوه استفاده از **symmetry 4 points**
+| Indicator | Tutorial | Source File |
+|-----------|----------|-------------|
+| 2Point-Selelctor | [Guide](2Point-Selelctor.md) | `2Point-Selelctor.txt` |
+| 3Mas-Symmetric | [Guide](3Mas-Symmetric.md) | `3Mas-Symmetric.txt` |
+| Bmoon-System-Order-Block-V2 | [Guide](Bmoon-System-Order-Block-V2.md) | `Bmoon-System-Order-Block-V2.txt` |
+| Bmoon-System-Order-Block | [Guide](Bmoon-System-Order-Block.md) | `Bmoon-System-Order-Block.txt` |
+| Bmoon-System-Pivot-Finder-V2 | [Guide](Bmoon-System-Pivot-Finder-V2.md) | `Bmoon-System-Pivot-Finder-V2.txt` |
+| Bmoon-System-Pivot-Finder-V3 | [Guide](Bmoon-System-Pivot-Finder-V3.md) | `Bmoon-System-Pivot-Finder-V3.txt` |
+| Bmoon-System-Pivot-Finder | [Guide](Bmoon-System-Pivot-Finder.md) | `Bmoon-System-Pivot-Finder.txt` |
+| Bmoon-System-V5-Signals | [Guide](Bmoon-System-V5-Signals.md) | `Bmoon-System-V5-Signals.txt` |
+| Bmoon-System-V5 | [Guide](Bmoon-System-V5.md) | `Bmoon-System-V5.txt` |
+| Fibo-Box-Steps | [Guide](Boxes/Fibo-Box-Steps.md) | `Boxes/Fibo-Box-Steps.txt` |
+| Curve | [Guide](Curve.md) | `Curve.txt` |
+| Fractal-Symmetric-Circles | [Guide](Fractal-Symmetric-Circles.md) | `Fractal-Symmetric-Circles.txt` |
+| Gannzilla-Chart-by-BITMOON618 | [Guide](Gannzilla/Gannzilla-Chart-by-BITMOON618.md) | `Gannzilla/Gannzilla-Chart-by-BITMOON618.txt` |
+| Golden-Price | [Guide](Golden-Price.md) | `Golden-Price.txt` |
+| HTF-Sessions-by-BITMOON618 | [Guide](HTF-Sessions-by-BITMOON618.md) | `HTF-Sessions-by-BITMOON618.txt` |
+| Live-Tick-Counter-by-BITMOON618-Copy | [Guide](Live-Tick-Countrer/Live-Tick-Counter-by-BITMOON618-Copy.md) | `Live-Tick-Countrer/Live-Tick-Counter-by-BITMOON618-Copy.txt` |
+| Live-Tick-Counter-by-BITMOON618-V2-Copy | [Guide](Live-Tick-Countrer/Live-Tick-Counter-by-BITMOON618-V2-Copy.md) | `Live-Tick-Countrer/Live-Tick-Counter-by-BITMOON618-V2-Copy.txt` |
+| Live-Tick-Counter-by-BITMOON618-V3-Copy | [Guide](Live-Tick-Countrer/Live-Tick-Counter-by-BITMOON618-V3-Copy.md) | `Live-Tick-Countrer/Live-Tick-Counter-by-BITMOON618-V3-Copy.txt` |
+| Live-Tick-Counter-by-BITMOON618-V4 | [Guide](Live-Tick-Countrer/Live-Tick-Counter-by-BITMOON618-V4.md) | `Live-Tick-Countrer/Live-Tick-Counter-by-BITMOON618-V4.txt` |
+| Live-Tick-Counter-v6 | [Guide](Live-Tick-Countrer/Live-Tick-Counter-v6.md) | `Live-Tick-Countrer/Live-Tick-Counter-v6.txt` |
+| Next-Candle-Predictor-v2 | [Guide](Live-Tick-Countrer/Next-Candle-Predictor-v2.md) | `Live-Tick-Countrer/Next-Candle-Predictor-v2.txt` |
+| Next-Candle-Predictor | [Guide](Live-Tick-Countrer/Next-Candle-Predictor.md) | `Live-Tick-Countrer/Next-Candle-Predictor.txt` |
+| Mirror-Oscilator-Price | [Guide](Mirror-Oscilator-Price.md) | `Mirror-Oscilator-Price.txt` |
+| Mirror-Oscilator-by-BITMOON618 | [Guide](Mirror-Oscilator-by-BITMOON618.md) | `Mirror-Oscilator-by-BITMOON618.txt` |
+| Mirror-Oscilator | [Guide](Mirror-Oscilator.md) | `Mirror-Oscilator.txt` |
+| Offset-Prices-V2 | [Guide](Offset-Prices-V2.md) | `Offset-Prices-V2.txt` |
+| Offset-Prices | [Guide](Offset-Prices.md) | `Offset-Prices.txt` |
+| Price-Mirror-PolyLine-2Points | [Guide](Price-Mirror-PolyLine-2Points.md) | `Price-Mirror-PolyLine-2Points.txt` |
+| Price-Mirror-PolyLine | [Guide](Price-Mirror-PolyLine.md) | `Price-Mirror-PolyLine.txt` |
+| Reflection-Channel | [Guide](Reflection-Channel.md) | `Reflection-Channel.txt` |
+| Cone | [Guide](Shapes-4d/Cone.md) | `Shapes-4d/Cone.txt` |
+| Cube | [Guide](Shapes-4d/Cube.md) | `Shapes-4d/Cube.txt` |
+| Cylinder | [Guide](Shapes-4d/Cylinder.md) | `Shapes-4d/Cylinder.txt` |
+| HyperCube-by-BITMOON618 | [Guide](Shapes-4d/HyperCube-by-BITMOON618.md) | `Shapes-4d/HyperCube-by-BITMOON618.txt` |
+| Icosahedron | [Guide](Shapes-4d/Icosahedron.md) | `Shapes-4d/Icosahedron.txt` |
+| Octahedron | [Guide](Shapes-4d/Octahedron.md) | `Shapes-4d/Octahedron.txt` |
+| Pyramid | [Guide](Shapes-4d/Pyramid.md) | `Shapes-4d/Pyramid.txt` |
+| Sphere | [Guide](Shapes-4d/Sphere.md) | `Shapes-4d/Sphere.txt` |
+| Tetrahedron | [Guide](Shapes-4d/Tetrahedron.md) | `Shapes-4d/Tetrahedron.txt` |
+| Torus | [Guide](Shapes-4d/Torus.md) | `Shapes-4d/Torus.txt` |
+| Simple-Time-Mirror-Fractals-Signals | [Guide](Simple-Time-Mirror-Fractals-Signals.md) | `Simple-Time-Mirror-Fractals-Signals.txt` |
+| Simple-Time-Mirror-Fractals | [Guide](Simple-Time-Mirror-Fractals.md) | `Simple-Time-Mirror-Fractals.txt` |
+| Spiral-Pro-by-BITMOON618 | [Guide](Spiral-Pro-by-BITMOON618.md) | `Spiral-Pro-by-BITMOON618.txt` |
+| Convergenc-Spirals | [Guide](Spiral-Symmetric/Convergenc-Spirals.md) | `Spiral-Symmetric/Convergenc-Spirals.txt` |
+| Just-Spirals | [Guide](Spiral-Symmetric/Just-Spirals.md) | `Spiral-Symmetric/Just-Spirals.txt` |
+| Spiral-Symmetric-Signals-Morindok | [Guide](Spiral-Symmetric/Spiral-Symmetric-Signals-Morindok.md) | `Spiral-Symmetric/Spiral-Symmetric-Signals-Morindok.txt` |
+| Spiral-Symmetric-V2 | [Guide](Spiral-Symmetric/Spiral-Symmetric-V2.md) | `Spiral-Symmetric/Spiral-Symmetric-V2.txt` |
+| Spiral-Symmetric-v3 | [Guide](Spiral-Symmetric/Spiral-Symmetric-v3.md) | `Spiral-Symmetric/Spiral-Symmetric-v3.txt` |
+| Spiral-Symmetric | [Guide](Spiral-Symmetric/Spiral-Symmetric.md) | `Spiral-Symmetric/Spiral-Symmetric.txt` |
+| Hhll-Spirals | [Guide](Spiral-Symmetric/Spirals/Hhll-Spirals.md) | `Spiral-Symmetric/Spirals/Hhll-Spirals.txt` |
+| Spiral-Path | [Guide](Spiral-Symmetric/Spirals/Spiral-Path.md) | `Spiral-Symmetric/Spirals/Spiral-Path.txt` |
+| Spiral-Trend-Exhaustion-STE-Pro-by-BITMOON618 | [Guide](Spiral-Symmetric/Spirals/Spiral-Trend-Exhaustion-STE-Pro-by-BITMOON618.md) | `Spiral-Symmetric/Spirals/Spiral-Trend-Exhaustion-STE-Pro-by-BITMOON618.txt` |
+| Strategy-Spiral-Symmetric | [Guide](Spiral-Symmetric/Strategy-Spiral-Symmetric.md) | `Spiral-Symmetric/Strategy-Spiral-Symmetric.txt` |
+| Universal-System-Spirals | [Guide](Spiral-Symmetric/Universal-System-Spirals.md) | `Spiral-Symmetric/Universal-System-Spirals.txt` |
+| Step-Line | [Guide](Step-Line.md) | `Step-Line.txt` |
+| Tagnet-Circle-Mirror | [Guide](Tagnet-Circle-Mirror.md) | `Tagnet-Circle-Mirror.txt` |
+| Tagnet-Circles | [Guide](Tagnet-Circles.md) | `Tagnet-Circles.txt` |
+| Time-Machine | [Guide](Time-Machine-2/Time-Machine.md) | `Time-Machine-2/Time-Machine.txt` |
+| Zero-Lag-Ma-by-BITMOON618 | [Guide](Zero-Lag-Ma-by-BITMOON618.md) | `Zero-Lag-Ma-by-BITMOON618.txt` |
+| symmetry-4-points | [Guide](symmetry-4-points.md) | `symmetry-4-points.txt` |
 
-## 🎓 آموزش عمومی
+## How to install
 
-### نصب در TradingView (Pine Script)
-1. فایل `.txt` مربوطه را باز کرده و کل کد را کپی کنید.
-2. در TradingView وارد **Pine Editor** شوید.
-3. کد را Paste کنید و **Add to Chart** بزنید.
-4. تنظیمات را از آیکون چرخ‌دنده روی اندیکاتور تغییر دهید.
+### TradingView (Pine Script)
 
-### اجرای اسکریپت‌های Python
-1. `pip install -r requirements.txt` (در صورت وجود)
-2. `python <اسم-فایل>.py` را اجرا کنید.
+1. Open the indicator `.txt` file and copy the entire code.
+2. In TradingView, open the **Pine Editor**.
+3. Paste the code and click **Add to Chart**.
+4. Adjust inputs via the settings gear on the indicator.
 
-## 🔑 کلمات کلیدی
-Simple Base, tradingview indicator, pine script, crypto trading, تحلیل تکنیکال, اندیکاتور تریدینگ ویو, سیگنال خرید و فروش
+### Python scripts
+
+```bash
+pip install -r requirements.txt  # if present
+python <script>.py
+```
+
+## Keywords
+
+simple base, tradingview indicator, pine script, crypto trading, technical analysis, buy sell signals
