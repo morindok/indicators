@@ -1,13 +1,13 @@
 # Python Tools
 
-> Python utilities - clock, spiral, footprint, Gann, neural tools.
+> Python utilities: clock, spiral, footprint, Gann and neural tools.
 
 [Back to main index](../README.md)
 
-## Indicators in this category
+## Indicators
 
-| Indicator | Tutorial | Source File |
-|-----------|----------|-------------|
+| Indicator | Tutorial | Source |
+|-----------|----------|--------|
 | 3D-Analyzer-by-BITMOON618 | [Guide](3D-Analyzer/3D-Analyzer-by-BITMOON618.md) | `3D-Analyzer/3D-Analyzer-by-BITMOON618.txt` |
 | 3D-net | [Guide](3D-Price/3D-net.md) | `3D-Price/3D-net.txt` |
 | 3D-price | [Guide](3D-price.md) | `3D-price.txt` |
@@ -304,22 +304,18 @@
 | bybit_whale_scalper | [Guide](scalper/bybit_whale_scalper.md) | `scalper/bybit_whale_scalper.py` |
 | timesFM | [Guide](timesFM.md) | `timesFM.txt` |
 
-## How to install
+## Installation
 
-### TradingView (Pine Script)
+**TradingView (Pine Script):**
 
 1. Open the indicator `.txt` file and copy the entire code.
-2. In TradingView, open the **Pine Editor**.
+2. In TradingView, open the **Pine Editor** tab.
 3. Paste the code and click **Add to Chart**.
-4. Adjust inputs via the settings gear on the indicator.
+4. Adjust the inputs from the settings gear on the indicator.
 
-### Python scripts
+**Python scripts:**
 
 ```bash
 pip install -r requirements.txt  # if present
 python <script>.py
 ```
-
-## Keywords
-
-python tools, tradingview indicator, pine script, crypto trading, technical analysis, buy sell signals

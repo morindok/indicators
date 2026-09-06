@@ -1,14 +1,14 @@
 # bybit_connector
 
-> Category: [Python Tools](README.md) - Python utilities - clock, spiral, footprint, Gann, neural tools.
+> Category: [Python Tools](README.md)
 
 Source file: [`Gann/new-gann/v3/bybit_connector.py`](Gann/new-gann/v3/bybit_connector.py)
 
 ## Overview
 
-**bybit_connector** belongs to the *Python Tools* category. Python utilities - clock, spiral, footprint, Gann, neural tools.
+Python utilities: clock, spiral, footprint, Gann and neural tools.
 
-## How to use
+## How to Use
 
 ```bash
 python "Gann/new-gann/v3/bybit_connector.py"
@@ -25,6 +25,6 @@ Requires Python 3.10+ and the libraries listed in the file header.
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

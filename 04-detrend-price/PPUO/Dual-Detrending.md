@@ -1,17 +1,17 @@
 # Dual-Detrending
 
-> Category: [Detrend Price](README.md) - Removing trend from price to reveal pure cycles.
+> Category: [Detrend Price](README.md)
 
 Source file: [`PPUO/Dual-Detrending.txt`](PPUO/Dual-Detrending.txt)
 
 ## Overview
 
-**Dual-Detrending** belongs to the *Detrend Price* category. Removing trend from price to reveal pure cycles.
+Removing the trend from price to reveal pure market cycles.
 
-## How to use
+## How to Use
 
 1. Copy the file contents.
-2. In TradingView, open **Pine Editor** and paste the code.
+2. In TradingView, open the **Pine Editor** and paste the code.
 3. Click **Add to Chart**, then configure the inputs.
 
 ## Tips
@@ -23,6 +23,6 @@ Source file: [`PPUO/Dual-Detrending.txt`](PPUO/Dual-Detrending.txt)
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

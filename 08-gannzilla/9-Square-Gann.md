@@ -1,17 +1,17 @@
 # 9-Square-Gann
 
-> Category: [Gannzilla](README.md) - W.D. Gann tools - Square of 9, Gann Machine, Atomic Models.
+> Category: [Gannzilla](README.md)
 
 Source file: [`9-Square-Gann.txt`](9-Square-Gann.txt)
 
 ## Overview
 
-**9-Square-Gann** belongs to the *Gannzilla* category. W.D. Gann tools - Square of 9, Gann Machine, Atomic Models.
+W.D. Gann tools: Square of 9, Gann Machine and Atomic Models.
 
-## How to use
+## How to Use
 
 1. Copy the file contents.
-2. In TradingView, open **Pine Editor** and paste the code.
+2. In TradingView, open the **Pine Editor** and paste the code.
 3. Click **Add to Chart**, then configure the inputs.
 
 ## Tips
@@ -23,6 +23,6 @@ Source file: [`9-Square-Gann.txt`](9-Square-Gann.txt)
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

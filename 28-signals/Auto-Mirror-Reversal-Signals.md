@@ -1,17 +1,17 @@
 # Auto-Mirror-Reversal-Signals
 
-> Category: [Signals](README.md) - Signal indicators - mirror reversal and LookBack systems.
+> Category: [Signals](README.md)
 
 Source file: [`Auto-Mirror-Reversal-Signals.txt`](Auto-Mirror-Reversal-Signals.txt)
 
 ## Overview
 
-**Auto-Mirror-Reversal-Signals** belongs to the *Signals* category. Signal indicators - mirror reversal and LookBack systems.
+Signal indicators: mirror reversal and LookBack systems.
 
-## How to use
+## How to Use
 
 1. Copy the file contents.
-2. In TradingView, open **Pine Editor** and paste the code.
+2. In TradingView, open the **Pine Editor** and paste the code.
 3. Click **Add to Chart**, then configure the inputs.
 
 ## Tips
@@ -23,6 +23,6 @@ Source file: [`Auto-Mirror-Reversal-Signals.txt`](Auto-Mirror-Reversal-Signals.t
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

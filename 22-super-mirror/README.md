@@ -1,13 +1,13 @@
 # Super Mirror
 
-> Super Mirror - price reflection, oscillator and time analysis.
+> Price reflection, oscillator and time analysis.
 
 [Back to main index](../README.md)
 
-## Indicators in this category
+## Indicators
 
-| Indicator | Tutorial | Source File |
-|-----------|----------|-------------|
+| Indicator | Tutorial | Source |
+|-----------|----------|--------|
 | BOS-Oscilator-Boxes | [Guide](BOS-Oscilator-Boxes.md) | `BOS-Oscilator-Boxes.txt` |
 | Fibo-Time-Analyzer | [Guide](Fibo-Time-Analyzer.md) | `Fibo-Time-Analyzer.txt` |
 | MOP-Ultimate | [Guide](MOP-Ultimate.md) | `MOP-Ultimate.txt` |
@@ -26,22 +26,18 @@
 | Super-Mirror | [Guide](Super-Mirror.md) | `Super-Mirror.txt` |
 | Time-Analyzer | [Guide](Time-Analyzer.md) | `Time-Analyzer.txt` |
 
-## How to install
+## Installation
 
-### TradingView (Pine Script)
+**TradingView (Pine Script):**
 
 1. Open the indicator `.txt` file and copy the entire code.
-2. In TradingView, open the **Pine Editor**.
+2. In TradingView, open the **Pine Editor** tab.
 3. Paste the code and click **Add to Chart**.
-4. Adjust inputs via the settings gear on the indicator.
+4. Adjust the inputs from the settings gear on the indicator.
 
-### Python scripts
+**Python scripts:**
 
 ```bash
 pip install -r requirements.txt  # if present
 python <script>.py
 ```
-
-## Keywords
-
-super mirror, tradingview indicator, pine script, crypto trading, technical analysis, buy sell signals

@@ -1,17 +1,17 @@
 # MTF-Symmetrical-Gap-Volume-Colored
 
-> Category: [Volume Analyzer](README.md) - Volume analyzers - volume power zones and dashboards.
+> Category: [Volume Analyzer](README.md)
 
 Source file: [`MTF-Symmetrical-Gap-Volume-Colored.txt`](MTF-Symmetrical-Gap-Volume-Colored.txt)
 
 ## Overview
 
-**MTF-Symmetrical-Gap-Volume-Colored** belongs to the *Volume Analyzer* category. Volume analyzers - volume power zones and dashboards.
+Volume analysis: volume power zones and dashboards.
 
-## How to use
+## How to Use
 
 1. Copy the file contents.
-2. In TradingView, open **Pine Editor** and paste the code.
+2. In TradingView, open the **Pine Editor** and paste the code.
 3. Click **Add to Chart**, then configure the inputs.
 
 ## Tips
@@ -23,6 +23,6 @@ Source file: [`MTF-Symmetrical-Gap-Volume-Colored.txt`](MTF-Symmetrical-Gap-Volu
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

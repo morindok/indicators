@@ -1,17 +1,17 @@
 # Smart-Money-Liquidity-Alpha-Engine-by-BITMOON618
 
-> Category: [Strategy](README.md) - Trading strategies - liquidity and Smart Money concepts.
+> Category: [Strategy](README.md)
 
 Source file: [`Smart-Money-Liquidity-Alpha-Engine-by-BITMOON618.txt`](Smart-Money-Liquidity-Alpha-Engine-by-BITMOON618.txt)
 
 ## Overview
 
-**Smart-Money-Liquidity-Alpha-Engine-by-BITMOON618** belongs to the *Strategy* category. Trading strategies - liquidity and Smart Money concepts.
+Trading strategies: liquidity and Smart Money concepts.
 
-## How to use
+## How to Use
 
 1. Copy the file contents.
-2. In TradingView, open **Pine Editor** and paste the code.
+2. In TradingView, open the **Pine Editor** and paste the code.
 3. Click **Add to Chart**, then configure the inputs.
 
 ## Tips
@@ -23,6 +23,6 @@ Source file: [`Smart-Money-Liquidity-Alpha-Engine-by-BITMOON618.txt`](Smart-Mone
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

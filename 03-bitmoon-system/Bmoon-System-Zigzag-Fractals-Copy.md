@@ -1,17 +1,17 @@
 # Bmoon-System-Zigzag-Fractals-Copy
 
-> Category: [Bitmoon System](README.md) - Complete Bitmoon system combining mirror, signals and oscillators.
+> Category: [Bitmoon System](README.md)
 
 Source file: [`Bmoon-System-Zigzag-Fractals-Copy.txt`](Bmoon-System-Zigzag-Fractals-Copy.txt)
 
 ## Overview
 
-**Bmoon-System-Zigzag-Fractals-Copy** belongs to the *Bitmoon System* category. Complete Bitmoon system combining mirror, signals and oscillators.
+Complete Bitmoon system combining mirror, signals and oscillators.
 
-## How to use
+## How to Use
 
 1. Copy the file contents.
-2. In TradingView, open **Pine Editor** and paste the code.
+2. In TradingView, open the **Pine Editor** and paste the code.
 3. Click **Add to Chart**, then configure the inputs.
 
 ## Tips
@@ -23,6 +23,6 @@ Source file: [`Bmoon-System-Zigzag-Fractals-Copy.txt`](Bmoon-System-Zigzag-Fract
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

@@ -1,14 +1,14 @@
 # hive_institutional_v7
 
-> Category: [Python Tools](README.md) - Python utilities - clock, spiral, footprint, Gann, neural tools.
+> Category: [Python Tools](README.md)
 
 Source file: [`Living-Brain/v10/v10.7/10.7.2/hive_institutional_v7.py`](Living-Brain/v10/v10.7/10.7.2/hive_institutional_v7.py)
 
 ## Overview
 
-**hive_institutional_v7** belongs to the *Python Tools* category. Python utilities - clock, spiral, footprint, Gann, neural tools.
+Python utilities: clock, spiral, footprint, Gann and neural tools.
 
-## How to use
+## How to Use
 
 ```bash
 python "Living-Brain/v10/v10.7/10.7.2/hive_institutional_v7.py"
@@ -25,6 +25,6 @@ Requires Python 3.10+ and the libraries listed in the file header.
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

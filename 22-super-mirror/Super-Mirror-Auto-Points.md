@@ -1,17 +1,17 @@
 # Super-Mirror-Auto-Points
 
-> Category: [Super Mirror](README.md) - Super Mirror - price reflection, oscillator and time analysis.
+> Category: [Super Mirror](README.md)
 
 Source file: [`Super-Mirror-Auto-Points.txt`](Super-Mirror-Auto-Points.txt)
 
 ## Overview
 
-**Super-Mirror-Auto-Points** belongs to the *Super Mirror* category. Super Mirror - price reflection, oscillator and time analysis.
+Price reflection, oscillator and time analysis.
 
-## How to use
+## How to Use
 
 1. Copy the file contents.
-2. In TradingView, open **Pine Editor** and paste the code.
+2. In TradingView, open the **Pine Editor** and paste the code.
 3. Click **Add to Chart**, then configure the inputs.
 
 ## Tips
@@ -23,6 +23,6 @@ Source file: [`Super-Mirror-Auto-Points.txt`](Super-Mirror-Auto-Points.txt)
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

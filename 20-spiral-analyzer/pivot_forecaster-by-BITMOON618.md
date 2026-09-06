@@ -1,17 +1,17 @@
 # pivot_forecaster-by-BITMOON618
 
-> Category: [Spiral Analyzer](README.md) - Spiral analyzer - logarithmic spiral pivot forecasting.
+> Category: [Spiral Analyzer](README.md)
 
 Source file: [`pivot_forecaster-by-BITMOON618.html`](pivot_forecaster-by-BITMOON618.html)
 
 ## Overview
 
-**pivot_forecaster-by-BITMOON618** belongs to the *Spiral Analyzer* category. Spiral analyzer - logarithmic spiral pivot forecasting.
+Spiral analyzer for logarithmic spiral pivot forecasting.
 
-## How to use
+## How to Use
 
 1. Copy the file contents.
-2. In TradingView, open **Pine Editor** and paste the code.
+2. In TradingView, open the **Pine Editor** and paste the code.
 3. Click **Add to Chart**, then configure the inputs.
 
 ## Tips
@@ -23,6 +23,6 @@ Source file: [`pivot_forecaster-by-BITMOON618.html`](pivot_forecaster-by-BITMOON
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

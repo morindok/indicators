@@ -1,17 +1,17 @@
 # Fibo-Flat-Volatility-Synchronized
 
-> Category: [Fibo Flat](README.md) - Fibonacci flat levels and cumulative line for reversal points.
+> Category: [Fibo Flat](README.md)
 
 Source file: [`Fibo-Flat-Volatility-Synchronized.txt`](Fibo-Flat-Volatility-Synchronized.txt)
 
 ## Overview
 
-**Fibo-Flat-Volatility-Synchronized** belongs to the *Fibo Flat* category. Fibonacci flat levels and cumulative line for reversal points.
+Fibonacci flat levels and a cumulative line for reversal points.
 
-## How to use
+## How to Use
 
 1. Copy the file contents.
-2. In TradingView, open **Pine Editor** and paste the code.
+2. In TradingView, open the **Pine Editor** and paste the code.
 3. Click **Add to Chart**, then configure the inputs.
 
 ## Tips
@@ -23,6 +23,6 @@ Source file: [`Fibo-Flat-Volatility-Synchronized.txt`](Fibo-Flat-Volatility-Sync
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

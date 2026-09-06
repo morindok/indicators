@@ -1,17 +1,17 @@
 # Parallel-Lines-Live-by-BITMOON618
 
-> Category: [Parallel Lines](README.md) - Live parallel lines and Markov-Bayesian harmonic network.
+> Category: [Parallel Lines](README.md)
 
 Source file: [`Parallel-Lines-Live-by-BITMOON618.txt`](Parallel-Lines-Live-by-BITMOON618.txt)
 
 ## Overview
 
-**Parallel-Lines-Live-by-BITMOON618** belongs to the *Parallel Lines* category. Live parallel lines and Markov-Bayesian harmonic network.
+Live parallel lines and a Markov-Bayesian harmonic network.
 
-## How to use
+## How to Use
 
 1. Copy the file contents.
-2. In TradingView, open **Pine Editor** and paste the code.
+2. In TradingView, open the **Pine Editor** and paste the code.
 3. Click **Add to Chart**, then configure the inputs.
 
 ## Tips
@@ -23,6 +23,6 @@ Source file: [`Parallel-Lines-Live-by-BITMOON618.txt`](Parallel-Lines-Live-by-BI
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

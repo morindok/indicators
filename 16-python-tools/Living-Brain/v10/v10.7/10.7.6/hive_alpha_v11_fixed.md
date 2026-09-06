@@ -1,14 +1,14 @@
 # hive_alpha_v11_fixed
 
-> Category: [Python Tools](README.md) - Python utilities - clock, spiral, footprint, Gann, neural tools.
+> Category: [Python Tools](README.md)
 
 Source file: [`Living-Brain/v10/v10.7/10.7.6/hive_alpha_v11_fixed.py`](Living-Brain/v10/v10.7/10.7.6/hive_alpha_v11_fixed.py)
 
 ## Overview
 
-**hive_alpha_v11_fixed** belongs to the *Python Tools* category. Python utilities - clock, spiral, footprint, Gann, neural tools.
+Python utilities: clock, spiral, footprint, Gann and neural tools.
 
-## How to use
+## How to Use
 
 ```bash
 python "Living-Brain/v10/v10.7/10.7.6/hive_alpha_v11_fixed.py"
@@ -25,6 +25,6 @@ Requires Python 3.10+ and the libraries listed in the file header.
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

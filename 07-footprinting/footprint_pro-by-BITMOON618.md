@@ -1,17 +1,17 @@
 # footprint_pro-by-BITMOON618
 
-> Category: [Footprinting](README.md) - Order-flow footprint and market microstructure analysis.
+> Category: [Footprinting](README.md)
 
 Source file: [`footprint_pro-by-BITMOON618.txt`](footprint_pro-by-BITMOON618.txt)
 
 ## Overview
 
-**footprint_pro-by-BITMOON618** belongs to the *Footprinting* category. Order-flow footprint and market microstructure analysis.
+Order-flow footprint and market microstructure analysis.
 
-## How to use
+## How to Use
 
 1. Copy the file contents.
-2. In TradingView, open **Pine Editor** and paste the code.
+2. In TradingView, open the **Pine Editor** and paste the code.
 3. Click **Add to Chart**, then configure the inputs.
 
 ## Tips
@@ -23,6 +23,6 @@ Source file: [`footprint_pro-by-BITMOON618.txt`](footprint_pro-by-BITMOON618.txt
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

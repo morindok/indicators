@@ -1,17 +1,17 @@
 # BOS-Clustering
 
-> Category: [Boxes & Zones](README.md) - Key market boxes and zones - accumulation and distribution areas.
+> Category: [Boxes & Zones](README.md)
 
 Source file: [`BOS-Clustering.txt`](BOS-Clustering.txt)
 
 ## Overview
 
-**BOS-Clustering** belongs to the *Boxes & Zones* category. Key market boxes and zones - accumulation and distribution areas.
+Key market boxes and zones for accumulation and distribution areas.
 
-## How to use
+## How to Use
 
 1. Copy the file contents.
-2. In TradingView, open **Pine Editor** and paste the code.
+2. In TradingView, open the **Pine Editor** and paste the code.
 3. Click **Add to Chart**, then configure the inputs.
 
 ## Tips
@@ -23,6 +23,6 @@ Source file: [`BOS-Clustering.txt`](BOS-Clustering.txt)
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

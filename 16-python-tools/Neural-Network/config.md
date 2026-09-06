@@ -1,14 +1,14 @@
 # config
 
-> Category: [Python Tools](README.md) - Python utilities - clock, spiral, footprint, Gann, neural tools.
+> Category: [Python Tools](README.md)
 
 Source file: [`Neural-Network/config.py`](Neural-Network/config.py)
 
 ## Overview
 
-**config** belongs to the *Python Tools* category. Python utilities - clock, spiral, footprint, Gann, neural tools.
+Python utilities: clock, spiral, footprint, Gann and neural tools.
 
-## How to use
+## How to Use
 
 ```bash
 python "Neural-Network/config.py"
@@ -25,6 +25,6 @@ Requires Python 3.10+ and the libraries listed in the file header.
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

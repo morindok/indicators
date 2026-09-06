@@ -1,17 +1,17 @@
 # Ichi-Moving-V1-by-BITMOON618
 
-> Category: [IchiMoving](README.md) - Ichimoku combined with moving averages.
+> Category: [IchiMoving](README.md)
 
 Source file: [`Ichi-Moving-V1-by-BITMOON618.txt`](Ichi-Moving-V1-by-BITMOON618.txt)
 
 ## Overview
 
-**Ichi-Moving-V1-by-BITMOON618** belongs to the *IchiMoving* category. Ichimoku combined with moving averages.
+Ichimoku combined with moving averages.
 
-## How to use
+## How to Use
 
 1. Copy the file contents.
-2. In TradingView, open **Pine Editor** and paste the code.
+2. In TradingView, open the **Pine Editor** and paste the code.
 3. Click **Add to Chart**, then configure the inputs.
 
 ## Tips
@@ -23,6 +23,6 @@ Source file: [`Ichi-Moving-V1-by-BITMOON618.txt`](Ichi-Moving-V1-by-BITMOON618.t
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

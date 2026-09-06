@@ -1,13 +1,13 @@
 # Simple Base
 
-> Base indicators - shapes, spirals, tick counters.
+> Base indicators: shapes, spirals and tick counters.
 
 [Back to main index](../README.md)
 
-## Indicators in this category
+## Indicators
 
-| Indicator | Tutorial | Source File |
-|-----------|----------|-------------|
+| Indicator | Tutorial | Source |
+|-----------|----------|--------|
 | 2Point-Selelctor | [Guide](2Point-Selelctor.md) | `2Point-Selelctor.txt` |
 | 3Mas-Symmetric | [Guide](3Mas-Symmetric.md) | `3Mas-Symmetric.txt` |
 | Bmoon-System-Order-Block-V2 | [Guide](Bmoon-System-Order-Block-V2.md) | `Bmoon-System-Order-Block-V2.txt` |
@@ -69,22 +69,18 @@
 | Zero-Lag-Ma-by-BITMOON618 | [Guide](Zero-Lag-Ma-by-BITMOON618.md) | `Zero-Lag-Ma-by-BITMOON618.txt` |
 | symmetry-4-points | [Guide](symmetry-4-points.md) | `symmetry-4-points.txt` |
 
-## How to install
+## Installation
 
-### TradingView (Pine Script)
+**TradingView (Pine Script):**
 
 1. Open the indicator `.txt` file and copy the entire code.
-2. In TradingView, open the **Pine Editor**.
+2. In TradingView, open the **Pine Editor** tab.
 3. Paste the code and click **Add to Chart**.
-4. Adjust inputs via the settings gear on the indicator.
+4. Adjust the inputs from the settings gear on the indicator.
 
-### Python scripts
+**Python scripts:**
 
 ```bash
 pip install -r requirements.txt  # if present
 python <script>.py
 ```
-
-## Keywords
-
-simple base, tradingview indicator, pine script, crypto trading, technical analysis, buy sell signals

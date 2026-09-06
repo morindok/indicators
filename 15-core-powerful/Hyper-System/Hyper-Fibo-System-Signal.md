@@ -1,17 +1,17 @@
 # Hyper-Fibo-System-Signal
 
-> Category: [Core Powerful Tools](README.md) - Core toolkit - mirror, spiral and system indicators.
+> Category: [Core Powerful Tools](README.md)
 
 Source file: [`Hyper-System/Hyper-Fibo-System-Signal.txt`](Hyper-System/Hyper-Fibo-System-Signal.txt)
 
 ## Overview
 
-**Hyper-Fibo-System-Signal** belongs to the *Core Powerful Tools* category. Core toolkit - mirror, spiral and system indicators.
+Core toolkit: mirror, spiral and system indicators.
 
-## How to use
+## How to Use
 
 1. Copy the file contents.
-2. In TradingView, open **Pine Editor** and paste the code.
+2. In TradingView, open the **Pine Editor** and paste the code.
 3. Click **Add to Chart**, then configure the inputs.
 
 ## Tips
@@ -23,6 +23,6 @@ Source file: [`Hyper-System/Hyper-Fibo-System-Signal.txt`](Hyper-System/Hyper-Fi
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)

@@ -1,14 +1,14 @@
 # Footprint-System-V1-Trade-System
 
-> Category: [Python Tools](README.md) - Python utilities - clock, spiral, footprint, Gann, neural tools.
+> Category: [Python Tools](README.md)
 
 Source file: [`Footprinting/Footprint-System-V1-Trade-System.py`](Footprinting/Footprint-System-V1-Trade-System.py)
 
 ## Overview
 
-**Footprint-System-V1-Trade-System** belongs to the *Python Tools* category. Python utilities - clock, spiral, footprint, Gann, neural tools.
+Python utilities: clock, spiral, footprint, Gann and neural tools.
 
-## How to use
+## How to Use
 
 ```bash
 python "Footprinting/Footprint-System-V1-Trade-System.py"
@@ -25,6 +25,6 @@ Requires Python 3.10+ and the libraries listed in the file header.
 
 ## Disclaimer
 
-These tools are for **educational purposes only** and are not financial advice.
+Educational purposes only. This is not financial advice.
 
 [All categories](../README.md)
