@@ -1,37 +1,22 @@
-# داشبورد کوانتومی مورین‌دوک
+# Neural Network Predictor
 
-اپلیکیشن Dash با یادگیری مداوم (Continual Learning) روی داده زنده بایبیت.
+> Dash dashboard with continual-learning LSTM price prediction (PyTorch).
 
-## اجرا
-```bash
-pip install -r requirements.txt
-python app.py
-```
-سپس مرورگر را روی `http://127.0.0.1:8050` باز کنید.
+## How to Use
 
-## ساختار فایل‌ها
-| فایل | وظیفه |
-|---|---|
-| `config.py` | همه پارامترهای قابل تنظیم (نماد، تایم‌فریم، معماری شبکه، وزن‌های ادغام و ...) |
-| `data_feed.py` | دریافت پایدار داده از بایبیت با retry/backoff، به‌روزرسانی پس‌زمینه |
-| `features.py` | ۱۲ ویژگی تکنیکال + ۳ ویژگی شبکه تار عنکبوتی + ۳ ویژگی تعاملی (۱۸ ورودی) |
-| `neural_net.py` | شبکه LSTM دولایه با یادگیری مداوم واقعی (PyTorch/Adam) + دقت Walk-Forward |
-| `path_simulator.py` | شبیه‌سازی مونت‌کارلوی چند-مسیره (Block Bootstrap) برای مسیریابی آینده |
-| `engine.py` | هماهنگ‌کننده همه اجزا در ترد پس‌زمینه، هر ۲۰ ثانیه یک چرخه کامل |
-| `app_state.py` | ظرف Thread-safe برای اشتراک نتایج با رابط کاربری |
-| `app.py` | رابط Dash: جدول احتمال زنده + نمودار شمعی با مخروط پیش‌بینی |
+- Run `pip install -r requirements.txt`
+- Run `python app.py` and open `http://127.0.0.1:8050`
 
-## نکات مهم قبل از اجرای واقعی
-1. **تست شبکه**: تمام منطق (مهندسی ویژگی، آموزش LSTM، مونت‌کارلو، موتور، رابط Dash) با
-   داده مصنوعی به‌طور کامل تست شده و بدون خطا اجرا می‌شود. اما ارتباط واقعی با API بایبیت
-   را باید در محیط خودت (با دسترسی شبکه) تست کنی - من در این محیط sandbox به دامنه
-   بایبیت دسترسی ندارم.
-2. **گرمایش مدل**: طبق `min_train_bars` و `min_samples` در `config.py`، تا وقتی داده و
-   نمونه کافی جمع نشده، وضعیت «در حال آموزش...» نمایش داده می‌شود - این عمدی است تا
-   سیگنال زودهنگام و نامعتبر نمایش داده نشود.
-3. **صداقت آماری**: عدد «دقت واک-فوروارد» تنها معیار واقعی عملکرد مدل است. اگر بعد از
-   جمع‌شدن چند صد نمونه، این عدد نزدیک ۵۰٪ باقی ماند، یعنی این ترکیب ویژگی/معماری برای
-   این نماد و تایم‌فریم اطلاعات پیش‌بینی‌کننده واقعی ندارد - نه اینکه پیاده‌سازی ایراد
-   دارد. قبل از تصمیم معاملاتی واقعی حتماً این عدد را روی چند هفته داده live رصد کن.
-4. **مقیاس‌پذیری**: `interval`, `symbol`, `category` در `config.py` قابل تغییرند
-   (مثلاً `"spot"` به‌جای `"linear"`، یا `"15"`/`"60"` برای تایم‌فریم‌های دیگر).
+## Notes
+
+- `config.py`: central configuration.
+- `data_feed.py`: data fetching with retry/backoff.
+- `features.py`: feature engineering.
+- `neural_net.py`: LSTM model with walk-forward validation.
+- `path_simulator.py`: block-bootstrap Monte Carlo simulation.
+- `engine.py`: signal generation and risk engine.
+- `app.py`: Dash user interface.
+
+## Disclaimer
+
+Educational purposes only. This is not financial advice.

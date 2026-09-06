@@ -1,45 +1,18 @@
-# BIO•TRADER 2500
+# BioTrader 2500
 
-یک داش حرفه‌ای برای «ارگانیسم» معاملاتی دمو با Python و Dash. این پروژه از
-داده‌های عمومی بازار خطی Bybit استفاده می‌کند و اگر اتصال عمومی در دسترس نباشد،
-به‌صورت خودکار به بازار مصنوعیِ قابل تکرار سوییچ می‌شود.
+> Python + Dash dashboard for crypto trading analysis on Bybit USDT perpetual futures.
 
-## ویژگی‌ها
+## How to Use
 
-- اسکن دوره‌ای یک جهان نقدشونده از نمادهای USDT و رتبه‌بندی پنج کاندید برتر.
-- هفت حس شفاف و قابل ممیزی: روند، حجم، تعادل چندبازه، نقدشوندگی، درد/ریسک،
-  نوسان و شهود جهش.
-- ژنوم دارای وزن، نرخ جهش و ضریب بیان؛ وضعیت آگاهی، تمرکز، انرژی، استرس و
-  ضربان قلب با خروجی اسکن هماهنگ می‌شود.
-- پنج معامله‌ی کاغذی با سرمایه‌ی پایه‌ی ۵۰۰ دلار، تقسیم مساوی مارجین (هرکدام
-  ۱۰۰ دلار)، اهرم شبیه‌سازی ۱۵×، کمیسیون taker و هزینه‌ی اسپرد.
-- حد سود پویا، حد ضرر مبتنی بر ATR، انتقال حد ضرر به نقطه‌ی سر‌به‌سر پس از یک R،
-  چرخش پنج‌تایی و حافظه‌ی معاملات بسته‌شده.
-- نمودار کندلی، EMA، حجم، رادار حواس، نمودار Equity، ژنوم و اندام‌های گرافیکی
-  با تم نئونی/زیستی.
+- Run `pip install -r requirements.txt`
+- Run `python app.py` and open `http://127.0.0.1:8050`
 
-> این برنامه فقط معاملات نمایشی را در حافظه‌ی محلی اجرا می‌کند و هیچ endpoint
-> خصوصی یا سفارش واقعی Bybit را فراخوانی نمی‌کند. برای استفاده‌ی مالی واقعی باید
-> اعتبارسنجی مستقل، تست تاریخی، مدیریت کلیدها و کنترل ریسک جداگانه اضافه شود.
+## Notes
 
-## اجرا
+- ATR-based stop-loss and take-profit levels.
+- EMA trend filters and equity-curve based risk management.
+- Uses Bybit public endpoints; API keys are optional.
 
-```powershell
-py -3.13 -m pip install -r requirements.txt
-py -3.13 app.py
-```
+## Disclaimer
 
-سپس در مرورگر به `http://127.0.0.1:8060` بروید.
-
-برای تست بدون هیچ درخواست شبکه:
-
-```powershell
-$env:BIO_TRADER_OFFLINE = "1"
-py -3.13 app.py
-```
-
-متغیرهای اختیاری:
-
-- `DASH_PORT`، `DASH_HOST`، `DASH_DEBUG`
-- `BYBIT_BASE_URL` برای تغییر دامنه‌ی REST عمومی
-- `BIO_TRADER_OFFLINE=1` برای اجبار حالت شبیه‌سازی
+Educational purposes only. This is not financial advice.
