@@ -1,0 +1,247 @@
+//@version=6
+indicator("Volume Power Zones {Morindok} v3 by BITMOON618", overlay=true, max_boxes_count=60, max_labels_count=10)
+
+// ================= ورودی‌ها =================
+lookbackBars    = input.int(6, "تعداد کندل (شامل کندل زنده)", minval=2, maxval=20, group="تنظیمات باکس")
+zoneCount       = input.int(7, "تعداد نواحی تقسیم", minval=2, maxval=15, group="تنظیمات باکس")
+edgePadFraction = input.float(0.35, "حاشیه اطراف کندل‌ها", minval=0.0, maxval=1.0, step=0.05, group="تنظیمات باکس")
+
+// دریافت تایم‌فریم پایین برای شبیه‌سازی تیک‌دیتا
+ltfRes          = input.timeframe("1", "تایم فریم پایین (دقت تیک)", group="تنظیمات دیتای پایه", tooltip="برای کاربران عادی '1' (یک دقیقه) و برای کاربران پرمیوم '15S' تا '1S' (ثانیه‌ای) بهترین دقت را می‌دهد.")
+
+showHeaderLabel = input.bool(true, "نمایش لیبل خلاصه بالای باکس", group="نمایش")
+minPowerForSolid= input.float(60.0, "حداقل قدرت برای رنگ پررنگ (%)", minval=50.0, maxval=100.0, group="نمایش")
+
+colorBuyStrong  = input.color(color.new(#00c853, 0),  "رنگ خرید قوی", group="رنگ‌ها")
+colorBuyWeak    = input.color(color.new(#00c853, 70), "رنگ خرید ضعیف", group="رنگ‌ها")
+colorSellStrong = input.color(color.new(#ff1744, 0),  "رنگ فروش قوی", group="رنگ‌ها")
+colorSellWeak   = input.color(color.new(#ff1744, 70), "رنگ فروش ضعیف", group="رنگ‌ها")
+colorBorder     = input.color(color.new(#787b86, 0), "رنگ حاشیه", group="رنگ‌ها")
+colorNeutralText= input.color(color.white, "رنگ متن", group="رنگ‌ها")
+
+// ================= دریافت آرایه‌های دیتای تایم‌فریم پایین (LTF) =================
+arrO = request.security_lower_tf(syminfo.tickerid, ltfRes, open)
+arrH = request.security_lower_tf(syminfo.tickerid, ltfRes, high)
+arrL = request.security_lower_tf(syminfo.tickerid, ltfRes, low)
+arrC = request.security_lower_tf(syminfo.tickerid, ltfRes, close)
+arrV = request.security_lower_tf(syminfo.tickerid, ltfRes, volume)
+
+// ================= توابع کمکی =================
+f_formatVol(v) =>
+    float absV = math.abs(v)
+    string sign = v < 0 ? "-" : ""
+    string _txt = ""
+    if absV >= 1000000
+        _txt := sign + str.tostring(absV / 1000000, "#.##") + "M"
+    else if absV >= 1000
+        _txt := sign + str.tostring(absV / 1000, "#.##") + "K"
+    else
+        _txt := sign + str.tostring(absV, "#.##")
+    _txt
+
+// ================= اشیاء گرافیکی پایدار =================
+var array<box> prevZoneBoxes = array.new<box>()
+var array<box> currZoneBoxes = array.new<box>()
+var box prevOuterBox = na
+var box currOuterBox = na
+var label prevHeaderLabel = na
+var label currHeaderLabel = na
+
+var table summaryTable = table.new(position.bottom_right, 4, 5, border_width=1, border_color=colorBorder, frame_color=colorBorder, frame_width=1)
+
+if barstate.isfirst
+    for i = 0 to zoneCount - 1
+        array.push(prevZoneBoxes, box.new(na, na, na, na, xloc=xloc.bar_time, border_color=color.new(colorBorder, 60), bgcolor=color.new(color.gray, 100)))
+        array.push(currZoneBoxes, box.new(na, na, na, na, xloc=xloc.bar_time, border_color=color.new(colorBorder, 60), bgcolor=color.new(color.gray, 100)))
+    
+    prevOuterBox := box.new(na, na, na, na, xloc=xloc.bar_time, border_color=colorBorder, border_width=2, bgcolor=color.new(color.gray, 100))
+    currOuterBox := box.new(na, na, na, na, xloc=xloc.bar_time, border_color=colorBorder, border_width=2, bgcolor=color.new(color.gray, 100))
+    
+    prevHeaderLabel := label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_down, color=color.new(color.black, 20), textcolor=colorNeutralText, size=size.small)
+    currHeaderLabel := label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_down, color=color.new(color.black, 20), textcolor=colorNeutralText, size=size.small)
+
+// ================= محاسبه سقف و کف =================
+float currBoxTop    = ta.highest(high, lookbackBars)
+float currBoxBottom = ta.lowest(low, lookbackBars)
+float prevBoxTop    = currBoxTop[lookbackBars]
+float prevBoxBottom = currBoxBottom[lookbackBars]
+
+// ================= محاسبات اصلی =================
+if barstate.islast and bar_index >= lookbackBars * 2 - 1
+    int tfMs = timeframe.in_seconds() * 1000
+    
+    int currLeftTime  = int(time[lookbackBars - 1] - tfMs * edgePadFraction)
+    int currRightTime = int(time + tfMs * (1 + edgePadFraction))
+    int prevLeftTime  = int(time[lookbackBars * 2 - 1] - tfMs * edgePadFraction)
+    int prevRightTime = int(time[lookbackBars] + tfMs * (1 + edgePadFraction))
+
+    float currTotalBuy = 0.0, currTotalSell = 0.0
+    float prevTotalBuy = 0.0, prevTotalSell = 0.0
+
+    for bIdx = 0 to 1
+        bool isCurrent = (bIdx == 1)
+        
+        int startJ = isCurrent ? 0 : lookbackBars
+        int endJ   = isCurrent ? lookbackBars - 1 : lookbackBars * 2 - 1
+        float top  = isCurrent ? currBoxTop : prevBoxTop
+        float bot  = isCurrent ? currBoxBottom : prevBoxBottom
+        int lTime  = isCurrent ? currLeftTime : prevLeftTime
+        int rTime  = isCurrent ? currRightTime : prevRightTime
+        
+        array<box> bxArr = isCurrent ? currZoneBoxes : prevZoneBoxes
+        box oBox   = isCurrent ? currOuterBox : prevOuterBox
+        label hLbl = isCurrent ? currHeaderLabel : prevHeaderLabel
+
+        float zHeight = (top - bot) / zoneCount
+        float totalB = 0.0
+        float totalS = 0.0
+
+        for i = 0 to zoneCount - 1
+            float zLow  = bot + i * zHeight
+            float zHigh = zLow + zHeight
+            float greenVol = 0.0
+            float redVol   = 0.0
+
+            for j = startJ to endJ
+                float bH = high[j]
+                float bL = low[j]
+                
+                // واکشی آرایه‌های دیتای تیک/ریز برای کندل مورد نظر
+                array<float> histO = arrO[j]
+                array<float> histH = arrH[j]
+                array<float> histL = arrL[j]
+                array<float> histC = arrC[j]
+                array<float> histV = arrV[j]
+
+                int ltfSize = na(histC) ? 0 : array.size(histC)
+
+                // اگر دیتای تایم‌پایین در دسترس باشد، از سیستم تیک‌دیتا استفاده می‌کند
+                if ltfSize > 0
+                    for k = 0 to ltfSize - 1
+                        float lO = array.get(histO, k)
+                        float lH = array.get(histH, k)
+                        float lL = array.get(histL, k)
+                        float lC = array.get(histC, k)
+                        float lV = array.get(histV, k)
+                        
+                        float lRange = lH - lL
+                        float overlap = math.min(lH, zHigh) - math.max(lL, zLow)
+
+                        if lRange <= 0
+                            if lC >= zLow and lC <= zHigh
+                                if lC >= lO
+                                    greenVol += lV
+                                else
+                                    redVol += lV
+                        else if overlap > 0
+                            float fraction = overlap / lRange
+                            float volAlloc = lV * fraction
+                            if lC >= lO
+                                greenVol += volAlloc
+                            else
+                                redVol += volAlloc
+                
+                // فال‌بک: اگر دیتای تایم‌فریم پایین در دسترس نبود، مثل روش قبل عمل کن
+                else
+                    float bO = open[j]
+                    float bC = close[j]
+                    float bV = volume[j]
+                    float bRange = bH - bL
+                    float overlap = math.min(bH, zHigh) - math.max(bL, zLow)
+
+                    if bRange <= 0
+                        if bC >= zLow and bC <= zHigh
+                            if bC >= bO
+                                greenVol += bV
+                            else
+                                redVol += bV
+                    else if overlap > 0
+                        float fraction = overlap / bRange
+                        float volAlloc = bV * fraction
+                        if bC >= bO
+                            greenVol += volAlloc
+                        else
+                            redVol += volAlloc
+
+            float zoneTotal = greenVol + redVol
+            float power = zoneTotal > 0 ? math.abs(greenVol - redVol) / zoneTotal * 100 : 0.0
+            bool buyDominant = greenVol >= redVol
+
+            totalB += greenVol
+            totalS += redVol
+
+            color zoneColor = buyDominant ? (power >= minPowerForSolid ? colorBuyStrong : colorBuyWeak) : (power >= minPowerForSolid ? colorSellStrong : colorSellWeak)
+            int transparencyVal = int(math.max(40, math.min(90, 90 - power * 0.5)))
+
+            string zoneText = (buyDominant ? "🟢 " : "🔴 ") + str.tostring(power, "#.#") + "%" + "\n" + "خرید:" + f_formatVol(greenVol) + "  فروش:" + f_formatVol(redVol)
+
+            box zBox = array.get(bxArr, i)
+            box.set_lefttop(zBox, lTime, zHigh)
+            box.set_rightbottom(zBox, rTime, zLow)
+            box.set_bgcolor(zBox, color.new(zoneColor, transparencyVal))
+            box.set_border_color(zBox, color.new(colorBorder, 40))
+            box.set_text(zBox, zoneText)
+            box.set_text_color(zBox, colorNeutralText)
+            box.set_text_size(zBox, size.small)
+            box.set_text_halign(zBox, text.align_center)
+            box.set_text_valign(zBox, text.align_center)
+
+        box.set_lefttop(oBox, lTime, top)
+        box.set_rightbottom(oBox, rTime, bot)
+
+        if showHeaderLabel
+            float grandTotal = totalB + totalS
+            float grandPower = grandTotal > 0 ? (totalB - totalS) / grandTotal * 100 : 0.0
+            string headerText = (isCurrent ? "[باکس حاضر] " : "[باکس قبلی] ") + "قدرت کلی: " + str.tostring(grandPower, "#.#") + "%" + "  |  خرید:" + f_formatVol(totalB) + "  فروش:" + f_formatVol(totalS)
+            int midTime = int(math.avg(lTime, rTime))
+            label.set_xy(hLbl, midTime, top + (top - bot) / zoneCount * 0.5)
+            label.set_text(hLbl, headerText)
+            label.set_textcolor(hLbl, grandPower >= 0 ? colorBuyStrong : colorSellStrong)
+        else
+            label.set_xy(hLbl, na, na)
+
+        if isCurrent
+            currTotalBuy := totalB
+            currTotalSell := totalS
+        else
+            prevTotalBuy := totalB
+            prevTotalSell := totalS
+
+    // ================= ترسیم جدول مقایسه =================
+    color bgHead = color.new(color.gray, 80)
+    color bgRow  = color.new(color.gray, 90)
+
+    table.cell(summaryTable, 0, 0, "شاخص", bgcolor=bgHead, text_color=colorNeutralText, text_halign=text.align_center)
+    table.cell(summaryTable, 1, 0, "باکس قبلی", bgcolor=bgHead, text_color=colorNeutralText, text_halign=text.align_center)
+    table.cell(summaryTable, 2, 0, "باکس حاضر", bgcolor=bgHead, text_color=colorNeutralText, text_halign=text.align_center)
+    table.cell(summaryTable, 3, 0, "رشد / افت", bgcolor=bgHead, text_color=colorNeutralText, text_halign=text.align_center)
+
+    table.cell(summaryTable, 0, 1, "حجم خرید 🟢", bgcolor=bgRow, text_color=colorNeutralText, text_halign=text.align_center)
+    table.cell(summaryTable, 1, 1, f_formatVol(prevTotalBuy), bgcolor=color.new(colorBuyWeak, 85), text_color=colorNeutralText, text_halign=text.align_center)
+    table.cell(summaryTable, 2, 1, f_formatVol(currTotalBuy), bgcolor=color.new(colorBuyWeak, 85), text_color=colorNeutralText, text_halign=text.align_center)
+    float buyDiff = currTotalBuy - prevTotalBuy
+    table.cell(summaryTable, 3, 1, (buyDiff > 0 ? "+" : "") + f_formatVol(buyDiff), bgcolor=color.new(buyDiff > 0 ? colorBuyStrong : colorSellStrong, 80), text_color=colorNeutralText, text_halign=text.align_center)
+
+    table.cell(summaryTable, 0, 2, "حجم فروش 🔴", bgcolor=bgRow, text_color=colorNeutralText, text_halign=text.align_center)
+    table.cell(summaryTable, 1, 2, f_formatVol(prevTotalSell), bgcolor=color.new(colorSellWeak, 85), text_color=colorNeutralText, text_halign=text.align_center)
+    table.cell(summaryTable, 2, 2, f_formatVol(currTotalSell), bgcolor=color.new(colorSellWeak, 85), text_color=colorNeutralText, text_halign=text.align_center)
+    float sellDiff = currTotalSell - prevTotalSell
+    table.cell(summaryTable, 3, 2, (sellDiff > 0 ? "+" : "") + f_formatVol(sellDiff), bgcolor=color.new(sellDiff > 0 ? colorSellStrong : colorBuyStrong, 80), text_color=colorNeutralText, text_halign=text.align_center)
+
+    float prevNet = prevTotalBuy - prevTotalSell
+    float currNet = currTotalBuy - currTotalSell
+    float netDiff = currNet - prevNet
+    table.cell(summaryTable, 0, 3, "خالص", bgcolor=bgRow, text_color=colorNeutralText, text_halign=text.align_center)
+    table.cell(summaryTable, 1, 3, f_formatVol(prevNet), bgcolor=color.new(prevNet > 0 ? colorBuyWeak : colorSellWeak, 85), text_color=colorNeutralText, text_halign=text.align_center)
+    table.cell(summaryTable, 2, 3, f_formatVol(currNet), bgcolor=color.new(currNet > 0 ? colorBuyWeak : colorSellWeak, 85), text_color=colorNeutralText, text_halign=text.align_center)
+    table.cell(summaryTable, 3, 3, (netDiff > 0 ? "+" : "") + f_formatVol(netDiff), bgcolor=color.new(netDiff > 0 ? colorBuyStrong : colorSellStrong, 80), text_color=colorNeutralText, text_halign=text.align_center)
+
+    float prevTotal = prevTotalBuy + prevTotalSell
+    float currTotal = currTotalBuy + currTotalSell
+    float prevPower = prevTotal > 0 ? (prevNet / prevTotal) * 100 : 0
+    float currPower = currTotal > 0 ? (currNet / currTotal) * 100 : 0
+    float powerDiff = currPower - prevPower
+    table.cell(summaryTable, 0, 4, "قدرت پول", bgcolor=bgRow, text_color=colorNeutralText, text_halign=text.align_center)
+    table.cell(summaryTable, 1, 4, (prevPower > 0 ? "+" : "") + str.tostring(prevPower, "#.##") + "%", bgcolor=color.new(prevPower > 0 ? colorBuyWeak : colorSellWeak, 85), text_color=colorNeutralText, text_halign=text.align_center)
+    table.cell(summaryTable, 2, 4, (currPower > 0 ? "+" : "") + str.tostring(currPower, "#.##") + "%", bgcolor=color.new(currPower > 0 ? colorBuyWeak : colorSellWeak, 85), text_color=colorNeutralText, text_halign=text.align_center)
+    table.cell(summaryTable, 3, 4, (powerDiff > 0 ? "+" : "") + str.tostring(powerDiff, "#.##") + "%", bgcolor=color.new(powerDiff > 0 ? colorBuyStrong : colorSellStrong, 80), text_color=colorNeutralText, text_halign=text.align_center)

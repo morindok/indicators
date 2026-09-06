@@ -1,0 +1,584 @@
+//@version=5
+indicator("Time Machine{Morindok}", overlay=true, max_bars_back=5000, max_labels_count=500)
+max_bars_back(close, 5000)
+max_bars_back(high, 5000)
+max_bars_back(low, 5000)
+max_bars_back(open, 5000)
+max_bars_back(volume, 5000)
+
+group_main = "Main Settings"
+calcMethod      = input.string("Dual Fib SMA", title="Calculation Basis", options=["SMA", "Dual Fib SMA", "HH/LL", "Bollinger Bands", "Flat Multiplier", "VWAP", "ATR Bands", "Fibo Wavy", "Spiral Spine"], group=group_main)
+splitSMA        = input.bool(false, title="Split SMA (Start=Inverted, End=Normal)", group=group_main, tooltip="If SMA is selected, calculates Start Range based on Inverted SMA and End Range based on Normal SMA. Responds to Invert options.")
+bbMult          = input.float(2.0, title="Bands Multiplier (for BB & VWAP)", group=group_main, step=0.1)
+autoSlopeHHLL   = input.bool(false, title="Auto Invert based on Slope", group=group_main, tooltip="If checked, automatically sets Start/End basis to Upper/Lower for negative slope and vice versa for positive slope.")
+invertHHLL      = input.bool(false, title="Invert Manually", group=group_main, tooltip="If Auto Slope is off, this manually inverts the calculations.")
+useCandleHeight = input.bool(false, title="Use Candle Height (High-Low)", group=group_main, tooltip="If checked, calculates distances based on the sum of candle heights (High - Low) instead of the distance to reference elements.")
+useCumSlope     = input.bool(false, title="Use Cumulative Slope", group=group_main, tooltip="If checked, includes the cumulative slope of the range in the distance calculations.")
+showSymmetricPriceLine = input.bool(false, title="Show Symmetric Price to Dashed Lines", group=group_main, tooltip="Plots the closing price mirrored symmetrically around all horizontal dashed lines (Base and Red Ends). Also enables Level 2 Symmetries.")
+// --- Òíäå ÌÏíÏ ÊÞÇÑä äÓÈÊ Èå ÎØæØ ÇäÏí˜ÇÊæÑ ---
+showSymmetricPriceIndi = input.bool(false, title="Show Symmetric Price to Indicator Lines", group=group_main, tooltip="Plots the closing price mirrored symmetrically around the dynamic indicator lines (Purple and Orange).")
+startPriceLevel = input.price(0, title="", confirm=true)
+endPriceLevel   = input.price(0, title="", confirm=true)
+
+group_fibs = "Fibonacci Levels"
+fib1 = input.float(1.618, title="Level 1", group=group_fibs, step=0.001)
+fib2 = input.float(0.618, title="Level 2", group=group_fibs, step=0.001)
+fib3 = input.float(0.382, title="Level 3", group=group_fibs, step=0.001)
+fib4 = input.float(-0.618, title="Level 4", group=group_fibs, step=0.001)
+
+group_spine = "Spiral Spine & Area Reversal"
+spine_radius_scale = input.float(0.15, "Radius Scale (Spine)", step=0.05, group=group_spine)
+spine_area_len     = input.int(14, "Area Window Length", minval=5, group=group_spine)
+spine_show_signals = input.bool(true, "Show Area Reversal Signals", group=group_spine)
+
+// --- UPDATED FLAT MULTIPLIER SETTINGS ---
+group_fm = "Flat Multiplier Settings"
+fm_multiplier       = input.float(1.1, "Base Multiplier", group=group_fm)
+fm_dynamic_enabled  = input.bool(false, "Enable Dynamic Multiplier", group=group_fm)
+fm_dyn_method       = input.string("Volatility (ATR)", "Dynamic Method", options=["Green/Red Ratio", "Volatility (ATR)", "Volume Momentum", "Vertical Boundaries Distance"], group=group_fm)
+fm_dynamic_target   = input.float(0.618, "Dynamic Target Ratio (for G/R & Vertical Method)", group=group_fm)
+fm_price_source     = input.source(close, "Price Source (Stepped)", group=group_fm)
+fm_symmetric_source = input.source(close, "Price Source (Symmetric)", group=group_fm)
+fm_symmetric_enabled= input.bool(false, "Enable Symmetric Line", group=group_fm)
+
+group_atr = "ATR Bands Settings"
+atrMult   = input.float(2.0, title="ATR Multiplier", step=0.1, group=group_atr, tooltip="ATR Length is automatically calculated based on the selected Time Range.")
+
+group_wave = "Fibo Wavy Settings"
+wave_on_ma       = input.bool(false, title="Superimpose Wave on SMA", tooltip="If checked, the Fibo wave is applied to the Main SMA instead of the static center price.", group=group_wave)
+sym_center_ratio = input.float(0.5, title="Wave Symmetry Center Ratio", step=0.1, tooltip="0.5 means center, 1.0 means end (t2), 0.0 means start (t1)", group=group_wave)
+reset_wave       = input.bool(true, title="Reset Wave After 5 Cycles (Disable for Infinite Growth)", group=group_wave)
+
+group_time = "Time Range"
+startTime       = input.time(0, title="Point 1", confirm=true)
+endTime         = input.time(0, title="Point 2", confirm=true)
+
+var int   fixed_N             = 0
+var float fixed_L_green_start = na
+var float fixed_L_red_start   = na
+var float fixed_L_green       = na
+var float fixed_L_red         = na
+var float startBase           = na
+var float endBase             = na
+var bool  calcComplete        = false
+var bool  finalInvertDecision = false
+
+var line startBaseHoriz = na
+var line startRedHoriz  = na
+var line endBaseHoriz   = na
+var line endRedHoriz    = na
+
+inRange = time >= startTime and time <= endTime
+var int startBarIdx = na
+var int endBarIdx   = na
+var int actualStartTimeMs = na
+var int actualEndTimeMs   = na
+
+if inRange
+    if na(startBarIdx)
+        startBarIdx := bar_index
+        actualStartTimeMs := time
+    endBarIdx := bar_index
+    actualEndTimeMs := time
+
+float atr14 = ta.atr(14)
+f_get_wave(t, t_start, t_end, p_start, p_end, len_bars, atr_val) =>
+    float _amp = math.abs(p_end - p_start) != 0 ? math.abs(p_end - p_start) / 2 : atr_val
+    float _mid_time = t_start + (t_end - t_start) * sym_center_ratio
+    float _bar_ms = timeframe.in_seconds(timeframe.period) * 1000
+    float _rel_x = (t - _mid_time) / _bar_ms
+    float _dist = math.abs(_rel_x)
+    int _max_cyc = 5
+    float _len = math.max(1, len_bars)
+    float _cyc_idx = reset_wave ? math.floor((_dist % (_len * _max_cyc)) / _len) : math.floor(_dist / _len)
+    float _max_fib = math.pow(1.618, _max_cyc - 1)
+    float _fibo_amp = (math.pow(1.618, _cyc_idx) / _max_fib) * _amp
+    float _w = math.sin(_rel_x * 2 * math.pi / _len) * _fibo_amp
+    _w
+
+var int est_N = 1
+if bar_index == 1 and time > time[1]
+    est_N := math.max(1, int((endTime - startTime) / (time - time[1])))
+int ma_length = calcComplete ? math.max(nz(fixed_N, 1), 1) : est_N
+
+float sp_smooth_price = ta.wma(close, 3)
+int sp_current_step = bar_index % math.max(1, ma_length)
+int sp_sum_len = math.min(sp_current_step + 1, 4999)
+float sp_raw_vol = math.sum(high - low, sp_sum_len)
+float sp_smooth_vol = ta.wma(sp_raw_vol, math.min(10, bar_index + 1))
+
+float sp_progress_pi = (float(sp_current_step) / math.max(1, ma_length)) * math.pi
+float sp_wave = math.sin(sp_progress_pi)
+
+float sp_rad_1 = math.toradians(137.5)
+float sp_rad_2 = math.toradians(222.5)
+
+float spine_upper = sp_smooth_price + (sp_smooth_vol * spine_radius_scale * sp_wave * math.sin(sp_rad_1))
+float spine_lower = sp_smooth_price + (sp_smooth_vol * spine_radius_scale * sp_wave * math.sin(sp_rad_2))
+
+var float stepped_price = na
+var float symmetric_price = na
+var float last_stepped_price = na
+var int segment_start_bar = na
+var float current_segment_length = na
+var int bars_in_range = 0
+var bool range_completed = false
+var int green_candles_passed = 0
+var int red_candles_passed = 0
+
+// --- Dynamic Factors Calculations ---
+float atr_short = ta.atr(7)
+float atr_long  = ta.atr(21)
+float vol_short = ta.sma(volume, 5)
+float vol_long  = ta.sma(volume, 20)
+
+if inRange
+    bars_in_range += 1
+
+if range_completed or inRange
+    if close > open
+        green_candles_passed += 1
+    else if close < open
+        red_candles_passed += 1
+// --- Function to get active multiplier based on market nature ---
+f_get_active_mult() =>
+    float _mult = fm_multiplier
+    if fm_dynamic_enabled
+        if fm_dyn_method == "Vertical Boundaries Distance"
+            float _progress = 0.0
+            int _len = math.max(1, ma_length)
+            if not na(startBarIdx) and not na(endBarIdx)
+                int _total_bars_in_range = endBarIdx - startBarIdx
+                int _cycle_pos = _total_bars_in_range % _len
+                _progress := _cycle_pos / _len
+                
+            float _time_factor = math.sin(_progress * math.pi)
+            _mult := fm_multiplier * (1.0 + (_time_factor * fm_dynamic_target))
+            
+        else if fm_dyn_method == "Volatility (ATR)"
+            float atr_ratio = atr_long > 0 ? (atr_short / atr_long) : 1.0
+            _mult := fm_multiplier * atr_ratio
+        else if fm_dyn_method == "Volume Momentum"
+            float vol_ratio = vol_long > 0 ? (vol_short / vol_long) : 1.0
+            _mult := fm_multiplier * vol_ratio
+        else // Green/Red Ratio
+            float dyn_ratio = red_candles_passed > 0 ? (green_candles_passed / red_candles_passed) : 1.0
+            _mult := dyn_ratio * fm_dynamic_target
+    _mult
+
+if time >= startTime and na(stepped_price)
+    stepped_price := fm_price_source
+    symmetric_price := fm_symmetric_source
+    segment_start_bar := bar_index
+
+just_exited_range = not inRange and inRange[1]
+if just_exited_range
+    range_completed := true
+    last_stepped_price := stepped_price
+    stepped_price := fm_price_source
+    if fm_symmetric_enabled and not na(last_stepped_price)
+        symmetric_price := last_stepped_price * 2 - fm_symmetric_source
+    else
+        symmetric_price := fm_symmetric_source
+    segment_start_bar := bar_index
+    
+    current_segment_length := bars_in_range * math.max(0.1, f_get_active_mult())
+
+if range_completed and not na(current_segment_length) and bar_index >= segment_start_bar + math.round(current_segment_length)
+    last_stepped_price := stepped_price
+    stepped_price := fm_price_source
+    if fm_symmetric_enabled and not na(last_stepped_price)
+        symmetric_price := last_stepped_price * 2 - fm_symmetric_source
+    else
+        symmetric_price := fm_symmetric_source
+    segment_start_bar := bar_index
+    
+    current_segment_length := current_segment_length * math.max(0.1, f_get_active_mult())
+
+if not calcComplete and not na(endBarIdx) and ((inRange[1] and not inRange) or (barstate.islast and inRange))
+    fixed_N := endBarIdx - startBarIdx + 1
+    
+    float sumGreenDist_start = 0.0
+    float sumRedDist_start   = 0.0
+    float sumGreenDist_end   = 0.0
+    float sumRedDist_end     = 0.0
+    int   greenCount         = 0
+    int   redCount           = 0
+
+    int loop_limit = math.min(fixed_N, 2400) 
+    
+    float cumSlope = 0.0
+    if useCumSlope
+        float sumX = 0.0, sumY = 0.0, sumXY = 0.0, sumX2 = 0.0
+        for i = 0 to loop_limit - 1
+            float y_val = close[bar_index - endBarIdx + i]
+            sumX += i
+            sumY += y_val
+            sumXY += i * y_val
+            sumX2 += i * i
+        cumSlope := (loop_limit * sumXY - sumX * sumY) / (loop_limit * sumX2 - sumX * sumX)
+
+    for i = 0 to loop_limit - 1
+        int idx = bar_index - endBarIdx + i
+        
+        float valRef_start = 0.0
+        float valRef_end   = 0.0
+        
+        if calcMethod == "Flat Multiplier"
+            valRef_start := stepped_price[idx]
+            valRef_end   := fm_symmetric_enabled ? symmetric_price[idx] : stepped_price[idx]
+            
+        else if calcMethod == "SMA"
+            float sumMA = 0.0
+            for j = 0 to loop_limit - 1
+                sumMA += close[idx + j]
+            float valMA = sumMA / loop_limit
+            
+            if splitSMA
+                float invertedMA = (startPriceLevel + endPriceLevel) - valMA
+                
+                bool shouldInvert = false
+                if autoSlopeHHLL
+                    float startRangeClose = close[bar_index - startBarIdx]
+                    float endRangeClose   = close[bar_index - endBarIdx]
+                    if (endRangeClose < startRangeClose)
+                        shouldInvert := true
+                else
+                    shouldInvert := invertHHLL
+                
+                finalInvertDecision := shouldInvert
+                
+                if shouldInvert
+                    valRef_start := valMA
+                    valRef_end   := invertedMA
+                else
+                    valRef_start := invertedMA
+                    valRef_end   := valMA
+            else
+                valRef_start := valMA
+                valRef_end   := valMA
+
+        else if calcMethod == "Dual Fib SMA"
+            int len_start = math.max(1, math.round(fixed_N * 0.618))
+            int len_end   = math.max(1, math.round(fixed_N * 1.618))
+            
+            float sumMA_start = 0.0
+            for j = 0 to len_start - 1
+                sumMA_start += close[idx + j]
+            float valMA_start = sumMA_start / len_start
+            
+            float sumMA_end = 0.0
+            for j = 0 to len_end - 1
+                sumMA_end += close[idx + j]
+            float valMA_end = sumMA_end / len_end
+            
+            bool shouldInvert = false
+            if autoSlopeHHLL
+                float startRangeClose = close[bar_index - startBarIdx]
+                float endRangeClose   = close[bar_index - endBarIdx]
+                if (endRangeClose < startRangeClose)
+                    shouldInvert := true
+            else
+                shouldInvert := invertHHLL
+            
+            finalInvertDecision := shouldInvert
+            
+            if shouldInvert
+                valRef_start := valMA_end
+                valRef_end   := valMA_start
+            else
+                valRef_start := valMA_start
+                valRef_end   := valMA_end
+            
+        else
+            float upperRef = na
+            float lowerRef = na
+            
+            if calcMethod == "VWAP"
+                float sumVol = 0.0
+                float sumSrcVol = 0.0
+                for j = 0 to loop_limit - 1
+                    float vol = nz(volume[idx + j], 1)
+                    float src_val = hlc3[idx + j]
+                    sumVol += vol
+                    sumSrcVol += src_val * vol
+                float valVWAP = sumVol > 0 ? (sumSrcVol / sumVol) : close[idx]
+                
+                float sumVwapDev = 0.0
+                for j = 0 to loop_limit - 1
+                    float vol = nz(volume[idx + j], 1)
+                    float src_val = hlc3[idx + j]
+                    sumVwapDev += vol * math.pow(src_val - valVWAP, 2)
+                float valVwapDev = sumVol > 0 ? math.sqrt(sumVwapDev / sumVol) : 0.0
+                
+                upperRef := valVWAP + bbMult * valVwapDev
+                lowerRef := valVWAP - bbMult * valVwapDev
+
+            else if calcMethod == "Bollinger Bands"
+                float sumMA = 0.0
+                for j = 0 to loop_limit - 1
+                    sumMA += close[idx + j]
+                float valMA = sumMA / loop_limit
+                
+                float sumDev = 0.0
+                for j = 0 to loop_limit - 1
+                    sumDev += math.pow(close[idx + j] - valMA, 2)
+                float valDev = math.sqrt(sumDev / math.max(1, loop_limit - 1))
+                
+                upperRef := valMA + bbMult * valDev
+                lowerRef := valMA - bbMult * valDev
+                
+            else if calcMethod == "ATR Bands"
+                float sumTR = 0.0
+                float sumClose = 0.0
+                for j = 0 to loop_limit - 1
+                    float prev_c = na(close[idx + j + 1]) ? open[idx + j] : close[idx + j + 1]
+                    float h = high[idx + j]
+                    float l = low[idx + j]
+                    float tr = math.max(h - l, math.max(math.abs(h - prev_c), math.abs(l - prev_c)))
+                    sumTR += tr
+                    sumClose += close[idx + j]
+                
+                float local_atr = sumTR / loop_limit
+                float local_sma = sumClose / loop_limit
+                
+                upperRef := local_sma + (atrMult * local_atr)
+                lowerRef := local_sma - (atrMult * local_atr)
+
+            else if calcMethod == "Fibo Wavy"
+                float _t = time[idx]
+                float _w = f_get_wave(_t, actualStartTimeMs, actualEndTimeMs, startPriceLevel, endPriceLevel, fixed_N, nz(atr14[idx], 1.0))
+                
+                float _base_level = (startPriceLevel + endPriceLevel) / 2
+                if wave_on_ma
+                    float sumMA = 0.0
+                    for j = 0 to loop_limit - 1
+                        sumMA += close[idx + j]
+                    _base_level := sumMA / loop_limit
+
+                upperRef := _base_level + _w
+                lowerRef := _base_level - _w
+                
+            else if calcMethod == "Spiral Spine"
+                upperRef := spine_upper[idx]
+                lowerRef := spine_lower[idx]
+
+            else // HH/LL
+                float maxH = high[idx]
+                float minL = low[idx]
+                for j = 0 to loop_limit - 1
+                    maxH := math.max(maxH, high[idx + j])
+                    minL := math.min(minL, low[idx + j])
+                upperRef := maxH
+                lowerRef := minL
+                
+            bool shouldInvert = false
+            if autoSlopeHHLL
+                float startRangeClose = close[bar_index - startBarIdx]
+                float endRangeClose   = close[bar_index - endBarIdx]
+                if (endRangeClose < startRangeClose)
+                    shouldInvert := true
+            else
+                shouldInvert := invertHHLL
+            
+            finalInvertDecision := shouldInvert
+
+            if shouldInvert
+                valRef_start := upperRef
+                valRef_end   := lowerRef
+            else
+                valRef_start := lowerRef
+                valRef_end   := upperRef
+        
+        float dist_start = useCandleHeight ? (high[idx] - low[idx]) : math.abs(close[idx] - valRef_start)
+        float dist_end   = useCandleHeight ? (high[idx] - low[idx]) : math.abs(close[idx] - valRef_end)
+        
+        if useCumSlope
+            dist_start := dist_start + (cumSlope * i)
+            dist_end   := dist_end + (cumSlope * i)
+        
+        if close[idx] > open[idx]
+            sumGreenDist_start += dist_start
+            sumGreenDist_end   += dist_end
+            greenCount         += 1
+        else if close[idx] < open[idx]
+            sumRedDist_start   += dist_start
+            sumRedDist_end     += dist_end
+            redCount           += 1
+
+    float finalGreenDist_start = greenCount > 0 ? (sumGreenDist_start / greenCount) : 0.0
+    float finalRedDist_start   = redCount > 0   ? (sumRedDist_start / redCount) : 0.0
+    float totalDist_start      = finalGreenDist_start + finalRedDist_start
+
+    float finalGreenDist_end   = greenCount > 0 ? (sumGreenDist_end / greenCount) : 0.0
+    float finalRedDist_end     = redCount > 0   ? (sumRedDist_end / redCount) : 0.0
+    float totalDist_end        = finalGreenDist_end + finalRedDist_end
+    
+    startBase := startPriceLevel - (totalDist_start / 2)
+    fixed_L_green_start := startBase + finalGreenDist_start
+    fixed_L_red_start   := fixed_L_green_start + finalRedDist_start
+
+    endBase := endPriceLevel - (totalDist_end / 2)
+    fixed_L_green  := endBase + finalGreenDist_end
+    fixed_L_red    := fixed_L_green + finalRedDist_end
+    
+    calcComplete := true
+
+    line.new(startBarIdx, startBase, startBarIdx, fixed_L_green_start, color=color.green, width=4)
+    line.new(startBarIdx, fixed_L_green_start, startBarIdx, fixed_L_red_start, color=color.red, width=4)
+    line.new(endBarIdx, endBase, endBarIdx, fixed_L_green, color=color.green, width=4)
+    line.new(endBarIdx, fixed_L_green, endBarIdx, fixed_L_red, color=color.red, width=4)
+    startBaseHoriz := line.new(startBarIdx, startBase, bar_index, startBase, color=color.blue, width=2, style=line.style_dashed)
+    endBaseHoriz   := line.new(endBarIdx, endBase, bar_index, endBase, color=color.blue, width=2, style=line.style_dashed)
+    startRedHoriz  := line.new(startBarIdx, fixed_L_red_start, bar_index, fixed_L_red_start, color=color.red, width=2, style=line.style_dashed)
+    endRedHoriz    := line.new(endBarIdx, fixed_L_red, bar_index, fixed_L_red, color=color.red, width=2, style=line.style_dashed)
+    
+    float startDiff = fixed_L_red_start - startBase
+    line.new(startBarIdx, startBase + (startDiff * fib1), startBarIdx + 1, startBase + (startDiff * fib1), color=color.fuchsia, width=1, style=line.style_solid, extend=extend.both)
+    label.new(startBarIdx, startBase + (startDiff * fib1), str.tostring(fib1), style=label.style_none, textcolor=color.fuchsia)
+    line.new(startBarIdx, startBase + (startDiff * fib2), startBarIdx + 1, startBase + (startDiff * fib2), color=color.fuchsia, width=1, style=line.style_solid, extend=extend.both)
+    label.new(startBarIdx, startBase + (startDiff * fib2), str.tostring(fib2), style=label.style_none, textcolor=color.fuchsia)
+    line.new(startBarIdx, startBase + (startDiff * fib3), startBarIdx + 1, startBase + (startDiff * fib3), color=color.fuchsia, width=1, style=line.style_solid, extend=extend.both)
+    label.new(startBarIdx, startBase + (startDiff * fib3), str.tostring(fib3), style=label.style_none, textcolor=color.fuchsia)
+    line.new(startBarIdx, startBase + (startDiff * fib4), startBarIdx + 1, startBase + (startDiff * fib4), color=color.fuchsia, width=1, style=line.style_solid, extend=extend.both)
+    label.new(startBarIdx, startBase + (startDiff * fib4), str.tostring(fib4), style=label.style_none, textcolor=color.fuchsia)
+    
+    float endDiff = fixed_L_red - endBase
+    line.new(endBarIdx, endBase + (endDiff * fib1), endBarIdx + 1, endBase + (endDiff * fib1), color=color.orange, width=1, style=line.style_solid, extend=extend.both)
+    label.new(endBarIdx, endBase + (endDiff * fib1), str.tostring(fib1), style=label.style_none, textcolor=color.orange)
+    line.new(endBarIdx, endBase + (endDiff * fib2), endBarIdx + 1, endBase + (endDiff * fib2), color=color.orange, width=1, style=line.style_solid, extend=extend.both)
+    label.new(endBarIdx, endBase + (endDiff * fib2), str.tostring(fib2), style=label.style_none, textcolor=color.orange)
+    line.new(endBarIdx, endBase + (endDiff * fib3), endBarIdx + 1, endBase + (endDiff * fib3), color=color.orange, width=1, style=line.style_solid, extend=extend.both)
+    label.new(endBarIdx, endBase + (endDiff * fib3), str.tostring(fib3), style=label.style_none, textcolor=color.orange)
+    line.new(endBarIdx, endBase + (endDiff * fib4), endBarIdx + 1, endBase + (endDiff * fib4), color=color.orange, width=1, style=line.style_solid, extend=extend.both)
+    label.new(endBarIdx, endBase + (endDiff * fib4), str.tostring(fib4), style=label.style_none, textcolor=color.orange)
+    
+    int timeDiffMs = actualEndTimeMs - actualStartTimeMs
+    if timeDiffMs > 0
+        float labelYPos = (startBase + endBase) / 2
+        
+        int fibTime1 = actualStartTimeMs + int(math.round(timeDiffMs * fib1))
+        line.new(fibTime1, labelYPos, fibTime1, labelYPos + 1, xloc=xloc.bar_time, extend=extend.both, color=color.teal, width=1, style=line.style_dashed)
+        label.new(fibTime1, labelYPos, "T: " + str.tostring(fib1), xloc=xloc.bar_time, style=label.style_none, textcolor=color.teal)
+        
+        int fibTime2 = actualStartTimeMs + int(math.round(timeDiffMs * fib2))
+        line.new(fibTime2, labelYPos, fibTime2, labelYPos + 1, xloc=xloc.bar_time, extend=extend.both, color=color.teal, width=1, style=line.style_dashed)
+        label.new(fibTime2, labelYPos, "T: " + str.tostring(fib2), xloc=xloc.bar_time, style=label.style_none, textcolor=color.teal)
+        
+        int fibTime3 = actualStartTimeMs + int(math.round(timeDiffMs * fib3))
+        line.new(fibTime3, labelYPos, fibTime3, labelYPos + 1, xloc=xloc.bar_time, extend=extend.both, color=color.teal, width=1, style=line.style_dashed)
+        label.new(fibTime3, labelYPos, "T: " + str.tostring(fib3), xloc=xloc.bar_time, style=label.style_none, textcolor=color.teal)
+        
+        int fibTime4 = actualStartTimeMs + int(math.round(timeDiffMs * fib4))
+        line.new(fibTime4, labelYPos, fibTime4, labelYPos + 1, xloc=xloc.bar_time, extend=extend.both, color=color.teal, width=1, style=line.style_dashed)
+        label.new(fibTime4, labelYPos, "T: " + str.tostring(fib4), xloc=xloc.bar_time, style=label.style_none, textcolor=color.teal)
+
+if calcComplete
+    line.set_x2(startBaseHoriz, bar_index)
+    line.set_x2(startRedHoriz, bar_index)
+    line.set_x2(endBaseHoriz, bar_index)
+    line.set_x2(endRedHoriz, bar_index)
+
+sma_val = ta.sma(close, ma_length)
+val_ll  = ta.lowest(low, ma_length)
+val_hh  = ta.highest(high, ma_length)
+
+val_bb_upper = sma_val + bbMult * ta.stdev(close, ma_length)
+val_bb_lower = sma_val - bbMult * ta.stdev(close, ma_length)
+
+float safeSumVol = math.max(1e-10, math.sum(nz(volume, 1), ma_length))
+vwap_val = math.sum(hlc3 * nz(volume, 1), ma_length) / safeSumVol
+vwap_sq_val = math.sum(math.pow(hlc3, 2) * nz(volume, 1), ma_length) / safeSumVol
+vwap_dev = math.sqrt(math.max(vwap_sq_val - math.pow(vwap_val, 2), 0))
+
+val_vwap_upper = vwap_val + (bbMult * vwap_dev)
+val_vwap_lower = vwap_val - (bbMult * vwap_dev)
+
+dyn_tr = ta.tr(true)
+dyn_atr = math.sum(dyn_tr, ma_length) / math.max(ma_length, 1)
+
+val_atr_upper = sma_val + (atrMult * dyn_atr)
+val_atr_lower = sma_val - (atrMult * dyn_atr)
+
+int ma_len_start = math.max(1, math.round(ma_length * 0.618))
+int ma_len_end   = math.max(1, math.round(ma_length * 1.618))
+sma_fib_start = ta.sma(close, ma_len_start)
+sma_fib_end   = ta.sma(close, ma_len_end)
+
+float dyn_wave = f_get_wave(time, nz(actualStartTimeMs, startTime), nz(actualEndTimeMs, endTime), startPriceLevel, endPriceLevel, ma_length, atr14)
+
+center_price = (startPriceLevel + endPriceLevel) / 2
+bool globalInvert = autoSlopeHHLL ? (endPriceLevel < startPriceLevel) : invertHHLL
+
+float purple_line = na
+float orange_line = na
+
+if calcMethod == "Flat Multiplier"
+    purple_line := (2 * center_price) - (fm_symmetric_enabled ? symmetric_price : stepped_price)
+    orange_line := stepped_price
+else if calcMethod == "Bollinger Bands"
+    purple_line := (2 * center_price) - (globalInvert ? val_bb_upper : val_bb_lower)
+    orange_line := globalInvert ? val_bb_lower : val_bb_upper
+else if calcMethod == "VWAP"
+    purple_line := (2 * center_price) - (globalInvert ? val_vwap_upper : val_vwap_lower)
+    orange_line := globalInvert ? val_vwap_lower : val_vwap_upper
+else if calcMethod == "ATR Bands"
+    purple_line := (2 * center_price) - (globalInvert ? val_atr_upper : val_atr_lower)
+    orange_line := globalInvert ? val_atr_lower : val_atr_upper
+else if calcMethod == "Fibo Wavy" 
+    float base_for_wave = wave_on_ma ? sma_val : center_price
+    float v_up = base_for_wave + dyn_wave
+    float v_dn = base_for_wave - dyn_wave
+    purple_line := (2 * center_price) - (globalInvert ? v_up : v_dn)
+    orange_line := globalInvert ? v_dn : v_up
+else if calcMethod == "Spiral Spine" 
+    purple_line := (2 * center_price) - (globalInvert ? spine_upper : spine_lower)
+    orange_line := globalInvert ? spine_lower : spine_upper
+else if calcMethod == "Dual Fib SMA"
+    float v_start = globalInvert ? sma_fib_end : sma_fib_start
+    float v_end   = globalInvert ? sma_fib_start : sma_fib_end
+    purple_line := (2 * center_price) - v_start
+    orange_line := v_end
+else if calcMethod == "SMA"
+    float inv_sma = (2 * center_price) - sma_val
+    if splitSMA
+        purple_line := globalInvert ? sma_val : inv_sma
+        orange_line := globalInvert ? inv_sma : sma_val
+    else
+        purple_line := inv_sma
+        orange_line := sma_val
+else // HH/LL
+    purple_line := (2 * center_price) - (globalInvert ? val_hh : val_ll)
+    orange_line := globalInvert ? val_ll : val_hh
+
+float symm_price_start_base = showSymmetricPriceLine and calcComplete ? (2 * startBase) - close : na
+float symm_price_start_red  = showSymmetricPriceLine and calcComplete ? (2 * fixed_L_red_start) - close : na
+float symm_price_end_base   = showSymmetricPriceLine and calcComplete ? (2 * endBase) - close : na
+float symm_price_end_red    = showSymmetricPriceLine and calcComplete ? (2 * fixed_L_red) - close : na
+
+float symm2_start_vs_end_base = showSymmetricPriceLine and calcComplete ? (2 * endBase) - symm_price_start_base : na
+float symm2_start_vs_end_red  = showSymmetricPriceLine and calcComplete ? (2 * fixed_L_red) - symm_price_start_red : na
+float symm2_end_vs_start_base = showSymmetricPriceLine and calcComplete ? (2 * startBase) - symm_price_end_base : na
+float symm2_end_vs_start_red  = showSymmetricPriceLine and calcComplete ? (2 * fixed_L_red_start) - symm_price_end_red : na
+
+plot(orange_line, color=color.orange, title="Dynamic Line 2 (Orange)", linewidth=2, style=calcMethod == "Flat Multiplier" ? plot.style_stepline : plot.style_line)
+plot(purple_line, color=color.purple, title="Dynamic Line 1 (Purple)", linewidth=2, style=calcMethod == "Flat Multiplier" ? plot.style_stepline : plot.style_line)
+plot(center_price, color=color.new(color.gray, 50), title="Center Line", style=plot.style_cross)
+
+plot(symm_price_start_base, color=color.new(color.blue, 40), title="Sym L1 (Start Base)", style=plot.style_linebr, linewidth=1)
+plot(symm_price_start_red,  color=color.new(color.red, 40),  title="Sym L1 (Start Red)",  style=plot.style_linebr, linewidth=1)
+plot(symm_price_end_base,   color=color.new(color.blue, 40), title="Sym L1 (End Base)",   style=plot.style_linebr, linewidth=1)
+plot(symm_price_end_red,    color=color.new(color.green, 40),title="Sym L1 (End Red)",    style=plot.style_linebr, linewidth=1)
+
+
+plot(symm2_start_vs_end_base, color=color.new(color.fuchsia, 50), title="Sym L2 (S-Base vs E-Base)", style=plot.style_circles, linewidth=1)
+plot(symm2_start_vs_end_red,  color=color.new(color.yellow, 50),  title="Sym L2 (S-Red vs E-Red)",   style=plot.style_circles, linewidth=1)
+plot(symm2_end_vs_start_base, color=color.new(color.fuchsia, 50), title="Sym L2 (E-Base vs S-Base)", style=plot.style_circles, linewidth=1)
+plot(symm2_end_vs_start_red,  color=color.new(color.yellow, 50),  title="Sym L2 (E-Red vs S-Red)",   style=plot.style_circles, linewidth=1)
+
+// --- ãÍÇÓÈå æ ÑÓã ÊÞÇÑä ÞíãÊ äÓÈÊ Èå ÎØæØ ÇäÏí˜ÇÊæÑ ---
+float symm_price_purple = showSymmetricPriceIndi and calcComplete ? (2 * purple_line) - close : na
+float symm_price_orange = showSymmetricPriceIndi and calcComplete ? (2 * orange_line) - close : na
+
+plot(symm_price_purple, color=color.new(color.purple, 40), title="Sym Price (Purple Line)", style=plot.style_linebr, linewidth=1)
+plot(symm_price_orange, color=color.new(color.orange, 40), title="Sym Price (Orange Line)", style=plot.style_linebr, linewidth=1)

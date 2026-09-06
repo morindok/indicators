@@ -1,0 +1,129 @@
+//@version=5
+indicator("Golden Line", overlay=true, max_lines_count=500)
+
+t1 = input.time(0, "Time 1", confirm=true)
+p1 = input.price(0.0, "Price 1", confirm=true)
+t2 = input.time(0, "Time 2", confirm=true)
+p2 = input.price(0.0, "Price 2", confirm=true)
+
+ratio_1 = input.float(0.0, "Center Ratio 1", step=0.1)
+ratio_2 = input.float(1.0, "Center Ratio 2", step=0.1)
+
+auto_tangent = input.bool(true, "Auto Tangent Lines (Overrides Angles)")
+tangent_arm  = input.string("2", "Tangent Arm (for Auto)", options=["1","2","3","4"])
+upper_angle  = input.float(45.0, "Upper Level Angle (degrees)", step=1.0)
+lower_angle  = input.float(-45.0, "Lower Level Angle (degrees)", step=1.0)
+
+intersect_color = input.color(color.new(color.fuchsia, 0), "Cross Intersection Lines Color")
+
+baseUpper = math.max(p1, p2)
+baseLower = math.min(p1, p2)
+dt_ms = timeframe.in_seconds(timeframe.period) * 1000
+
+dt_bars = math.max(1, math.round(math.abs(t2 - t1) / dt_ms))
+dp_range = math.abs(p2 - p1)
+baseline_slope = dp_range / dt_bars
+
+var float sum_red_dp = 0.0
+var int count_red = 0
+in_range = time >= math.min(t1, t2) and time <= math.max(t1, t2)
+if in_range
+    if close < open
+        sum_red_dp += (close - open)
+        count_red += 1
+
+// ---  Ê«»⁄ ”—«”—Ì ---
+
+get_intersection(A1, B1, A2, B2) =>
+    float x = na
+    float y = na
+    if B1 != B2
+        x := (A2 - A1) / (B1 - B2)
+        y := A1 + B1 * x
+    [x, y]
+
+get_slopes_and_syms(c_ratio, t1_val, p1_val, dt_val, dp_val, spiral_dp_val, b_coeff_val, auto_tan, arm_str, man_up_slope, man_dn_slope, bUpper, bLower) =>
+    center_t = math.round(t1_val + dt_val * c_ratio)
+    center_p = p1_val + dp_val * c_ratio
+    
+    float max_m_up = -999999.0
+    float min_m_dn = 999999.0
+    arm_n = str.tonumber(arm_str)
+    start_i = math.round((arm_n - 1) * math.round(2 * math.pi / 0.001))
+    end_i = math.round(arm_n * math.round(2 * math.pi / 0.001))
+
+    for i = start_i to end_i
+        th = i * 0.001
+        r_th = 0.02 * math.exp(b_coeff_val * th)
+        
+        dx2_th = r_th * (dt_val * math.cos(-th) - dt_val * math.sin(-th))
+        dy2_th = r_th * (spiral_dp_val * math.sin(-th) + spiral_dp_val * math.cos(-th))
+        t_pt_up = center_t + dx2_th
+        p_pt_up = center_p + dy2_th
+        b_diff_up = (t_pt_up - t1_val) / dt_ms
+        if b_diff_up > 0
+            m_up = (p_pt_up - bUpper) / b_diff_up
+            if m_up > max_m_up
+                max_m_up := m_up
+                
+        dx1_th = r_th * (dt_val * math.cos(th) - dt_val * math.sin(th))
+        dy1_th = r_th * (spiral_dp_val * math.sin(th) + spiral_dp_val * math.cos(th))
+        t_pt_dn = center_t - dx1_th
+        p_pt_dn = center_p - dy1_th
+        b_diff_dn = (t_pt_dn - t1_val) / dt_ms
+        if b_diff_dn > 0
+            m_dn = (p_pt_dn - bLower) / b_diff_dn
+            if m_dn < min_m_dn
+                min_m_dn := m_dn
+
+    f_up = auto_tan and max_m_up != -999999.0 ? max_m_up : man_up_slope
+    f_dn = auto_tan and min_m_dn != 999999.0 ? min_m_dn : man_dn_slope
+    
+    s_up = center_p - (bUpper - center_p)
+    s_dn = center_p - (bLower - center_p)
+    
+    [f_up, f_dn, s_up, s_dn, center_t, center_p]
+
+//  «»⁄ —”„ Œÿ «›ﬁÌ  ﬁ«ÿ⁄
+draw_horizontal_intersect(x_bar, y_val, t_base, step_ms, c) =>
+    if not na(x_bar) and not na(y_val)
+        t_int = math.round(t_base + x_bar * step_ms)
+        line.new(t_int, y_val, t_int + (step_ms * 10), y_val, xloc=xloc.bar_time, color=c, width=2, style=line.style_solid, extend=extend.right)
+
+// --- «Ã—«Ì „Õ«”»«  Ê —”„ œ— ò‰œ· ¬Œ— ---
+
+if barstate.islast
+    dt = t2 - t1
+    dp = p2 - p1
+    
+    total_bars_dt = dt == 0 ? 1 : dt / dt_ms
+    spiral_dp = count_red > 0 ? (sum_red_dp / count_red) * total_bars_dt : 0.0
+    if spiral_dp == 0.0
+        spiral_dp := dp
+
+    b_coeff = math.log(1.618) / (math.pi / 2)
+    
+    manual_upper_slope = math.tan(upper_angle * math.pi / 180) * baseline_slope
+    manual_lower_slope = math.tan(lower_angle * math.pi / 180) * baseline_slope
+
+    // „Õ«”»«  ‘Ì» Ê  ﬁ«ÿ⁄ »—«Ì ‰”»  1
+    [upSlope1, dnSlope1, symUp1, symDn1, ct1, cp1] = get_slopes_and_syms(ratio_1, t1, p1, dt, dp, spiral_dp, b_coeff, auto_tangent, tangent_arm, manual_upper_slope, manual_lower_slope, baseUpper, baseLower)
+    
+    // „Õ«”»«  ‘Ì» Ê  ﬁ«ÿ⁄ »—«Ì ‰”»  2
+    [upSlope2, dnSlope2, symUp2, symDn2, ct2, cp2] = get_slopes_and_syms(ratio_2, t1, p1, dt, dp, spiral_dp, b_coeff, auto_tangent, tangent_arm, manual_upper_slope, manual_lower_slope, baseUpper, baseLower)
+
+    // „Õ«”»Â  „«„ ?  ﬁ«ÿ⁄ „„ò‰ »Ì‰ ? Œÿ „ ﬁ«—‰ (»œÊ‰ —”„ ŒÿÊÿ „Ê—»)
+    [x1, y1_int] = get_intersection(symUp1, -upSlope1, symDn1, -dnSlope1)
+    [x2, y2_int] = get_intersection(symUp1, -upSlope1, symUp2, -upSlope2)
+    [x3, y3_int] = get_intersection(symUp1, -upSlope1, symDn2, -dnSlope2)
+    [x4, y4_int] = get_intersection(symDn1, -dnSlope1, symUp2, -upSlope2)
+    [x5, y5_int] = get_intersection(symDn1, -dnSlope1, symDn2, -dnSlope2)
+    [x6, y6_int] = get_intersection(symUp2, -upSlope2, symDn2, -dnSlope2)
+
+    // —”„ ŒÿÊÿ «›ﬁÌ  ﬁ«ÿ⁄ »Â ”„  —«” 
+    draw_horizontal_intersect(x1, y1_int, t1, dt_ms, intersect_color)
+    draw_horizontal_intersect(x2, y2_int, t1, dt_ms, intersect_color)
+    draw_horizontal_intersect(x3, y3_int, t1, dt_ms, intersect_color)
+    draw_horizontal_intersect(x4, y4_int, t1, dt_ms, intersect_color)
+    draw_horizontal_intersect(x5, y5_int, t1, dt_ms, intersect_color)
+    draw_horizontal_intersect(x6, y6_int, t1, dt_ms, intersect_color)

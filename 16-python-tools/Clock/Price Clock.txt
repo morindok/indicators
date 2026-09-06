@@ -1,0 +1,490 @@
+# -*- coding: utf-8 -*-
+"""
+🕐 Bybit Price Clock — ساعت قیمت زنده با دو عقربه (یکی ساعت‌گرد، یکی معکوس)
+--------------------------------------------------------------------------
+ایده:
+  • یک دایره‌ی ساعت (مثل صفحه‌ی ساعت آنالوگ ۱۲ ساعته) رسم می‌شود.
+  • کل تاریخچه‌ی کندل‌ها بر اساس "ساعتِ روز" (mod 12) روی محیط دایره
+    نگاشت می‌شوند: هر بخش از دایره معادل یک لحظه از شبانه‌روز است.
+  • برای هر نقطه از دایره، آخرین قیمتی که بازار در آن لحظه از روز
+    داشته نگه داشته می‌شود → یک "حلقه‌ی قیمت" پیوسته دور دایره.
+  • بخشی از دایره که جلوتر از "اکنون" و داخل افق پیش‌بینی است با قیمت
+    پیش‌بینی‌شده (برازش خطی ساده روی کندل‌های اخیر) پر می‌شود.
+  • قیمت لایو دقیقاً روی محیط دایره در زاویه‌ی "لحظه‌ی حال" با یک ستاره
+    طلایی مشخص شده.
+  • دو عقربه از مرکز دایره:
+      - عقربه‌ی سفید: می‌چرخد در جهت عقربه‌های ساعت (زمان واقعی UTC)
+      - عقربه‌ی قرمز: آینه‌ی آن است و در جهت *معکوس* (پادساعتگرد) می‌چرخد
+  • با نگه‌داشتن ماوس روی هر نقطه از محیط دایره، ساعتِ آن نقطه، قیمت و
+    نوع داده (تاریخی / پیش‌بینی / درون‌یابی) نمایش داده می‌شود.
+
+⚠️ توجه: پیش‌بینی قیمت با یک برازش خطی ساده روی چند کندل اخیر انجام
+می‌شود و هیچ اعتبار آماری اثبات‌شده‌ای ندارد؛ صرفاً جنبه‌ی بصری/کاوشی دارد.
+"""
+
+import math
+from datetime import datetime, timezone, timedelta
+
+import numpy as np
+import pandas as pd
+import requests
+import plotly.graph_objects as go
+
+import dash
+from dash import dcc, html, Input, Output, State
+import dash_bootstrap_components as dbc
+
+# ==============================================================================
+# 0) پالت رنگی و تنظیمات پیش‌فرض
+# ==============================================================================
+BG, CARD, LINE, TXT, MUT = "#0b1220", "#121c30", "#23314d", "#e8ecf4", "#8fa3c0"
+GOLD, UP, DN = "#f0b90b", "#16a085", "#e74c3c"
+HAND_CW_CLR = "#ecf0f1"      # عقربه‌ی ساعت‌گرد (زمان واقعی)
+HAND_CCW_CLR = "#e74c3c"     # عقربه‌ی معکوس (آینه)
+
+DEFAULT_SYMBOL   = "BTCUSDT"
+DEFAULT_CATEGORY = "linear"
+DEFAULT_INTERVAL = "15"
+DEFAULT_FORECAST_HOURS = 6
+N_BINS = 288                 # وضوح حلقه‌ی قیمت (هر بین ≈ 2.5 دقیقه از یک دور ۱۲ ساعته)
+FIT_LOOKBACK = 60            # تعداد کندل اخیر برای برازش خطی پیش‌بینی
+
+# ==============================================================================
+# 1) REST پایدار بایبیت (همان روش چندمنبعی با هدرهای شبه‌مرورگر)
+# ==============================================================================
+REST_CANDIDATES = [
+    "https://api.bybit.com",
+    "https://api.bytick.com",
+    "https://api.bybit.kz",
+]
+
+SESSION = requests.Session()
+SESSION.headers.update({
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/120.0 Safari/537.36"),
+    "Accept": "application/json",
+    "Referer": "https://www.bybit.com/",
+})
+
+_ACTIVE_REST_BASE = {"url": None}
+
+
+def bybit_get(path, params, timeout=10):
+    cands = ([_ACTIVE_REST_BASE["url"]] if _ACTIVE_REST_BASE["url"] else []) + \
+            [b for b in REST_CANDIDATES if b != _ACTIVE_REST_BASE["url"]]
+    for base in cands:
+        try:
+            r = SESSION.get(f"{base}{path}", params=params, timeout=timeout)
+            if r.status_code in (403, 451):
+                continue
+            r.raise_for_status()
+            d = r.json()
+            if d.get("retCode") == 0:
+                _ACTIVE_REST_BASE["url"] = base
+                return d
+        except Exception:
+            continue
+    return None
+
+
+def get_server_time():
+    """دریافت زمان دقیق UTC از سرور بایبیت (fallback به زمان سیستم)."""
+    d = bybit_get("/v5/market/time", {})
+    try:
+        res = (d or {}).get("result") or {}
+        nano = res.get("timeNano")
+        if nano:
+            return datetime.fromtimestamp(int(nano) / 1e9, tz=timezone.utc)
+        sec = res.get("timeSecond")
+        if sec:
+            v = int(sec)
+            s = str(v)
+            if len(s) >= 19:
+                sec_f = v / 1e9
+            elif len(s) >= 16:
+                sec_f = v / 1e6
+            elif len(s) >= 13:
+                sec_f = v / 1e3
+            else:
+                sec_f = float(v)
+            return datetime.fromtimestamp(sec_f, tz=timezone.utc)
+    except Exception:
+        pass
+    return datetime.now(timezone.utc)
+
+
+def get_klines(symbol, interval, category="linear", limit=500):
+    d = bybit_get("/v5/market/kline", {
+        "category": category,
+        "symbol": symbol,
+        "interval": interval,
+        "limit": limit,
+    })
+    if not d or "list" not in (d.get("result") or {}):
+        return pd.DataFrame()
+
+    lst = d["result"]["list"]
+    if not lst:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(
+        lst,
+        columns=["ts", "open", "high", "low", "close", "volume", "turnover"],
+    )
+    df["ts"] = pd.to_datetime(df["ts"].astype(int), unit="ms")
+    for c in ["open", "high", "low", "close", "volume"]:
+        df[c] = df[c].astype(float)
+    return df.sort_values("ts").reset_index(drop=True)
+
+
+def get_interval_minutes(interval):
+    s = str(interval).strip().lower()
+    if s == "d":
+        return 1440
+    try:
+        return int(s)
+    except Exception:
+        return 15
+
+
+# ==============================================================================
+# 2) نگاشت زمان → زاویه‌ی صفحه‌ی ساعت (۱۲ ساعته)
+# ==============================================================================
+def hour_frac_12(dt_utc):
+    """کسر ساعت در بازه‌ی [0,12) — مثل عقربه‌ی ساعت‌شمار یک ساعت آنالوگ."""
+    return (dt_utc.hour % 12) + dt_utc.minute / 60.0 + dt_utc.second / 3600.0
+
+
+def hour_frac_to_theta_cw(hf):
+    """زاویه (درجه، ریاضی استاندارد) برای حرکت *ساعت‌گرد* — مثل عقربه‌ی واقعی ساعت."""
+    return (90.0 - 30.0 * hf) % 360.0
+
+
+def hour_frac_to_theta_ccw(hf):
+    """زاویه برای عقربه‌ی *معکوس/آینه* — با همان سرعت ولی در جهت پادساعتگرد."""
+    return (90.0 + 30.0 * hf) % 360.0
+
+
+def hour_frac_to_clockstr(hf):
+    total_min = hf * 60.0
+    hh = int(total_min // 60)
+    mm = int(round(total_min % 60))
+    if mm == 60:
+        mm = 0
+        hh += 1
+    hh = hh % 12
+    if hh == 0:
+        hh = 12
+    return f"{hh:02d}:{mm:02d}"
+
+
+# ==============================================================================
+# 3) ساخت «حلقه‌ی قیمت» دور دایره‌ی ساعت (تاریخی + پیش‌بینی + درون‌یابی)
+# ==============================================================================
+def build_price_ring(df, now_utc, forecast_hours, interval_min,
+                      n_bins=N_BINS, fit_lookback=FIT_LOOKBACK):
+    bin_price_hist = np.full(n_bins, np.nan)
+    bin_ts_hist = [None] * n_bins
+
+    # --- تاریخی: برای هر بین، آخرین قیمتی که بازار در آن لحظه از روز داشته ---
+    for _, row in df.iterrows():
+        ts = pd.Timestamp(row["ts"]).to_pydatetime().replace(tzinfo=timezone.utc)
+        hf = hour_frac_12(ts)
+        idx = int(hf / 12.0 * n_bins) % n_bins
+        if bin_ts_hist[idx] is None or ts > bin_ts_hist[idx]:
+            bin_ts_hist[idx] = ts
+            bin_price_hist[idx] = float(row["close"])
+
+    # --- پیش‌بینی: برازش خطی ساده روی چند کندل اخیر ---
+    closes = df["close"].values[-fit_lookback:]
+    n = len(closes)
+    bin_price_fut = np.full(n_bins, np.nan)
+    fut_bins = set()
+
+    if n >= 5:
+        x = np.arange(n)
+        try:
+            coeff = np.polyfit(x, closes, 1)
+        except Exception:
+            coeff = None
+        if coeff is not None:
+            last_ts = pd.Timestamp(df.iloc[-1]["ts"]).to_pydatetime().replace(tzinfo=timezone.utc)
+            steps = max(int((forecast_hours * 60.0) / max(interval_min, 1)), 1)
+            for s in range(1, steps + 1):
+                pred_price = float(np.polyval(coeff, n - 1 + s))
+                t_future = last_ts + timedelta(minutes=interval_min * s)
+                hf = hour_frac_12(t_future)
+                idx = int(hf / 12.0 * n_bins) % n_bins
+                bin_price_fut[idx] = pred_price
+                fut_bins.add(idx)
+
+    # --- ادغام: پیش‌بینی، بین‌های بین «اکنون» و «افق آینده» را بازنویسی می‌کند ---
+    final_price = bin_price_hist.copy()
+    status = np.array(["past"] * n_bins, dtype=object)
+    for idx in fut_bins:
+        final_price[idx] = bin_price_fut[idx]
+        status[idx] = "future"
+
+    # --- پر کردن شکاف‌ها با درون‌یابی دایره‌ای (نزدیک‌ترین همسایه‌ها) ---
+    nanmask = np.isnan(final_price)
+    valid_count = (~nanmask).sum()
+    if valid_count >= 2:
+        idxs = np.arange(n_bins)
+        ext_price = np.concatenate([final_price, final_price, final_price])
+        ext_idx = np.concatenate([idxs - n_bins, idxs, idxs + n_bins])
+        ext_valid = ~np.isnan(ext_price)
+        filled = np.interp(idxs + n_bins, ext_idx[ext_valid], ext_price[ext_valid])
+        final_price[nanmask] = filled[nanmask]
+        status[nanmask & (status == "past")] = "interp"
+    elif valid_count == 1:
+        only_val = final_price[~nanmask][0]
+        final_price[nanmask] = only_val
+        status[nanmask] = "interp"
+    else:
+        # هیچ داده‌ای نیست — از آخرین قیمت لایو به‌عنوان fallback استفاده می‌شود
+        fallback = float(df.iloc[-1]["close"]) if len(df) else 0.0
+        final_price[:] = fallback
+        status[:] = "interp"
+
+    hour_fracs = np.arange(n_bins) / n_bins * 12.0
+    thetas = np.array([hour_frac_to_theta_cw(hf) for hf in hour_fracs])
+    return thetas, hour_fracs, final_price, status
+
+
+# ==============================================================================
+# 4) ساخت شکل (Figure) ساعت قیمت
+# ==============================================================================
+STATUS_FA = {
+    "past": "داده تاریخی",
+    "future": "پیش‌بینی آینده",
+    "interp": "درون‌یابی",
+}
+STATUS_SYMBOL = {
+    "past": "circle",
+    "future": "diamond",
+    "interp": "circle-open",
+}
+
+
+def empty_fig(msg):
+    fig = go.Figure()
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor=BG, plot_bgcolor=CARD,
+        xaxis=dict(visible=False), yaxis=dict(visible=False),
+    )
+    fig.add_annotation(x=0.5, y=0.5, xref="paper", yref="paper", text=msg,
+                        showarrow=False, font=dict(size=16, color=DN))
+    return fig
+
+
+def build_clock_figure(df, now_utc, symbol, interval, forecast_hours):
+    if df.empty or len(df) < 8:
+        return empty_fig("داده‌ی کافی از بایبیت دریافت نشد.")
+
+    interval_min = get_interval_minutes(interval)
+    thetas, hour_fracs, prices, status = build_price_ring(
+        df, now_utc, forecast_hours, interval_min
+    )
+
+    R = 1.0
+    live_price = float(df.iloc[-1]["close"])
+    hf_now = hour_frac_12(now_utc)
+    theta_cw = hour_frac_to_theta_cw(hf_now)     # عقربه‌ی ساعت‌گرد (واقعی)
+    theta_ccw = hour_frac_to_theta_ccw(hf_now)   # عقربه‌ی معکوس (آینه)
+
+    fig = go.Figure()
+
+    # --- محیط دایره‌ی ساعت ---
+    ang_full = np.linspace(0, 360, 361)
+    fig.add_trace(go.Scatter(
+        x=R * np.cos(np.radians(ang_full)), y=R * np.sin(np.radians(ang_full)),
+        mode="lines", line=dict(color=LINE, width=1.5),
+        showlegend=False, hoverinfo="skip",
+    ))
+
+    # --- خطوط شعاعی و اعداد ۱ تا ۱۲ ---
+    for h in range(1, 13):
+        theta = (90 - 30 * h) % 360
+        c, s = np.cos(np.radians(theta)), np.sin(np.radians(theta))
+        fig.add_trace(go.Scatter(
+            x=[0.92 * R * c, R * c], y=[0.92 * R * s, R * s],
+            mode="lines", line=dict(color=GOLD, width=1.5),
+            hoverinfo="skip", showlegend=False,
+        ))
+        fig.add_annotation(x=1.1 * R * c, y=1.1 * R * s, text=f"<b>{h}</b>",
+                            showarrow=False, font=dict(size=13, color=GOLD))
+
+    # --- حلقه‌ی قیمت (رنگ = قیمت، شکل نشانگر = وضعیت) ---
+    xs = R * np.cos(np.radians(thetas))
+    ys = R * np.sin(np.radians(thetas))
+    clock_labels = [hour_frac_to_clockstr(hf) for hf in hour_fracs]
+    status_labels = [STATUS_FA[s] for s in status]
+    symbols = [STATUS_SYMBOL[s] for s in status]
+
+    customdata = np.column_stack([clock_labels, [f"{p:.6g}" for p in prices], status_labels])
+
+    fig.add_trace(go.Scatter(
+        x=xs, y=ys, mode="markers",
+        marker=dict(
+            size=8, color=prices, colorscale="Turbo", symbol=symbols,
+            showscale=True,
+            colorbar=dict(title="قیمت", thickness=12, len=0.55, y=0.78,
+                          tickfont=dict(color=TXT, size=10)),
+            line=dict(width=0.3, color="#000"),
+        ),
+        customdata=customdata,
+        hovertemplate=(
+            "⏱ ساعت: %{customdata[0]}<br>"
+            "💰 قیمت: %{customdata[1]}<br>"
+            "📌 %{customdata[2]}<extra></extra>"
+        ),
+        name="حلقه قیمت دور ساعت",
+    ))
+
+    # --- نازک‌کننده‌ی بصری: خط اتصال نازک پشت نشانگرها ---
+    order = np.argsort(-thetas)  # مرتب‌سازی بر اساس جهت ساعت‌گرد برای خط پیوسته
+    fig.add_trace(go.Scatter(
+        x=np.append(xs[order], xs[order][0]), y=np.append(ys[order], ys[order][0]),
+        mode="lines", line=dict(color=MUT, width=1), opacity=0.35,
+        hoverinfo="skip", showlegend=False,
+    ))
+
+    # --- قیمت لایو، دقیقاً روی محیط دایره در لحظه‌ی حال ---
+    lc, ls = np.cos(np.radians(theta_cw)), np.sin(np.radians(theta_cw))
+    fig.add_trace(go.Scatter(
+        x=[R * lc], y=[R * ls], mode="markers+text",
+        marker=dict(size=18, symbol="star", color=GOLD, line=dict(width=2, color="black")),
+        text=[f"LIVE {live_price:.4g}"], textposition="top center",
+        textfont=dict(color=GOLD, size=12, family="Arial Black"),
+        name=f"قیمت لایو = {live_price:.4g}",
+    ))
+
+    # --- عقربه‌ی ساعت‌گرد (زمان واقعی UTC) ---
+    fig.add_trace(go.Scatter(
+        x=[0, 0.88 * R * lc], y=[0, 0.88 * R * ls],
+        mode="lines", line=dict(color=HAND_CW_CLR, width=6),
+        name="عقربه ساعت‌گرد (زمان واقعی)",
+    ))
+
+    # --- عقربه‌ی معکوس (آینه، پادساعتگرد) ---
+    mc, ms = np.cos(np.radians(theta_ccw)), np.sin(np.radians(theta_ccw))
+    fig.add_trace(go.Scatter(
+        x=[0, 0.72 * R * mc], y=[0, 0.72 * R * ms],
+        mode="lines", line=dict(color=HAND_CCW_CLR, width=5, dash="dot"),
+        name="عقربه معکوس (آینه)",
+    ))
+
+    # --- نقطه‌ی مرکز ---
+    fig.add_trace(go.Scatter(
+        x=[0], y=[0], mode="markers",
+        marker=dict(size=10, color=TXT, line=dict(width=1, color=GOLD)),
+        showlegend=False, hoverinfo="skip",
+    ))
+
+    lim = 1.35 * R
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor=BG, plot_bgcolor=CARD,
+        legend=dict(bgcolor="rgba(11,18,32,0.8)", font=dict(size=10),
+                    orientation="h", y=-0.06, x=0.5, xanchor="center"),
+        margin=dict(l=10, r=10, t=60, b=10),
+        title=dict(
+            text=(f"🕐 ساعت قیمت زنده — {symbol} | {interval}m | "
+                  f"{now_utc.strftime('%H:%M:%S')} UTC"),
+            x=0.5, font=dict(color=GOLD, size=16),
+        ),
+    )
+    fig.update_xaxes(range=[-lim, lim], visible=False)
+    fig.update_yaxes(range=[-lim, lim], visible=False, scaleanchor="x", scaleratio=1)
+    return fig
+
+
+# ==============================================================================
+# 5) اپ Dash
+# ==============================================================================
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.CYBORG])
+app.title = "Bybit Price Clock"
+server = app.server
+
+CATEGORY_OPTS = [{"label": v, "value": v} for v in ["linear", "spot", "inverse"]]
+INTERVAL_OPTS = [{"label": lbl, "value": val} for lbl, val in [
+    ("1m", "1"), ("3m", "3"), ("5m", "5"), ("15m", "15"),
+    ("30m", "30"), ("1h", "60"), ("4h", "240"),
+]]
+
+app.layout = html.Div([
+    dbc.Card(dbc.CardBody(dbc.Row([
+        dbc.Col([
+            html.Label("نماد", style={"fontSize": 11, "color": MUT}),
+            dcc.Input(id="symbol", value=DEFAULT_SYMBOL, type="text",
+                      style={"width": "100%", "padding": 6, "borderRadius": 6}),
+        ], md=3),
+        dbc.Col([
+            html.Label("بازار", style={"fontSize": 11, "color": MUT}),
+            dcc.Dropdown(id="category", value=DEFAULT_CATEGORY, clearable=False, options=CATEGORY_OPTS),
+        ], md=2),
+        dbc.Col([
+            html.Label("تایم‌فریم", style={"fontSize": 11, "color": MUT}),
+            dcc.Dropdown(id="interval", value=DEFAULT_INTERVAL, clearable=False, options=INTERVAL_OPTS),
+        ], md=2),
+        dbc.Col([
+            html.Label("افق پیش‌بینی (ساعت)", style={"fontSize": 11, "color": MUT}),
+            dcc.Input(id="forecast-hours", type="number", value=DEFAULT_FORECAST_HOURS,
+                      min=1, max=12, step=1,
+                      style={"width": "100%", "padding": 6, "borderRadius": 6}),
+        ], md=2),
+        dbc.Col(
+            dbc.Button("🔄 بروزرسانی", id="refresh-btn", color="warning", className="mt-3",
+                       style={"fontWeight": "bold", "color": BG, "width": "100%"}),
+            md=2,
+        ),
+        dbc.Col(html.Div(id="conn-status",
+                         style={"color": MUT, "fontSize": 11, "marginTop": 22, "textAlign": "center"}), md=1),
+    ])), style={"maxWidth": 1100, "margin": "10px auto"}),
+
+    dbc.Card(dbc.CardBody([
+        dcc.Graph(id="clock-graph", style={"height": "82vh"}, config={"displaylogo": False}),
+        html.Div(
+            "💡 دور محیط دایره حرکت دهید تا ساعتِ آن نقطه و قیمت متناظرش را ببینید. "
+            "بخش‌های جلوتر از عقربه‌ی ساعت‌گرد که داخل افق پیش‌بینی هستند با نشانگر لوزی‌شکل "
+            "(پیش‌بینی) نمایش داده می‌شوند؛ ستاره‌ی طلایی = قیمت لایو در لحظه‌ی حال.",
+            style={"fontSize": 10.5, "color": MUT, "marginTop": 8, "direction": "rtl", "lineHeight": "1.6"},
+        ),
+    ]), style={"maxWidth": 1100, "margin": "0 auto", "backgroundColor": CARD, "border": f"1px solid {LINE}"}),
+
+    dcc.Interval(id="tick", interval=20_000, n_intervals=0),
+], style={"background": BG, "minHeight": "100vh", "padding": "10px"})
+
+
+@app.callback(
+    Output("clock-graph", "figure"),
+    Output("conn-status", "children"),
+    Input("tick", "n_intervals"),
+    Input("refresh-btn", "n_clicks"),
+    State("symbol", "value"),
+    State("category", "value"),
+    State("interval", "value"),
+    State("forecast-hours", "value"),
+)
+def update(_n, _click, symbol, category, interval, forecast_hours):
+    symbol = (symbol or DEFAULT_SYMBOL).upper().strip()
+    category = category or DEFAULT_CATEGORY
+    interval = interval or DEFAULT_INTERVAL
+    try:
+        forecast_hours = float(forecast_hours or DEFAULT_FORECAST_HOURS)
+    except Exception:
+        forecast_hours = DEFAULT_FORECAST_HOURS
+
+    now_utc = get_server_time()
+    df = get_klines(symbol, interval, category, limit=500)
+
+    if df.empty:
+        return empty_fig("خطا در دریافت کندل از بایبیت."), "🔴 قطع از بایبیت"
+
+    fig = build_clock_figure(df, now_utc, symbol, interval, forecast_hours)
+    status = f"🟢 متصل | {now_utc.strftime('%H:%M:%S')} UTC"
+    return fig, status
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=8050, use_reloader=False)

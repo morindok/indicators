@@ -1,0 +1,102 @@
+//@version=5
+indicator("Parallel Lines{Morindok} by BITMOON618", overlay=true, max_lines_count=100)
+
+// دریافت تنظیمات از کاربر
+i_time = input.time(timestamp("2023-01-01 00:00"), "انتخاب زمان (کلیک روی چارت)", confirm=true)
+i_step_mult = input.float(1.0, "ضریب گسترش شبکه طلایی")
+
+// متغیرهای ثابت و پایه‌ای
+var float anchor_price = na
+var float step_size = na
+var float PHI = 1.6180339887
+
+// آرایه‌ها برای نگهداری مقادیر و آمار ۱۰۰ سطح
+var float[] levels = array.new_float(100, na)
+var int[] touch_count = array.new_int(100, 0)
+var int[] bull_react = array.new_int(100, 0)
+var int[] bear_react = array.new_int(100, 0)
+
+// پیدا کردن کندلِ زمان انتخاب شده و رسم ۱۰۰ خط
+if time >= i_time and na(anchor_price)
+    anchor_price := close
+    
+    // محاسبه فاصله خطوط بر اساس ساختار هندسی نرخ طلایی (0.1618 درصد از قیمت لنگر)
+    step_size := (anchor_price * (PHI / 1000)) * i_step_mult
+    
+    // تولید 100 سطح (50 تا بالا، 50 تا پایین)
+    for i = 0 to 99
+        lvl = anchor_price + (i - 50) * step_size
+        array.set(levels, i, lvl)
+        // رسم خط افقی ممتد با رنگ طلاییِ تیره و محو، مناسب تم دارک
+        line.new(bar_index, lvl, bar_index + 1, lvl, color=color.new(#d4af37, 75), extend=extend.both)
+
+// بررسی برخوردها در کندل‌های بعد از زمان انتخاب شده
+if not na(anchor_price)
+    for i = 0 to 99
+        lvl = array.get(levels, i)
+        // بررسی تقاطع یا برخورد سایه‌ها و بدنه با خطوط طلایی
+        if high >= lvl and low <= lvl
+            array.set(touch_count, i, array.get(touch_count, i) + 1)
+            // محاسبه واکنش صعودی یا نزولی بر اساس بسته شدن کندل
+            if close > lvl
+                array.set(bull_react, i, array.get(bull_react, i) + 1)
+            else if close < lvl
+                array.set(bear_react, i, array.get(bear_react, i) + 1)
+
+// رسم جدول با پالت رنگی اختصاصی تم دارک
+var table prob_table = table.new(position.top_right, 4, 12, border_width=1, border_color=color.rgb(40, 40, 40))
+
+if barstate.islast and not na(anchor_price)
+    // رنگ‌های هدر (پس‌زمینه مشکی مات با متن طلایی)
+    color bg_header = color.rgb(15, 15, 15)
+    color text_header = color.rgb(212, 175, 55)
+    
+    // هدرهای جدول
+    table.cell(prob_table, 0, 0, "سطح (قیمت)", bgcolor=bg_header, text_color=text_header)
+    table.cell(prob_table, 1, 0, "تعداد برخورد", bgcolor=bg_header, text_color=text_header)
+    table.cell(prob_table, 2, 0, "احتمال صعود", bgcolor=bg_header, text_color=text_header)
+    table.cell(prob_table, 3, 0, "احتمال نزول", bgcolor=bg_header, text_color=text_header)
+    
+    // پیدا کردن سطحی که به قیمت فعلی بازار نزدیک‌تر است
+    min_dist = 9999999.9
+    closest_idx = 50
+    for i = 0 to 99
+        dist = math.abs(close - array.get(levels, i))
+        if dist < min_dist
+            min_dist := dist
+            closest_idx := i
+            
+    // نمایش 11 سطح اطراف قیمت فعلی در جدول
+    start_idx = math.max(0, closest_idx - 5)
+    end_idx = math.min(99, closest_idx + 5)
+    
+    row = 1
+    for i = end_idx to start_idx
+        lvl = array.get(levels, i)
+        tc = array.get(touch_count, i)
+        bull = array.get(bull_react, i)
+        bear = array.get(bear_react, i)
+        
+        // محاسبه درصدها
+        bull_pct = tc > 0 ? (bull / tc) * 100 : 0
+        bear_pct = tc > 0 ? (bear / tc) * 100 : 0
+        
+        // پالت رنگی ردیف‌ها برای تم دارک
+        // ردیف فعال (نزدیک‌ترین به قیمت) کمی روشن‌تر است
+        bg_c = i == closest_idx ? color.rgb(50, 50, 50) : color.rgb(25, 25, 25)
+        text_c = i == closest_idx ? color.white : color.rgb(180, 180, 180)
+        
+        // رنگ‌های احتمال با کنتراست بالا (پس‌زمینه تیره، متن نئونی روشن)
+        bg_bull = color.rgb(10, 40, 10)
+        text_bull = color.rgb(80, 255, 80)
+        
+        bg_bear = color.rgb(40, 10, 10)
+        text_bear = color.rgb(255, 80, 80)
+        
+        // پر کردن سلول‌ها
+        // در صورت نیاز به دقت اعشاری بالاتر برای رمزارزهای کوچک‌تر، می‌توانید عدد 4 را در math.round تغییر دهید
+        table.cell(prob_table, 0, row, str.tostring(math.round(lvl, 4)), bgcolor=bg_c, text_color=text_c)
+        table.cell(prob_table, 1, row, str.tostring(tc), bgcolor=bg_c, text_color=text_c)
+        table.cell(prob_table, 2, row, str.tostring(math.round(bull_pct, 1)) + "%", bgcolor=bg_bull, text_color=text_bull)
+        table.cell(prob_table, 3, row, str.tostring(math.round(bear_pct, 1)) + "%", bgcolor=bg_bear, text_color=text_bear)
+        row += 1

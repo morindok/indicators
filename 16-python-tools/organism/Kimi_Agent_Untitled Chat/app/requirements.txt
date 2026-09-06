@@ -1,0 +1,4 @@
+dash
+psutil
+plotly
+numpy

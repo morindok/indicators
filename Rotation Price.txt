@@ -1,0 +1,57 @@
+//@version=5
+indicator("Purple Candles Only", overlay=true)
+
+lookback = input.int(100, "Lookback Period", minval=1, maxval=5000)
+angle2 = input.float(30, "Angle (degrees)")
+speed = input.float(0.1, "Speed", minval=0.01, maxval=10)
+startTime = input.time(timestamp("2024-01-01 00:00"), "Start Time")
+reflectPrice2 = input.bool(true, "Show Purple Candles")
+
+hh = ta.highest(high, lookback)
+ll = ta.lowest(low, lookback)
+
+var float currentY2 = na
+var int direction2 = -1
+var float prevY2 = na
+var float cumulativeSlope2 = 0.0
+var bool started = false
+
+priceRange = hh - ll
+angleRad2 = angle2 * math.pi / 180
+deltaY2 = priceRange * speed * 0.01 * math.tan(angleRad2)
+
+if time >= startTime and not started
+    currentY2 := hh
+    direction2 := -1
+    prevY2 := hh
+    cumulativeSlope2 := 0.0
+    started := true
+
+if started
+    prevY2 := currentY2
+    newY2 = currentY2 + direction2 * deltaY2
+    if newY2 >= hh
+        excess = newY2 - hh
+        currentY2 := hh - excess
+        direction2 := -1
+        cumulativeSlope2 := cumulativeSlope2 + (hh - prevY2)
+    else if newY2 <= ll
+        excess = ll - newY2
+        currentY2 := ll + excess
+        direction2 := 1
+        cumulativeSlope2 := cumulativeSlope2 + (ll - prevY2)
+    else
+        currentY2 := newY2
+        cumulativeSlope2 := cumulativeSlope2 + (currentY2 - prevY2)
+
+adjustedOpen2 = open + cumulativeSlope2
+adjustedHigh2 = high + cumulativeSlope2
+adjustedLow2 = low + cumulativeSlope2
+adjustedClose2 = close + cumulativeSlope2
+
+reflectedPriceOpen2 = reflectPrice2 and started ? 2 * currentY2 - adjustedOpen2 : na
+reflectedPriceHigh2 = reflectPrice2 and started ? 2 * currentY2 - adjustedLow2 : na
+reflectedPriceLow2 = reflectPrice2 and started ? 2 * currentY2 - adjustedHigh2 : na
+reflectedPriceClose2 = reflectPrice2 and started ? 2 * currentY2 - adjustedClose2 : na
+
+plotcandle(reflectedPriceOpen2, reflectedPriceHigh2, reflectedPriceLow2, reflectedPriceClose2, color=color.new(color.purple, 30), wickcolor=color.new(color.purple, 30), bordercolor=color.new(color.purple, 30), title="Purple Candles")

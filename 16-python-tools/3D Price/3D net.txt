@@ -1,0 +1,528 @@
+import numpy as np
+import pandas as pd
+import yfinance as yf
+from dash import Dash, dcc, html, Input, Output
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
+
+SYMBOL = "BTC-USD"
+INTERVAL = "5m"
+PERIOD = "1d"
+
+NUM_PHASES = 10
+PHASE_STEP_DEG = 45
+POINTS_TO_SHOW = 220
+
+FIB_WINDOWS = [2, 3, 5, 8, 13, 21, 34, 55, 89, 144]
+
+PHASE_COLORS = [
+    "#ff6b6b",
+    "#feca57",
+    "#48dbfb",
+    "#1dd1a1",
+    "#5f27cd",
+    "#ff9ff3",
+    "#54a0ff",
+    "#00d2d3",
+    "#c8d6e5",
+    "#ff9f43",
+]
+
+app = Dash(__name__)
+
+
+def fetch_prices(symbol: str) -> pd.DataFrame:
+    symbol = (symbol or SYMBOL).upper().strip()
+
+    try:
+        df = yf.download(
+            tickers=symbol,
+            period=PERIOD,
+            interval=INTERVAL,
+            auto_adjust=True,
+            progress=False,
+            threads=False,
+            group_by="column",
+        )
+    except Exception as exc:
+        print(f"Download error for {symbol}: {exc}")
+        return pd.DataFrame(columns=["Datetime", "Close"])
+
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["Datetime", "Close"])
+
+    if isinstance(df.columns, pd.MultiIndex):
+        if ("Close", symbol) in df.columns:
+            close = df[("Close", symbol)]
+        elif "Close" in df.columns.get_level_values(0):
+            close = df.xs("Close", axis=1, level=0).iloc[:, 0]
+        else:
+            return pd.DataFrame(columns=["Datetime", "Close"])
+    else:
+        if "Close" not in df.columns:
+            return pd.DataFrame(columns=["Datetime", "Close"])
+        close = df["Close"]
+
+    out = pd.DataFrame(
+        {
+            "Datetime": pd.to_datetime(df.index),
+            "Close": pd.to_numeric(close, errors="coerce"),
+        }
+    )
+
+    return out.dropna().tail(POINTS_TO_SHOW).reset_index(drop=True)
+
+
+def normalize_radius(values, src_min, src_max, r_min=1.0, r_max=5.0):
+    arr = np.asarray(values, dtype=float)
+
+    if len(arr) == 0:
+        return arr
+
+    result = np.full(arr.shape, np.nan, dtype=float)
+    valid_mask = ~np.isnan(arr)
+
+    if not np.any(valid_mask):
+        return result
+
+    if np.isclose(src_max, src_min):
+        result[valid_mask] = (r_min + r_max) / 2.0
+        return result
+
+    result[valid_mask] = (
+        r_min
+        + (arr[valid_mask] - src_min) * (r_max - r_min) / (src_max - src_min)
+    )
+    return result
+
+
+def compute_phase_data(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    prices = out["Close"].astype(float)
+
+    for i in range(NUM_PHASES):
+        fib_window = FIB_WINDOWS[i]
+        phase_deg = i * PHASE_STEP_DEG
+
+        out[f"phase_{i}_deg"] = phase_deg
+        out[f"phase_{i}_price"] = prices
+        out[f"phase_{i}_ma"] = prices.rolling(
+            window=fib_window,
+            min_periods=max(2, fib_window // 2),
+        ).mean()
+
+        # Reflect price around this phase-specific MA
+        out[f"phase_{i}_sym_price"] = 2.0 * out[f"phase_{i}_ma"] - prices
+
+    return out
+
+
+def get_scale_bounds(df: pd.DataFrame):
+    all_values = [df["Close"].to_numpy(dtype=float)]
+
+    for i in range(NUM_PHASES):
+        ma = df[f"phase_{i}_ma"].to_numpy(dtype=float)
+        sym = df[f"phase_{i}_sym_price"].to_numpy(dtype=float)
+
+        valid_ma = ma[~np.isnan(ma)]
+        valid_sym = sym[~np.isnan(sym)]
+
+        if len(valid_ma) > 0:
+            all_values.append(valid_ma)
+        if len(valid_sym) > 0:
+            all_values.append(valid_sym)
+
+    src_min = min(np.min(v) for v in all_values)
+    src_max = max(np.max(v) for v in all_values)
+    return src_min, src_max
+
+
+def compute_symmetric_radius_frame(df: pd.DataFrame, src_min: float, src_max: float) -> pd.DataFrame:
+    out = df[["Datetime", "Close"]].copy()
+
+    for i in range(NUM_PHASES):
+        ma_col = f"phase_{i}_ma"
+        sym_col = f"phase_{i}_sym_price"
+        radius_col = f"phase_{i}_sym_radius"
+
+        ma_vals = df[ma_col].to_numpy(dtype=float)
+        sym_vals = df[sym_col].to_numpy(dtype=float)
+
+        out[ma_col] = ma_vals
+        out[sym_col] = sym_vals
+        out[radius_col] = normalize_radius(sym_vals, src_min, src_max)
+
+    return out
+
+
+def build_connector_trace(df: pd.DataFrame, src_min: float, src_max: float):
+    if df.empty:
+        return None
+
+    times = pd.to_datetime(df["Datetime"])
+
+    if len(times) > 1:
+        step = (times.iloc[1] - times.iloc[0]) / NUM_PHASES
+    else:
+        step = pd.Timedelta(minutes=1)
+
+    x_vals = []
+    y_vals = []
+    z_vals = []
+    hover_text = []
+
+    for row_idx in range(len(df)):
+        base_time = times.iloc[row_idx]
+
+        for phase_idx in range(NUM_PHASES):
+            ma_val = df.loc[row_idx, f"phase_{phase_idx}_ma"]
+            if pd.isna(ma_val):
+                continue
+
+            theta = np.deg2rad(phase_idx * PHASE_STEP_DEG)
+            radius = normalize_radius([ma_val], src_min, src_max)[0]
+
+            x_vals.append(base_time + phase_idx * step)
+            y_vals.append(radius * np.cos(theta))
+            z_vals.append(radius * np.sin(theta))
+            hover_text.append(
+                f"Fib Spiral Connector<br>"
+                f"Phase: {phase_idx * PHASE_STEP_DEG}°<br>"
+                f"Fib MA Window: {FIB_WINDOWS[phase_idx]}<br>"
+                f"MA: {ma_val:,.2f}"
+            )
+
+    if not x_vals:
+        return None
+
+    return go.Scatter3d(
+        x=x_vals,
+        y=y_vals,
+        z=z_vals,
+        mode="lines",
+        name="Fib Spiral Connector",
+        line=dict(color="rgba(255,255,255,0.90)", width=6),
+        text=hover_text,
+        hovertemplate="%{text}<extra></extra>",
+    )
+
+
+def build_3d_figure(df: pd.DataFrame, symbol: str):
+    fig = go.Figure()
+
+    if df.empty:
+        fig.update_layout(template="plotly_dark", title=f"No data received for {symbol}")
+        return fig
+
+    times = df["Datetime"]
+    prices = df["Close"].to_numpy(dtype=float)
+    src_min, src_max = get_scale_bounds(df)
+    price_radii = normalize_radius(prices, src_min, src_max)
+
+    for i in range(NUM_PHASES):
+        phase_deg = i * PHASE_STEP_DEG
+        theta = np.deg2rad(phase_deg)
+
+        y_price = price_radii * np.cos(theta)
+        z_price = price_radii * np.sin(theta)
+
+        ma = df[f"phase_{i}_ma"].to_numpy(dtype=float)
+        ma_radii = normalize_radius(ma, src_min, src_max)
+        y_ma = ma_radii * np.cos(theta)
+        z_ma = ma_radii * np.sin(theta)
+
+        fig.add_trace(
+            go.Scatter3d(
+                x=times,
+                y=y_price,
+                z=z_price,
+                mode="lines",
+                name=f"Price Phase {phase_deg}°",
+                line=dict(width=4, color=PHASE_COLORS[i % len(PHASE_COLORS)]),
+                customdata=np.column_stack([prices, np.full(len(prices), phase_deg)]),
+                hovertemplate=(
+                    "Time: %{x}<br>"
+                    "Phase: %{customdata[1]}°<br>"
+                    "Price: %{customdata[0]:,.2f} USD"
+                    "<extra></extra>"
+                ),
+            )
+        )
+
+        fig.add_trace(
+            go.Scatter3d(
+                x=times,
+                y=y_ma,
+                z=z_ma,
+                mode="lines",
+                name=f"Fib MA {phase_deg}° / {FIB_WINDOWS[i]}",
+                line=dict(width=3, color="rgba(255,255,255,0.65)", dash="dash"),
+                customdata=np.column_stack([ma, np.full(len(ma), phase_deg)]),
+                hovertemplate=(
+                    "Time: %{x}<br>"
+                    "Phase: %{customdata[1]}°<br>"
+                    f"Fib Window: {FIB_WINDOWS[i]}<br>"
+                    "MA: %{customdata[0]:,.2f} USD"
+                    "<extra></extra>"
+                ),
+                connectgaps=False,
+            )
+        )
+
+    fig.add_trace(
+        go.Scatter3d(
+            x=times,
+            y=np.zeros(len(times)),
+            z=np.zeros(len(times)),
+            mode="lines",
+            name="Time Axis",
+            line=dict(color="white", width=5, dash="dash"),
+            hoverinfo="skip",
+        )
+    )
+
+    connector = build_connector_trace(df, src_min, src_max)
+    if connector is not None:
+        fig.add_trace(connector)
+
+    fig.update_layout(
+        template="plotly_dark",
+        title=f"{symbol} Fibonacci Phase MA Spiral",
+        scene=dict(
+            xaxis_title="Time",
+            yaxis_title="Circle Y",
+            zaxis_title="Circle Z",
+            aspectmode="manual",
+            aspectratio=dict(x=3.6, y=1.5, z=1.5),
+            camera=dict(eye=dict(x=1.7, y=1.4, z=1.15)),
+        ),
+        margin=dict(l=0, r=0, t=55, b=0),
+        legend=dict(itemsizing="constant"),
+        uirevision="keep-view",
+    )
+    return fig
+
+
+def build_2d_figure(df: pd.DataFrame, sym_df: pd.DataFrame, symbol: str, hover_data):
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.08,
+        row_heights=[0.58, 0.42],
+        subplot_titles=(
+            f"{symbol} Price-Time",
+            "Distance Of Symmetric Prices From Circle Center",
+        ),
+    )
+
+    if df.empty:
+        fig.update_layout(template="plotly_dark", title=f"No data for {symbol}")
+        return fig
+
+    fig.add_trace(
+        go.Scatter(
+            x=df["Datetime"],
+            y=df["Close"],
+            mode="lines",
+            name="Price",
+            line=dict(color="#48dbfb", width=2),
+            hovertemplate="Time: %{x}<br>Price: %{y:,.2f} USD<extra></extra>",
+        ),
+        row=1,
+        col=1,
+    )
+
+    for i in range(NUM_PHASES):
+        phase_deg = i * PHASE_STEP_DEG
+        sym_col = f"phase_{i}_sym_price"
+        radius_col = f"phase_{i}_sym_radius"
+
+        customdata = np.column_stack(
+            [
+                sym_df[sym_col].to_numpy(dtype=float),
+                np.full(len(sym_df), phase_deg),
+                np.full(len(sym_df), FIB_WINDOWS[i]),
+            ]
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=sym_df["Datetime"],
+                y=sym_df[radius_col],
+                mode="lines",
+                name=f"Sym Radius {phase_deg}° / {FIB_WINDOWS[i]}",
+                line=dict(color=PHASE_COLORS[i % len(PHASE_COLORS)], width=2),
+                customdata=customdata,
+                hovertemplate=(
+                    "Time: %{x}<br>"
+                    "Phase: %{customdata[1]}°<br>"
+                    "Fib Window: %{customdata[2]}<br>"
+                    "Sym Price: %{customdata[0]:,.2f} USD<br>"
+                    "Radius: %{y:.3f}"
+                    "<extra></extra>"
+                ),
+                connectgaps=False,
+            ),
+            row=2,
+            col=1,
+        )
+
+    if hover_data and hover_data.get("points"):
+        point = hover_data["points"][0]
+        curve_number = point.get("curveNumber")
+
+        if curve_number is not None and curve_number >= 1:
+            point_x = point.get("x")
+            custom = point.get("customdata", [])
+            sym_price = None
+            phase_deg = None
+            fib_window = None
+
+            if isinstance(custom, (list, tuple)) and len(custom) >= 3:
+                sym_price = custom[0]
+                phase_deg = custom[1]
+                fib_window = custom[2]
+
+            if point_x is not None and sym_price is not None and not pd.isna(sym_price):
+                fig.add_trace(
+                    go.Scatter(
+                        x=[point_x],
+                        y=[sym_price],
+                        mode="markers",
+                        name="Hovered Symmetric Price",
+                        marker=dict(
+                            color="white",
+                            size=14,
+                            symbol="diamond",
+                            line=dict(color="#111111", width=1),
+                        ),
+                        hovertemplate=(
+                            "Selected Symmetric Point<br>"
+                            "Time: %{x}<br>"
+                            "Sym Price: %{y:,.2f} USD"
+                            "<extra></extra>"
+                        ),
+                        showlegend=False,
+                    ),
+                    row=1,
+                    col=1,
+                )
+
+                annotation_text = (
+                    f"Sym {int(phase_deg)}° / {int(fib_window)}"
+                    f"<br>{sym_price:,.2f} USD"
+                )
+
+                fig.add_annotation(
+                    x=point_x,
+                    y=sym_price,
+                    xref="x",
+                    yref="y",
+                    text=annotation_text,
+                    showarrow=True,
+                    arrowhead=2,
+                    arrowsize=1.2,
+                    arrowwidth=2,
+                    arrowcolor="white",
+                    ax=40,
+                    ay=-45,
+                    bgcolor="rgba(0,0,0,0.75)",
+                    bordercolor="white",
+                    borderwidth=1,
+                    font=dict(color="white", size=11),
+                )
+
+                fig.add_vline(
+                    x=point_x,
+                    line_width=1,
+                    line_dash="dot",
+                    line_color="rgba(255,255,255,0.45)",
+                    row=1,
+                    col=1,
+                )
+                fig.add_vline(
+                    x=point_x,
+                    line_width=1,
+                    line_dash="dot",
+                    line_color="rgba(255,255,255,0.45)",
+                    row=2,
+                    col=1,
+                )
+
+    fig.update_layout(
+        template="plotly_dark",
+        height=900,
+        margin=dict(l=0, r=0, t=70, b=0),
+        legend=dict(itemsizing="constant"),
+        hovermode="closest",
+        uirevision="keep-view",
+    )
+
+    fig.update_yaxes(title_text="Price (USD)", row=1, col=1)
+    fig.update_yaxes(title_text="Sym Radius", row=2, col=1)
+    fig.update_xaxes(title_text="Time", row=2, col=1)
+
+    return fig
+
+
+app.layout = html.Div(
+    [
+        html.H2("Fibonacci Phase MA Spiral + Symmetric Price Radius Map"),
+        html.Div(
+            [
+                html.Label("Ticker:"),
+                dcc.Input(
+                    id="ticker-input",
+                    value=SYMBOL,
+                    type="text",
+                    debounce=True,
+                ),
+            ],
+            style={"marginBottom": "12px"},
+        ),
+        dcc.Graph(id="chart-3d", style={"height": "60vh"}),
+        dcc.Graph(id="chart-2d", style={"height": "95vh"}),
+        dcc.Interval(id="refresh", interval=60 * 1000, n_intervals=0),
+    ],
+    style={"padding": "16px"},
+)
+
+
+@app.callback(
+    Output("chart-3d", "figure"),
+    Output("chart-2d", "figure"),
+    Input("refresh", "n_intervals"),
+    Input("ticker-input", "value"),
+    Input("chart-2d", "hoverData"),
+)
+def update_charts(_, ticker, hover_data):
+    symbol = (ticker or SYMBOL).upper().strip()
+
+    df = fetch_prices(symbol)
+    if df.empty:
+        empty_3d = go.Figure()
+        empty_3d.update_layout(
+            template="plotly_dark",
+            title=f"No data for {symbol}. Check yfinance connection.",
+        )
+
+        empty_2d = go.Figure()
+        empty_2d.update_layout(
+            template="plotly_dark",
+            title=f"No 2D data for {symbol}.",
+        )
+        return empty_3d, empty_2d
+
+    df = compute_phase_data(df)
+    src_min, src_max = get_scale_bounds(df)
+    sym_df = compute_symmetric_radius_frame(df, src_min, src_max)
+
+    fig_3d = build_3d_figure(df, symbol)
+    fig_2d = build_2d_figure(df, sym_df, symbol, hover_data)
+
+    return fig_3d, fig_2d
+
+
+if __name__ == "__main__":
+    app.run(debug=True)

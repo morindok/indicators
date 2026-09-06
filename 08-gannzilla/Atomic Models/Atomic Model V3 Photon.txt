@@ -1,0 +1,192 @@
+import dash
+from dash import dcc, html, Input, Output
+import plotly.graph_objects as go
+import numpy as np
+
+# --- Constants & Elements ---
+PHI = (1 + np.sqrt(5)) / 2  # ~ 1.618
+B_FACTOR = (2 * np.log(PHI)) / np.pi
+
+ELEMENTS = [
+    "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar",
+    "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge", "As", "Se", "Br", "Kr",
+    "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Te", "I", "Xe",
+    "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu",
+    "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra",
+    "Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr", "Rf", "Db",
+    "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn", "Nh", "Fl", "Mc", "Lv", "Ts", "Og"
+]
+
+element_options = [{'label': f"{i + 1} - {sym}", 'value': i + 1} for i, sym in enumerate(ELEMENTS)]
+
+app = dash.Dash(__name__)
+app.title = "Quantum Leap & Bonding Simulation"
+
+app.layout = html.Div(style={'backgroundColor': '#0a0a1a', 'color': '#e0e0e0', 'fontFamily': 'Arial', 'padding': '20px',
+                             'minHeight': '100vh'}, children=[
+    html.H2("ÔÈíåÓÇÒí íæäÏ ãæá˜æáí æ ÌåÔ ˜æÇäÊæãí (Photon Excitation)",
+            style={'textAlign': 'center', 'color': '#f2a900'}),
+
+    html.Div(
+        style={'display': 'flex', 'justifyContent': 'center', 'gap': '12px', 'margin': '20px 0', 'flexWrap': 'wrap',
+               'backgroundColor': '#1a1a2e', 'padding': '15px', 'borderRadius': '10px'}, children=[
+            html.Div([
+                html.Label("ÇÊã ?:"),
+                dcc.Dropdown(id='input-element-1', options=element_options, value=79,
+                             style={'width': '100px', 'color': 'black'})
+            ]),
+            html.Div([
+                html.Label("ÇÊã ?:"),
+                dcc.Dropdown(id='input-element-2', options=element_options, value=47,
+                             style={'width': '100px', 'color': 'black'})
+            ]),
+            html.Div([
+                html.Label("˜äÏáåÇ:"),
+                dcc.Input(id='input-candles', type='number', value=21, step=1,
+                          style={'width': '60px', 'backgroundColor': '#333', 'color': 'white'})
+            ]),
+            html.Div([
+                html.Label("ÊÇíãİÑíã:"),
+                dcc.Dropdown(
+                    id='input-timeframe',
+                    options=[{'label': '5M', 'value': 5}, {'label': '1H', 'value': 60}, {'label': '4H', 'value': 240},
+                             {'label': '1D', 'value': 1440}],
+                    value=60, style={'width': '80px', 'color': 'black'}
+                )
+            ]),
+            html.Div([
+                html.Label("íææÊ:"),
+                dcc.Input(id='input-pivot', type='number', value=1.0500, step=0.0001,
+                          style={'width': '90px', 'backgroundColor': '#333', 'color': 'white'})
+            ]),
+            html.Div([
+                html.Label("?P (Çã):"),
+                dcc.Input(id='input-height', type='number', value=0.0500, step=0.001,
+                          style={'width': '80px', 'backgroundColor': '#333', 'color': 'white'})
+            ]),
+            html.Div([
+                html.Label("İæÊæä (Ôæ˜):"),
+                dcc.Input(id='input-photon', type='number', value=0.0000, step=0.005,
+                          style={'width': '90px', 'backgroundColor': '#4d0000', 'color': '#ff4d4d',
+                                 'fontWeight': 'bold'})
+            ])
+        ]),
+
+    html.Div(id='output-results',
+             style={'textAlign': 'center', 'fontSize': '15px', 'margin': '15px', 'color': '#00ffcc',
+                    'fontWeight': 'bold', 'whiteSpace': 'pre-line'}),
+    dcc.Graph(id='spiral-graph', style={'height': '800px'})
+])
+
+
+@app.callback(
+    [Output('spiral-graph', 'figure'), Output('output-results', 'children')],
+    [Input('input-element-1', 'value'), Input('input-element-2', 'value'),
+     Input('input-candles', 'value'), Input('input-timeframe', 'value'),
+     Input('input-pivot', 'value'), Input('input-height', 'value'),
+     Input('input-photon', 'value')]
+)
+def update_simulation(z1, z2, candles, timeframe, pivot, height, photon):
+    if any(v is None for v in [z1, z2, candles, timeframe, pivot, height]):
+        return go.Figure(), "áØİÇğ ÊãÇã ãŞÇÏíÑ ÑÇ æÇÑÏ ˜äíÏ."
+
+    photon = float(photon) if photon else 0.0
+    sym1, sym2 = ELEMENTS[z1 - 1], ELEMENTS[z2 - 1]
+
+    # 1. Base Calculations
+    time_factor = np.log10((candles * timeframe) + 1)
+    a_base = time_factor * 10
+
+    # 2. Molecular Energy & Photon Excitation
+    e1 = height * time_factor * np.log10(z1 + 9)
+    e2 = height * time_factor * np.log10(z2 + 9)
+    e_bond = np.sqrt(e1 ** 2 + e2 ** 2)
+    e_total = e_bond + photon  # Excitation
+
+    # 3. Orbit Geometry
+    shells_theta = np.array([n * (np.pi / 2) for n in range(7)])
+    shells_radii = a_base * np.exp(B_FACTOR * shells_theta)
+
+    prices_full, prices_half = [], []
+    for n in range(7):
+        dynamic_step = e_total * (PHI ** (n / 2))
+        prices_full.append(pivot + dynamic_step)
+        prices_half.append(pivot + (dynamic_step / 2))
+
+        # 4. Plotly Setup
+    # 4. Plotly Setup
+    fig = go.Figure()
+
+    # Draw Photon Wave if exists
+    if photon > 0:
+        max_radius = shells_radii[-1]
+        px = np.linspace(-max_radius, 0, 50)
+        py = np.sin(px * 5) * (shells_radii[1] / 3)
+        fig.add_trace(
+            go.Scatter(x=px - max_radius, y=py, mode='lines', line=dict(color='#ff0066', width=2, dash='solid'),
+                       name='ÊÇÈÔ İæÊæä'))
+
+        # Quantum Leap Arrow (Jump to outer orbit)
+        fig.add_annotation(
+            x=shells_radii[-1] * np.cos(shells_theta[-1]), y=shells_radii[-1] * np.sin(shells_theta[-1]),
+            ax=0, ay=0, xref="x", yref="y", axref="x", ayref="y",
+            showarrow=True, arrowhead=2, arrowsize=2, arrowwidth=2, arrowcolor="#ff0066",
+            text="ÌåÔ ˜æÇäÊæãí (Ôæ˜ ŞíãÊ)", font=dict(color="#ff0066", size=12)
+        )
+
+    # Molecular Nucleus
+    total_z = z1 + z2
+    nuc_size = min(15 + (total_z / 200) * 20, 40)
+    nuc_color = '#ff0066' if photon > 0 else '#00ffcc'
+    fig.add_trace(go.Scatter(x=[0], y=[0], mode='markers+text',
+                             text=[f"{sym1}-{sym2}"], textposition="middle center",
+                             textfont=dict(color='black', size=11, weight='bold'),
+                             marker=dict(size=nuc_size, color=nuc_color, line=dict(width=3, color='white')),
+                             name=f'åÓÊå (Z={total_z})'))
+
+    # Orbits and Targets
+    colors = ['#ff3333', '#ff9933', '#ffff33', '#33ff33', '#33ffff', '#3333ff', '#ff33ff']
+    for i in range(7):
+        r = shells_radii[i]
+        c_theta = np.linspace(0, 2 * np.pi, 100)
+        fig.add_trace(go.Scatter(x=r * np.cos(c_theta), y=r * np.sin(c_theta), mode='lines',
+                                 line=dict(color=colors[i], width=1, dash='dot'), opacity=0.4, showlegend=False))
+
+        # Full Targets
+        pt_x, pt_y = r * np.cos(shells_theta[i]), r * np.sin(shells_theta[i])
+        fig.add_trace(go.Scatter(x=[pt_x], y=[pt_y], mode='markers+text', text=[f"T{i + 1}: {prices_full[i]:.4f}"],
+                                 textposition="top right",
+                                 marker=dict(size=12, color=colors[i], symbol='star'), showlegend=False))
+
+        # Half Targets
+        half_pt_x, half_pt_y = (r * 0.85) * np.cos(shells_theta[i] - 0.2), (r * 0.85) * np.sin(shells_theta[i] - 0.2)
+        fig.add_trace(
+            go.Scatter(x=[half_pt_x], y=[half_pt_y], mode='markers+text', text=[f"H{i + 1}: {prices_half[i]:.4f}"],
+                       textposition="bottom left",
+                       marker=dict(size=6, color='white', symbol='circle-open'), opacity=0.7, showlegend=False))
+
+    # Spiral (Excited or Normal)
+    t_cont = np.linspace(0, 3 * np.pi, 500)
+    r_cont = a_base * np.exp(B_FACTOR * t_cont)
+    spiral_color = '#ff4d4d' if photon > 0 else '#f2a900'
+    fig.add_trace(go.Scatter(x=r_cont * np.cos(t_cont), y=r_cont * np.sin(t_cont), mode='lines',
+                             line=dict(color=spiral_color, width=2), name='ãÏÇÑ ÇÓíÑÇá (ãÓíÑ ŞíãÊ)'))
+
+    fig.update_layout(
+        plot_bgcolor='#0a0a1a', paper_bgcolor='#0a0a1a', font=dict(color='#e0e0e0'),
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, scaleanchor="x", scaleratio=1),
+        title=dict(text=f"ãÏá ˜æÇäÊæãí íæäÏ {sym1} æ {sym2} " + ("(ÈÑÇäíÎÊå ÔÏå ÈÇ İæÊæä)" if photon > 0 else ""),
+                   x=0.5), margin=dict(l=20, r=20, t=50, b=20)
+    )
+
+    res_text = (f"ÇäÑí ÇÊã {sym1}: {e1:.4f} | ÇäÑí ÇÊã {sym2}: {e2:.4f}\n"
+                f"ÇäÑí Çíå íæäÏ: {e_bond:.4f} | ÇäÑí İæÊæä: {photon:.4f}\n"
+                f"ÇäÑí ˜á (ÈÑÇäíÎÊå): {e_total:.4f}\n"
+                f"ÊÇÑÊ İÑÇÑ (íæäíÒÇÓíæä - ãÏÇÑ ?): {prices_full[-1]:.4f}")
+
+    return fig, res_text
+
+
+if __name__ == '__main__':
+    app.run(debug=True)

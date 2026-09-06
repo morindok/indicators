@@ -1,0 +1,244 @@
+//@version=5
+indicator("Auto OB Symmetry - Scored Reversals", overlay=true, max_lines_count=500)
+
+// --- General Inputs ---
+targetTF = input.timeframe("D", "Target Timeframe")
+n = input.int(title="Fractal Periods", defval=2, minval=2)
+obBufferSize = input.int(50, "Max OB Buffer Size (Bars)")
+
+// --- Scoring Inputs ---
+useScoring = input.bool(true, "Enable Scoring System")
+minScore = input.int(2, "Minimum Score Required (1-3)", minval=1, maxval=3)
+rsiLen = input.int(14, "RSI Length", group="Indicators")
+emaLen = input.int(50, "Trend EMA Length", group="Indicators")
+
+useDistance = input.bool(true, "Use Distance from Mid")
+useBoundarySymmetry = input.bool(false, "Constrain to Boundaries")
+showMA = input.bool(false, "Use Dynamic MA for Mid")
+maType = input.string("SMA", "MA Type", options=["SMA", "EMA", "WMA"])
+useAngle = input.bool(false, "Apply Slope/Angle")
+midSlopeRatio = input.float(0.5, "Mid Slope Ratio")
+skipWeekend = input.bool(true, "Skip Weekends in Time Calc")
+invertAngles = input.bool(false, "Invert Angles")
+useSlopeMultiplier = input.bool(false, "Use Slope Multiplier")
+slopeMultiplier = input.float(1.0, "Slope Multiplier")
+
+// --- Time Inputs ---
+anchorTime1 = input.time(timestamp("2024-01-01 00:00"), "Anchor Time 1")
+enableSet2 = input.bool(true, "Enable Set 2")
+anchorTime2 = input.time(timestamp("2024-02-01 00:00"), "Anchor Time 2")
+
+// --- Data Request ---
+req_o = request.security(syminfo.tickerid, targetTF, open)
+req_h = request.security(syminfo.tickerid, targetTF, high)
+req_l = request.security(syminfo.tickerid, targetTF, low)
+req_c = request.security(syminfo.tickerid, targetTF, close)
+req_t = request.security(syminfo.tickerid, targetTF, time)
+req_tf_seconds = timeframe.in_seconds(targetTF)
+
+// --- Fractal Logic ---
+bool upflagDownFrontier = true
+bool upflagUpFrontier0 = true
+bool upflagUpFrontier1 = true
+bool upflagUpFrontier2 = true
+bool upflagUpFrontier3 = true
+bool upflagUpFrontier4 = true
+
+for i = 1 to n
+    upflagDownFrontier := upflagDownFrontier and (req_h[n-i] < req_h[n])
+    upflagUpFrontier0 := upflagUpFrontier0 and (req_h[n+i] < req_h[n])
+    upflagUpFrontier1 := upflagUpFrontier1 and (req_h[n+1] <= req_h[n] and req_h[n+i + 1] < req_h[n])
+    upflagUpFrontier2 := upflagUpFrontier2 and (req_h[n+1] <= req_h[n] and req_h[n+2] <= req_h[n] and req_h[n+i + 2] < req_h[n])
+    upflagUpFrontier3 := upflagUpFrontier3 and (req_h[n+1] <= req_h[n] and req_h[n+2] <= req_h[n] and req_h[n+3] <= req_h[n] and req_h[n+i + 3] < req_h[n])
+    upflagUpFrontier4 := upflagUpFrontier4 and (req_h[n+1] <= req_h[n] and req_h[n+2] <= req_h[n] and req_h[n+3] <= req_h[n] and req_h[n+4] <= req_h[n] and req_h[n+i + 4] < req_h[n])
+flagUpFrontier = upflagUpFrontier0 or upflagUpFrontier1 or upflagUpFrontier2 or upflagUpFrontier3 or upflagUpFrontier4
+upFractal = (upflagDownFrontier and flagUpFrontier)
+
+bool downflagDownFrontier = true
+bool downflagUpFrontier0 = true
+bool downflagUpFrontier1 = true
+bool downflagUpFrontier2 = true
+bool downflagUpFrontier3 = true
+bool downflagUpFrontier4 = true
+
+for i = 1 to n
+    downflagDownFrontier := downflagDownFrontier and (req_l[n-i] > req_l[n])
+    downflagUpFrontier0 := downflagUpFrontier0 and (req_l[n+i] > req_l[n])
+    downflagUpFrontier1 := downflagUpFrontier1 and (req_l[n+1] >= req_l[n] and req_l[n+i + 1] > req_l[n])
+    downflagUpFrontier2 := downflagUpFrontier2 and (req_l[n+1] >= req_l[n] and req_l[n+2] >= req_l[n] and req_l[n+i + 2] > req_l[n])
+    downflagUpFrontier3 := downflagUpFrontier3 and (req_l[n+1] >= req_l[n] and req_l[n+2] >= req_l[n] and req_l[n+3] >= req_l[n] and req_l[n+i + 3] > req_l[n])
+    downflagUpFrontier4 := downflagUpFrontier4 and (req_l[n+1] >= req_l[n] and req_l[n+2] >= req_l[n] and req_l[n+3] >= req_l[n] and req_l[n+4] >= req_l[n] and req_l[n+i + 4] > req_l[n])
+flagDownFrontier = downflagUpFrontier0 or downflagUpFrontier1 or downflagUpFrontier2 or downflagUpFrontier3 or downflagUpFrontier4
+downFractal = (downflagDownFrontier and flagDownFrontier)
+
+// --- Dynamic Levels (Fractal Based) ---
+var float baseUpperLevel = na
+var float baseLowerLevel = na
+
+if upFractal
+    baseUpperLevel := req_h[n]
+if downFractal
+    baseLowerLevel := req_l[n]
+
+if na(baseUpperLevel)
+    baseUpperLevel := req_h
+if na(baseLowerLevel)
+    baseLowerLevel := req_l
+
+midLevel = (baseUpperLevel + baseLowerLevel) / 2.0
+
+// --- Time & Slope Calculations ---
+week_ms = 604800000.0
+weekend_ms_box = skipWeekend ? (math.floor((anchorTime2 - anchorTime1) / week_ms) * 172800000.0) : 0.0
+dT = ((anchorTime2 - anchorTime1) - weekend_ms_box) / 60000.0
+
+priceSlope = dT != 0 ? (baseUpperLevel - baseLowerLevel) / dT : 0.0
+
+// Window Trend
+isBullish = req_c > req_c[n]
+
+sign = invertAngles ? -1 : 1
+
+baseUpperSlope = isBullish ? priceSlope : 0.0
+baseLowerSlope = isBullish ? 0.0 : priceSlope
+
+upperSlopeVal = useSlopeMultiplier ? (baseUpperSlope * slopeMultiplier) : baseUpperSlope
+lowerSlopeVal = useSlopeMultiplier ? (baseLowerSlope * slopeMultiplier) : baseLowerSlope
+
+midSlope1 = upperSlopeVal * midSlopeRatio * sign
+midSlope2 = lowerSlopeVal * midSlopeRatio * sign
+
+// --- Dynamic MA ---
+tf_minutes = math.max(1, req_tf_seconds / 60)
+dynamicMaLength = int(math.max(1, math.round(math.abs(dT) / tf_minutes)))
+
+float ma = na
+if maType == "SMA"
+    ma := ta.sma(req_c, dynamicMaLength)
+else if maType == "EMA"
+    ma := ta.ema(req_c, dynamicMaLength)
+else if maType == "WMA"
+    ma := ta.wma(req_c, dynamicMaLength)
+
+// --- Helper Function for Set ---
+f_calc_set(aTime) =>
+    weekend_ms = skipWeekend ? (math.floor((req_t - aTime) / week_ms) * 172800000.0) : 0.0
+    x = ((req_t - aTime) - weekend_ms) / 60000.0
+    
+    upperLvl = baseUpperLevel + (useAngle ? (upperSlopeVal * x * sign) : 0.0)
+    lowerLvl = baseLowerLevel + (useAngle ? (lowerSlopeVal * x * sign) : 0.0)
+    adjMidLvl = midLevel + (useAngle ? (isBullish ? midSlope1 : midSlope2) * x : 0.0)
+    
+    theoMid = (upperLvl + lowerLvl) / 2.0
+    userOffset = adjMidLvl - theoMid
+    midMA = showMA ? (ma + userOffset) : na
+    activeMid = showMA ? midMA : adjMidLvl
+    
+    sH = activeMid + (activeMid - req_l)
+    sL = activeMid + (activeMid - req_h)
+    
+    if useBoundarySymmetry
+        sH := math.min(sH, upperLvl)
+        sL := math.max(sL, lowerLvl)
+        
+    [sH, sL]
+
+// --- Calculate Sets ---
+[symHigh1, symLow1] = f_calc_set(anchorTime1)
+[tempH2, tempL2] = f_calc_set(anchorTime2)
+
+float symHigh2 = enableSet2 ? tempH2 : na
+float symLow2  = enableSet2 ? tempL2 : na
+
+// --- Order Block Validation ---
+bool isCollision = enableSet2 and not na(symHigh1) and not na(symHigh2) and (symLow1 <= symHigh2) and (symHigh1 >= symLow2)
+
+var float[] obTops = array.new_float()
+var float[] obBots = array.new_float()
+var int[] obBars = array.new_int()
+
+if isCollision
+    array.push(obTops, math.min(symHigh1, symHigh2))
+    array.push(obBots, math.max(symLow1, symLow2))
+    array.push(obBars, bar_index)
+
+while array.size(obBars) > obBufferSize
+    array.shift(obTops)
+    array.shift(obBots)
+    array.shift(obBars)
+
+// --- Raw Signals ---
+bool rawBuy = false
+bool rawSell = false
+
+int arrSize = array.size(obTops)
+if arrSize >= 2
+    for i = 0 to arrSize - 2
+        for j = i + 1 to arrSize - 1
+            float topA = array.get(obTops, i)
+            float botA = array.get(obBots, i)
+            float topB = array.get(obTops, j)
+            float botB = array.get(obBots, j)
+            
+            if botA <= topB and topA >= botB
+                float overTop = math.min(topA, topB)
+                float overBot = math.max(botA, botB)
+                
+                bool isBearishPrev = close[1] < open[1]
+                bool isBullishPrev = close[1] > open[1]
+                bool isBullishCurr = close > open
+                bool isBearishCurr = close < open
+                
+                // ÎÑíÏ ÏÑ ÕæÑÊí ˜å ÑæäÏ äÌÑå äÒæáí ÈÇÔÏ
+                if not isBullish and low <= overTop and close >= overBot and isBearishPrev and isBullishCurr
+                    rawBuy := true
+                    
+                // ÝÑæÔ ÏÑ ÕæÑÊí ˜å ÑæäÏ äÌÑå ÕÚæÏí ÈÇÔÏ
+                if isBullish and high >= overBot and close <= overTop and isBullishPrev and isBearishCurr
+                    rawSell := true
+
+// --- Scoring System ---
+float currentRsi = ta.rsi(close, rsiLen)
+float currentEma = ta.ema(close, emaLen)
+[macdLine, signalLine, hist] = ta.macd(close, 12, 26, 9)
+
+int buyScore = 0
+int sellScore = 0
+
+if rawBuy
+    if currentRsi < 45 // ÔÑÇíØ ãÓÇÚÏ RSI
+        buyScore += 1
+    if close > currentEma // ÑæäÏ ÕÚæÏí
+        buyScore += 1
+    if macdLine > signalLine or hist > hist[1] // ã˜Ïí ãËÈÊ
+        buyScore += 1
+
+if rawSell
+    if currentRsi > 55
+        sellScore += 1
+    if close < currentEma
+        sellScore += 1
+    if macdLine < signalLine or hist < hist[1]
+        sellScore += 1
+
+bool finalBuy = rawBuy and (not useScoring or buyScore >= minScore)
+bool finalSell = rawSell and (not useScoring or sellScore >= minScore)
+
+// --- Anti-Clustering (State Machine) ---
+var int lastSignal = 0 // 1 for Buy, -1 for Sell
+
+if finalBuy
+    if lastSignal != 1
+        lastSignal := 1
+    else
+        finalBuy := false
+
+if finalSell
+    if lastSignal != -1
+        lastSignal := -1
+    else
+        finalSell := false
+
+// --- Plot Output ---
+plotshape(finalBuy, title="Buy Reversal", style=shape.triangleup, location=location.belowbar, color=color.new(color.green, 0), size=size.small)
+plotshape(finalSell, title="Sell Reversal", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), size=size.small)

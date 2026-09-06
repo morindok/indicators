@@ -1,0 +1,226 @@
+//@version=5
+indicator("Dynamic Step Line - Green/Red/Both", overlay=true)
+
+//--------------------------------------------------
+// Inputs
+//--------------------------------------------------
+startTime = input.time(timestamp("2026-01-01 00:00:00"), title="Start Time", confirm=true)
+endTime   = input.time(timestamp("2026-01-02 00:00:00"), title="End Time", confirm=true)
+
+useCumHeight = input.bool(false, title="Use Cumulative Candle Heights Instead of Total Range")
+candleFilter = input.string("All Candles", title="Candle Filter", options=["All Candles", "Green Candles Only", "Red Candles Only"])
+showBothLines = input.bool(false, title="Show Both Green and Red Lines")
+
+//--------------------------------------------------
+// Helper Functions
+//--------------------------------------------------
+isCandleMatch(_isGreen, _filter) =>
+    _filter == "All Candles" or
+     (_filter == "Green Candles Only" and _isGreen) or
+     (_filter == "Red Candles Only" and not _isGreen)
+
+calcHeightForWindow(_len, _useCumHeight, _filter) =>
+    float _height = 0.0
+    if _useCumHeight
+        for i = 0 to _len - 1
+            bool _isGreen = close[i] >= open[i]
+            if isCandleMatch(_isGreen, _filter)
+                _height += (high[i] - low[i])
+    else
+        float _h = na
+        float _l = na
+        bool _found = false
+        for i = 0 to _len - 1
+            bool _isGreen = close[i] >= open[i]
+            if isCandleMatch(_isGreen, _filter)
+                _h := _found ? math.max(_h, high[i]) : high[i]
+                _l := _found ? math.min(_l, low[i])  : low[i]
+                _found := true
+        _height := _found ? (_h - _l) : 0.0
+    _height
+
+//--------------------------------------------------
+// Range detection
+//--------------------------------------------------
+isInRange = time >= startTime and time <= endTime
+isRangeEnd = isInRange[1] and not isInRange
+
+//--------------------------------------------------
+// General range stats
+//--------------------------------------------------
+var int rangeBarCount = 0
+
+var float rangeHighAll = na
+var float rangeLowAll = na
+var float rangeCumAll = 0.0
+
+var float rangeHighGreen = na
+var float rangeLowGreen = na
+var float rangeCumGreen = 0.0
+var bool hasGreen = false
+
+var float rangeHighRed = na
+var float rangeLowRed = na
+var float rangeCumRed = 0.0
+var bool hasRed = false
+
+if isInRange
+    bool isGreen = close >= open
+    float cHeight = high - low
+
+    if not isInRange[1]
+        rangeBarCount := 1
+
+        rangeHighAll := high
+        rangeLowAll := low
+        rangeCumAll := cHeight
+
+        rangeHighGreen := na
+        rangeLowGreen := na
+        rangeCumGreen := 0.0
+        hasGreen := false
+
+        rangeHighRed := na
+        rangeLowRed := na
+        rangeCumRed := 0.0
+        hasRed := false
+
+        if isGreen
+            rangeHighGreen := high
+            rangeLowGreen := low
+            rangeCumGreen := cHeight
+            hasGreen := true
+        else
+            rangeHighRed := high
+            rangeLowRed := low
+            rangeCumRed := cHeight
+            hasRed := true
+    else
+        rangeBarCount += 1
+
+        rangeHighAll := math.max(rangeHighAll, high)
+        rangeLowAll := math.min(rangeLowAll, low)
+        rangeCumAll += cHeight
+
+        if isGreen
+            rangeHighGreen := hasGreen ? math.max(rangeHighGreen, high) : high
+            rangeLowGreen := hasGreen ? math.min(rangeLowGreen, low) : low
+            rangeCumGreen += cHeight
+            hasGreen := true
+        else
+            rangeHighRed := hasRed ? math.max(rangeHighRed, high) : high
+            rangeLowRed := hasRed ? math.min(rangeLowRed, low) : low
+            rangeCumRed += cHeight
+            hasRed := true
+
+//--------------------------------------------------
+// State for MAIN line
+//--------------------------------------------------
+var int stepRemainingMain = 0
+var float nextStepLengthMain = 0.0
+var float currentStepValMain = na
+var float stepLineMain = na
+
+//--------------------------------------------------
+// State for GREEN line
+//--------------------------------------------------
+var int stepRemainingGreen = 0
+var float nextStepLengthGreen = 0.0
+var float currentStepValGreen = na
+var float stepLineGreen = na
+
+//--------------------------------------------------
+// State for RED line
+//--------------------------------------------------
+var int stepRemainingRed = 0
+var float nextStepLengthRed = 0.0
+var float currentStepValRed = na
+var float stepLineRed = na
+
+//--------------------------------------------------
+// Initialize after selected range ends
+//--------------------------------------------------
+if isRangeEnd and rangeBarCount > 0
+    // ÍÇáÊ ÇÕáí
+    float baseHeightMain = switch candleFilter
+        "All Candles" => useCumHeight ? rangeCumAll : (rangeHighAll - rangeLowAll)
+        "Green Candles Only" => hasGreen ? (useCumHeight ? rangeCumGreen : (rangeHighGreen - rangeLowGreen)) : 0.0
+        "Red Candles Only" => hasRed ? (useCumHeight ? rangeCumRed : (rangeHighRed - rangeLowRed)) : 0.0
+        => 0.0
+
+    nextStepLengthMain := math.max(1.0, baseHeightMain / rangeBarCount)
+    stepRemainingMain := math.round(nextStepLengthMain)
+    currentStepValMain := close
+    stepLineMain := currentStepValMain
+
+    // ÇÑ ˜ÇÑÈÑ ÈÎæÇåÏ åÑ Ïæ ÎØ ÓÈÒ æ ÞÑãÒ åãÒãÇä ÑÓã ÔæäÏ
+    if showBothLines
+        float baseHeightGreen = hasGreen ? (useCumHeight ? rangeCumGreen : (rangeHighGreen - rangeLowGreen)) : 0.0
+        float baseHeightRed   = hasRed ? (useCumHeight ? rangeCumRed : (rangeHighRed - rangeLowRed)) : 0.0
+
+        nextStepLengthGreen := math.max(1.0, baseHeightGreen / rangeBarCount)
+        stepRemainingGreen := math.round(nextStepLengthGreen)
+        currentStepValGreen := close
+        stepLineGreen := currentStepValGreen
+
+        nextStepLengthRed := math.max(1.0, baseHeightRed / rangeBarCount)
+        stepRemainingRed := math.round(nextStepLengthRed)
+        currentStepValRed := close
+        stepLineRed := currentStepValRed
+
+//--------------------------------------------------
+// Update after range
+//--------------------------------------------------
+else if time > endTime
+    // MAIN
+    if stepRemainingMain > 0
+        stepLineMain := currentStepValMain
+        stepRemainingMain -= 1
+
+    if stepRemainingMain == 0 and nextStepLengthMain > 0
+        int endedLenMain = math.max(1, math.round(nextStepLengthMain))
+        float newHeightMain = calcHeightForWindow(endedLenMain, useCumHeight, candleFilter)
+        nextStepLengthMain := math.max(1.0, newHeightMain / endedLenMain)
+        stepRemainingMain := math.round(nextStepLengthMain)
+        currentStepValMain := close
+        stepLineMain := currentStepValMain
+
+    // GREEN
+    if showBothLines
+        if stepRemainingGreen > 0
+            stepLineGreen := currentStepValGreen
+            stepRemainingGreen -= 1
+
+        if stepRemainingGreen == 0 and nextStepLengthGreen > 0
+            int endedLenGreen = math.max(1, math.round(nextStepLengthGreen))
+            float newHeightGreen = calcHeightForWindow(endedLenGreen, useCumHeight, "Green Candles Only")
+            nextStepLengthGreen := math.max(1.0, newHeightGreen / endedLenGreen)
+            stepRemainingGreen := math.round(nextStepLengthGreen)
+            currentStepValGreen := close
+            stepLineGreen := currentStepValGreen
+
+        // RED
+        if stepRemainingRed > 0
+            stepLineRed := currentStepValRed
+            stepRemainingRed -= 1
+
+        if stepRemainingRed == 0 and nextStepLengthRed > 0
+            int endedLenRed = math.max(1, math.round(nextStepLengthRed))
+            float newHeightRed = calcHeightForWindow(endedLenRed, useCumHeight, "Red Candles Only")
+            nextStepLengthRed := math.max(1.0, newHeightRed / endedLenRed)
+            stepRemainingRed := math.round(nextStepLengthRed)
+            currentStepValRed := close
+            stepLineRed := currentStepValRed
+else
+    stepLineMain := na
+    stepLineGreen := na
+    stepLineRed := na
+
+//--------------------------------------------------
+// Plots
+//--------------------------------------------------
+plot(showBothLines ? na : stepLineMain, title="Main Step Line", color=color.blue, linewidth=2, style=plot.style_stepline)
+plot(showBothLines ? stepLineGreen : na, title="Green Step Line", color=color.lime, linewidth=2, style=plot.style_stepline)
+plot(showBothLines ? stepLineRed : na, title="Red Step Line", color=color.red, linewidth=2, style=plot.style_stepline)
+
+bgcolor(isInRange ? color.new(color.yellow, 90) : na, title="Selected Range Background")

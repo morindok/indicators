@@ -1,0 +1,44 @@
+//@version=5
+indicator("Symmetrized MA & Dynamic Offset", overlay=true, shorttitle="SymMA-DynOffset")
+
+// --- ÊäÙíãÇÊ æÑæÏí (Inputs) ---
+ma_length = input.int(20, title="Øæá ãæíä ÇæÑíÌ (MA Length)", minval=1)
+offset_mult = input.float(1.5, title="ÖÑíÈ ÂİÓÊ æíÇ (ATR Multiplier)", step=0.1)
+show_symmetrical = input.bool(true, title="äãÇíÔ ãæíä ãÊŞÇÑä ÔÏå (Íæá ÕİÑ)")
+
+// --- 1. ãÍÇÓÈå ãæíä ÇæÑíÌ ÇÕáí ---
+main_ma = ta.sma(close, ma_length)
+
+// --- 2. ãÊŞÇÑä ˜ÑÏä ŞíãÊ äÓÈÊ Èå ÓØÍ 0 ãØáŞ ---
+// ÈÇ ˜ã ˜ÑÏä ãæíä ÇÕáí¡ ŞíãÊ ÏŞíŞÇğ Íæá ãÍæÑ ÕİÑ äæÓÇä ãí˜äÏ
+sym_price = close - main_ma
+
+// --- 3. ãÍÇÓÈå ãæíä ÇæÑíÌö ŞíãÊ ãÊŞÇÑä ÔÏå ---
+sym_ma = ta.sma(sym_price, ma_length)
+
+// --- 4. ãÍÇÓÈå ÂİÓÊ æíÇ (Dynamic Offset) ---
+// ÇÓÊİÇÏå ÇÒ ATR ÈÑÇí ÇíÌÇÏ í˜ ÂİÓÊ æíÇ ÈÑ ÇÓÇÓ äæÓÇäÇÊ ÈÇÒÇÑ
+atr_val = ta.atr(ma_length)
+dynamic_price_offset = atr_val * offset_mult
+
+// --- 5. ÇäÊŞÇá Èå ÈÇÒå ŞíãÊ ÇÕáí ---
+// ÈÑÇí ÈÑÑÏÇäÏä Èå ÈÇÒå ŞíãÊ¡ ãæíä ÇÕáí ÑÇ ÇÖÇİå ãí˜äíã æ ÂİÓÊ æíÇ ÑÇ ÇÚãÇá ãí˜äíã
+final_translated_ma = main_ma + sym_ma + dynamic_price_offset
+
+// --- ÑÓã äãæÏÇÑåÇ (Plotting) ---
+// ÑÓã ŞíãÊ ÇÕáí æ ãæíä ÇÕáí ÈÑÇí ãÑÌÚ
+plot(close, color=color.new(color.gray, 50), title="Close Price")
+plot(main_ma, color=color.blue, title="Main MA", linewidth=2)
+
+// ÑÓã ãæíä ãÊŞÇÑä ÔÏå (ÊæÌå: Çíä ÎØ Íæá ÕİÑ ÇÓÊ¡ ÇÑ ŞíãÊ ÏÇÑÇíí ÈÇáÇ ÈÇÔÏ ãËá ÈíÊ ˜æíä¡ Çíä ÎØ ˜İ äãæÏÇÑ ÏíÏå ãíÔæÏ)
+plot(show_symmetrical ? sym_ma : na, color=color.red, title="Symmetrized MA (Centered at 0)", linewidth=1)
+
+// ÑÓã ÎØ äåÇíí ˜å Èå ÈÇÒå ŞíãÊ ãäÊŞá ÔÏå æ ÂİÓÊ æíÇ ÏÇÑÏ
+plot(final_translated_ma, color=color.orange, title="Translated MA + Dynamic Offset", linewidth=2, style=plot.style_stepline)
+
+// --- ÑÓã ÂİÓÊ æíÇ Èå ÕæÑÊ ˜ÇäÇá (ÇÎÊíÇÑí ÈÑÇí ÏÑ˜ ÈåÊÑ) ---
+upper_band = main_ma + dynamic_price_offset
+lower_band = main_ma - dynamic_price_offset
+p1 = plot(upper_band, color=color.new(color.green, 80), title="Dynamic Offset Upper")
+p2 = plot(lower_band, color=color.new(color.red, 80), title="Dynamic Offset Lower")
+fill(p1, p2, color=color.new(color.blue, 90), title="Dynamic Offset Fill")

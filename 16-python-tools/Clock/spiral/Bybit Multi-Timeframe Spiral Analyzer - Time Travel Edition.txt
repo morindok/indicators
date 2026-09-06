@@ -1,0 +1,635 @@
+# -*- coding: utf-8 -*-
+"""
+🌀 Bybit Multi-Timeframe Spiral Analyzer - Time Travel Edition (UTC Fixed)
+------------------------------------------------------------------
+نصب:
+pip install dash dash-bootstrap-components plotly pandas numpy requests pytz
+"""
+
+import time
+import numpy as np
+import pandas as pd
+import requests
+import dash
+from dash import dcc, html, Input, Output, State, ctx, no_update
+import dash_bootstrap_components as dbc
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
+import pytz
+
+# ==============================================================================
+# 0) پالت رنگی تیره
+# ==============================================================================
+BG, CARD, LINE, TXT, MUT = "#0b1220", "#121c30", "#23314d", "#e8ecf4", "#8fa3c0"
+GOLD, UP, DN = "#f0b90b", "#16a085", "#e74c3c"
+
+DEFAULT_SYMBOL = "BTCUSDT"
+DEFAULT_CATEGORY = "linear"
+
+TIMEFRAMES_STANDARD = [
+    {"label": "1 دقیقه", "value": "1", "interval": "1", "candles": 100},
+    {"label": "3 دقیقه", "value": "3", "interval": "3", "candles": 100},
+    {"label": "5 دقیقه", "value": "5", "interval": "5", "candles": 100},
+    {"label": "15 دقیقه", "value": "15", "interval": "15", "candles": 100},
+    {"label": "30 دقیقه", "value": "30", "interval": "30", "candles": 100},
+    {"label": "1 ساعت", "value": "60", "interval": "60", "candles": 100},
+    {"label": "2 ساعت", "value": "120", "interval": "120", "candles": 100},
+    {"label": "4 ساعت", "value": "240", "interval": "240", "candles": 100},
+    {"label": "6 ساعت", "value": "360", "interval": "360", "candles": 100},
+    {"label": "12 ساعت", "value": "720", "interval": "720", "candles": 100},
+    {"label": "1 روز", "value": "D", "interval": "D", "candles": 100},
+    {"label": "1 هفته", "value": "W", "interval": "W", "candles": 100},
+    {"label": "1 ماه", "value": "M", "interval": "M", "candles": 100},
+]
+
+TIMEFRAMES_FIBONACCI = [
+    {"label": "Fib 1 → 1 دقیقه", "value": "fib_1", "interval": "1", "candles": 100, "fib": 1},
+    {"label": "Fib 3 → 3 دقیقه", "value": "fib_3", "interval": "3", "candles": 100, "fib": 3},
+    {"label": "Fib 5 → 5 دقیقه", "value": "fib_5", "interval": "5", "candles": 100, "fib": 5},
+    {"label": "Fib 8 → 15 دقیقه", "value": "fib_8", "interval": "15", "candles": 100, "fib": 8},
+    {"label": "Fib 13 → 15 دقیقه", "value": "fib_13", "interval": "15", "candles": 100, "fib": 13},
+    {"label": "Fib 21 → 30 دقیقه", "value": "fib_21", "interval": "30", "candles": 100, "fib": 21},
+    {"label": "Fib 34 → 30 دقیقه", "value": "fib_34", "interval": "30", "candles": 100, "fib": 34},
+    {"label": "Fib 55 → 1 ساعت", "value": "fib_55", "interval": "60", "candles": 100, "fib": 55},
+    {"label": "Fib 89 → 2 ساعت", "value": "fib_89", "interval": "120", "candles": 100, "fib": 89},
+    {"label": "Fib 144 → 2 ساعت", "value": "fib_144", "interval": "120", "candles": 100, "fib": 144},
+    {"label": "Fib 233 → 4 ساعت", "value": "fib_233", "interval": "240", "candles": 100, "fib": 233},
+    {"label": "Fib 377 → 6 ساعت", "value": "fib_377", "interval": "360", "candles": 100, "fib": 377},
+    {"label": "Fib 610 → 12 ساعت", "value": "fib_610", "interval": "720", "candles": 100, "fib": 610},
+    {"label": "Fib 987 → 1 روز", "value": "fib_987", "interval": "D", "candles": 100, "fib": 987},
+    {"label": "Fib 1597 → 1 هفته", "value": "fib_1597", "interval": "W", "candles": 100, "fib": 1597},
+    {"label": "Fib 2584 → 1 ماه", "value": "fib_2584", "interval": "M", "candles": 100, "fib": 2584},
+]
+
+SPIRAL_COLORS = [
+    "#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", "#98D8C8",
+    "#F7B731", "#5F27CD", "#FF9FF3", "#54A0FF", "#48DBFB",
+    "#1DD1A1", "#FF6348", "#FFC048", "#C7CEE8", "#74b9ff",
+    "#a29bfe", "#fd79a8"
+]
+
+# ==============================================================================
+# 1) اتصال REST پایدار به بایبیت
+# ==============================================================================
+REST_CANDIDATES = ["https://api.bybit.com", "https://api.bytick.com", "https://api.bybit.kz"]
+SESSION = requests.Session()
+SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
+    "Referer": "https://www.bybit.com/",
+})
+_ACTIVE_REST_BASE = {"url": None}
+
+
+def bybit_get(path, params, timeout=10):
+    cands = ([_ACTIVE_REST_BASE["url"]] if _ACTIVE_REST_BASE["url"] else []) + \
+            [b for b in REST_CANDIDATES if b != _ACTIVE_REST_BASE["url"]]
+    for base in cands:
+        try:
+            r = SESSION.get(f"{base}{path}", params=params, timeout=timeout)
+            if r.status_code in (403, 451):
+                continue
+            r.raise_for_status()
+            d = r.json()
+            if d.get("retCode") == 0:
+                _ACTIVE_REST_BASE["url"] = base
+                return d
+        except Exception:
+            continue
+    return None
+
+
+def get_klines(symbol, interval, category="linear", limit=200, end_time=None):
+    params = {
+        "category": category,
+        "symbol": symbol,
+        "interval": interval,
+        "limit": limit
+    }
+
+    if end_time:
+        if end_time.tzinfo is None:
+            end_time = pytz.utc.localize(end_time)
+        end_timestamp_ms = int(end_time.timestamp() * 1000)
+        params["end"] = end_timestamp_ms
+
+    d = bybit_get("/v5/market/kline", params)
+    if not d or "list" not in (d.get("result") or {}):
+        return pd.DataFrame()
+    lst = d["result"]["list"]
+    if not lst:
+        return pd.DataFrame()
+    df = pd.DataFrame(lst, columns=["ts", "open", "high", "low", "close", "volume", "turnover"])
+    df["ts"] = pd.to_datetime(df["ts"].astype(int), unit="ms", utc=True)
+    for c in ["open", "high", "low", "close", "volume"]:
+        df[c] = df[c].astype(float)
+    return df.sort_values("ts").reset_index(drop=True)
+
+
+def get_all_timeframes_data(symbol, category, mode="standard", target_time=None):
+    if mode == "fibonacci":
+        timeframes = TIMEFRAMES_FIBONACCI
+    else:
+        timeframes = TIMEFRAMES_STANDARD
+
+    data = {}
+    for i, tf in enumerate(timeframes):
+        print(f"Fetching {tf['label']}...")
+        df = get_klines(symbol, tf["interval"], category, limit=tf["candles"], end_time=target_time)
+
+        if not df.empty:
+            data[tf["value"]] = {
+                "df": df,
+                "label": tf["label"],
+                "interval": tf["interval"],
+                "color": SPIRAL_COLORS[i % len(SPIRAL_COLORS)],
+                "fib": tf.get("fib", None)
+            }
+            print(f"  ✅ {tf['label']}: {len(df)} candles (last: {df['ts'].iloc[-1]})")
+        else:
+            print(f"  ❌ {tf['label']}: No data")
+
+        if i < len(timeframes) - 1:
+            time.sleep(0.3)
+
+    return data
+
+
+# ==============================================================================
+# 2) محاسبه اسپیرال
+# ==============================================================================
+def create_spiral_coordinates(df, spiral_radius=1.0):
+    if df.empty or len(df) < 2:
+        return None, None, None
+
+    ts_values = df["ts"].astype("int64").values
+    close_values = df["close"].values
+    low_values = df["low"].values
+    high_values = df["high"].values
+
+    time_range = (ts_values[-1] - ts_values[0]) / 10**9
+    if time_range == 0:
+        time_range = 1
+    time_normalized = (ts_values - ts_values[0]) / (10**9 * time_range)
+    theta = time_normalized * 2 * np.pi
+
+    price_min = low_values.min()
+    price_max = high_values.max()
+    price_range = price_max - price_min
+    if price_range == 0:
+        price_range = 1
+
+    r_normalized = 0.3 + 0.7 * (close_values - price_min) / price_range
+    r = r_normalized * spiral_radius
+
+    theta_spiral = theta + np.linspace(0, 4 * np.pi, len(df))
+
+    return theta_spiral, r, close_values
+
+
+def find_line_spiral_intersection(x1, y1, dx, dy, x_spiral, y_spiral, prices):
+    t_vals = np.linspace(0, 10, 500)
+    x_line = x1 + t_vals * dx
+    y_line = y1 + t_vals * dy
+
+    min_dist = float('inf')
+    best_idx_line = 0
+    best_idx_spiral = 0
+
+    for i in range(len(x_line)):
+        for j in range(len(x_spiral)):
+            dist = np.sqrt((x_line[i] - x_spiral[j]) ** 2 + (y_line[i] - y_spiral[j]) ** 2)
+            if dist < min_dist:
+                min_dist = dist
+                best_idx_line = i
+                best_idx_spiral = j
+
+    if min_dist < 0.15:
+        intersection_price = prices[best_idx_spiral]
+        return {
+            "x_line": x_line[best_idx_line],
+            "y_line": y_line[best_idx_line],
+            "x_spiral": x_spiral[best_idx_spiral],
+            "y_spiral": y_spiral[best_idx_spiral],
+            "price": intersection_price,
+            "distance": min_dist
+        }
+
+    return None
+
+
+# ==============================================================================
+# 3) رسم چارت اسپیرال
+# ==============================================================================
+def build_spiral_chart(all_data, mode="standard", target_time=None):
+    fig = go.Figure()
+    spiral_info = []
+    table_data = []
+
+    num_spirals = len(all_data)
+    radius_step = 0.12
+
+    for i, (tf_key, data) in enumerate(all_data.items()):
+        df = data["df"]
+        color = data["color"]
+        label = data["label"]
+        fib = data.get("fib")
+
+        spiral_radius = 0.3 + i * radius_step
+        theta, r, prices = create_spiral_coordinates(df, spiral_radius)
+
+        if theta is None:
+            continue
+
+        x = r * np.cos(theta)
+        y = r * np.sin(theta)
+
+        time_strings = df["ts"].dt.strftime('%Y-%m-%d %H:%M UTC').tolist()
+
+        fig.add_trace(go.Scatter(
+            x=x, y=y,
+            mode='lines',
+            line=dict(color=color, width=2),
+            name=label,
+            hovertemplate=f"<b>{label}</b><br>" +
+                          "Price: %{customdata[0]:.2f}<br>" +
+                          "Time: %{customdata[1]}<br>" +
+                          "<extra></extra>",
+            customdata=list(zip(prices, time_strings))
+        ))
+
+        if len(x) > 0 and len(y) > 0:
+            fig.add_trace(go.Scatter(
+                x=[x[0], x[len(x)-1]],
+                y=[y[0], y[len(y)-1]],
+                mode='markers',
+                marker=dict(color=color, size=[8, 10], symbol=['circle', 'square']),
+                name=f"{label} (Start/End)",
+                showlegend=False
+            ))
+
+        spiral_info.append({
+            "theta": theta,
+            "r": r,
+            "x": x,
+            "y": y,
+            "label": label,
+            "color": color,
+            "prices": prices,
+            "tf_key": tf_key,
+            "fib": fib
+        })
+
+        last_price = prices[len(prices)-1] if len(prices) > 0 else None
+        last_time = df["ts"].iloc[-1].strftime('%Y-%m-%d %H:%M') if len(df) > 0 else "N/A"
+        fib_label = f"Fib({fib})" if fib else ""
+
+        table_data.append({
+            "تایم‌فریم": label,
+            "فیبوناچی": fib_label,
+            "قیمت لایو": f"{last_price:.2f}" if last_price else "N/A",
+            "زمان": last_time,
+            "قیمت پیش‌بینی": "-",
+            "تعداد کندل": len(df),
+            "رنگ": color
+        })
+
+    for i in range(len(spiral_info) - 1):
+        current = spiral_info[i]
+        next_spiral = spiral_info[i + 1]
+
+        if len(current["x"]) == 0 or len(next_spiral["x"]) == 0:
+            continue
+
+        x1 = current["x"][len(current["x"])-1]
+        y1 = current["y"][len(current["y"])-1]
+
+        if len(current["x"]) > 1:
+            dx = current["x"][len(current["x"])-1] - current["x"][len(current["x"])-2]
+            dy = current["y"][len(current["y"])-1] - current["y"][len(current["y"])-2]
+        else:
+            dx, dy = 0.1, 0.1
+
+        mag = np.sqrt(dx**2 + dy**2)
+        if mag > 0:
+            dx = dx / mag
+            dy = dy / mag
+
+        intersection = find_line_spiral_intersection(
+            x1, y1, dx, dy,
+            next_spiral["x"], next_spiral["y"],
+            next_spiral["prices"]
+        )
+
+        if intersection:
+            x2 = intersection["x_spiral"]
+            y2 = intersection["y_spiral"]
+            predicted_price = intersection["price"]
+
+            fig.add_trace(go.Scatter(
+                x=[x1, x2], y=[y1, y2],
+                mode='lines+markers',
+                line=dict(color=current["color"], width=2, dash='dash'),
+                marker=dict(color=current["color"], size=8, symbol='diamond'),
+                name=f"پیش‌بینی {current['label']} → {next_spiral['label']}",
+                showlegend=False,
+                hovertemplate=f"<b>خط امتداد</b><br>" +
+                              f"{current['label']} → {next_spiral['label']}<br>" +
+                              f"قیمت پیش‌بینی: {predicted_price:.2f}<br>" +
+                              "<extra></extra>"
+            ))
+
+            fig.add_trace(go.Scatter(
+                x=[x2], y=[y2],
+                mode='markers+text',
+                marker=dict(color=GOLD, size=12, symbol='star'),
+                text=[f"{predicted_price:.0f}"],
+                textposition="top center",
+                textfont=dict(color=GOLD, size=10),
+                name=f"تقاطع {current['label']} → {next_spiral['label']}",
+                showlegend=False
+            ))
+
+            table_data[i + 1]["قیمت پیش‌بینی"] = f"{predicted_price:.2f}"
+
+    mode_title = "فیبوناچی" if mode == "fibonacci" else "استاندارد"
+    time_title = ""
+    if target_time:
+        time_title = f" | ⏰ {target_time.strftime('%Y-%m-%d %H:%M')} UTC"
+
+    fig.update_layout(
+        title=dict(text=f"🌀 نمودار اسپیرال چند تایم‌فریم ({mode_title}){time_title}",
+                   x=0.5, font=dict(color=GOLD, size=16)),
+        paper_bgcolor=BG,
+        plot_bgcolor=CARD,
+        font=dict(color=TXT),
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.2,
+            xanchor="center",
+            x=0.5,
+            font=dict(color=TXT, size=9)
+        ),
+        xaxis=dict(
+            showgrid=False,
+            zeroline=False,
+            showticklabels=False,
+            scaleanchor="y",
+            scaleratio=1
+        ),
+        yaxis=dict(
+            showgrid=False,
+            zeroline=False,
+            showticklabels=False
+        ),
+        margin=dict(l=20, r=20, t=60, b=20),
+        height=750
+    )
+
+    for radius in np.arange(0.3, 2.5, 0.2):
+        theta_circle = np.linspace(0, 2 * np.pi, 100)
+        x_circle = radius * np.cos(theta_circle)
+        y_circle = radius * np.sin(theta_circle)
+        fig.add_trace(go.Scatter(
+            x=x_circle, y=y_circle,
+            mode='lines',
+            line=dict(color=LINE, width=1, dash='dot'),
+            showlegend=False,
+            hoverinfo='skip'
+        ))
+
+    return fig, table_data
+
+
+def build_price_table(table_data, mode="standard"):
+    if not table_data:
+        return dbc.Alert("داده‌ای برای نمایش وجود ندارد.", color="warning")
+
+    rows = []
+    for row in table_data:
+        row_cells = [
+            html.Td([
+                html.Span("●", style={"color": row["رنگ"], "marginRight": 5}),
+                row["تایم‌فریم"]
+            ], style={"color": TXT, "fontWeight": "bold"}),
+        ]
+
+        if mode == "fibonacci":
+            row_cells.append(html.Td(row["فیبوناچی"], style={"color": MUT, "fontSize": 11}))
+
+        row_cells.extend([
+            html.Td(row["قیمت لایو"], style={"color": UP, "fontWeight": "bold"}),
+            html.Td(row["زمان"], style={"color": MUT, "fontSize": 11}),
+            html.Td(row["قیمت پیش‌بینی"], style={"color": GOLD, "fontWeight": "bold"}),
+            html.Td(row["تعداد کندل"], style={"color": MUT}),
+        ])
+
+        rows.append(html.Tr(row_cells, style={"borderBottom": f"1px solid {LINE}"}))
+
+    header_cells = [
+        html.Th("تایم‌فریم", style={"color": GOLD, "borderBottom": f"2px solid {GOLD}"}),
+    ]
+
+    if mode == "fibonacci":
+        header_cells.append(html.Th("فیبوناچی", style={"color": GOLD, "borderBottom": f"2px solid {GOLD}"}))
+
+    header_cells.extend([
+        html.Th("قیمت لایو", style={"color": GOLD, "borderBottom": f"2px solid {GOLD}"}),
+        html.Th("زمان (UTC)", style={"color": GOLD, "borderBottom": f"2px solid {GOLD}"}),
+        html.Th("قیمت پیش‌بینی", style={"color": GOLD, "borderBottom": f"2px solid {GOLD}"}),
+        html.Th("کندل‌ها", style={"color": GOLD, "borderBottom": f"2px solid {GOLD}"}),
+    ])
+
+    table = dbc.Table([
+        html.Thead(html.Tr(header_cells)),
+        html.Tbody(rows)
+    ], bordered=False, hover=True, style={"background": CARD, "color": TXT})
+
+    return table
+
+
+# ==============================================================================
+# 4) اپ Dash
+# ==============================================================================
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.CYBORG])
+app.title = "Multi-Timeframe Spiral Analyzer - Time Travel (UTC)"
+server = app.server
+
+CATEGORY_OPTS = [{"label": v, "value": v} for v in ["linear", "spot", "inverse"]]
+MODE_OPTS = [
+    {"label": "📊 استاندارد (1m تا 1M)", "value": "standard"},
+    {"label": "🌀 فیبوناچی (Fib تا 1M)", "value": "fibonacci"},
+]
+
+utc_now = datetime.now(pytz.UTC)
+default_date = utc_now.strftime('%Y-%m-%d')
+default_time = utc_now.strftime('%H:%M')
+
+app.layout = html.Div([
+    dbc.Alert([
+        html.Strong("⚠️ نکته مهم: "),
+        "تمام زمان‌ها به صورت ",
+        html.Strong("UTC"),
+        " تفسیر می‌شوند. بایبیت از timezone UTC استفاده می‌کند."
+    ], color="info", style={"maxWidth": 1500, "margin": "10px auto", "fontSize": 13}),
+
+    dbc.Card(dbc.CardBody(dbc.Row([
+        dbc.Col([html.Label("نماد:", style={"fontSize": 12, "color": MUT}),
+                 dcc.Input(id="symbol-input", value=DEFAULT_SYMBOL, type="text",
+                           style={"width": "100%", "padding": 6, "borderRadius": 6})], md=2),
+        dbc.Col([html.Label("بازار:", style={"fontSize": 12, "color": MUT}),
+                 dcc.Dropdown(id="category-dropdown", value=DEFAULT_CATEGORY,
+                             clearable=False, options=CATEGORY_OPTS)], md=2),
+        dbc.Col([html.Label("حالت تایم‌فریم:", style={"fontSize": 12, "color": MUT}),
+                 dcc.Dropdown(id="mode-dropdown", value="standard",
+                             clearable=False, options=MODE_OPTS)], md=2),
+        dbc.Col([html.Label("📅 تاریخ (UTC):", style={"fontSize": 12, "color": MUT}),
+                 dcc.Input(id="date-input", type="text", value=default_date,
+                           placeholder="YYYY-MM-DD",
+                           style={"width": "100%", "padding": 6, "borderRadius": 6})], md=2),
+        dbc.Col([html.Label("🕐 ساعت (UTC):", style={"fontSize": 12, "color": MUT}),
+                 dcc.Input(id="time-input", type="text", value=default_time,
+                           placeholder="HH:MM",
+                           style={"width": "100%", "padding": 6, "borderRadius": 6})], md=2),
+        dbc.Col(dbc.Button("🔄 بروزرسانی", id="refresh-btn", color="warning", className="mt-3",
+                           style={"fontWeight": "bold", "color": "#0b1220", "width": "100%"}), md=2),
+    ])), style={"maxWidth": 1500, "margin": "10px auto"}),
+
+    dbc.Card(dbc.CardBody(dbc.Row([
+        dbc.Col(dbc.Button("⏰ برو به زمان مشخص (UTC)", id="goto-time-btn", color="info",
+                          style={"fontWeight": "bold", "width": "100%"}), md=3),
+        dbc.Col(dbc.Button("🔄 برو به زمان حال (لایو)", id="goto-now-btn", color="success",
+                          style={"fontWeight": "bold", "width": "100%"}), md=3),
+        dbc.Col(html.Div(id="conn-status", style={"color": MUT, "fontSize": 11,
+                          "textAlign": "center", "marginTop": 8}), md=6),
+    ])), style={"maxWidth": 1500, "margin": "5px auto"}),
+
+    dbc.Card(dbc.CardBody([
+        html.H5("🌀 نمودار اسپیرال چند تایم‌فریم با خطوط امتداد یافته",
+                style={"color": GOLD, "fontSize": 14, "margin": "8px 0", "textAlign": "center"}),
+        dcc.Graph(id="spiral-chart", style={"height": "75vh"},
+                 config={"displaylogo": False, "scrollZoom": True})
+    ]), style={"maxWidth": 1500, "margin": "10px auto"}),
+
+    dbc.Card(dbc.CardBody([
+        html.H5("📊 جدول قیمت‌های لایو و پیش‌بینی شده از تقاطع خطوط",
+                style={"color": GOLD, "fontSize": 14, "margin": "8px 0"}),
+        html.Div(id="price-table")
+    ]), style={"maxWidth": 1500, "margin": "10px auto"}),
+
+    # Store برای ذخیره target_time به صورت ISO string
+    dcc.Store(id="target-time-store", data=None),
+
+    # Interval برای بروزرسانی خودکار
+    dcc.Interval(id="refresh-interval", interval=30_000, n_intervals=0),
+], style={"background": BG, "minHeight": "100vh", "padding": "10px"})
+
+
+# ==============================================================================
+# 5) کال‌بک 1: مدیریت target_time در Store
+# ==============================================================================
+@app.callback(
+    Output("target-time-store", "data"),
+    Output("refresh-interval", "disabled"),
+    Input("goto-time-btn", "n_clicks"),
+    Input("goto-now-btn", "n_clicks"),
+    State("date-input", "value"),
+    State("time-input", "value"),
+    prevent_initial_call=True
+)
+def manage_target_time(n_goto, n_now, date_value, time_value):
+    trigger = ctx.triggered_id
+
+    if trigger == "goto-time-btn" and date_value:
+        try:
+            if time_value:
+                time_parts = time_value.split(':')
+                if len(time_parts) >= 2:
+                    hour = int(time_parts[0])
+                    minute = int(time_parts[1])
+                else:
+                    hour, minute = 0, 0
+            else:
+                hour, minute = 0, 0
+
+            target_time = datetime.strptime(date_value, '%Y-%m-%d').replace(
+                hour=hour, minute=minute, tzinfo=pytz.UTC
+            )
+            print(f"\n⏰ Time Travel to: {target_time.isoformat()}")
+            return target_time.isoformat(), True  # disabled=True
+        except Exception as e:
+            print(f"❌ Error parsing time: {e}")
+            return None, False
+
+    elif trigger == "goto-now-btn":
+        print(f"\n🔄 Returning to LIVE mode")
+        return None, False  # disabled=False
+
+    return dash.no_update, dash.no_update
+
+
+# ==============================================================================
+# 6) کال‌بک 2: رسم چارت بر اساس target_time
+# ==============================================================================
+@app.callback(
+    Output("spiral-chart", "figure"),
+    Output("price-table", "children"),
+    Output("conn-status", "children"),
+    Input("refresh-interval", "n_intervals"),
+    Input("refresh-btn", "n_clicks"),
+    Input("target-time-store", "data"),
+    State("symbol-input", "value"),
+    State("category-dropdown", "value"),
+    State("mode-dropdown", "value"),
+)
+def update_spirals(n_int, n_refresh, stored_target_time, symbol, category, mode):
+    symbol = (symbol or DEFAULT_SYMBOL).upper()
+    category = category or DEFAULT_CATEGORY
+    mode = mode or "standard"
+
+    # بازیابی target_time از Store
+    target_time = None
+    if stored_target_time:
+        try:
+            target_time = datetime.fromisoformat(stored_target_time)
+        except Exception:
+            target_time = None
+
+    print(f"\n{'='*60}")
+    print(f"Updating spirals for {symbol} | Mode: {mode}")
+    if target_time:
+        print(f"Target Time: {target_time.isoformat()}")
+        print(f"🔒 Auto-refresh DISABLED (Time Travel mode)")
+    else:
+        print(f"Target Time: NOW (Live)")
+        print(f"✅ Auto-refresh ENABLED (Live mode)")
+    print(f"{'='*60}")
+
+    all_data = get_all_timeframes_data(symbol, category, mode, target_time)
+
+    if not all_data:
+        empty_fig = go.Figure(layout=dict(
+            paper_bgcolor=BG, plot_bgcolor=CARD,
+            annotations=[dict(text="❌ دریافت دیتا از بایبیت ناموفق بود.",
+                             x=0.5, y=0.5, showarrow=False,
+                             font=dict(color=DN, size=14))]))
+        return empty_fig, dash.no_update, "🔴 قطع"
+
+    fig, table_data = build_spiral_chart(all_data, mode, target_time)
+    table = build_price_table(table_data, mode)
+
+    mode_label = "فیبوناچی" if mode == "fibonacci" else "استاندارد"
+    if target_time:
+        time_label = f"⏰ {target_time.strftime('%Y-%m-%d %H:%M')} UTC (قفل شده)"
+    else:
+        time_label = f"🔴 زنده | {datetime.now(pytz.UTC).strftime('%H:%M:%S')} UTC"
+
+    status = f"🟢 متصل | {len(all_data)} تایم‌فریم ({mode_label}) | {time_label}"
+
+    return fig, table, status
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=8060, use_reloader=False)

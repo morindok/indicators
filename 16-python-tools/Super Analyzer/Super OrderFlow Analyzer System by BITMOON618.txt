@@ -1,0 +1,2786 @@
+﻿import requests
+import json
+import time
+import threading
+import math
+from collections import deque, defaultdict
+import statistics
+import numpy as np  # اضافه شده برای تحلیل‌های آماری
+
+import dash
+from dash import dcc, html
+from dash.dependencies import Input, Output, State
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+DEFAULT_USD_TO_IRR = 85000
+
+COLORS = {
+    'background': '#0a0e1a',
+    'card': '#111827',
+    'card_border': '#1f2937',
+    'text': '#f3f4f6',
+    'text_muted': '#9ca3af',
+    'bid': '#00d084',
+    'bid_dark': '#006633',
+    'ask': '#ff4757',
+    'ask_dark': '#991a2e',
+    'accent': '#3b82f6',
+    'accent_light': '#60a5fa',
+    'warning': '#f59e0b',
+    'warning_light': '#fbbf24',
+    'danger': '#ef4444',
+    'success': '#10b981',
+    'info': '#06b6d4',
+    'purple': '#8b5cf6',
+    'orange': '#f97316',
+    'pink': '#ec4899',
+    'teal': '#14b8a6',
+    'hvn': '#fbbf24',
+}
+
+
+def hex_to_rgba(hex_color, alpha=0.1):
+    hex_color = hex_color.lstrip('#')
+    if len(hex_color) == 6:
+        r = int(hex_color[0:2], 16)
+        g = int(hex_color[2:4], 16)
+        b = int(hex_color[4:6], 16)
+        return f"rgba({r}, {g}, {b}, {alpha})"
+    return hex_color
+
+
+class NobitexOrderbookAnalyzer:
+    def __init__(self, symbol="BTCIRT", max_history=200):
+        self.symbol = symbol
+        self.base_url = "https://apiv2.nobitex.ir/v3/orderbook"
+        self.max_history = max_history
+
+        self.usd_rate = self.fetch_usd_rate()
+        if not self.usd_rate:
+            self.usd_rate = DEFAULT_USD_TO_IRR
+
+        self.unit_multiplier = 1
+        self.last_usd_rate_update = 0
+
+        # قیمت مرجع جهانی BTC/USD (بایننس با fallback به CoinGecko) برای مقایسه با قیمت مؤثر نوبیتکس
+        self.reference_price = None
+        self.reference_source = None
+        self.last_reference_update = 0
+        self.reference_history = deque(maxlen=max_history)
+        self.premium_history = deque(maxlen=max_history)
+
+        # آفست کالیبراسیون: اختلاف (قیمت مرجع - قیمت خام نوبیتکس) که به همه قیمت‌های
+        # مطلق تبدیل‌شده از نوبیتکس اضافه می‌شود تا با بایننس/CoinGecko هم‌راستا شوند.
+        # فقط هنگام دریافت قیمت مرجع تازه بازتنظیم می‌شود (نه هر چرخه)، تا نوسانات
+        # واقعی اردربوک نوبیتکس بین دو بروزرسانی از بین نرود.
+        self.price_calibration_offset = 0.0
+        self._recalibrate_offset = True
+
+        self.price_history = deque(maxlen=max_history)
+        self.spread_history = deque(maxlen=max_history)
+        self.imbalance_history = deque(maxlen=max_history)
+        self.bid_depth_history = deque(maxlen=max_history)
+        self.ask_depth_history = deque(maxlen=max_history)
+        self.mid_price_history = deque(maxlen=max_history)
+        self.volume_history = deque(maxlen=max_history)
+        self.buy_pressure_history = deque(maxlen=max_history)
+        self.sell_pressure_history = deque(maxlen=max_history)
+        self.delta_history = deque(maxlen=max_history)
+        self.vwap_history = deque(maxlen=max_history)
+        self.timestamps = deque(maxlen=max_history)
+
+        self.current_stats = None
+        self.current_orderbook = None
+        self.current_signals = []
+        self.footprint_data = None
+        self.orderflow_data = None
+
+        self.footprint_history = deque(maxlen=max_history)
+        self.orderflow_history = deque(maxlen=max_history)
+
+        self.prev_bids = {}
+        self.prev_asks = {}
+        self.prev_time = 0
+
+    def fetch_usd_rate(self):
+        try:
+            url = "https://apiv2.nobitex.ir/market/stats?srcCurrency=usdt&dstCurrency=irt"
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("status") == "ok" and "usdt-irt" in data.get("stats", {}):
+                    return float(data["stats"]["usdt-irt"]["latest"])
+        except Exception:
+            pass
+        return None
+
+    def update_usd_rate_if_needed(self):
+        current_time = time.time()
+        if current_time - self.last_usd_rate_update > 60:
+            new_rate = self.fetch_usd_rate()
+            if new_rate and new_rate > 0:
+                self.usd_rate = new_rate
+                self.last_usd_rate_update = current_time
+
+    def fetch_reference_price(self):
+        """
+        قیمت مرجع جهانی BTC/USD را می‌گیرد تا با قیمت مؤثر نوبیتکس مقایسه/کالیبره شود.
+
+        توجه: این متد و `update_reference_price_if_needed` دیگر به‌صورت خودکار در حلقهٔ اصلی
+        اپ فراخوانی نمی‌شوند، چون در محیط فعلی دسترسی شبکه به api.binance.com و
+        api.coingecko.com وجود ندارد و صبر کردن برای timeout هر چرخه را کند می‌کرد.
+        به‌جای آن، قیمت مرجع از طریق ورودی دستی «قیمت لحظه‌ای بایننس» در بالای صفحه
+        تنظیم می‌شود (کالبک `update_manual_reference_price`). این دو متد فقط برای زمانی
+        نگه داشته شده‌اند که دسترسی شبکه در دسترس باشد (مثلاً با VPN).
+        """
+        try:
+            response = requests.get(
+                "https://api.binance.com/api/v3/ticker/price",
+                params={"symbol": "BTCUSDT"}, timeout=5
+            )
+            if response.status_code == 200:
+                price = float(response.json().get("price"))
+                if price > 0:
+                    return price, "Binance"
+        except Exception:
+            pass
+
+        try:
+            response = requests.get(
+                "https://api.coingecko.com/api/v3/simple/price",
+                params={"ids": "bitcoin", "vs_currencies": "usd"}, timeout=5
+            )
+            if response.status_code == 200:
+                price = response.json().get("bitcoin", {}).get("usd")
+                if price:
+                    return float(price), "CoinGecko"
+        except Exception:
+            pass
+
+        return None, None
+
+    def update_reference_price_if_needed(self):
+        current_time = time.time()
+        if current_time - self.last_reference_update > 5:
+            price, source = self.fetch_reference_price()
+            if price and price > 0:
+                self.reference_price = price
+                self.reference_source = source
+                self.last_reference_update = current_time
+                self._recalibrate_offset = True  # آفست را در چرخه محاسباتی بعدی بازتنظیم کن
+
+    def _raw_to_usd(self, price_amount):
+        """تبدیل خام IRR/IRT به USD، بدون اعمال آفست کالیبراسیون (برای مقادیر دلتا مثل اسپرد)."""
+        effective_divisor = self.usd_rate * self.unit_multiplier
+        if effective_divisor <= 0:
+            return 0
+        return price_amount / effective_divisor
+
+    def to_usd(self, price_amount):
+        """تبدیل قیمت مطلق IRR/IRT به USD + اعمال آفست کالیبراسیون نسبت به بایننس/CoinGecko."""
+        return self._raw_to_usd(price_amount) + self.price_calibration_offset
+
+    def fetch_orderbook(self):
+        url = f"{self.base_url}/{self.symbol}"
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except Exception:
+            return None
+
+    def parse_orderbook(self, data):
+        if not data or data.get("status") != "ok":
+            return None
+
+        bids = [[float(price), float(volume)] for price, volume in data.get("bids", [])]
+        asks = [[float(price), float(volume)] for price, volume in data.get("asks", [])]
+
+        bids.sort(key=lambda x: x[0], reverse=True)
+        asks.sort(key=lambda x: x[0])
+
+        return {
+            "bids": bids,
+            "asks": asks,
+            "last_trade_price": float(data.get("lastTradePrice", 0)),
+            "last_update": data.get("lastUpdate", 0)
+        }
+
+    def calculate_statistics(self, orderbook):
+        bids = orderbook["bids"]
+        asks = orderbook["asks"]
+
+        if not bids or not asks:
+            return None
+
+        best_bid_irr = bids[0][0]
+        best_ask_irr = asks[0][0]
+        spread_irr = best_ask_irr - best_bid_irr
+        mid_price_irr = (best_bid_irr + best_ask_irr) / 2
+
+        # کالیبراسیون با قیمت مرجع جهانی: فقط وقتی یک قیمت مرجع تازه رسیده (هر ~۵ ثانیه)
+        # آفست بازتنظیم می‌شود؛ در فاصله بین دو بروزرسانی، آفست ثابت می‌ماند تا نوسانات
+        # واقعی اردربوک نوبیتکس (که پایه سیگنال‌های این اپ است) دست‌نخورده باقی بمانند.
+        raw_mid_price = self._raw_to_usd(mid_price_irr)
+        if self._recalibrate_offset and self.reference_price and self.reference_price > 0 and raw_mid_price > 0:
+            self.price_calibration_offset = self.reference_price - raw_mid_price
+            self._recalibrate_offset = False
+
+        best_bid = self.to_usd(best_bid_irr)
+        best_ask = self.to_usd(best_ask_irr)
+        spread = self._raw_to_usd(spread_irr)  # اسپرد یک اختلاف قیمتی است؛ آفست کالیبراسیون نباید رویش اعمال شود
+        mid_price = self.to_usd(mid_price_irr)
+        last_trade = self.to_usd(orderbook["last_trade_price"])
+        spread_pct = (spread / mid_price) * 100 if mid_price else 0
+
+        total_bid_volume = sum(b[1] for b in bids)
+        total_ask_volume = sum(a[1] for a in asks)
+        total_volume = total_bid_volume + total_ask_volume
+
+        if total_volume > 0:
+            imbalance = (total_bid_volume - total_ask_volume) / total_volume
+        else:
+            imbalance = 0
+
+        vwap_bid = self._weighted_avg_price(bids)
+        vwap_ask = self._weighted_avg_price(asks)
+        vwap_bid_usd = self.to_usd(vwap_bid)
+        vwap_ask_usd = self.to_usd(vwap_ask)
+
+        bid_depth_1pct = self._calculate_depth(bids, mid_price_irr, 0.01)
+        bid_depth_5pct = self._calculate_depth(bids, mid_price_irr, 0.05)
+        ask_depth_1pct = self._calculate_depth(asks, mid_price_irr, 0.01, is_ask=True)
+        ask_depth_5pct = self._calculate_depth(asks, mid_price_irr, 0.05, is_ask=True)
+
+        avg_bid_size = statistics.mean([b[1] for b in bids]) if bids else 0
+        avg_ask_size = statistics.mean([a[1] for a in asks]) if asks else 0
+
+        large_bids = [b for b in bids if b[1] > avg_bid_size * 2]
+        large_asks = [a for a in asks if a[1] > avg_ask_size * 2]
+
+        top5_bid_vol = sum(b[1] for b in bids[:5])
+        top5_ask_vol = sum(a[1] for a in asks[:5])
+        buy_pressure = top5_bid_vol / (top5_bid_vol + top5_ask_vol) if (top5_bid_vol + top5_ask_vol) > 0 else 0.5
+        sell_pressure = 1 - buy_pressure
+
+        delta = self._calculate_delta(bids, asks)
+
+        return {
+            "timestamp": time.time(),
+            "best_bid": best_bid,
+            "best_ask": best_ask,
+            "spread": spread,
+            "spread_pct": spread_pct,
+            "mid_price": mid_price,
+            "mid_price_raw": raw_mid_price,
+            "calibration_offset": self.price_calibration_offset,
+            "mid_price_irr": mid_price_irr,
+            "last_trade_price": last_trade,
+            "total_bid_volume": total_bid_volume,
+            "total_ask_volume": total_ask_volume,
+            "total_volume": total_volume,
+            "imbalance": imbalance,
+            "bid_depth_1pct": bid_depth_1pct,
+            "bid_depth_5pct": bid_depth_5pct,
+            "ask_depth_1pct": ask_depth_1pct,
+            "ask_depth_5pct": ask_depth_5pct,
+            "vwap_bid": vwap_bid_usd,
+            "vwap_ask": vwap_ask_usd,
+            "bid_levels": len(bids),
+            "ask_levels": len(asks),
+            "avg_bid_size": avg_bid_size,
+            "avg_ask_size": avg_ask_size,
+            "large_bids_count": len(large_bids),
+            "large_asks_count": len(large_asks),
+            "large_bids_volume": sum(b[1] for b in large_bids),
+            "large_asks_volume": sum(a[1] for a in large_asks),
+            "buy_pressure": buy_pressure,
+            "sell_pressure": sell_pressure,
+            "delta": delta,
+            "bids": bids,
+            "asks": asks,
+            "best_bid_irr": best_bid_irr,
+            "best_ask_irr": best_ask_irr,
+        }
+
+    def _calculate_depth(self, orders, mid_price, pct_range, is_ask=False):
+        if is_ask:
+            limit = mid_price * (1 + pct_range)
+            return sum(o[1] for o in orders if o[0] <= limit)
+        else:
+            limit = mid_price * (1 - pct_range)
+            return sum(o[1] for o in orders if o[0] >= limit)
+
+    def _weighted_avg_price(self, orders):
+        if not orders:
+            return 0
+        total_vol = sum(o[1] for o in orders)
+        if total_vol == 0:
+            return 0
+        return sum(o[0] * o[1] for o in orders) / total_vol
+
+    def _calculate_delta(self, bids, asks):
+        """
+        برآورد خالص تغییر «فشار» اردربوک بین دو اسنپ‌شات (Book-Pressure Delta).
+        توجه علمی مهم: این معیار Trade Delta واقعی (خرید/فروش تیک‌به‌تیک) نیست،
+        چون نوبیتکس داده معاملات با برچسب Aggressor Side نمی‌دهد؛ این فقط یک
+        تقریب از جهت نقدینگی اردربوک است.
+
+        نسخه قبلی فقط افزایش حجم را می‌شمرد و کاهش/حذف سطوح (لغو سفارش یا پر شدن آن)
+        را نادیده می‌گرفت که تصویر را ناقص می‌کرد. این نسخه خالص تغییرات
+        (هم افزایش، هم کاهش) را روی اجتماع سطوح فعلی و قبلی محاسبه می‌کند.
+        """
+        current_bids = {b[0]: b[1] for b in bids[:20]}
+        current_asks = {a[0]: a[1] for a in asks[:20]}
+
+        bid_net = 0.0
+        for price in set(current_bids) | set(self.prev_bids):
+            bid_net += current_bids.get(price, 0.0) - self.prev_bids.get(price, 0.0)
+
+        ask_net = 0.0
+        for price in set(current_asks) | set(self.prev_asks):
+            ask_net += current_asks.get(price, 0.0) - self.prev_asks.get(price, 0.0)
+
+        self.prev_bids = current_bids
+        self.prev_asks = current_asks
+
+        return bid_net - ask_net
+
+    def calculate_footprint(self, stats):
+        bids = stats["bids"]
+        asks = stats["asks"]
+
+        size_ranges = [
+            (0, 0.001, "Micro"),
+            (0.001, 0.01, "Small"),
+            (0.01, 0.1, "Medium"),
+            (0.1, 1.0, "Large"),
+            (1.0, float('inf'), "Whale")
+        ]
+
+        footprint = {
+            "bid_distribution": defaultdict(float),
+            "ask_distribution": defaultdict(float),
+            "bid_count": defaultdict(int),
+            "ask_count": defaultdict(int),
+            "cluster_analysis": [],
+            "absorption_zones": [],
+            "iceberg_hints": [],
+        }
+
+        for min_s, max_s, label in size_ranges:
+            bid_vol = sum(b[1] for b in bids if min_s <= b[1] < max_s)
+            ask_vol = sum(a[1] for a in asks if min_s <= a[1] < max_s)
+            bid_cnt = sum(1 for b in bids if min_s <= b[1] < max_s)
+            ask_cnt = sum(1 for a in asks if min_s <= a[1] < max_s)
+
+            footprint["bid_distribution"][label] = bid_vol
+            footprint["ask_distribution"][label] = ask_vol
+            footprint["bid_count"][label] = bid_cnt
+            footprint["ask_count"][label] = ask_cnt
+
+        for i in range(len(bids) - 2):
+            cluster_vol = sum(b[1] for b in bids[i:i + 3])
+            cluster_price_range = bids[i][0] - bids[i + 2][0]
+            if cluster_vol > stats["total_bid_volume"] * 0.15 and cluster_price_range < stats["best_bid_irr"] * 0.002:
+                footprint["cluster_analysis"].append({
+                    "side": "bid",
+                    "price": self.to_usd(bids[i][0]),
+                    "volume": cluster_vol,
+                    "levels": 3,
+                    "strength": "Strong" if cluster_vol > stats["total_bid_volume"] * 0.25 else "Medium"
+                })
+
+        for i in range(len(asks) - 2):
+            cluster_vol = sum(a[1] for a in asks[i:i + 3])
+            cluster_price_range = asks[i + 2][0] - asks[i][0]
+            if cluster_vol > stats["total_ask_volume"] * 0.15 and cluster_price_range < stats["best_ask_irr"] * 0.002:
+                footprint["cluster_analysis"].append({
+                    "side": "ask",
+                    "price": self.to_usd(asks[i][0]),
+                    "volume": cluster_vol,
+                    "levels": 3,
+                    "strength": "Strong" if cluster_vol > stats["total_ask_volume"] * 0.25 else "Medium"
+                })
+
+        bid_sizes = [b[1] for b in bids[:10]]
+        ask_sizes = [a[1] for a in asks[:10]]
+
+        for size, count in self._find_repeated_sizes(bid_sizes).items():
+            if count >= 3 and size > stats["avg_bid_size"]:
+                footprint["iceberg_hints"].append({
+                    "side": "bid",
+                    "size": size,
+                    "count": count,
+                    "confidence": "High" if count >= 5 else "Medium"
+                })
+
+        for size, count in self._find_repeated_sizes(ask_sizes).items():
+            if count >= 3 and size > stats["avg_ask_size"]:
+                footprint["iceberg_hints"].append({
+                    "side": "ask",
+                    "size": size,
+                    "count": count,
+                    "confidence": "High" if count >= 5 else "Medium"
+                })
+
+        if len(self.footprint_history) > 0:
+            prev = self.footprint_history[-1]
+            if abs(stats["mid_price"] - self.mid_price_history[-1]) / stats["mid_price"] < 0.001:
+                if stats["total_volume"] > statistics.mean(self.volume_history) * 1.5:
+                    footprint["absorption_zones"].append({
+                        "price": stats["mid_price"],
+                        "volume": stats["total_volume"],
+                        "type": "Bid Absorption" if stats["imbalance"] > 0 else "Ask Absorption"
+                    })
+
+        return footprint
+
+    def _find_repeated_sizes(self, sizes, tolerance=0.0001):
+        groups = defaultdict(int)
+        for s in sizes:
+            key = round(s / tolerance) * tolerance
+            groups[key] += 1
+        return {k: v for k, v in groups.items() if v >= 2}
+
+    def calculate_orderflow(self, stats):
+        orderflow = {
+            "flow_direction": "Neutral",
+            "flow_strength": 0,
+            "aggressive_buyers": 0,
+            "aggressive_sellers": 0,
+            "passive_buyers": 0,
+            "passive_sellers": 0,
+            "market_depth_ratio": 0,
+            "liquidity_score": 0,
+            "resistance_levels": [],
+            "support_levels": [],
+            "momentum": 0,
+        }
+
+        if stats["imbalance"] > 0.4:
+            orderflow["flow_direction"] = "Strong Buy"
+            orderflow["flow_strength"] = stats["imbalance"]
+        elif stats["imbalance"] > 0.2:
+            orderflow["flow_direction"] = "Buy"
+            orderflow["flow_strength"] = stats["imbalance"]
+        elif stats["imbalance"] < -0.4:
+            orderflow["flow_direction"] = "Strong Sell"
+            orderflow["flow_strength"] = abs(stats["imbalance"])
+        elif stats["imbalance"] < -0.2:
+            orderflow["flow_direction"] = "Sell"
+            orderflow["flow_strength"] = abs(stats["imbalance"])
+
+        bid_aggression = sum(b[1] for b in stats["bids"][:3]) / stats["total_bid_volume"] if stats[
+                                                                                                 "total_bid_volume"] > 0 else 0
+        ask_aggression = sum(a[1] for a in stats["asks"][:3]) / stats["total_ask_volume"] if stats[
+                                                                                                 "total_ask_volume"] > 0 else 0
+
+        orderflow["aggressive_buyers"] = bid_aggression
+        orderflow["aggressive_sellers"] = ask_aggression
+        orderflow["passive_buyers"] = 1 - bid_aggression
+        orderflow["passive_sellers"] = 1 - ask_aggression
+
+        if stats["ask_depth_1pct"] > 0:
+            orderflow["market_depth_ratio"] = stats["bid_depth_1pct"] / stats["ask_depth_1pct"]
+
+        spread_score = max(0, 1 - stats["spread_pct"] / 0.5)
+        volume_score = min(1, stats["total_volume"] / 1.0)
+        depth_score = min(1, (stats["bid_depth_1pct"] + stats["ask_depth_1pct"]) / 0.5)
+        orderflow["liquidity_score"] = (spread_score * 0.4 + volume_score * 0.3 + depth_score * 0.3) * 100
+
+        bids = stats["bids"]
+        asks = stats["asks"]
+
+        for i in range(min(10, len(bids))):
+            if bids[i][1] > stats["avg_bid_size"] * 3:
+                orderflow["support_levels"].append({
+                    "price": self.to_usd(bids[i][0]),
+                    "volume": bids[i][1],
+                    "strength": "Strong" if bids[i][1] > stats["avg_bid_size"] * 5 else "Medium"
+                })
+
+        for i in range(min(10, len(asks))):
+            if asks[i][1] > stats["avg_ask_size"] * 3:
+                orderflow["resistance_levels"].append({
+                    "price": self.to_usd(asks[i][0]),
+                    "volume": asks[i][1],
+                    "strength": "Strong" if asks[i][1] > stats["avg_ask_size"] * 5 else "Medium"
+                })
+
+        if len(self.mid_price_history) >= 3:
+            changes = [self.mid_price_history[i] - self.mid_price_history[i - 1]
+                       for i in range(1, len(self.mid_price_history))]
+            if len(changes) >= 2:
+                orderflow["momentum"] = changes[-1] - changes[-2]
+
+        return orderflow
+
+    def update_history(self, stats):
+        self.price_history.append(stats["mid_price"])
+        self.spread_history.append(stats["spread_pct"])
+        self.imbalance_history.append(stats["imbalance"])
+        self.bid_depth_history.append(stats["bid_depth_1pct"])
+        self.ask_depth_history.append(stats["ask_depth_1pct"])
+        self.mid_price_history.append(stats["mid_price"])
+        self.volume_history.append(stats["total_volume"])
+        self.buy_pressure_history.append(stats["buy_pressure"])
+        self.sell_pressure_history.append(stats["sell_pressure"])
+        self.delta_history.append(stats["delta"])
+        self.vwap_history.append((stats["vwap_bid"] + stats["vwap_ask"]) / 2)
+        self.timestamps.append(time.strftime('%H:%M:%S'))
+
+        if self.reference_price and self.reference_price > 0:
+            premium_pct = (stats["mid_price"] - self.reference_price) / self.reference_price * 100
+            self.reference_history.append(self.reference_price)
+            self.premium_history.append(premium_pct)
+
+    def calculate_trends(self):
+        trends = {}
+        if len(self.mid_price_history) >= 2:
+            trends["price_change"] = self.mid_price_history[-1] - self.mid_price_history[-2]
+            trends["price_change_pct"] = (trends["price_change"] / self.mid_price_history[-2]) * 100 if \
+            self.mid_price_history[-2] > 0 else 0
+
+        if len(self.spread_history) >= 5:
+            trends["avg_spread"] = statistics.mean(self.spread_history)
+            trends["spread_volatility"] = statistics.stdev(self.spread_history) if len(self.spread_history) > 1 else 0
+
+        if len(self.imbalance_history) >= 5:
+            trends["avg_imbalance"] = statistics.mean(self.imbalance_history)
+            trends["imbalance_trend"] = "Bullish" if trends["avg_imbalance"] > 0.1 else "Bearish" if trends[
+                                                                                                         "avg_imbalance"] < -0.1 else "Neutral"
+
+        if len(self.volume_history) >= 5:
+            trends["avg_volume"] = statistics.mean(self.volume_history)
+            trends["volume_trend"] = "Increasing" if self.volume_history[-1] > trends["avg_volume"] else "Decreasing"
+
+        if len(self.delta_history) >= 5:
+            trends["avg_delta"] = statistics.mean(self.delta_history)
+            trends["delta_trend"] = "Accumulation" if trends["avg_delta"] > 0 else "Distribution"
+
+        return trends
+
+    def generate_signals(self, stats, trends, footprint, orderflow):
+        signals = []
+
+        # بررسی معقول بودن قیمت محاسبه‌شده - محافظ در برابر انتخاب اشتباه واحد (تومان/ریال)
+        if stats["mid_price"] > 0 and (stats["mid_price"] < 1000 or stats["mid_price"] > 500000):
+            signals.append(("danger",
+                             "🚫 قیمت محاسبه‌شده (${:,.0f}) خارج از بازه منطقی BTC است - واحد قیمت (تومان/ریال) را از بالای صفحه بررسی کنید".format(
+                                 stats["mid_price"]), 0))
+
+        if self.reference_price and self.reference_price > 0 and stats.get("calibration_offset") is not None:
+            offset_pct = (stats["calibration_offset"] / self.reference_price) * 100
+            if abs(offset_pct) > 5:
+                signals.append(("warning",
+                                 "💱 آفست کالیبراسیون نسبت به {} غیرعادی است ({:+.2f}%, ${:+,.2f}) - نرخ دلار/واحد قیمت را بررسی کنید".format(
+                                     self.reference_source or "قیمت مرجع", offset_pct, stats["calibration_offset"]), 1))
+
+        if stats["spread_pct"] > 0.5:
+            signals.append(("warning", "⚠️ اسپرد بالا ({:.4f}%) - نقدشوندگی پایین".format(stats["spread_pct"]), 3))
+        elif stats["spread_pct"] < 0.1:
+            signals.append(("success", "✅ اسپرد کم ({:.4f}%) - نقدشوندگی بالا".format(stats["spread_pct"]), 1))
+
+        if stats["imbalance"] > 0.5:
+            signals.append(("success", "🟢 فشار خرید بسیار قوی (Imbalance: {:.2f})".format(stats["imbalance"]), 1))
+        elif stats["imbalance"] > 0.3:
+            signals.append(("success", "🟢 فشار خرید قوی (Imbalance: {:.2f})".format(stats["imbalance"]), 2))
+        elif stats["imbalance"] < -0.5:
+            signals.append(("danger", "🔴 فشار فروش بسیار قوی (Imbalance: {:.2f})".format(stats["imbalance"]), 1))
+        elif stats["imbalance"] < -0.3:
+            signals.append(("danger", "🔴 فشار فروش قوی (Imbalance: {:.2f})".format(stats["imbalance"]), 2))
+
+        if "avg_delta" in trends:
+            if stats["delta"] > trends["avg_delta"] * 2 and stats["delta"] > 0:
+                signals.append(("success", "📈 Delta مثبت قوی - جریان خرید در حال افزایش", 2))
+            elif stats["delta"] < trends["avg_delta"] * 2 and stats["delta"] < 0:
+                signals.append(("danger", "📉 Delta منفی قوی - جریان فروش در حال افزایش", 2))
+
+        if footprint["iceberg_hints"]:
+            for hint in footprint["iceberg_hints"]:
+                if hint["confidence"] == "High":
+                    side_emoji = "🟢" if hint["side"] == "bid" else "🔴"
+                    signals.append(("info", "{} Iceberg Order {}: {:.6f} BTC x {}".format(
+                        side_emoji, hint["side"].upper(), hint["size"], hint["count"]), 2))
+
+        if footprint["absorption_zones"]:
+            for zone in footprint["absorption_zones"]:
+                signals.append(("warning", "⚡ Zone Absorption در ${:,.2f} - حجم: {:.6f} BTC".format(
+                    zone["price"], zone["volume"]), 2))
+
+        if orderflow["flow_direction"] in ["Strong Buy", "Strong Sell"]:
+            signals.append(("info", "🌊 Order Flow: {} (Strength: {:.2f})".format(
+                orderflow["flow_direction"], orderflow["flow_strength"]), 1))
+
+        if orderflow["liquidity_score"] < 30:
+            signals.append(
+                ("danger", "💧 نقدشوندگی بسیار پایین (Score: {:.1f}/100)".format(orderflow["liquidity_score"]), 2))
+        elif orderflow["liquidity_score"] > 70:
+            signals.append(("success", "💧 نقدشوندگی عالی (Score: {:.1f}/100)".format(orderflow["liquidity_score"]), 3))
+
+        if stats["last_trade_price"] > 0:
+            deviation = (stats["mid_price"] - stats["last_trade_price"]) / stats["last_trade_price"] * 100
+            if deviation > 0.5:
+                signals.append(("success", "📈 قیمت میانی {:.2f}% بالاتر از آخرین معامله".format(deviation), 2))
+            elif deviation < -0.5:
+                signals.append(("danger", "📉 قیمت میانی {:.2f}% پایین‌تر از آخرین معامله".format(abs(deviation)), 2))
+
+        if stats["mid_price"] < stats["vwap_bid"]:
+            signals.append(("success", "🟢 قیمت زیر VWAP بید - فرصت خرید بالقوه", 3))
+        elif stats["mid_price"] > stats["vwap_ask"]:
+            signals.append(("danger", "💎 قیمت بالای VWAP اسک - فشار فروش بالقوه", 3))
+
+        signals.sort(key=lambda x: x[2])
+        return [(s[0], s[1]) for s in signals]
+
+    def calculate_comprehensive_trend(self):
+        result = {"score": 0.0, "direction": "خنثی", "color_key": "text_muted",
+                  "factors": [], "confidence": "کم"}
+
+        if len(self.mid_price_history) < 5 or not self.current_stats:
+            return result
+
+        prices = list(self.mid_price_history)
+        n = len(prices)
+        xs = list(range(n))
+        x_mean = statistics.mean(xs)
+        y_mean = statistics.mean(prices)
+        denom = sum((x - x_mean) ** 2 for x in xs)
+        slope = sum((xs[i] - x_mean) * (prices[i] - y_mean) for i in range(n)) / denom if denom > 0 else 0
+        slope_pct = (slope / y_mean) * 100 if y_mean else 0
+
+        score = 0.0
+        factors = []
+
+        price_score = max(-25, min(25, slope_pct * 800))
+        score += price_score
+        factors.append(("شیب قیمت میانی", f"{slope_pct:+.5f}%/نمونه", price_score))
+
+        avg_imbalance = statistics.mean(list(self.imbalance_history)[-15:]) if self.imbalance_history else 0
+        imbalance_score = max(-20, min(20, avg_imbalance * 40))
+        score += imbalance_score
+        factors.append(("نامتعادلی بید/اسک", f"{avg_imbalance:+.3f}", imbalance_score))
+
+        recent_delta = list(self.delta_history)[-15:] if self.delta_history else []
+        avg_delta = statistics.mean(recent_delta) if recent_delta else 0
+        delta_ref = statistics.mean([abs(d) for d in self.delta_history]) if self.delta_history else 0
+        delta_score = max(-20, min(20, (avg_delta / delta_ref) * 20)) if delta_ref > 0 else 0
+        score += delta_score
+        factors.append(("Delta حجم", f"{avg_delta:+.6f} BTC", delta_score))
+
+        avg_buy_p = statistics.mean(list(self.buy_pressure_history)[-15:]) if self.buy_pressure_history else 0.5
+        pressure_score = max(-15, min(15, (avg_buy_p - 0.5) * 60))
+        score += pressure_score
+        factors.append(("فشار خرید/فروش", f"{avg_buy_p * 100:.1f}% خرید", pressure_score))
+
+        stats = self.current_stats
+        vwap_score = 0
+        if stats["mid_price"] < stats["vwap_bid"]:
+            vwap_score = 10
+        elif stats["mid_price"] > stats["vwap_ask"]:
+            vwap_score = -10
+        score += vwap_score
+        vwap_label = "زیر VWAP بید" if vwap_score > 0 else ("بالای VWAP اسک" if vwap_score < 0 else "داخل بازه VWAP")
+        factors.append(("موقعیت نسبت به VWAP", vwap_label, vwap_score))
+
+        volume_score = 0
+        if len(self.volume_history) >= 10:
+            recent_vol = statistics.mean(list(self.volume_history)[-5:])
+            older_vol = statistics.mean(list(self.volume_history)[-10:-5])
+            if older_vol > 0:
+                vol_change_pct = (recent_vol - older_vol) / older_vol * 100
+                volume_score = max(-10, min(10, vol_change_pct / 5))
+        score += volume_score
+        vol_label = "افزایشی" if volume_score > 0 else ("کاهشی" if volume_score < 0 else "ثابت")
+        factors.append(("روند حجم معاملات", vol_label, volume_score))
+
+        score = max(-100, min(100, score))
+
+        if score >= 40:
+            direction, color_key = "📈 صعودی قوی", "bid"
+        elif score >= 15:
+            direction, color_key = "📈 صعودی", "success"
+        elif score <= -40:
+            direction, color_key = "📉 نزولی قوی", "ask"
+        elif score <= -15:
+            direction, color_key = "📉 نزولی", "danger"
+        else:
+            direction, color_key = "➖ خنثی / بدون روند مشخص", "text_muted"
+
+        confidence = "بالا" if n >= 30 else ("متوسط" if n >= 15 else "کم")
+
+        result.update({"score": score, "direction": direction, "color_key": color_key,
+                       "factors": factors, "confidence": confidence})
+        return result
+
+    def update(self):
+        data = self.fetch_orderbook()
+        if not data:
+            return False
+
+        orderbook = self.parse_orderbook(data)
+        if not orderbook:
+            return False
+
+        stats = self.calculate_statistics(orderbook)
+        if not stats:
+            return False
+
+        self.current_stats = stats
+        self.current_orderbook = orderbook
+
+        self.footprint_data = self.calculate_footprint(stats)
+        self.orderflow_data = self.calculate_orderflow(stats)
+
+        self.footprint_history.append(self.footprint_data)
+        self.orderflow_history.append(self.orderflow_data)
+
+        self.update_history(stats)
+        trends = self.calculate_trends()
+        self.current_signals = self.generate_signals(stats, trends, self.footprint_data, self.orderflow_data)
+
+        return True
+
+
+class FootprintAnalyzer:
+    def __init__(self, max_history=50):
+        self.max_history = max_history
+        self.footprint_history = deque(maxlen=max_history)
+        self.timestamps = deque(maxlen=max_history)
+
+    def calculate_aggressive_volume(self, bids, asks, levels=5):
+        aggressive_buyers = sum(b[1] for b in bids[:levels]) if bids else 0
+        aggressive_sellers = sum(a[1] for a in asks[:levels]) if asks else 0
+        return aggressive_buyers, aggressive_sellers
+
+    def update(self, orderbook_data, mid_price_usd):
+        if not orderbook_data:
+            return None
+
+        bids = orderbook_data.get("bids", [])
+        asks = orderbook_data.get("asks", [])
+
+        agg_buyers, agg_sellers = self.calculate_aggressive_volume(bids, asks, levels=5)
+        total_volume = agg_buyers + agg_sellers
+
+        imbalance = (agg_buyers - agg_sellers) / total_volume if total_volume > 0 else 0
+
+        if agg_buyers > agg_sellers * 1.2:
+            candle_type = "bullish"
+        elif agg_sellers > agg_buyers * 1.2:
+            candle_type = "bearish"
+        else:
+            candle_type = "neutral"
+
+        is_hvn = False
+        if len(self.footprint_history) >= 5:
+            avg_vol = statistics.mean([fp["total_volume"] for fp in self.footprint_history])
+            is_hvn = total_volume > avg_vol * 0.8
+
+        footprint = {
+            "aggressive_buyers": agg_buyers,
+            "aggressive_sellers": agg_sellers,
+            "total_volume": total_volume,
+            "imbalance": imbalance,
+            "candle_type": candle_type,
+            "is_hvn": is_hvn,
+            "price": mid_price_usd,
+            "timestamp": time.strftime('%H:%M:%S')
+        }
+
+        self.footprint_history.append(footprint)
+        self.timestamps.append(footprint["timestamp"])
+
+        return footprint
+
+
+class OrderbookFootprintBuilder:
+    def __init__(self, max_candles=18, tick_pct=0.0006, depth_levels=25):
+        self.max_candles = max_candles
+        self.tick_pct = tick_pct
+        self.depth_levels = depth_levels
+        self.candles = deque(maxlen=max_candles)
+
+    def add_snapshot(self, stats, usd_rate, price_offset=0.0):
+        if not stats:
+            return None
+
+        bids = stats["bids"][:self.depth_levels]
+        asks = stats["asks"][:self.depth_levels]
+        mid_usd = stats["mid_price"]
+        if mid_usd <= 0:
+            return None
+
+        tick_size = max(mid_usd * self.tick_pct, 0.01)
+
+        levels = defaultdict(lambda: [0.0, 0.0])
+
+        for price_irr, vol in bids:
+            price_usd = price_irr / usd_rate + price_offset
+            lvl = round(math.floor(price_usd / tick_size) * tick_size, 2)
+            levels[lvl][0] += vol
+
+        for price_irr, vol in asks:
+            price_usd = price_irr / usd_rate + price_offset
+            lvl = round(math.floor(price_usd / tick_size) * tick_size, 2)
+            levels[lvl][1] += vol
+
+        if not levels:
+            return None
+
+        price_levels = list(levels.keys())
+        high = max(price_levels) + tick_size / 2
+        low = min(price_levels) - tick_size / 2
+        open_price = self.candles[-1]["close"] if self.candles else mid_usd
+        close_price = mid_usd
+
+        totals = {lvl: v[0] + v[1] for lvl, v in levels.items()}
+        hvn_level = max(totals, key=totals.get)
+        avg_total = statistics.mean(totals.values()) if totals else 0
+        is_hvn_candle = avg_total > 0 and totals[hvn_level] > avg_total * 1.8
+
+        buy_total = sum(v[0] for v in levels.values())
+        sell_total = sum(v[1] for v in levels.values())
+
+        candle = {
+            "time": time.strftime('%H:%M:%S'),
+            "open": open_price,
+            "high": high,
+            "low": low,
+            "close": close_price,
+            "levels": {lvl: (v[0], v[1]) for lvl, v in levels.items()},
+            "tick_size": tick_size,
+            "hvn_level": hvn_level,
+            "is_hvn_candle": is_hvn_candle,
+            "buy_total": buy_total,
+            "sell_total": sell_total,
+            "delta": buy_total - sell_total,
+        }
+        self.candles.append(candle)
+        return candle
+
+
+def render_footprint_candles(candles, colors):
+    fig = go.Figure()
+
+    if not candles:
+        fig.update_layout(
+            plot_bgcolor=colors['card'], paper_bgcolor=colors['card'],
+            font_color=colors['text_muted'],
+            annotations=[dict(text="در انتظار اسنپ‌شات‌های کافی اردربوک...",
+                              xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False,
+                              font=dict(size=14, color=colors['text_muted']))],
+            height=550
+        )
+        return fig
+
+    shapes = []
+    annotations = []
+
+    all_lows = [c["low"] for c in candles]
+    all_highs = [c["high"] for c in candles]
+    y_min, y_max = min(all_lows), max(all_highs)
+    y_pad = max((y_max - y_min) * 0.10, candles[0]["tick_size"])
+
+    for i, c in enumerate(candles):
+        x0, x1 = i - 0.38, i + 0.38
+        is_bull = c["close"] >= c["open"]
+        color = colors['bid'] if is_bull else colors['ask']
+
+        shapes.append(dict(
+            type="rect", xref="x", yref="y",
+            x0=x0 - 0.02, x1=x1 + 0.02, y0=c["low"], y1=c["high"],
+            line=dict(color=color, width=1.2),
+            fillcolor=color, opacity=0.07,
+        ))
+        shapes.append(dict(
+            type="line", xref="x", yref="y",
+            x0=x0 - 0.06, x1=x0 - 0.06, y0=c["low"], y1=c["high"],
+            line=dict(color=color, width=4),
+        ))
+
+        for lvl, (b, s) in sorted(c["levels"].items()):
+            txt = f"{b:.3f}x{s:.3f}"
+            cell_color = colors['bid'] if b >= s else colors['ask']
+            annotations.append(dict(
+                x=i, y=lvl, text=txt, showarrow=False,
+                font=dict(size=8, color=cell_color),
+                align="center",
+            ))
+            if lvl == c["hvn_level"]:
+                shapes.append(dict(
+                    type="rect", xref="x", yref="y",
+                    x0=x0 - 0.02, x1=x1 + 0.02,
+                    y0=lvl - c["tick_size"] * 0.45, y1=lvl + c["tick_size"] * 0.45,
+                    line=dict(color=colors['hvn'], width=2),
+                    fillcolor=colors['hvn'], opacity=0.15,
+                ))
+
+        if c["is_hvn_candle"]:
+            annotations.append(dict(
+                x=i, y=c["high"] + y_pad * 0.18, text="⭐ HVN", showarrow=False,
+                font=dict(size=10, color=colors['hvn']),
+            ))
+
+        delta_color = colors['bid'] if c["delta"] >= 0 else colors['ask']
+        annotations.append(dict(
+            x=i, y=c["low"] - y_pad * 0.22, text=f"Δ{c['delta']:+.3f}", showarrow=False,
+            font=dict(size=9, color=delta_color),
+        ))
+
+    fig.add_trace(go.Scatter(
+        x=list(range(len(candles))), y=[c["close"] for c in candles],
+        mode="markers", marker=dict(size=1, opacity=0),
+        showlegend=False, hoverinfo="skip",
+    ))
+
+    fig.update_layout(
+        shapes=shapes,
+        annotations=annotations,
+        plot_bgcolor=colors['card'], paper_bgcolor=colors['card'],
+        font_color=colors['text'],
+        title="👣 Footprint کندلی زنده (هر سطح: Buy x Sell بر اساس بید/اسک اردربوک)",
+        title_font_color=colors['text'], title_x=0.5,
+        xaxis=dict(
+            tickmode="array",
+            tickvals=list(range(len(candles))),
+            ticktext=[c["time"] for c in candles],
+            showgrid=False, zeroline=False,
+            range=[-1, len(candles)],
+        ),
+        yaxis=dict(
+            title="قیمت ($)", showgrid=True, gridcolor=colors['card_border'],
+            range=[y_min - y_pad, y_max + y_pad],
+        ),
+        margin=dict(l=60, r=20, t=60, b=60),
+        height=550,
+    )
+    return fig
+
+
+def render_trend_panel(trend):
+    color = COLORS.get(trend["color_key"], COLORS["text_muted"])
+    score = trend["score"]
+    bar_pct = max(0, min(100, (score + 100) / 2))
+    bar_color = COLORS['bid'] if score > 0 else (COLORS['ask'] if score < 0 else COLORS['text_muted'])
+
+    factor_rows = []
+    for name, value, fscore in trend["factors"]:
+        fcolor = COLORS['bid'] if fscore > 0 else (COLORS['ask'] if fscore < 0 else COLORS['text_muted'])
+        factor_rows.append(html.Div([
+            html.Span(name, style={'color': COLORS['text_muted'], 'fontSize': '12px'}),
+            html.Span(value, style={'color': COLORS['text'], 'fontSize': '12px'}),
+            html.Span(f"{fscore:+.1f}",
+                      style={'color': fcolor, 'fontSize': '12px', 'fontWeight': 'bold', 'minWidth': '46px',
+                             'textAlign': 'left'}),
+        ], style={'display': 'flex', 'justifyContent': 'space-between', 'gap': '10px', 'padding': '7px 4px',
+                  'borderBottom': f'1px solid {COLORS["card_border"]}'}))
+
+    return html.Div([
+        html.Div([
+            html.Div("جهت کلی روند بازار",
+                     style={'color': COLORS['text_muted'], 'fontSize': '13px', 'marginBottom': '6px'}),
+            html.Div(trend["direction"], style={'color': color, 'fontWeight': 'bold', 'fontSize': '26px'}),
+            html.Div(f"امتیاز روند: {score:+.1f} از 100  |  اطمینان: {trend['confidence']}",
+                     style={'color': COLORS['text_muted'], 'fontSize': '12px', 'marginTop': '6px'}),
+            html.Div(style={
+                'width': '100%', 'height': '10px', 'backgroundColor': COLORS['card_border'],
+                'borderRadius': '5px', 'marginTop': '12px', 'overflow': 'hidden'
+            }, children=[
+                html.Div(style={'width': f'{bar_pct}%', 'height': '100%',
+                                'backgroundColor': bar_color, 'borderRadius': '5px'})
+            ]),
+            html.Div([
+                html.Span("نزولی شدید", style={'color': COLORS['ask'], 'fontSize': '10px'}),
+                html.Span("خنثی", style={'color': COLORS['text_muted'], 'fontSize': '10px'}),
+                html.Span("صعودی شدید", style={'color': COLORS['bid'], 'fontSize': '10px'}),
+            ], style={'display': 'flex', 'justifyContent': 'space-between', 'marginTop': '4px'}),
+        ], style={'flex': '1', 'minWidth': '260px'}),
+
+        html.Div(factor_rows, style={'flex': '1.4', 'minWidth': '300px'}),
+    ], style={'display': 'flex', 'flexWrap': 'wrap', 'gap': '24px'})
+
+
+# ==========================================
+# کلاس جدید: تحلیلگر پروفایل حجم (LVN/HVN)
+# ==========================================
+class VolumeProfileAnalyzer:
+    def __init__(self, num_levels=40):
+        self.num_levels = num_levels
+        self.profile = {}
+        self.poc = 0.0
+        self.va_high = 0.0
+        self.va_low = 0.0
+        self.hvn_levels = []
+        self.lvn_levels = []
+
+    def calculate(self, prices, volumes):
+        if not prices or not volumes or len(prices) < 10:
+            return None
+
+        min_p = min(prices)
+        max_p = max(prices)
+        if min_p == max_p:
+            return None
+
+        level_size = (max_p - min_p) / self.num_levels
+        if level_size == 0:
+            level_size = 0.01
+
+        self.profile = {}
+        for p, v in zip(prices, volumes):
+            level = round(((p - min_p) // level_size) * level_size + min_p, 2)
+            self.profile[level] = self.profile.get(level, 0.0) + v
+
+        if not self.profile:
+            return None
+
+        # محاسبه POC (Point of Control)
+        self.poc = max(self.profile, key=self.profile.get)
+
+        # محاسبه Value Area (70%)
+        sorted_levels = sorted(self.profile.keys(), key=lambda x: abs(x - self.poc))
+        total_vol = sum(self.profile.values())
+        target_vol = total_vol * 0.70
+        cum_vol = 0
+        va_levels = []
+        for lvl in sorted_levels:
+            cum_vol += self.profile[lvl]
+            va_levels.append(lvl)
+            if cum_vol >= target_vol:
+                break
+        self.va_high = max(va_levels) if va_levels else self.poc
+        self.va_low = min(va_levels) if va_levels else self.poc
+
+        # شناسایی HVN و LVN بر اساس انحراف معیار
+        vols = list(self.profile.values())
+        mean_vol = np.mean(vols)
+        std_vol = np.std(vols)
+
+        self.hvn_levels = []
+        self.lvn_levels = []
+        for lvl, vol in self.profile.items():
+            if vol > mean_vol + 0.5 * std_vol:
+                self.hvn_levels.append(
+                    {'price': lvl, 'volume': vol, 'strength': 'Strong' if vol > mean_vol + 1.5 * std_vol else 'Medium'})
+            elif vol < mean_vol - 0.5 * std_vol:
+                self.lvn_levels.append(
+                    {'price': lvl, 'volume': vol, 'strength': 'Strong' if vol < mean_vol - 1.5 * std_vol else 'Medium'})
+
+        self.hvn_levels.sort(key=lambda x: x['volume'], reverse=True)
+        self.lvn_levels.sort(key=lambda x: x['volume'])
+
+        return self.profile
+
+
+# ==========================================
+# کلاس جدید: سیستم آماری پیشرفته + برایند نهایی تمام تب‌ها
+# ==========================================
+class StatisticalSynthesizer:
+    """
+    به‌جای وزن‌دهی دلبخواهی (که در نسخه‌های قبلی روی امتیازها اعمال می‌شد)،
+    این کلاس از دو ابزار آماری استاندارد استفاده می‌کند:
+
+    1) Z-Score خودکالیبره: هر شاخص (Imbalance، Delta، فشار خرید، اسپرد) نسبت به
+       میانگین و انحراف‌معیار خودِ همان نشست معاملاتی نرمال‌سازی می‌شود، نه
+       بازه‌های ثابت و دلخواه.
+
+    2) ضریب همبستگی پیرسون + آزمون معناداری با تبدیل فیشر (Fisher z-transform):
+       رابطه بین Imbalance/Delta در لحظه t و تغییر قیمت در لحظه t+1 (lag-1)
+       سنجیده می‌شود تا معلوم شود آیا این شاخص‌ها واقعاً «پیش‌بینی‌کننده»
+       بوده‌اند یا صرفاً هم‌بسته لحظه‌ای. اگر p-value < 0.05 باشد رابطه از نظر
+       آماری معنادار تلقی می‌شود (بدون نیاز به scipy).
+
+    خروجی نهایی یک «رأی‌گیری» بین سیگنال‌های مستقل چهار تب است، نه جمع ساده
+    امتیازها؛ سطح اطمینان هم بر اساس میزان توافق رأی‌ها و هم معناداری آماری
+    همبستگی‌های بالا تعیین می‌شود.
+    """
+
+    def __init__(self):
+        self.history_composite = deque(maxlen=200)
+
+    @staticmethod
+    def zscore(current, series):
+        series = list(series)
+        if len(series) < 5:
+            return 0.0
+        mu = statistics.mean(series)
+        sigma = statistics.pstdev(series) if len(series) > 1 else 0.0
+        if sigma == 0:
+            return 0.0
+        return (current - mu) / sigma
+
+    @staticmethod
+    def _norm_cdf(x):
+        return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+
+    @classmethod
+    def pearson_with_pvalue(cls, x, y):
+        """همبستگی پیرسون + p-value دوطرفه با روش تبدیل فیشر (برای n >= 10 قابل‌اعتماد)."""
+        n = min(len(x), len(y))
+        if n < 10:
+            return 0.0, 1.0, n
+        x = list(x)[-n:]
+        y = list(y)[-n:]
+        try:
+            r = statistics.correlation(x, y)  # Python 3.10+
+        except Exception:
+            mx, my = statistics.mean(x), statistics.mean(y)
+            sx, sy = statistics.pstdev(x), statistics.pstdev(y)
+            if sx == 0 or sy == 0:
+                return 0.0, 1.0, n
+            cov = sum((xi - mx) * (yi - my) for xi, yi in zip(x, y)) / n
+            r = cov / (sx * sy)
+
+        r = max(-0.999999, min(0.999999, r))
+        z = 0.5 * math.log((1 + r) / (1 - r))
+        se = 1 / math.sqrt(n - 3) if n > 3 else 1.0
+        z_stat = z / se if se > 0 else 0.0
+        p_value = 2 * (1 - cls._norm_cdf(abs(z_stat)))
+        return r, max(0.0, min(1.0, p_value)), n
+
+    def evaluate_predictive_power(self, imbalance_hist, delta_hist, price_hist):
+        """آیا Imbalance/Delta واقعاً پیش‌بینی‌کننده تغییر قیمت لحظه بعد بوده‌اند؟"""
+        results = {}
+        prices = list(price_hist)
+        if len(prices) < 12:
+            return results
+
+        price_changes = [prices[i + 1] - prices[i] for i in range(len(prices) - 1)]
+
+        imb = list(imbalance_hist)[:-1][-len(price_changes):]
+        if len(imb) == len(price_changes) and len(imb) >= 10:
+            r, p, n = self.pearson_with_pvalue(imb, price_changes)
+            results['imbalance_vs_price'] = {'r': r, 'p_value': p, 'n': n,
+                                              'significant': p < 0.05, 'x': imb, 'y': price_changes}
+
+        delta = list(delta_hist)[:-1][-len(price_changes):]
+        if len(delta) == len(price_changes) and len(delta) >= 10:
+            r, p, n = self.pearson_with_pvalue(delta, price_changes)
+            results['delta_vs_price'] = {'r': r, 'p_value': p, 'n': n,
+                                          'significant': p < 0.05, 'x': delta, 'y': price_changes}
+        return results
+
+    def collect_votes(self, trend, orderflow, footprint, vp_state, current_price):
+        """رأی‌گیری مستقل هر تب: جهت (-1/0/+1)، قدرت (0..1) و دلیل."""
+        votes = []
+
+        t_dir = 1 if trend['score'] > 15 else (-1 if trend['score'] < -15 else 0)
+        votes.append({'source': 'روند جامع (Overview)', 'direction': t_dir,
+                      'strength': min(1.0, abs(trend['score']) / 100), 'detail': trend['direction']})
+
+        if orderflow:
+            of_dir = 1 if 'Buy' in orderflow.get('flow_direction', '') else (
+                -1 if 'Sell' in orderflow.get('flow_direction', '') else 0)
+            votes.append({'source': 'Order Flow', 'direction': of_dir,
+                          'strength': min(1.0, orderflow.get('flow_strength', 0)),
+                          'detail': orderflow.get('flow_direction', 'Neutral')})
+
+        if footprint:
+            bid_ice = sum(1 for h in footprint.get('iceberg_hints', []) if h['side'] == 'bid')
+            ask_ice = sum(1 for h in footprint.get('iceberg_hints', []) if h['side'] == 'ask')
+            fp_dir = 1 if bid_ice > ask_ice else (-1 if ask_ice > bid_ice else 0)
+            votes.append({'source': 'Footprint (Iceberg)', 'direction': fp_dir,
+                          'strength': min(1.0, (bid_ice + ask_ice) / 5),
+                          'detail': f"{bid_ice} Bid-Iceberg / {ask_ice} Ask-Iceberg"})
+
+        if vp_state and vp_state.get('poc'):
+            poc_dev = ((current_price - vp_state['poc']) / vp_state['poc'] * 100) if vp_state['poc'] else 0
+            vp_dir = -1 if poc_dev > 1 else (1 if poc_dev < -1 else 0)
+            votes.append({'source': 'پروفایل حجم (POC)', 'direction': vp_dir,
+                          'strength': min(1.0, abs(poc_dev) / 5),
+                          'detail': f"انحراف از POC: {poc_dev:+.2f}%"})
+
+        return votes
+
+    def composite_verdict(self, votes, predictive):
+        if not votes:
+            return {'score': 0.0, 'label': 'داده ناکافی', 'agreement': 0.0, 'confidence': 'کم', 'n_votes': 0}
+
+        weighted_sum = sum(v['direction'] * v['strength'] for v in votes)
+        max_possible = sum(v['strength'] for v in votes) or 1
+        score = (weighted_sum / max_possible) * 100
+
+        directions = [v['direction'] for v in votes if v['direction'] != 0]
+        agree_ratio = 0.0
+        if directions:
+            pos = sum(1 for d in directions if d > 0)
+            neg = sum(1 for d in directions if d < 0)
+            agree_ratio = max(pos, neg) / len(directions)
+
+        sig_count = sum(1 for v in predictive.values() if v.get('significant'))
+        if agree_ratio >= 0.75 and sig_count >= 1:
+            confidence = 'بالا'
+        elif agree_ratio >= 0.6:
+            confidence = 'متوسط'
+        else:
+            confidence = 'کم'
+
+        if score >= 30:
+            label = '📈 برایند صعودی'
+        elif score <= -30:
+            label = '📉 برایند نزولی'
+        else:
+            label = '➖ برایند خنثی / سیگنال‌های متناقض'
+
+        self.history_composite.append(score)
+
+        return {'score': score, 'label': label, 'agreement': agree_ratio * 100,
+                'confidence': confidence, 'n_votes': len(votes)}
+
+
+# نمونه‌سازی تحلیلگرها
+analyzer = NobitexOrderbookAnalyzer(symbol="BTCIRT", max_history=200)
+footprint_analyzer = FootprintAnalyzer(max_history=50)
+footprint_candle_builder = OrderbookFootprintBuilder(max_candles=18, tick_pct=0.0006, depth_levels=25)
+vp_analyzer = VolumeProfileAnalyzer(num_levels=40)  # نمونه‌سازی تحلیلگر LVN/HVN
+synth_analyzer = StatisticalSynthesizer()  # نمونه‌سازی سیستم آماری/برایند نهایی
+
+app = dash.Dash(__name__, suppress_callback_exceptions=True)
+app.title = "Nobitex Advanced Orderbook Analytics"
+
+app.index_string = '''
+<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+        <style>
+            * { box-sizing: border-box; }
+            body { margin: 0; background-color: #0a0e1a; font-family: Tahoma, Arial, sans-serif; }
+            ::-webkit-scrollbar { width: 8px; height: 8px; }
+            ::-webkit-scrollbar-track { background: #0a0e1a; }
+            ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 4px; }
+            ::-webkit-scrollbar-thumb:hover { background: #374151; }
+            .js-plotly-plot, .plot-container { border-radius: 10px; overflow: hidden; }
+            input[type=number], input[type=text] { font-family: inherit; outline: none; }
+            input[type=number]:focus, input[type=text]:focus { border-color: #3b82f6 !important; }
+            #main-tabs .tab { border: none !important; padding: 12px 4px !important; }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>
+'''
+
+CARD_STYLE = {
+    'backgroundColor': COLORS['card'], 'borderRadius': '12px',
+    'padding': '20px', 'border': f'1px solid {COLORS["card_border"]}',
+    'boxShadow': '0 4px 6px rgba(0,0,0,0.3)'
+}
+
+LABEL_STYLE = {'color': COLORS['text_muted'], 'fontSize': '13px', 'marginBottom': '5px'}
+VALUE_STYLE = {'color': COLORS['text'], 'fontWeight': 'bold', 'fontSize': '20px'}
+SUB_VALUE_STYLE = {'color': COLORS['text_muted'], 'fontSize': '12px', 'marginTop': '3px'}
+
+app.layout = html.Div([
+
+    html.Div([
+        html.Div([
+            html.Div([
+                html.H1("📊 تحلیل پیشرفته اردربوک نوبیتکس",
+                        style={'color': COLORS['text'], 'margin': '0', 'fontSize': '24px'}),
+                html.P("بیت‌کوین / دلار (BTCIRT → USD) | Footprint & Order Flow Analysis",
+                       style={'color': COLORS['text_muted'], 'margin': '4px 0 0 0', 'fontSize': '13px'}),
+            ], style={'flex': '1.4', 'minWidth': '260px'}),
+
+            html.Div(id="header-live-price", style={'flex': '1', 'minWidth': '180px', 'textAlign': 'center'}),
+
+            html.Div([
+                html.Div("نرخ دلار (تومان) - دریافت خودکار از نوبیتکس",
+                         style={'color': COLORS['text_muted'], 'fontSize': '11px', 'marginBottom': '4px'}),
+                dcc.Input(id="usd-rate-input", type="number", value=DEFAULT_USD_TO_IRR, min=1000, step=1000,
+                          readOnly=True,
+                          style={'width': '120px', 'padding': '7px', 'borderRadius': '6px',
+                                 'border': f'1px solid {COLORS["card_border"]}',
+                                 'backgroundColor': COLORS['background'],
+                                 'color': COLORS['success'], 'textAlign': 'center', 'fontSize': '13px',
+                                 'fontWeight': 'bold'}),
+            ], style={'flex': '0.8', 'minWidth': '150px'}),
+
+            html.Div([
+                html.Div("واحد قیمت خروجی API",
+                         style={'color': COLORS['text_muted'], 'fontSize': '11px', 'marginBottom': '4px'}),
+                dcc.RadioItems(
+                    id="price-unit-radio",
+                    options=[
+                        {'label': ' تومان (پیش‌فرض صحیح نوبیتکس)', 'value': 'toman'},
+                        {'label': ' ریال', 'value': 'rial'},
+                    ],
+                    value='toman',
+                    labelStyle={'display': 'block', 'color': COLORS['text_muted'], 'fontSize': '12px',
+                                'marginBottom': '2px'},
+                    inputStyle={'marginLeft': '6px', 'marginRight': '4px'}
+                ),
+            ], style={'flex': '1', 'minWidth': '200px'}),
+
+            html.Div([
+                html.Div("💱 قیمت لحظه‌ای بایننس (دستی) - برای تصحیح خودکار قیمت",
+                         style={'color': COLORS['text_muted'], 'fontSize': '11px', 'marginBottom': '4px'}),
+                dcc.Input(id="manual-reference-price-input", type="number", placeholder="مثلاً 66258",
+                          min=0, step=0.01, debounce=True,
+                          style={'width': '140px', 'padding': '7px', 'borderRadius': '6px',
+                                 'border': f'1px solid {COLORS["card_border"]}',
+                                 'backgroundColor': COLORS['background'],
+                                 'color': COLORS['orange'], 'textAlign': 'center', 'fontSize': '13px',
+                                 'fontWeight': 'bold'}),
+                html.Div(id="manual-reference-status",
+                         style={'color': COLORS['text_muted'], 'fontSize': '10px', 'marginTop': '4px',
+                                'maxWidth': '220px'}),
+            ], style={'flex': '1', 'minWidth': '220px'}),
+        ], style={'display': 'flex', 'flexWrap': 'wrap', 'gap': '24px', 'alignItems': 'center',
+                  'maxWidth': '1500px', 'margin': '0 auto'}),
+
+        html.Div(id="last-update",
+                 style={'textAlign': 'center', 'color': '#64748b', 'fontSize': '12px', 'marginTop': '16px'})
+    ], style={'padding': '22px 30px', 'backgroundColor': COLORS['card'],
+              'borderBottom': f'2px solid {COLORS["card_border"]}'}),
+
+    dcc.Tabs(id="main-tabs", value="overview", children=[
+
+        dcc.Tab(label="📈 Overview", value="overview",
+                style={'backgroundColor': COLORS['card'], 'color': COLORS['text_muted']},
+                selected_style={'backgroundColor': COLORS['accent'], 'color': COLORS['text']}, children=[
+
+                html.Div([
+                    html.Div([
+                        html.Div("💰 قیمت‌ها (USD)", style=LABEL_STYLE),
+                        html.Div(id="ov-price-cards")
+                    ], style=CARD_STYLE),
+
+                    html.Div([
+                        html.Div("📊 حجم و نامتعادلی", style=LABEL_STYLE),
+                        html.Div(id="ov-volume-cards")
+                    ], style=CARD_STYLE),
+
+                    html.Div([
+                        html.Div("🏊 عمق بازار", style=LABEL_STYLE),
+                        html.Div(id="ov-depth-cards")
+                    ], style=CARD_STYLE),
+
+                    html.Div([
+                        html.Div("⚖️ فشار بازار", style=LABEL_STYLE),
+                        html.Div(id="ov-pressure-cards")
+                    ], style=CARD_STYLE),
+
+                    html.Div([
+                        html.Div("💱 مقایسه با بایننس (قیمت مرجع جهانی)", style=LABEL_STYLE),
+                        html.Div(id="ov-reference-cards")
+                    ], style=CARD_STYLE),
+                ], style={'display': 'grid', 'gridTemplateColumns': 'repeat(auto-fit, minmax(250px, 1fr))',
+                          'gap': '16px', 'padding': '20px 20px 0 20px', 'backgroundColor': COLORS['background']}),
+
+                html.Div([
+                    html.Div("🧭 تحلیل جامع روند بازار", style={
+                        'color': COLORS['text'], 'fontSize': '16px', 'marginBottom': '15px', 'fontWeight': 'bold'
+                    }),
+                    html.Div(id="ov-trend-panel")
+                ], style={**CARD_STYLE, 'margin': '20px'}),
+
+                html.Div([
+                    html.Div("🚨 سیگنال‌های معاملاتی", style={
+                        'color': COLORS['text'], 'fontSize': '16px', 'marginBottom': '15px', 'fontWeight': 'bold'
+                    }),
+                    html.Div(id="ov-signals")
+                ], style={**CARD_STYLE, 'margin': '20px'}),
+
+                html.Div([
+                    html.Div([
+                        dcc.Graph(id="ov-orderbook-chart", style={'height': '450px'})
+                    ], style=CARD_STYLE),
+
+                    html.Div([
+                        dcc.Graph(id="ov-price-chart", style={'height': '215px'}),
+                        dcc.Graph(id="ov-imbalance-chart", style={'height': '215px'})
+                    ], style=CARD_STYLE),
+                ], style={'display': 'grid', 'gridTemplateColumns': 'minmax(0, 2fr) minmax(0, 1fr)',
+                          'gap': '16px', 'padding': '0 20px 20px 20px', 'backgroundColor': COLORS['background']}),
+
+                html.Div([
+                    dcc.Graph(id="ov-volume-spread-chart", style={'height': '300px'})
+                ], style={**CARD_STYLE, 'margin': '20px'}),
+            ]),
+
+        dcc.Tab(label="👣 Footprint", value="footprint",
+                style={'backgroundColor': COLORS['card'], 'color': COLORS['text_muted']},
+                selected_style={'backgroundColor': COLORS['purple'], 'color': COLORS['text']}, children=[
+
+                html.Div([
+                    html.Div([
+                        html.H3("👣 Footprint کندلی - نبرد خریداران و فروشندگان روی هر سطح قیمتی",
+                                style={'color': COLORS['text'], 'textAlign': 'center', 'marginBottom': '10px'}),
+                        html.P("هر کندل یک اسنپ‌شات از اردربوک زنده است. عدد هر سطح به شکل Buy x Sell است "
+                               "(حجم بید = Buy، حجم اسک = Sell روی همان تیک قیمتی). کادر طلایی = High Volume Node (HVN).",
+                               style={'color': COLORS['text_muted'], 'textAlign': 'center', 'fontSize': '13px'})
+                    ], style={'marginBottom': '10px'}),
+
+                    html.Div([
+                        dcc.Graph(id="footprint-candles-chart", style={'height': '550px'})
+                    ], style={**CARD_STYLE, 'margin': '10px'}),
+
+                    html.Div(
+                        "ℹ️ نوبیتکس تیک‌دیتای معاملات با برچسب Buy/Sell واقعی نمی‌دهد؛ این کندل‌ها تقریبی از فشار "
+                        "نقدینگی لحظه‌ای اردربوک هستند، نه Order Flow واقعی معاملات انجام‌شده.",
+                        style={'color': COLORS['warning'], 'textAlign': 'center', 'fontSize': '12px',
+                               'margin': '0 10px 20px 10px'}
+                    ),
+
+                    html.Div([
+                        html.H3("🌊 Order Flow خلاصه - Aggressive Buyers × Aggressive Sellers",
+                                style={'color': COLORS['text'], 'textAlign': 'center', 'marginBottom': '10px'}),
+                    ], style={'marginBottom': '10px'}),
+
+                    html.Div([
+                        dcc.Graph(id="footprint-main-chart", style={'height': '450px'})
+                    ], style={**CARD_STYLE, 'margin': '10px'}),
+
+                    html.Div([
+                        html.Div([
+                            html.H4("🟡 High Volume Nodes (HVN)",
+                                    style={'color': COLORS['text'], 'marginBottom': '10px'}),
+                            html.P("مناطقی که بیشترین حجم معامله اتفاق افتاده - قیمت اغلب اینجا واکنش نشان می‌دهد",
+                                   style={'color': COLORS['text_muted'], 'fontSize': '12px'}),
+                            html.Div(id="hvn-list")
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '300px', 'margin': '10px'}),
+
+                        html.Div([
+                            html.H4("⚡ Imbalance Zones", style={'color': COLORS['text'], 'marginBottom': '10px'}),
+                            html.P("مناطقی که یک طرف کنترل را در دست دارد - منجر به حرکات قوی می‌شود",
+                                   style={'color': COLORS['text_muted'], 'fontSize': '12px'}),
+                            html.Div(id="imbalance-list")
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '300px', 'margin': '10px'}),
+                    ], style={'display': 'flex', 'flexWrap': 'wrap', 'padding': '0 10px'}),
+
+                    html.Div([
+                        html.Div([
+                            html.H4("📊 توزیع سایز سفارشات", style={'color': COLORS['text'], 'marginBottom': '10px'}),
+                            dcc.Graph(id="fp-size-dist", style={'height': '300px'})
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '350px', 'margin': '10px'}),
+
+                        html.Div([
+                            html.H4("📈 روند Aggressive Volume",
+                                    style={'color': COLORS['text'], 'marginBottom': '10px'}),
+                            dcc.Graph(id="fp-aggressive-chart", style={'height': '300px'})
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '350px', 'margin': '10px'}),
+                    ], style={'display': 'flex', 'flexWrap': 'wrap', 'padding': '0 10px'}),
+
+                ], style={'backgroundColor': COLORS['background']}),
+            ]),
+
+        dcc.Tab(label="🌊 Order Flow", value="orderflow",
+                style={'backgroundColor': COLORS['card'], 'color': COLORS['text_muted']},
+                selected_style={'backgroundColor': COLORS['teal'], 'color': COLORS['text']}, children=[
+
+                html.Div([
+                    html.Div([
+                        html.P(
+                            "تحلیل Order Flow جهت جریان سفارشات، فشار خرید/فروش، سطوح حمایت/مقاومت و امتیاز نقدشوندگی را بررسی می‌کند.",
+                            style={'color': COLORS['text_muted'], 'fontSize': '13px', 'lineHeight': '1.6'})
+                    ], style={**CARD_STYLE, 'margin': '20px'}),
+
+                    html.Div([
+                        html.Div([
+                            html.Div("🌊 جهت جریان", style=LABEL_STYLE),
+                            html.Div(id="of-flow-card")
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '250px', 'margin': '10px'}),
+
+                        html.Div([
+                            html.Div("💧 امتیاز نقدشوندگی", style=LABEL_STYLE),
+                            html.Div(id="of-liquidity-card")
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '250px', 'margin': '10px'}),
+
+                        html.Div([
+                            html.Div("⚔️ خریداران پرخاشگر", style=LABEL_STYLE),
+                            html.Div(id="of-aggression-card")
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '250px', 'margin': '10px'}),
+
+                        html.Div([
+                            html.Div("📈 مومنتوم", style=LABEL_STYLE),
+                            html.Div(id="of-momentum-card")
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '250px', 'margin': '10px'}),
+                    ], style={'display': 'flex', 'flexWrap': 'wrap', 'padding': '10px'}),
+
+                    html.Div([
+                        html.Div([
+                            html.Div("📊 فشار خرید/فروش در طول زمان", style=LABEL_STYLE),
+                            dcc.Graph(id="of-pressure-chart", style={'height': '300px'})
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '400px', 'margin': '10px'}),
+
+                        html.Div([
+                            html.Div("📉 Delta (تغییرات خالص حجم)", style=LABEL_STYLE),
+                            dcc.Graph(id="of-delta-chart", style={'height': '300px'})
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '400px', 'margin': '10px'}),
+                    ], style={'display': 'flex', 'flexWrap': 'wrap', 'padding': '0 10px'}),
+
+                    html.Div([
+                        html.Div([
+                            html.Div("🛡️ سطوح حمایت", style=LABEL_STYLE),
+                            html.Div(id="of-support-table")
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '350px', 'margin': '10px'}),
+
+                        html.Div([
+                            html.Div("🧱 سطوح مقاومت", style=LABEL_STYLE),
+                            html.Div(id="of-resistance-table")
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '350px', 'margin': '10px'}),
+                    ], style={'display': 'flex', 'flexWrap': 'wrap', 'padding': '0 10px'}),
+
+                    html.Div([
+                        html.Div("💎 قیمت میانی vs VWAP", style=LABEL_STYLE),
+                        dcc.Graph(id="of-vwap-chart", style={'height': '350px'})
+                    ], style={**CARD_STYLE, 'margin': '20px'}),
+
+                ], style={'backgroundColor': COLORS['background']}),
+            ]),
+
+        # ==========================================
+        # تب جدید: تحلیل LVN/HVN و پروفایل حجم
+        # ==========================================
+        dcc.Tab(label="📊 LVN/HVN", value="lvn",
+                style={'backgroundColor': COLORS['card'], 'color': COLORS['text_muted']},
+                selected_style={'backgroundColor': COLORS['orange'], 'color': COLORS['text']}, children=[
+                html.Div([
+                    html.Div([
+                        html.H3("📊 تحلیل پروفایل حجم - LVN و HVN",
+                                style={'color': COLORS['text'], 'textAlign': 'center', 'marginBottom': '10px'}),
+                        html.P(
+                            "شناسایی گره‌های پرحجم (HVN) و کم‌حجم (LVN) در پروفایل حجم برای تعیین سطوح حمایت/مقاومت و مناطق شکست",
+                            style={'color': COLORS['text_muted'], 'textAlign': 'center', 'fontSize': '13px'})
+                    ], style={'marginBottom': '10px'}),
+
+                    html.Div([
+                        dcc.Graph(id="lvn-volume-profile-chart", style={'height': '600px'})
+                    ], style={**CARD_STYLE, 'margin': '10px'}),
+
+                    html.Div([
+                        html.Div([
+                            html.Div("🎯 Point of Control (POC)", style=LABEL_STYLE),
+                            html.Div(id="lvn-poc-card", style=VALUE_STYLE)
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '200px', 'margin': '10px'}),
+                        html.Div([
+                            html.Div("📊 Value Area", style=LABEL_STYLE),
+                            html.Div(id="lvn-va-card")
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '250px', 'margin': '10px'}),
+                        html.Div([
+                            html.Div("🔺 HVN Count", style=LABEL_STYLE),
+                            html.Div(id="lvn-hvn-count-card", style=VALUE_STYLE)
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '150px', 'margin': '10px'}),
+                        html.Div([
+                            html.Div("🔻 LVN Count", style=LABEL_STYLE),
+                            html.Div(id="lvn-lvn-count-card", style=VALUE_STYLE)
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '150px', 'margin': '10px'}),
+                    ], style={'display': 'flex', 'flexWrap': 'wrap', 'padding': '10px'}),
+
+                    html.Div([
+                        html.H4("🚨 سیگنال‌های LVN/HVN", style={'color': COLORS['text'], 'marginBottom': '10px'}),
+                        html.Div(id="lvn-signals")
+                    ], style={**CARD_STYLE, 'margin': '20px'}),
+
+                    html.Div([
+                        html.Div([
+                            html.H4("🟡 High Volume Nodes (HVN) - حمایت/مقاومت قوی",
+                                    style={'color': COLORS['text'], 'marginBottom': '10px'}),
+                            html.Div(id="lvn-hvn-table")
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '350px', 'margin': '10px'}),
+                        html.Div([
+                            html.H4("🔻 Low Volume Nodes (LVN) - مناطق شکست",
+                                    style={'color': COLORS['text'], 'marginBottom': '10px'}),
+                            html.Div(id="lvn-lvn-table")
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '350px', 'margin': '10px'}),
+                    ], style={'display': 'flex', 'flexWrap': 'wrap', 'padding': '0 10px'}),
+
+                    html.Div([
+                        html.Div([
+                            html.H4("📊 تحلیل آماری پیشرفته", style={'color': COLORS['text'], 'marginBottom': '10px'}),
+                            dcc.Graph(id="lvn-statistical-chart", style={'height': '400px'})
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '400px', 'margin': '10px'}),
+                        html.Div([
+                            html.H4("📈 توزیع حجم", style={'color': COLORS['text'], 'marginBottom': '10px'}),
+                            dcc.Graph(id="lvn-distribution-chart", style={'height': '400px'})
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '400px', 'margin': '10px'}),
+                    ], style={'display': 'flex', 'flexWrap': 'wrap', 'padding': '0 10px'}),
+                ], style={'backgroundColor': COLORS['background']})
+            ]),
+
+        # ==========================================
+        # تب جدید: برایند نهایی + سیستم آماری پیشرفته
+        # ==========================================
+        dcc.Tab(label="🧮 برایند نهایی", value="synthesis",
+                style={'backgroundColor': COLORS['card'], 'color': COLORS['text_muted']},
+                selected_style={'backgroundColor': COLORS['pink'], 'color': COLORS['text']}, children=[
+                html.Div([
+                    html.Div([
+                        html.H3("🧮 برایند نهایی و اعتبارسنجی آماری تمام تب‌ها",
+                                style={'color': COLORS['text'], 'textAlign': 'center', 'marginBottom': '10px'}),
+                        html.P("این تب سیگنال‌های مستقل Overview، Footprint، Order Flow و LVN/HVN را کنار هم "
+                               "می‌گذارد و با آزمون همبستگی پیرسون (تبدیل فیشر) و Z-Score، اعتبار آماری آن‌ها را "
+                               "می‌سنجد. این یک پیش‌بینی قطعی نیست، بلکه سنجش میزان سازگاری/ناسازگاری سیگنال‌های "
+                               "موجود در همین لحظه است.",
+                               style={'color': COLORS['text_muted'], 'textAlign': 'center', 'fontSize': '13px',
+                                      'maxWidth': '900px', 'margin': '0 auto'})
+                    ], style={'marginBottom': '10px'}),
+
+                    html.Div([
+                        html.Div([
+                            html.Div("🏁 برایند نهایی", style=LABEL_STYLE),
+                            html.Div(id="syn-verdict-card")
+                        ], style={**CARD_STYLE, 'flex': '1.3', 'minWidth': '280px', 'margin': '10px'}),
+
+                        html.Div([
+                            html.Div("🤝 میزان توافق سیگنال‌ها", style=LABEL_STYLE),
+                            html.Div(id="syn-agreement-card")
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '220px', 'margin': '10px'}),
+
+                        html.Div([
+                            html.Div("📐 اعتبار آماری (p-value)", style=LABEL_STYLE),
+                            html.Div(id="syn-significance-card")
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '260px', 'margin': '10px'}),
+                    ], style={'display': 'flex', 'flexWrap': 'wrap', 'padding': '10px'}),
+
+                    html.Div([
+                        html.H4("🗳️ رأی هر تب (Signal Voting)", style={'color': COLORS['text'], 'marginBottom': '10px'}),
+                        html.Div(id="syn-votes-table")
+                    ], style={**CARD_STYLE, 'margin': '20px'}),
+
+                    html.Div([
+                        html.Div([
+                            html.Div("📊 Z-Score شاخص‌های کلیدی (نسبت به توزیع نشست جاری)", style=LABEL_STYLE),
+                            dcc.Graph(id="syn-zscore-chart", style={'height': '320px'})
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '400px', 'margin': '10px'}),
+
+                        html.Div([
+                            html.Div("📈 روند امتیاز برایند در طول زمان", style=LABEL_STYLE),
+                            dcc.Graph(id="syn-composite-history-chart", style={'height': '320px'})
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '400px', 'margin': '10px'}),
+                    ], style={'display': 'flex', 'flexWrap': 'wrap', 'padding': '0 10px'}),
+
+                    html.Div([
+                        html.H4("🔬 آزمون همبستگی: Imbalance/Delta در برابر تغییر قیمت آینده (lag-1)",
+                                style={'color': COLORS['text'], 'marginBottom': '10px'}),
+                        html.P("همبستگی پیرسون بین سیگنال در لحظه t و تغییر قیمت در لحظه t+1، به‌همراه p-value "
+                               "(روش تبدیل فیشر). اگر p-value کمتر از ۰.۰۵ باشد رابطه از نظر آماری معنادار است.",
+                               style={'color': COLORS['text_muted'], 'fontSize': '12px'}),
+                    ], style={'margin': '20px 20px 0 20px'}),
+
+                    html.Div([
+                        html.Div([
+                            dcc.Graph(id="syn-imbalance-scatter", style={'height': '350px'})
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '400px', 'margin': '10px'}),
+
+                        html.Div([
+                            dcc.Graph(id="syn-delta-scatter", style={'height': '350px'})
+                        ], style={**CARD_STYLE, 'flex': '1', 'minWidth': '400px', 'margin': '10px'}),
+                    ], style={'display': 'flex', 'flexWrap': 'wrap', 'padding': '0 10px 20px 10px'}),
+
+                ], style={'backgroundColor': COLORS['background']})
+            ]),
+
+    ], style={'backgroundColor': COLORS['background']}),
+
+    dcc.Interval(id="interval-component", interval=3000, n_intervals=0),
+
+], style={'backgroundColor': COLORS['background'], 'minHeight': '100vh', 'fontFamily': 'Tahoma, Arial, sans-serif'})
+
+
+@app.callback(
+    Output("manual-reference-status", "children"),
+    [Input("manual-reference-price-input", "value")]
+)
+def update_manual_reference_price(value):
+    """
+    چون در این محیط دسترسی شبکه به بایننس/CoinGecko وجود ندارد، قیمت مرجع جهانی به‌صورت
+    دستی از کاربر گرفته می‌شود (مثلاً از سایت بایننس یا هر منبع دیگری که در دسترس است).
+    با هر تغییر این عدد، آفست کالیبراسیون در چرخه محاسباتی بعدی بازتنظیم می‌شود و از
+    همان‌جا در سراسر اپ (Overview، Footprint، Order Flow، LVN/HVN) اعمال می‌گردد.
+    """
+    if value is None or value <= 0:
+        analyzer.reference_price = None
+        analyzer.reference_source = None
+        return "قیمت لحظه‌ای بایننس را وارد کنید تا قیمت نوبیتکس با آن هم‌راستا شود."
+
+    analyzer.reference_price = float(value)
+    analyzer.reference_source = "دستی (Manual)"
+    analyzer._recalibrate_offset = True
+    return f"✅ ثبت شد: ${float(value):,.2f} — آفست در چرخه محاسباتی بعدی اعمال می‌شود."
+
+
+@app.callback(
+    [Output("last-update", "children"),
+     Output("header-live-price", "children"),
+     Output("usd-rate-input", "value"),
+     Output("ov-price-cards", "children"),
+     Output("ov-volume-cards", "children"),
+     Output("ov-depth-cards", "children"),
+     Output("ov-pressure-cards", "children"),
+     Output("ov-reference-cards", "children"),
+     Output("ov-signals", "children"),
+     Output("ov-trend-panel", "children"),
+     Output("ov-orderbook-chart", "figure"),
+     Output("ov-price-chart", "figure"),
+     Output("ov-imbalance-chart", "figure"),
+     Output("ov-volume-spread-chart", "figure")],
+    [Input("interval-component", "n_intervals")],
+    [State("price-unit-radio", "value")]
+)
+def update_overview(n, price_unit_value):
+    analyzer.update_usd_rate_if_needed()
+    # توجه: در این محیط به بایننس/CoinGecko دسترسی شبکه وجود ندارد، پس دیگر به‌صورت
+    # خودکار fetch نمی‌شوند (تا وقفهٔ timeout هر چرخه را کند نکند). قیمت مرجع از
+    # طریق ورودی دستی «قیمت لحظه‌ای بایننس» در بالای صفحه تنظیم می‌شود.
+    analyzer.unit_multiplier = 1 if price_unit_value == 'toman' else 10
+
+    success = analyzer.update()
+    if success:
+        footprint_analyzer.update(analyzer.current_orderbook, analyzer.current_stats["mid_price"])
+        footprint_candle_builder.add_snapshot(analyzer.current_stats, analyzer.usd_rate * analyzer.unit_multiplier,
+                                              analyzer.price_calibration_offset)
+
+    stats = analyzer.current_stats
+    if not stats:
+        return [dash.no_update] * 14
+
+    unit_label = "ریال" if analyzer.unit_multiplier == 10 else "تومان"
+    last_update = (f"⏱️ آخرین به‌روزرسانی: {time.strftime('%H:%M:%S')} | نمونه‌ها: {len(analyzer.timestamps)} | "
+                   f"نرخ خودکار: 1 دلار = {analyzer.usd_rate:,.0f} تومان | واحد قیمت API: {unit_label} "
+                   f"(اگر قیمت غیرمنطقی به‌نظر می‌رسد، واحد را از بالای صفحه تغییر دهید)")
+
+    price_change_pct = 0.0
+    if len(analyzer.mid_price_history) >= 2 and analyzer.mid_price_history[-2]:
+        price_change_pct = (stats['mid_price'] - analyzer.mid_price_history[-2]) / analyzer.mid_price_history[-2] * 100
+    change_color = COLORS['bid'] if price_change_pct >= 0 else COLORS['ask']
+    header_children = [
+        html.Div(f"${stats['mid_price']:,.2f}",
+                 style={'color': COLORS['text'], 'fontWeight': 'bold', 'fontSize': '30px'}),
+        html.Div(f"{price_change_pct:+.3f}% از آخرین نمونه",
+                 style={'color': change_color, 'fontSize': '12px', 'fontWeight': 'bold'}),
+    ]
+    if analyzer.reference_price and analyzer.reference_price > 0:
+        offset = stats.get("calibration_offset", 0.0)
+        offset_color = COLORS['warning'] if abs(offset) > analyzer.reference_price * 0.02 else COLORS['success']
+        header_children.append(html.Div(
+            f"🌐 کالیبره‌شده با {analyzer.reference_source} (${analyzer.reference_price:,.2f})  |  آفست اعمال‌شده: {offset:+,.2f}$",
+            style={'color': offset_color, 'fontSize': '12px', 'marginTop': '4px'}))
+    header_price = html.Div(header_children)
+
+    trend = analyzer.calculate_comprehensive_trend()
+    trend_panel = render_trend_panel(trend)
+
+    price_cards = html.Div([
+        html.Div([
+            html.Span("بهترین بید: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"${stats['best_bid']:,.2f}",
+                      style={'color': COLORS['bid'], 'fontWeight': 'bold', 'fontSize': '22px'})
+        ], style={'marginBottom': '10px'}),
+        html.Div([
+            html.Span("بهترین اسک: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"${stats['best_ask']:,.2f}",
+                      style={'color': COLORS['ask'], 'fontWeight': 'bold', 'fontSize': '22px'})
+        ], style={'marginBottom': '10px'}),
+        html.Div([
+            html.Span("میانی: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"${stats['mid_price']:,.2f}",
+                      style={'color': COLORS['accent'], 'fontWeight': 'bold', 'fontSize': '22px'})
+        ], style={'marginBottom': '10px'}),
+        html.Div([
+            html.Span("اسپرد: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"${stats['spread']:,.2f} ({stats['spread_pct']:.4f}%)",
+                      style={'color': COLORS['warning'], 'fontWeight': 'bold'})
+        ]),
+    ])
+
+    volume_cards = html.Div([
+        html.Div([
+            html.Span("حجم بید: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"{stats['total_bid_volume']:.6f} BTC", style={'color': COLORS['bid'], 'fontWeight': 'bold'})
+        ], style={'marginBottom': '10px'}),
+        html.Div([
+            html.Span("حجم اسک: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"{stats['total_ask_volume']:.6f} BTC", style={'color': COLORS['ask'], 'fontWeight': 'bold'})
+        ], style={'marginBottom': '10px'}),
+        html.Div([
+            html.Span("حجم کل: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"{stats['total_volume']:.6f} BTC", style={'color': COLORS['text'], 'fontWeight': 'bold'})
+        ], style={'marginBottom': '10px'}),
+        html.Div([
+            html.Span("نامتعادلی: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"{stats['imbalance']:.4f}",
+                      style={'color': COLORS['bid'] if stats['imbalance'] > 0 else COLORS['ask'], 'fontWeight': 'bold'})
+        ]),
+    ])
+
+    depth_cards = html.Div([
+        html.Div([
+            html.Span("عمق بید 1%: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"{stats['bid_depth_1pct']:.6f} BTC", style={'color': COLORS['bid'], 'fontWeight': 'bold'})
+        ], style={'marginBottom': '10px'}),
+        html.Div([
+            html.Span("عمق اسک 1%: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"{stats['ask_depth_1pct']:.6f} BTC", style={'color': COLORS['ask'], 'fontWeight': 'bold'})
+        ], style={'marginBottom': '10px'}),
+        html.Div([
+            html.Span("VWAP بید: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"${stats['vwap_bid']:,.2f}", style={'color': COLORS['text'], 'fontWeight': 'bold'})
+        ], style={'marginBottom': '10px'}),
+        html.Div([
+            html.Span("VWAP اسک: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"${stats['vwap_ask']:,.2f}", style={'color': COLORS['text'], 'fontWeight': 'bold'})
+        ]),
+    ])
+
+    pressure_cards = html.Div([
+        html.Div([
+            html.Span("فشار خرید: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"{stats['buy_pressure'] * 100:.1f}%",
+                      style={'color': COLORS['bid'], 'fontWeight': 'bold', 'fontSize': '22px'})
+        ], style={'marginBottom': '10px'}),
+        html.Div([
+            html.Span("فشار فروش: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"{stats['sell_pressure'] * 100:.1f}%",
+                      style={'color': COLORS['ask'], 'fontWeight': 'bold', 'fontSize': '22px'})
+        ], style={'marginBottom': '10px'}),
+        html.Div([
+            html.Span("Delta: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"{stats['delta']:+.6f}",
+                      style={'color': COLORS['bid'] if stats['delta'] > 0 else COLORS['ask'], 'fontWeight': 'bold'})
+        ], style={'marginBottom': '10px'}),
+        html.Div([
+            html.Span("بید/اسک بزرگ: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"{stats['large_bids_count']}/{stats['large_asks_count']}",
+                      style={'color': COLORS['warning'], 'fontWeight': 'bold'})
+        ]),
+    ])
+
+    if analyzer.reference_price and analyzer.reference_price > 0:
+        offset = stats.get("calibration_offset", 0.0)
+        raw_price = stats.get("mid_price_raw", stats['mid_price'])
+        offset_pct = (offset / analyzer.reference_price * 100) if analyzer.reference_price else 0
+        offset_color = COLORS['warning'] if abs(offset_pct) > 2 else COLORS['success']
+        reference_cards = html.Div([
+            html.Div([
+                html.Span(f"قیمت {analyzer.reference_source} (مرجع جهانی): ", style={'color': COLORS['text_muted']}),
+                html.Span(f"${analyzer.reference_price:,.2f}",
+                          style={'color': COLORS['orange'], 'fontWeight': 'bold', 'fontSize': '20px'})
+            ], style={'marginBottom': '10px'}),
+            html.Div([
+                html.Span("قیمت خام نوبیتکس (قبل از تصحیح): ", style={'color': COLORS['text_muted']}),
+                html.Span(f"${raw_price:,.2f}", style={'color': COLORS['text_muted'], 'fontSize': '16px'})
+            ], style={'marginBottom': '10px'}),
+            html.Div([
+                html.Span("آفست تصحیح اعمال‌شده: ", style={'color': COLORS['text_muted']}),
+                html.Span(f"{offset:+,.2f}$ ({offset_pct:+.2f}%)",
+                          style={'color': offset_color, 'fontWeight': 'bold', 'fontSize': '18px'})
+            ], style={'marginBottom': '10px'}),
+            html.Div([
+                html.Span("قیمت نهایی نمایش‌داده‌شده (هم‌راستا با بایننس): ", style={'color': COLORS['text_muted']}),
+                html.Span(f"${stats['mid_price']:,.2f}",
+                          style={'color': COLORS['accent'], 'fontWeight': 'bold', 'fontSize': '20px'})
+            ], style={'marginBottom': '6px'}),
+            html.Div("آفست فقط هنگام دریافت قیمت مرجع تازه (هر ~۵ ثانیه) بازتنظیم می‌شود تا نوسانات "
+                     "واقعی اردربوک نوبیتکس بین این بروزرسانی‌ها حفظ شود.",
+                     style={'color': COLORS['text_muted'], 'fontSize': '11px'}),
+        ])
+    else:
+        reference_cards = html.Div(
+            "⏳ برای تصحیح قیمت، عدد قیمت لحظه‌ای بایننس را در کادر بالای صفحه («قیمت لحظه‌ای بایننس (دستی)») وارد کنید.",
+            style={'color': COLORS['text_muted']})
+
+    signals_divs = []
+    for signal_type, signal_text in analyzer.current_signals:
+        color = COLORS.get(signal_type, COLORS['info'])
+        bg_color = hex_to_rgba(color, 0.15)
+        signals_divs.append(html.Div(
+            signal_text,
+            style={
+                'backgroundColor': bg_color, 'color': color, 'padding': '12px 18px',
+                'borderRadius': '10px', 'margin': '6px', 'display': 'inline-block',
+                'border': f'1px solid {color}', 'fontWeight': 'bold', 'fontSize': '13px'
+            }
+        ))
+    signals_container = html.Div(signals_divs, style={'display': 'flex', 'flexWrap': 'wrap'})
+
+    bids = stats['bids'][:15]
+    asks = stats['asks'][:15]
+
+    bid_prices = [b[0] for b in bids]
+    bid_volumes = [b[1] for b in bids]
+    ask_prices = [a[0] for a in asks]
+    ask_volumes = [a[1] for a in asks]
+
+    bid_cumvol = []
+    cum = 0
+    for v in bid_volumes[::-1]:
+        cum += v
+        bid_cumvol.insert(0, cum)
+    ask_cumvol = []
+    cum = 0
+    for v in ask_volumes:
+        cum += v
+        ask_cumvol.append(cum)
+
+    fig_orderbook = make_subplots(rows=1, cols=2, shared_yaxes=False,
+                                  subplot_titles=('📗 حجم تجمعی بید', '📕 حجم تجمعی اسک'),
+                                  horizontal_spacing=0.05)
+
+    fig_orderbook.add_trace(
+        go.Bar(x=[f"${analyzer.to_usd(p):,.0f}" for p in bid_prices], y=bid_cumvol,
+               marker_color=COLORS['bid'], name='Bid', opacity=0.85,
+               text=[f"{v:.4f}" for v in bid_cumvol], textposition='outside'),
+        row=1, col=1
+    )
+    fig_orderbook.add_trace(
+        go.Bar(x=[f"${analyzer.to_usd(p):,.0f}" for p in ask_prices], y=ask_cumvol,
+               marker_color=COLORS['ask'], name='Ask', opacity=0.85,
+               text=[f"{v:.4f}" for v in ask_cumvol], textposition='outside'),
+        row=1, col=2
+    )
+
+    fig_orderbook.update_layout(
+        plot_bgcolor=COLORS['card'], paper_bgcolor=COLORS['card'],
+        font_color=COLORS['text'], showlegend=False,
+        title_text="📊 تحلیل عمق اردربوک", title_font_color=COLORS['text'], title_x=0.5,
+        xaxis_tickangle=-45, xaxis2_tickangle=-45,
+        margin=dict(l=40, r=20, t=60, b=60)
+    )
+
+    fig_price = go.Figure()
+    if len(analyzer.timestamps) > 0:
+        fig_price.add_trace(go.Scatter(
+            x=list(analyzer.timestamps), y=list(analyzer.mid_price_history),
+            mode='lines+markers', name='Mid Price',
+            line=dict(color=COLORS['accent'], width=2),
+            marker=dict(size=5, color=COLORS['accent_light']),
+            fill='tozeroy', fillcolor=hex_to_rgba(COLORS['accent'], 0.15)
+        ))
+        if len(analyzer.vwap_history) > 0:
+            fig_price.add_trace(go.Scatter(
+                x=list(analyzer.timestamps), y=list(analyzer.vwap_history),
+                mode='lines', name='VWAP',
+                line=dict(color=COLORS['purple'], width=2, dash='dot')
+            ))
+    fig_price.update_layout(
+        plot_bgcolor=COLORS['card'], paper_bgcolor=COLORS['card'],
+        font_color=COLORS['text'], title="📈 روند قیمت میانی و VWAP",
+        xaxis_title="زمان", yaxis_title="قیمت ($)",
+        margin=dict(l=40, r=20, t=50, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+
+    fig_imbalance = go.Figure()
+    if len(analyzer.timestamps) > 0:
+        colors_imb = [COLORS['bid'] if v > 0 else COLORS['ask'] for v in analyzer.imbalance_history]
+        fig_imbalance.add_trace(go.Bar(
+            x=list(analyzer.timestamps), y=list(analyzer.imbalance_history),
+            marker_color=colors_imb, name='Imbalance'
+        ))
+    fig_imbalance.update_layout(
+        plot_bgcolor=COLORS['card'], paper_bgcolor=COLORS['card'],
+        font_color=COLORS['text'], title="⚖️ نامتعادلی بید/اسک",
+        xaxis_title="زمان", yaxis_title="نسبت نامتعادلی",
+        margin=dict(l=40, r=20, t=50, b=40),
+        showlegend=False
+    )
+    fig_imbalance.add_hline(y=0, line_dash="dash", line_color="#64748b")
+    fig_imbalance.add_hline(y=0.3, line_dash="dot", line_color=COLORS['bid'], opacity=0.5)
+    fig_imbalance.add_hline(y=-0.3, line_dash="dot", line_color=COLORS['ask'], opacity=0.5)
+
+    fig_vol_spread = make_subplots(specs=[[{"secondary_y": True}]])
+    if len(analyzer.timestamps) > 0:
+        fig_vol_spread.add_trace(
+            go.Bar(x=list(analyzer.timestamps), y=list(analyzer.volume_history),
+                   name='Total Volume', marker_color=COLORS['accent'], opacity=0.5),
+            secondary_y=False
+        )
+        fig_vol_spread.add_trace(
+            go.Scatter(x=list(analyzer.timestamps), y=list(analyzer.spread_history),
+                       name='Spread %', mode='lines+markers',
+                       line=dict(color=COLORS['warning'], width=2)),
+            secondary_y=True
+        )
+    fig_vol_spread.update_layout(
+        plot_bgcolor=COLORS['card'], paper_bgcolor=COLORS['card'],
+        font_color=COLORS['text'], title="📊 حجم کل و درصد اسپرد",
+        margin=dict(l=40, r=40, t=50, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02)
+    )
+    fig_vol_spread.update_yaxes(title_text="حجم (BTC)", secondary_y=False)
+    fig_vol_spread.update_yaxes(title_text="اسپرد (%)", secondary_y=True)
+
+    return (last_update, header_price, analyzer.usd_rate, price_cards, volume_cards, depth_cards, pressure_cards,
+            reference_cards, signals_container, trend_panel, fig_orderbook, fig_price, fig_imbalance, fig_vol_spread)
+
+
+@app.callback(
+    [Output("footprint-candles-chart", "figure"),
+     Output("footprint-main-chart", "figure"),
+     Output("hvn-list", "children"),
+     Output("imbalance-list", "children"),
+     Output("fp-size-dist", "figure"),
+     Output("fp-aggressive-chart", "figure")],
+    [Input("interval-component", "n_intervals")]
+)
+def update_footprint_tab(n):
+    if not footprint_analyzer.footprint_history:
+        return [dash.no_update] * 6
+
+    fig_candles = render_footprint_candles(list(footprint_candle_builder.candles), COLORS)
+
+    fp_data = list(footprint_analyzer.footprint_history)
+    timestamps = list(footprint_analyzer.timestamps)
+
+    buyers_vals = [fp['aggressive_buyers'] for fp in fp_data]
+    sellers_vals = [fp['aggressive_sellers'] for fp in fp_data]
+
+    fig_main = make_subplots(rows=1, cols=1)
+
+    fig_main.add_trace(go.Bar(
+        x=timestamps,
+        y=buyers_vals,
+        name='Aggressive Buyers',
+        marker_color=COLORS['bid'],
+        opacity=0.7,
+        text=[f"{b:.3f}" for b in buyers_vals],
+        textposition='outside',
+        textfont=dict(size=9, color=COLORS['text'])
+    ))
+
+    fig_main.add_trace(go.Bar(
+        x=timestamps,
+        y=sellers_vals,
+        name='Aggressive Sellers',
+        marker_color=COLORS['ask'],
+        opacity=0.7,
+        text=[f"{s:.3f}" for s in sellers_vals],
+        textposition='outside',
+        textfont=dict(size=9, color=COLORS['text'])
+    ))
+
+    hvn_indices = [i for i, fp in enumerate(fp_data) if fp['is_hvn']]
+    if hvn_indices:
+        fig_main.add_trace(go.Scatter(
+            x=[timestamps[i] for i in hvn_indices],
+            y=[max(buyers_vals[i], sellers_vals[i]) * 1.1 for i in hvn_indices],
+            mode='markers',
+            marker=dict(size=15, color=COLORS['hvn'], symbol='star', line=dict(width=2, color='black')),
+            name='HVN',
+            hovertemplate='High Volume Node<br>Time: %{x}<extra></extra>'
+        ))
+
+    fig_main.update_layout(
+        plot_bgcolor=COLORS['card'],
+        paper_bgcolor=COLORS['card'],
+        font_color=COLORS['text'],
+        title="🌊 Order Flow خلاصه - Aggressive Buyers × Sellers",
+        title_font_color=COLORS['text'],
+        xaxis_title="زمان",
+        yaxis_title="حجم (BTC)",
+        barmode='group',
+        height=450,
+        margin=dict(l=60, r=20, t=80, b=60),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02)
+    )
+
+    for i in hvn_indices:
+        fig_main.add_annotation(
+            x=timestamps[i],
+            y=max(buyers_vals[i], sellers_vals[i]),
+            text="HVN",
+            showarrow=True,
+            arrowcolor=COLORS['hvn'],
+            ax=0,
+            ay=-40
+        )
+
+    hvn_items = []
+    for fp in fp_data:
+        if fp['is_hvn']:
+            hvn_items.append(html.Div(
+                f"⏰ {fp['timestamp']} | قیمت: ${fp['price']:,.2f} | حجم: {fp['total_volume']:.4f} BTC",
+                style={
+                    'backgroundColor': COLORS['hvn'] + '20',
+                    'color': COLORS['hvn'],
+                    'padding': '8px',
+                    'margin': '5px 0',
+                    'borderRadius': '6px',
+                    'border': f'1px solid {COLORS["hvn"]}'
+                }
+            ))
+
+    if not hvn_items:
+        hvn_items = [html.P("هنوز HVN شناسایی نشده", style={'color': COLORS['text_muted'], 'textAlign': 'center'})]
+
+    imbalance_items = []
+    for fp in fp_data:
+        if abs(fp['imbalance']) > 0.3:
+            side = "🟢 خرید" if fp['imbalance'] > 0 else "🔴 فروش"
+            color = COLORS['bid'] if fp['imbalance'] > 0 else COLORS['ask']
+            imbalance_items.append(html.Div(
+                f"{side} | ⏰ {fp['timestamp']} | Imbalance: {fp['imbalance']:+.3f}",
+                style={
+                    'backgroundColor': color + '20',
+                    'color': color,
+                    'padding': '8px',
+                    'margin': '5px 0',
+                    'borderRadius': '6px',
+                    'border': f'1px solid {color}'
+                }
+            ))
+
+    if not imbalance_items:
+        imbalance_items = [
+            html.P("Imbalance قابل توجهی وجود ندارد", style={'color': COLORS['text_muted'], 'textAlign': 'center'})]
+
+    size_ranges = ["Micro", "Small", "Medium", "Large", "Whale"]
+    bid_dist = defaultdict(float)
+    ask_dist = defaultdict(float)
+
+    current_stats = analyzer.current_stats
+    if current_stats:
+        bids = current_stats.get("bids", [])
+        asks = current_stats.get("asks", [])
+
+        size_ranges_vals = [
+            (0, 0.001, "Micro"),
+            (0.001, 0.01, "Small"),
+            (0.01, 0.1, "Medium"),
+            (0.1, 1.0, "Large"),
+            (1.0, float('inf'), "Whale")
+        ]
+
+        for min_s, max_s, label in size_ranges_vals:
+            bid_dist[label] = sum(b[1] for b in bids if min_s <= b[1] < max_s)
+            ask_dist[label] = sum(a[1] for a in asks if min_s <= a[1] < max_s)
+
+    fig_size = go.Figure()
+    fig_size.add_trace(go.Bar(x=size_ranges, y=[bid_dist.get(s, 0) for s in size_ranges],
+                              name='Bid Volume', marker_color=COLORS['bid'], opacity=0.8))
+    fig_size.add_trace(go.Bar(x=size_ranges, y=[ask_dist.get(s, 0) for s in size_ranges],
+                              name='Ask Volume', marker_color=COLORS['ask'], opacity=0.8))
+    fig_size.update_layout(
+        plot_bgcolor=COLORS['card'], paper_bgcolor=COLORS['card'],
+        font_color=COLORS['text'], title="📊 توزیع حجم بر اساس سایز سفارش",
+        barmode='group', xaxis_title="دسته سایز", yaxis_title="حجم (BTC)",
+        margin=dict(l=40, r=20, t=50, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02)
+    )
+
+    fig_agg = go.Figure()
+    fig_agg.add_trace(go.Scatter(x=timestamps, y=buyers_vals, mode='lines+markers',
+                                 name='Aggressive Buyers', line=dict(color=COLORS['bid'], width=2)))
+    fig_agg.add_trace(go.Scatter(x=timestamps, y=sellers_vals, mode='lines+markers',
+                                 name='Aggressive Sellers', line=dict(color=COLORS['ask'], width=2)))
+    fig_agg.update_layout(
+        plot_bgcolor=COLORS['card'], paper_bgcolor=COLORS['card'],
+        font_color=COLORS['text'], title="📈 روند Aggressive Volume",
+        xaxis_title="زمان", yaxis_title="حجم (BTC)",
+        margin=dict(l=40, r=20, t=50, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02)
+    )
+
+    return fig_candles, fig_main, html.Div(hvn_items), html.Div(imbalance_items), fig_size, fig_agg
+
+
+@app.callback(
+    [Output("of-flow-card", "children"),
+     Output("of-liquidity-card", "children"),
+     Output("of-aggression-card", "children"),
+     Output("of-momentum-card", "children"),
+     Output("of-pressure-chart", "figure"),
+     Output("of-delta-chart", "figure"),
+     Output("of-support-table", "children"),
+     Output("of-resistance-table", "children"),
+     Output("of-vwap-chart", "figure")],
+    [Input("interval-component", "n_intervals")]
+)
+def update_orderflow(n):
+    of = analyzer.orderflow_data
+    stats = analyzer.current_stats
+    if not of or not stats:
+        return [dash.no_update] * 9
+
+    flow_color = COLORS['bid'] if "Buy" in of["flow_direction"] else COLORS['ask'] if "Sell" in of[
+        "flow_direction"] else COLORS['text_muted']
+    flow_card = html.Div([
+        html.Div(of["flow_direction"], style={'color': flow_color, 'fontWeight': 'bold', 'fontSize': '24px'}),
+        html.Div(f"Strength: {of['flow_strength']:.3f}",
+                 style={'color': COLORS['text_muted'], 'fontSize': '13px', 'marginTop': '5px'}),
+    ])
+
+    liq_color = COLORS['success'] if of["liquidity_score"] > 70 else COLORS['warning'] if of[
+                                                                                              "liquidity_score"] > 40 else \
+    COLORS['danger']
+    liquidity_card = html.Div([
+        html.Div(f"{of['liquidity_score']:.1f}/100",
+                 style={'color': liq_color, 'fontWeight': 'bold', 'fontSize': '28px'}),
+        html.Div("Liquidity Score", style={'color': COLORS['text_muted'], 'fontSize': '13px', 'marginTop': '5px'}),
+    ])
+
+    aggression_card = html.Div([
+        html.Div([
+            html.Span("Buyers: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"{of['aggressive_buyers'] * 100:.1f}%", style={'color': COLORS['bid'], 'fontWeight': 'bold'})
+        ], style={'marginBottom': '8px'}),
+        html.Div([
+            html.Span("Sellers: ", style={'color': COLORS['text_muted']}),
+            html.Span(f"{of['aggressive_sellers'] * 100:.1f}%", style={'color': COLORS['ask'], 'fontWeight': 'bold'})
+        ]),
+    ])
+
+    mom_color = COLORS['bid'] if of["momentum"] > 0 else COLORS['ask'] if of["momentum"] < 0 else COLORS['text_muted']
+    momentum_card = html.Div([
+        html.Div(f"{of['momentum']:+.4f}", style={'color': mom_color, 'fontWeight': 'bold', 'fontSize': '24px'}),
+        html.Div("Price Momentum", style={'color': COLORS['text_muted'], 'fontSize': '13px', 'marginTop': '5px'}),
+    ])
+
+    fig_pressure = go.Figure()
+    if len(analyzer.timestamps) > 0:
+        fig_pressure.add_trace(go.Scatter(
+            x=list(analyzer.timestamps), y=[b * 100 for b in analyzer.buy_pressure_history],
+            mode='lines', name='Buy Pressure', line=dict(color=COLORS['bid'], width=2),
+            fill='tozeroy', fillcolor=hex_to_rgba(COLORS['bid'], 0.2)
+        ))
+        fig_pressure.add_trace(go.Scatter(
+            x=list(analyzer.timestamps), y=[s * 100 for s in analyzer.sell_pressure_history],
+            mode='lines', name='Sell Pressure', line=dict(color=COLORS['ask'], width=2),
+            fill='tozeroy', fillcolor=hex_to_rgba(COLORS['ask'], 0.2)
+        ))
+    fig_pressure.update_layout(
+        plot_bgcolor=COLORS['card'], paper_bgcolor=COLORS['card'],
+        font_color=COLORS['text'], title="⚔️ فشار خرید/فروش در طول زمان",
+        xaxis_title="زمان", yaxis_title="فشار (%)",
+        margin=dict(l=40, r=20, t=50, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02)
+    )
+
+    fig_delta = go.Figure()
+    if len(analyzer.timestamps) > 0:
+        colors_d = [COLORS['bid'] if d > 0 else COLORS['ask'] for d in analyzer.delta_history]
+        fig_delta.add_trace(go.Bar(
+            x=list(analyzer.timestamps), y=list(analyzer.delta_history),
+            marker_color=colors_d, name='Delta'
+        ))
+    fig_delta.update_layout(
+        plot_bgcolor=COLORS['card'], paper_bgcolor=COLORS['card'],
+        font_color=COLORS['text'], title="📉 Delta (تغییرات خالص حجم)",
+        xaxis_title="زمان", yaxis_title="Delta (BTC)",
+        margin=dict(l=40, r=20, t=50, b=40),
+        showlegend=False
+    )
+    fig_delta.add_hline(y=0, line_dash="dash", line_color="#64748b")
+
+    support_rows = []
+    for s in of["support_levels"]:
+        support_rows.append(html.Tr([
+            html.Td(f"${s['price']:,.2f}"),
+            html.Td(f"{s['volume']:.6f} BTC"),
+            html.Td(s["strength"],
+                    style={'color': COLORS['success'] if s["strength"] == "Strong" else COLORS['warning']}),
+        ], style={'borderBottom': f'1px solid {COLORS["card_border"]}'}))
+
+    support_table = html.Table([
+        html.Thead(html.Tr([
+            html.Th("Price", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'}),
+            html.Th("Volume", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'}),
+            html.Th("Strength", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'}),
+        ])),
+        html.Tbody(support_rows if support_rows else [html.Tr([html.Td("سطح حمایت یافت نشد", colSpan=3,
+                                                                       style={'textAlign': 'center', 'padding': '20px',
+                                                                              'color': COLORS['text_muted']})])])
+    ], style={'width': '100%', 'color': COLORS['text'], 'fontSize': '13px'})
+
+    resistance_rows = []
+    for r in of["resistance_levels"]:
+        resistance_rows.append(html.Tr([
+            html.Td(f"${r['price']:,.2f}"),
+            html.Td(f"{r['volume']:.6f} BTC"),
+            html.Td(r["strength"],
+                    style={'color': COLORS['danger'] if r["strength"] == "Strong" else COLORS['warning']}),
+        ], style={'borderBottom': f'1px solid {COLORS["card_border"]}'}))
+
+    resistance_table = html.Table([
+        html.Thead(html.Tr([
+            html.Th("Price", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'}),
+            html.Th("Volume", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'}),
+            html.Th("Strength", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'}),
+        ])),
+        html.Tbody(resistance_rows if resistance_rows else [html.Tr([html.Td("سطح مقاومت یافت نشد", colSpan=3,
+                                                                             style={'textAlign': 'center',
+                                                                                    'padding': '20px',
+                                                                                    'color': COLORS['text_muted']})])])
+    ], style={'width': '100%', 'color': COLORS['text'], 'fontSize': '13px'})
+
+    fig_vwap = go.Figure()
+    if len(analyzer.timestamps) > 0:
+        fig_vwap.add_trace(go.Scatter(
+            x=list(analyzer.timestamps), y=list(analyzer.mid_price_history),
+            mode='lines+markers', name='Mid Price',
+            line=dict(color=COLORS['accent'], width=2),
+            marker=dict(size=5)
+        ))
+        if len(analyzer.vwap_history) > 0:
+            fig_vwap.add_trace(go.Scatter(
+                x=list(analyzer.timestamps), y=list(analyzer.vwap_history),
+                mode='lines', name='VWAP',
+                line=dict(color=COLORS['purple'], width=2, dash='dash')
+            ))
+            vwap_vals = list(analyzer.vwap_history)
+            upper_band = [v * 1.002 for v in vwap_vals]
+            lower_band = [v * 0.998 for v in vwap_vals]
+            fig_vwap.add_trace(go.Scatter(
+                x=list(analyzer.timestamps), y=upper_band,
+                mode='lines', name='Upper Band (+0.2%)',
+                line=dict(color=COLORS['purple'], width=1, dash='dot'),
+                opacity=0.5
+            ))
+            fig_vwap.add_trace(go.Scatter(
+                x=list(analyzer.timestamps), y=lower_band,
+                mode='lines', name='Lower Band (-0.2%)',
+                line=dict(color=COLORS['purple'], width=1, dash='dot'),
+                opacity=0.5,
+                fill='tonexty', fillcolor=hex_to_rgba(COLORS['purple'], 0.1)
+            ))
+
+    fig_vwap.update_layout(
+        plot_bgcolor=COLORS['card'], paper_bgcolor=COLORS['card'],
+        font_color=COLORS['text'], title="💎 قیمت میانی vs VWAP با باندهای انحراف",
+        xaxis_title="زمان", yaxis_title="قیمت ($)",
+        margin=dict(l=40, r=20, t=50, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02)
+    )
+
+    return (flow_card, liquidity_card, aggression_card, momentum_card,
+            fig_pressure, fig_delta, support_table, resistance_table, fig_vwap)
+
+
+# ==========================================
+# کالبک جدید: به‌روزرسانی تب LVN/HVN
+# ==========================================
+@app.callback(
+    [Output("lvn-volume-profile-chart", "figure"),
+     Output("lvn-poc-card", "children"),
+     Output("lvn-va-card", "children"),
+     Output("lvn-hvn-count-card", "children"),
+     Output("lvn-lvn-count-card", "children"),
+     Output("lvn-signals", "children"),
+     Output("lvn-hvn-table", "children"),
+     Output("lvn-lvn-table", "children"),
+     Output("lvn-statistical-chart", "figure"),
+     Output("lvn-distribution-chart", "figure")],
+    [Input("interval-component", "n_intervals")]
+)
+def update_lvn_tab(n):
+    if len(analyzer.mid_price_history) < 20:
+        return [dash.no_update] * 10
+
+    prices = list(analyzer.mid_price_history)[-100:]
+    volumes = list(analyzer.volume_history)[-100:]
+
+    profile = vp_analyzer.calculate(prices, volumes)
+    if not profile:
+        return [dash.no_update] * 10
+
+    current_price = analyzer.current_stats['mid_price'] if analyzer.current_stats else (prices[-1] if prices else 0)
+    if not current_price:
+        return [dash.no_update] * 10
+
+    # 1. نمودار پروفایل حجم
+    fig_profile = make_subplots(rows=1, cols=2, shared_yaxes=True, horizontal_spacing=0.02,
+                                column_widths=[0.35, 0.65],
+                                subplot_titles=('📊 پروفایل حجم', '📈 روند قیمت با HVN/LVN'))
+
+    if vp_analyzer.profile:
+        vol_levels = sorted(vp_analyzer.profile.keys())
+        vol_values = [vp_analyzer.profile[l] for l in vol_levels]
+
+        bar_colors = []
+        for level in vol_levels:
+            is_hvn = any(abs(h['price'] - level) < 0.001 for h in vp_analyzer.hvn_levels)
+            is_lvn = any(abs(lv['price'] - level) < 0.001 for lv in vp_analyzer.lvn_levels)
+            if is_hvn:
+                bar_colors.append(COLORS['hvn'])
+            elif is_lvn:
+                bar_colors.append(COLORS['warning'])
+            else:
+                bar_colors.append(COLORS['accent'])
+
+        fig_profile.add_trace(
+            go.Bar(y=vol_levels, x=vol_values, orientation='h', marker_color=bar_colors, name='Volume',
+                   showlegend=False), row=1, col=1)
+
+        if vp_analyzer.poc:
+            fig_profile.add_hline(y=vp_analyzer.poc, line_dash="dash", line_color=COLORS['purple'],
+                                  annotation_text="POC", row=1, col=1)
+
+    fig_profile.add_trace(go.Scatter(x=list(range(len(prices))), y=prices, mode='lines', name='Price',
+                                     line=dict(color=COLORS['accent'], width=2)), row=1, col=2)
+
+    for hvn in vp_analyzer.hvn_levels[:5]:
+        fig_profile.add_trace(go.Scatter(x=[0, len(prices) - 1], y=[hvn['price'], hvn['price']], mode='lines',
+                                         line=dict(color=COLORS['hvn'], width=2, dash='dash'),
+                                         name=f'HVN ${hvn["price"]:,.2f}', showlegend=True, opacity=0.7), row=1, col=2)
+
+    for lvn in vp_analyzer.lvn_levels[:3]:
+        fig_profile.add_trace(go.Scatter(x=[0, len(prices) - 1], y=[lvn['price'], lvn['price']], mode='lines',
+                                         line=dict(color=COLORS['warning'], width=1, dash='dot'),
+                                         name=f'LVN ${lvn["price"]:,.2f}', showlegend=True, opacity=0.5), row=1, col=2)
+
+    fig_profile.add_hline(y=current_price, line_dash="solid", line_color=COLORS['text'], annotation_text="Current",
+                          row=1, col=2)
+
+    fig_profile.update_layout(plot_bgcolor=COLORS['card'], paper_bgcolor=COLORS['card'], font_color=COLORS['text'],
+                              height=600, margin=dict(l=40, r=20, t=60, b=40), showlegend=True,
+                              legend=dict(orientation="h", yanchor="bottom", y=1.02))
+
+    # 2. کارت POC
+    poc_dev = ((current_price - vp_analyzer.poc) / vp_analyzer.poc * 100) if vp_analyzer.poc else 0
+    poc_color = COLORS['bid'] if poc_dev < 0 else COLORS['ask'] if poc_dev > 0 else COLORS['text']
+    poc_card = html.Div([
+        html.Div(f"${vp_analyzer.poc:,.2f}", style={'color': COLORS['text'], 'fontSize': '24px', 'fontWeight': 'bold'}),
+        html.Div(f"انحراف: {poc_dev:+.2f}%", style={'color': poc_color, 'fontSize': '14px'})
+    ])
+
+    # 3. کارت Value Area
+    va_card = html.Div([
+        html.Div([html.Span("VA High: ", style={'color': COLORS['text_muted']}),
+                  html.Span(f"${vp_analyzer.va_high:,.2f}", style={'color': COLORS['bid'], 'fontWeight': 'bold'})],
+                 style={'marginBottom': '5px'}),
+        html.Div([html.Span("VA Low: ", style={'color': COLORS['text_muted']}),
+                  html.Span(f"${vp_analyzer.va_low:,.2f}", style={'color': COLORS['ask'], 'fontWeight': 'bold'})],
+                 style={'marginBottom': '5px'}),
+        html.Div([html.Span("Width: ", style={'color': COLORS['text_muted']}),
+                  html.Span(f"${(vp_analyzer.va_high - vp_analyzer.va_low):,.2f}",
+                            style={'color': COLORS['text'], 'fontWeight': 'bold'})])
+    ])
+
+    # 4. کارت تعداد HVN
+    hvn_count_card = html.Div([
+        html.Div(str(len(vp_analyzer.hvn_levels)),
+                 style={'color': COLORS['hvn'], 'fontSize': '28px', 'fontWeight': 'bold'}),
+        html.Div("High Volume Nodes", style={'color': COLORS['text_muted'], 'fontSize': '12px'})
+    ])
+
+    # 5. کارت تعداد LVN
+    lvn_count_card = html.Div([
+        html.Div(str(len(vp_analyzer.lvn_levels)),
+                 style={'color': COLORS['warning'], 'fontSize': '28px', 'fontWeight': 'bold'}),
+        html.Div("Low Volume Nodes", style={'color': COLORS['text_muted'], 'fontSize': '12px'})
+    ])
+
+    # 6. سیگنال‌ها
+    signals_divs = []
+    if vp_analyzer.poc:
+        if poc_dev > 2:
+            signals_divs.append(html.Div(f'📉 قیمت {abs(poc_dev):.2f}% بالاتر از POC - احتمال بازگشت',
+                                         style={'backgroundColor': hex_to_rgba(COLORS['danger'], 0.15),
+                                                'color': COLORS['danger'], 'padding': '10px 15px',
+                                                'borderRadius': '8px', 'margin': '5px', 'display': 'inline-block',
+                                                'border': f'1px solid {COLORS["danger"]}', 'fontSize': '13px'}))
+        elif poc_dev < -2:
+            signals_divs.append(html.Div(f'📈 قیمت {abs(poc_dev):.2f}% پایین‌تر از POC - فرصت خرید',
+                                         style={'backgroundColor': hex_to_rgba(COLORS['success'], 0.15),
+                                                'color': COLORS['success'], 'padding': '10px 15px',
+                                                'borderRadius': '8px', 'margin': '5px', 'display': 'inline-block',
+                                                'border': f'1px solid {COLORS["success"]}', 'fontSize': '13px'}))
+
+    if vp_analyzer.hvn_levels:
+        nearest_hvn = min(vp_analyzer.hvn_levels, key=lambda x: abs(x['price'] - current_price))
+        dist = abs(nearest_hvn['price'] - current_price) / current_price * 100
+        if dist < 1.5:
+            pos = "مقاومت" if nearest_hvn['price'] > current_price else "حمایت"
+            signals_divs.append(html.Div(f'🎯 {pos} قوی HVN در ${nearest_hvn["price"]:,.2f} (فاصله: {dist:.2f}%)',
+                                         style={'backgroundColor': hex_to_rgba(COLORS['warning'], 0.15),
+                                                'color': COLORS['warning'], 'padding': '10px 15px',
+                                                'borderRadius': '8px', 'margin': '5px', 'display': 'inline-block',
+                                                'border': f'1px solid {COLORS["warning"]}', 'fontSize': '13px'}))
+
+    signals_container = html.Div(signals_divs,
+                                 style={'display': 'flex', 'flexWrap': 'wrap'}) if signals_divs else html.P(
+        "سیگنالی موجود نیست", style={'color': COLORS['text_muted']})
+
+    # 7. جدول HVN
+    hvn_rows = []
+    for hvn in vp_analyzer.hvn_levels[:8]:
+        dist = ((hvn['price'] - current_price) / current_price * 100) if current_price else 0
+        pos = "Above" if dist > 0 else "Below"
+        pos_color = COLORS['ask'] if dist > 0 else COLORS['bid']
+        hvn_rows.append(html.Tr([
+            html.Td(f"${hvn['price']:,.2f}", style={'padding': '8px'}),
+            html.Td(f"{hvn['volume']:.4f}", style={'padding': '8px'}),
+            html.Td(hvn['strength'], style={'padding': '8px', 'color': COLORS['hvn']}),
+            html.Td(f"{dist:+.2f}%", style={'padding': '8px', 'color': pos_color}),
+            html.Td(pos, style={'padding': '8px', 'color': pos_color}),
+        ], style={'borderBottom': f'1px solid {COLORS["card_border"]}'}))
+
+    hvn_table = html.Table([
+        html.Thead(html.Tr(
+            [html.Th("Price", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'}),
+             html.Th("Volume", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'}),
+             html.Th("Strength", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'}),
+             html.Th("Distance", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'}),
+             html.Th("Position", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'})])),
+        html.Tbody(hvn_rows if hvn_rows else [html.Tr([html.Td("HVN یافت نشد", colSpan=5,
+                                                               style={'textAlign': 'center', 'padding': '20px',
+                                                                      'color': COLORS['text_muted']})])])
+    ], style={'width': '100%', 'color': COLORS['text'], 'fontSize': '12px'})
+
+    # 8. جدول LVN
+    lvn_rows = []
+    for lvn in vp_analyzer.lvn_levels[:8]:
+        dist = ((lvn['price'] - current_price) / current_price * 100) if current_price else 0
+        lvn_rows.append(html.Tr([
+            html.Td(f"${lvn['price']:,.2f}", style={'padding': '8px'}),
+            html.Td(f"{lvn['volume']:.4f}", style={'padding': '8px'}),
+            html.Td(lvn['strength'], style={'padding': '8px', 'color': COLORS['warning']}),
+            html.Td(f"{dist:+.2f}%", style={'padding': '8px', 'color': COLORS['text_muted']}),
+        ], style={'borderBottom': f'1px solid {COLORS["card_border"]}'}))
+
+    lvn_table = html.Table([
+        html.Thead(html.Tr(
+            [html.Th("Price", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'}),
+             html.Th("Volume", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'}),
+             html.Th("Strength", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'}),
+             html.Th("Distance", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'})])),
+        html.Tbody(lvn_rows if lvn_rows else [html.Tr([html.Td("LVN یافت نشد", colSpan=4,
+                                                               style={'textAlign': 'center', 'padding': '20px',
+                                                                      'color': COLORS['text_muted']})])])
+    ], style={'width': '100%', 'color': COLORS['text'], 'fontSize': '12px'})
+
+    # 9. نمودار تحلیل آماری
+    fig_stats = make_subplots(rows=2, cols=1, subplot_titles=('📊 توزیع آماری قیمت', '📈 Cumulative Volume'))
+    if prices:
+        fig_stats.add_trace(
+            go.Histogram(x=prices, name='Price Distribution', marker_color=COLORS['accent'], opacity=0.7, nbinsx=30),
+            row=1, col=1)
+        mean_p = np.mean(prices)
+        median_p = np.median(prices)
+        fig_stats.add_vline(x=mean_p, line_dash="dash", line_color=COLORS['purple'], annotation_text="Mean", row=1,
+                            col=1)
+        fig_stats.add_vline(x=median_p, line_dash="dot", line_color=COLORS['hvn'], annotation_text="Median", row=1,
+                            col=1)
+
+        cum_vol = np.cumsum(volumes)
+        fig_stats.add_trace(
+            go.Scatter(y=cum_vol, mode='lines', name='Cumulative Volume', line=dict(color=COLORS['bid'], width=2)),
+            row=2, col=1)
+
+    fig_stats.update_layout(plot_bgcolor=COLORS['card'], paper_bgcolor=COLORS['card'], font_color=COLORS['text'],
+                            height=400, showlegend=False, margin=dict(l=40, r=20, t=60, b=40))
+
+    # 10. نمودار توزیع حجم
+    fig_dist = go.Figure()
+    if vp_analyzer.profile:
+        price_ranges = ['Micro', 'Small', 'Medium', 'Large', 'Mega']
+        range_volumes = [0.0] * 5
+        for p, v in vp_analyzer.profile.items():
+            if v < 0.1:
+                range_volumes[0] += v
+            elif v < 0.5:
+                range_volumes[1] += v
+            elif v < 1.0:
+                range_volumes[2] += v
+            elif v < 2.0:
+                range_volumes[3] += v
+            else:
+                range_volumes[4] += v
+
+        fig_dist.add_trace(go.Bar(x=price_ranges, y=range_volumes,
+                                  marker_color=[COLORS['warning'], COLORS['teal'], COLORS['accent'], COLORS['purple'],
+                                                COLORS['hvn']], name='Volume by Range'))
+
+        total_vol = sum(vp_analyzer.profile.values())
+        hvn_vol = sum(h['volume'] for h in vp_analyzer.hvn_levels)
+        lvn_vol = sum(l['volume'] for l in vp_analyzer.lvn_levels)
+
+        if total_vol > 0:
+            fig_dist.add_trace(go.Pie(labels=['HVN Volume', 'LVN Volume', 'Normal Volume'],
+                                      values=[hvn_vol, lvn_vol, total_vol - hvn_vol - lvn_vol], hole=0.4,
+                                      marker_colors=[COLORS['hvn'], COLORS['warning'], COLORS['card_border']],
+                                      name='Volume Distribution'))
+
+    fig_dist.update_layout(plot_bgcolor=COLORS['card'], paper_bgcolor=COLORS['card'], font_color=COLORS['text'],
+                           height=400, margin=dict(l=40, r=20, t=60, b=40), showlegend=True)
+
+    return fig_profile, poc_card, va_card, hvn_count_card, lvn_count_card, signals_container, hvn_table, lvn_table, fig_stats, fig_dist
+
+
+# ==========================================
+# کالبک جدید: به‌روزرسانی تب برایند نهایی
+# ==========================================
+@app.callback(
+    [Output("syn-verdict-card", "children"),
+     Output("syn-agreement-card", "children"),
+     Output("syn-significance-card", "children"),
+     Output("syn-votes-table", "children"),
+     Output("syn-zscore-chart", "figure"),
+     Output("syn-composite-history-chart", "figure"),
+     Output("syn-imbalance-scatter", "figure"),
+     Output("syn-delta-scatter", "figure")],
+    [Input("interval-component", "n_intervals")]
+)
+def update_synthesis_tab(n):
+    stats = analyzer.current_stats
+    if not stats or len(analyzer.mid_price_history) < 12:
+        empty_fig = go.Figure()
+        empty_fig.update_layout(
+            plot_bgcolor=COLORS['card'], paper_bgcolor=COLORS['card'], font_color=COLORS['text_muted'],
+            annotations=[dict(text="در انتظار داده کافی برای تحلیل آماری...", xref="paper", yref="paper",
+                              x=0.5, y=0.5, showarrow=False)])
+        waiting = html.Div("در انتظار داده کافی...", style={'color': COLORS['text_muted']})
+        return waiting, waiting, waiting, waiting, empty_fig, empty_fig, empty_fig, empty_fig
+
+    trend = analyzer.calculate_comprehensive_trend()
+    orderflow = analyzer.orderflow_data
+    footprint = analyzer.footprint_data
+    vp_state = {'poc': vp_analyzer.poc}
+
+    votes = synth_analyzer.collect_votes(trend, orderflow, footprint, vp_state, stats['mid_price'])
+    predictive = synth_analyzer.evaluate_predictive_power(
+        analyzer.imbalance_history, analyzer.delta_history, analyzer.mid_price_history)
+    verdict = synth_analyzer.composite_verdict(votes, predictive)
+
+    verdict_color = COLORS['bid'] if verdict['score'] > 0 else COLORS['ask'] if verdict['score'] < 0 else COLORS['text_muted']
+    verdict_card = html.Div([
+        html.Div(verdict['label'], style={'color': verdict_color, 'fontWeight': 'bold', 'fontSize': '26px'}),
+        html.Div(f"امتیاز ترکیبی: {verdict['score']:+.1f} از 100 | بر اساس {verdict['n_votes']} سیگنال مستقل",
+                 style={'color': COLORS['text_muted'], 'fontSize': '12px', 'marginTop': '6px'}),
+        html.Div(f"سطح اطمینان: {verdict['confidence']}",
+                 style={'color': COLORS['warning'], 'fontSize': '13px', 'marginTop': '6px', 'fontWeight': 'bold'}),
+    ])
+
+    agreement_card = html.Div([
+        html.Div(f"{verdict['agreement']:.0f}%",
+                 style={'color': COLORS['accent'], 'fontWeight': 'bold', 'fontSize': '28px'}),
+        html.Div("از سیگنال‌های جهت‌دار هم‌راستا هستند", style={'color': COLORS['text_muted'], 'fontSize': '12px'}),
+    ])
+
+    sig_lines = []
+    for key, res in predictive.items():
+        label = "Imbalance ↔ ΔPrice" if key == 'imbalance_vs_price' else "Delta ↔ ΔPrice"
+        sig_color = COLORS['success'] if res['significant'] else COLORS['text_muted']
+        sig_lines.append(html.Div([
+            html.Span(f"{label}: ", style={'color': COLORS['text_muted'], 'fontSize': '12px'}),
+            html.Span(f"r={res['r']:+.3f}, p={res['p_value']:.3f} (n={res['n']}) ",
+                      style={'color': sig_color, 'fontSize': '12px', 'fontWeight': 'bold'}),
+            html.Span("✓ معنادار" if res['significant'] else "✗ غیرمعنادار",
+                      style={'color': sig_color, 'fontSize': '11px'}),
+        ], style={'marginBottom': '6px'}))
+    if not sig_lines:
+        sig_lines = [html.Div("داده کافی برای آزمون همبستگی موجود نیست",
+                              style={'color': COLORS['text_muted'], 'fontSize': '12px'})]
+    significance_card = html.Div(sig_lines)
+
+    votes_rows = []
+    for v in votes:
+        dir_label = "🟢 صعودی" if v['direction'] > 0 else ("🔴 نزولی" if v['direction'] < 0 else "⚪ خنثی")
+        dir_color = COLORS['bid'] if v['direction'] > 0 else (COLORS['ask'] if v['direction'] < 0 else COLORS['text_muted'])
+        votes_rows.append(html.Tr([
+            html.Td(v['source'], style={'padding': '8px'}),
+            html.Td(dir_label, style={'padding': '8px', 'color': dir_color, 'fontWeight': 'bold'}),
+            html.Td(f"{v['strength']:.2f}", style={'padding': '8px'}),
+            html.Td(v['detail'], style={'padding': '8px', 'color': COLORS['text_muted'], 'fontSize': '12px'}),
+        ], style={'borderBottom': f'1px solid {COLORS["card_border"]}'}))
+
+    votes_table = html.Table([
+        html.Thead(html.Tr([
+            html.Th("منبع سیگنال (تب)", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'}),
+            html.Th("جهت", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'}),
+            html.Th("قدرت (0-1)", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'}),
+            html.Th("جزئیات", style={'color': COLORS['text_muted'], 'padding': '10px', 'textAlign': 'left'}),
+        ])),
+        html.Tbody(votes_rows if votes_rows else [html.Tr([html.Td("داده‌ای موجود نیست", colSpan=4,
+                                                                   style={'textAlign': 'center', 'padding': '20px',
+                                                                          'color': COLORS['text_muted']})])])
+    ], style={'width': '100%', 'color': COLORS['text'], 'fontSize': '13px'})
+
+    z_imbalance = synth_analyzer.zscore(stats['imbalance'], analyzer.imbalance_history)
+    z_delta = synth_analyzer.zscore(stats['delta'], analyzer.delta_history)
+    z_buy_pressure = synth_analyzer.zscore(stats['buy_pressure'], analyzer.buy_pressure_history)
+    z_spread = synth_analyzer.zscore(stats['spread_pct'], analyzer.spread_history)
+
+    z_labels = ['Imbalance', 'Delta', 'Buy Pressure', 'Spread %']
+    z_values = [z_imbalance, z_delta, z_buy_pressure, z_spread]
+    z_colors = [COLORS['bid'] if z > 0 else COLORS['ask'] for z in z_values]
+
+    fig_z = go.Figure()
+    fig_z.add_trace(go.Bar(x=z_labels, y=z_values, marker_color=z_colors,
+                           text=[f"{z:+.2f}σ" for z in z_values], textposition='outside'))
+    fig_z.add_hline(y=2, line_dash="dot", line_color=COLORS['warning'], opacity=0.5)
+    fig_z.add_hline(y=-2, line_dash="dot", line_color=COLORS['warning'], opacity=0.5)
+    fig_z.update_layout(plot_bgcolor=COLORS['card'], paper_bgcolor=COLORS['card'], font_color=COLORS['text'],
+                        title="انحراف از میانگین نشست (به واحد انحراف معیار σ)",
+                        yaxis_title="Z-Score", margin=dict(l=40, r=20, t=50, b=40), showlegend=False)
+
+    fig_composite_hist = go.Figure()
+    hist_scores = list(synth_analyzer.history_composite)
+    if hist_scores:
+        colors_hist = [COLORS['bid'] if s > 0 else COLORS['ask'] for s in hist_scores]
+        fig_composite_hist.add_trace(go.Scatter(y=hist_scores, mode='lines+markers',
+                                                 line=dict(color=COLORS['pink'], width=2),
+                                                 marker=dict(size=5, color=colors_hist)))
+    fig_composite_hist.add_hline(y=0, line_dash="dash", line_color="#64748b")
+    fig_composite_hist.update_layout(plot_bgcolor=COLORS['card'], paper_bgcolor=COLORS['card'],
+                                     font_color=COLORS['text'], title="روند امتیاز برایند ترکیبی",
+                                     yaxis_title="Score (-100..100)", margin=dict(l=40, r=20, t=50, b=40))
+
+    def make_scatter(res, title, color):
+        fig = go.Figure()
+        if res:
+            x = res['x']
+            y = res['y']
+            fig.add_trace(go.Scatter(x=x, y=y, mode='markers', marker=dict(color=color, size=7, opacity=0.6)))
+            if len(x) >= 2 and statistics.pstdev(x) > 0:
+                slope = res['r'] * (statistics.pstdev(y) / statistics.pstdev(x))
+                intercept = statistics.mean(y) - slope * statistics.mean(x)
+                x_line = [min(x), max(x)]
+                y_line = [slope * xi + intercept for xi in x_line]
+                fig.add_trace(go.Scatter(x=x_line, y=y_line, mode='lines',
+                                         line=dict(color=COLORS['warning'], width=2, dash='dash'), name='خط رگرسیون'))
+            sig_txt = "✓ معنادار" if res['significant'] else "✗ غیرمعنادار (احتیاط لازم است)"
+            fig.update_layout(
+                title=f"{title}<br><sub>r={res['r']:+.3f} | p={res['p_value']:.3f} | n={res['n']} | {sig_txt}</sub>")
+        else:
+            fig.update_layout(title=title,
+                              annotations=[dict(text="داده کافی موجود نیست", xref="paper", yref="paper",
+                                                x=0.5, y=0.5, showarrow=False, font=dict(color=COLORS['text_muted']))])
+        fig.update_layout(plot_bgcolor=COLORS['card'], paper_bgcolor=COLORS['card'], font_color=COLORS['text'],
+                          showlegend=False, margin=dict(l=40, r=20, t=70, b=40))
+        return fig
+
+    fig_imb_scatter = make_scatter(predictive.get('imbalance_vs_price'),
+                                    "Imbalance(t) در برابر ΔPrice(t+1)", COLORS['accent'])
+    fig_delta_scatter = make_scatter(predictive.get('delta_vs_price'),
+                                      "Delta(t) در برابر ΔPrice(t+1)", COLORS['purple'])
+
+    return (verdict_card, agreement_card, significance_card, votes_table,
+            fig_z, fig_composite_hist, fig_imb_scatter, fig_delta_scatter)
+
+
+if __name__ == "__main__":
+    print("=" * 70)
+    print("🚀 Nobitex Advanced Orderbook Analytics Dashboard")
+    print("=" * 70)
+    print("📡 در حال دریافت نرخ خودکار دلار از نوبیتکس و اتصال به API...")
+
+    success = analyzer.update()
+    if success:
+        print("✅ اتصال موفق!")
+        print(f"💰 قیمت فعلی BTC: ${analyzer.current_stats['mid_price']:,.2f} USD")
+        print(f"🔄 نرخ خودکار دریافت‌شده: 1 دلار = {analyzer.usd_rate:,.0f} تومان")
+        print(f"📊 تب‌ها: Overview | Footprint | Order Flow | LVN/HVN | برایند نهایی")
+    else:
+        print("⚠️ خطا در اتصال اولیه - بررسی اتصال اینترنت")
+
+    print("\n🌐 باز کردن مرورگر در: http://127.0.0.1:8050")
+    print("⏹️ برای توقف Ctrl+C را فشار دهید")
+    print("=" * 70)
+
+    app.run(debug=True, host='0.0.0.0', port=8050)

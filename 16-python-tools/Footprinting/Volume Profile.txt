@@ -1,0 +1,459 @@
+import dash
+from dash import dcc, html, Input, Output, State, callback_context, no_update
+import plotly.graph_objs as go
+from plotly.subplots import make_subplots
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import dash_bootstrap_components as dbc
+from datetime import datetime
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+
+# --- App Initialization ---
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
+server = app.server
+app.title = "Pro Order Flow Terminal"
+
+# --- Custom CSS for Professional Look ---
+app.index_string = '''
+<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>Pro Order Flow Terminal</title>
+        {%css%}
+        <style>
+            body { background-color: #0b0c10; color: #c5c6c7; font-family: 'Inter', 'Segoe UI', sans-serif; }
+            .sidebar { background: #1f2833; min-height: 100vh; padding: 20px; border-right: 1px solid #2d3748; }
+            .main-content { padding: 20px; background: #0b0c10; }
+            .kpi-card { background: #1f2833; border: 1px solid #2d3748; border-radius: 8px; padding: 15px; text-align: center; transition: 0.3s; }
+            .kpi-card:hover { border-color: #4db8ff; transform: translateY(-2px); }
+            .kpi-value { font-size: 1.5rem; font-weight: 700; margin: 5px 0; }
+            .kpi-label { font-size: 0.8rem; color: #8892b0; text-transform: uppercase; letter-spacing: 1px; }
+            .text-bullish { color: #00e676; }
+            .text-bearish { color: #ff5252; }
+            .text-neutral { color: #4db8ff; }
+            .signal-box { background: #1f2833; border-left: 4px solid; padding: 15px; margin-bottom: 10px; border-radius: 4px; }
+            .signal-buy { border-left-color: #00e676; }
+            .signal-sell { border-left-color: #ff5252; }
+            .form-control, .form-select { background: #0b0c10; border: 1px solid #2d3748; color: #c5c6c7; }
+            .form-control:focus, .form-select:focus { background: #0b0c10; border-color: #4db8ff; color: #fff; box-shadow: none; }
+            .btn-primary { background: #4db8ff; border: none; color: #0b0c10; font-weight: 600; }
+            .btn-primary:hover { background: #3a9fd8; color: #fff; }
+            .btn-danger { background: #ff5252; border: none; }
+            .live-dot { width: 10px; height: 10px; background: #ff5252; border-radius: 50%; display: inline-block; margin-right: 8px; animation: pulse 1.5s infinite; }
+            .live-dot.active { background: #00e676; }
+            @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer> {%config%} {%scripts%} {%renderer%} </footer>
+    </body>
+</html>
+'''
+# --- Layout ---
+app.layout = dbc.Container([
+    dbc.Row([
+        # Sidebar
+        dbc.Col([
+            html.H4("? Order Flow", className="text-primary mb-4 fw-bold"),
+            html.Label("Symbol", className="small text-muted"),
+            dbc.Input(id="symbol-input", value="BTC-USD", className="mb-3"),
+
+            html.Label("Interval", className="small text-muted"),
+            dcc.Dropdown(id="interval-dropdown", options=[
+                {'label': '5m', 'value': '5m'}, {'label': '15m', 'value': '15m'},
+                {'label': '1h', 'value': '1h'}, {'label': '4h', 'value': '4h'},
+                {'label': '1D', 'value': '1d'}
+            ], value="15m", clearable=False, className="mb-3"),
+
+            html.Label("Period", className="small text-muted"),
+            dcc.Dropdown(id="period-dropdown", options=[
+                {'label': '5 Days', 'value': '5d'}, {'label': '1 Month', 'value': '1mo'},
+                {'label': '3 Months', 'value': '3mo'}
+            ], value="1mo", clearable=False, className="mb-3"),
+
+            html.Label("Profile Levels", className="small text-muted"),
+            dbc.Input(id="levels-input", type="number", value=50, min=20, max=100, className="mb-4"),
+
+            dbc.Button("?? Generate Analysis", id="generate-btn", color="primary", className="w-100 mb-3"),
+            dbc.Button("?? Start Live", id="live-btn", color="danger", className="w-100 mb-4"),
+
+            html.Hr(className="my-4"),
+            html.Div(id="live-status", className="small text-muted text-center"),
+
+            html.H6("Signal History", className="mt-4 mb-2 text-muted"),
+            html.Div(id="signal-history", style={'maxHeight': '300px', 'overflowY': 'auto'})
+
+        ], width=2, className="sidebar p-3"),
+
+        # Main Content
+        dbc.Col([
+            # KPI Row
+            dbc.Row([
+                dbc.Col(html.Div(id="kpi-price", className="kpi-card"), width=2),
+                dbc.Col(html.Div(id="kpi-poc", className="kpi-card"), width=2),
+                dbc.Col(html.Div(id="kpi-vah-val", className="kpi-card"), width=2),
+                dbc.Col(html.Div(id="kpi-cvd", className="kpi-card"), width=2),
+                dbc.Col(html.Div(id="kpi-vwap", className="kpi-card"), width=2),
+                dbc.Col(html.Div(id="kpi-sentiment", className="kpi-card"), width=2),
+            ], className="mb-4"),
+
+            # Charts Row
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader("Price Action & Volume Profile", className="bg-transparent border-0 text-muted"),
+                        dbc.CardBody(dcc.Graph(id="price-profile-chart", style={'height': '500px'}))
+                    ], className="bg-transparent border-0")
+                ], width=8),
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader("Cumulative Volume Delta (CVD)", className="bg-transparent border-0 text-muted"),
+                        dbc.CardBody(dcc.Graph(id="cvd-chart", style={'height': '500px'}))
+                    ], className="bg-transparent border-0")
+                ], width=4),
+            ]),
+
+            # Signals Row
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader("Live Trading Signals", className="bg-transparent border-0 text-muted"),
+                        dbc.CardBody(html.Div(id="signals-container"))
+                    ], className="bg-transparent border-0")
+                ], width=12)
+            ])
+        ], width=10, className="main-content")
+    ]),  # <--- ?? fluid=True ÇÒ ÇíäÌÇ ÍÐÝ ÔÏ
+
+    dcc.Interval(id='live-interval', interval=30000, n_intervals=0, disabled=True),
+    dcc.Store(id='history-store', data=[])
+], fluid=True)  # <--- ?? fluid=True ÝÞØ ÇíäÌÇ (ÈÑÇí Container) ÈÇÞí ãíãÇäÏ
+
+# --- Analytical Engine ---
+def calculate_advanced_metrics(df, num_levels=50):
+    """Calculates POC, VAH, VAL, CVD, VWAP"""
+    df = df.copy()
+    df.dropna(inplace=True)
+
+    # 1. Delta & CVD Calculation
+    # Approximation: UpVolume = Vol * (Close-Open)/(High-Low)
+    candle_range = df['High'] - df['Low']
+    candle_range = candle_range.replace(0, np.nan)
+
+    up_vol = df['Volume'] * ((df['Close'] - df['Open']) / candle_range)
+    up_vol = up_vol.fillna(0).clip(lower=0)
+    down_vol = df['Volume'] - up_vol
+
+    df['Delta'] = up_vol - down_vol
+    df['CVD'] = df['Delta'].cumsum()
+
+    # 2. VWAP Calculation
+    df['VWAP'] = (df['Volume'] * (df['High'] + df['Low'] + df['Close']) / 3).cumsum() / df['Volume'].cumsum()
+
+    # 3. Volume Profile (POC, VAH, VAL)
+    price_min = df['Low'].min()
+    price_max = df['High'].max()
+    bins = np.linspace(price_min, price_max, num_levels + 1)
+
+    # Distribute volume across bins based on typical price
+    typical_price = (df['High'] + df['Low'] + df['Close']) / 3
+    vol_profile = np.zeros(num_levels)
+
+    for i in range(len(df)):
+        idx = np.digitize(typical_price.iloc[i], bins) - 1
+        idx = min(idx, num_levels - 1)
+        vol_profile[idx] += df['Volume'].iloc[i]
+
+    poc_idx = np.argmax(vol_profile)
+    poc_price = (bins[poc_idx] + bins[poc_idx + 1]) / 2
+
+    # Value Area (70% of total volume)
+    total_vol = vol_profile.sum()
+    target_vol = total_vol * 0.70
+    current_vol = vol_profile[poc_idx]
+
+    upper_idx = poc_idx
+    lower_idx = poc_idx
+
+    while current_vol < target_vol:
+        if upper_idx < num_levels - 1 and (lower_idx <= 0 or vol_profile[upper_idx + 1] >= vol_profile[lower_idx - 1]):
+            upper_idx += 1
+            current_vol += vol_profile[upper_idx]
+        elif lower_idx > 0:
+            lower_idx -= 1
+            current_vol += vol_profile[lower_idx]
+        else:
+            break
+
+    vah_price = (bins[upper_idx] + bins[upper_idx + 1]) / 2
+    val_price = (bins[lower_idx] + bins[lower_idx + 1]) / 2
+
+    return {
+        'df': df,
+        'poc': poc_price,
+        'vah': vah_price,
+        'val': val_price,
+        'vol_profile': vol_profile,
+        'bins': bins,
+        'current_price': df['Close'].iloc[-1],
+        'cvd': df['CVD'].iloc[-1],
+        'vwap': df['VWAP'].iloc[-1],
+        'delta': df['Delta'].iloc[-1]
+    }
+
+
+def generate_pro_signals(metrics):
+    """Generates signals based on Value Area and CVD"""
+    signals = []
+    df = metrics['df']
+    price = metrics['current_price']
+    poc = metrics['poc']
+    vah = metrics['vah']
+    val = metrics['val']
+    cvd = metrics['cvd']
+    delta = metrics['delta']
+
+    # Signal 1: Value Area Breakout/Breakdown
+    if price > vah and delta > 0:
+        signals.append({
+            'type': 'BUY', 'title': 'VAH Breakout',
+            'reason': f'Price broke above Value Area High (${vah:.2f}) with positive Delta.',
+            'confidence': 85, 'entry': price, 'tp': price * 1.02, 'sl': vah
+        })
+    elif price < val and delta < 0:
+        signals.append({
+            'type': 'SELL', 'title': 'VAL Breakdown',
+            'reason': f'Price broke below Value Area Low (${val:.2f}) with negative Delta.',
+            'confidence': 85, 'entry': price, 'tp': price * 0.98, 'sl': val
+        })
+
+    # Signal 2: POC Reversion (Mean Reversion)
+    dist_to_poc = abs(price - poc) / price * 100
+    if dist_to_poc < 0.5 and delta < 0 and price > poc:
+        signals.append({
+            'type': 'SELL', 'title': 'POC Rejection',
+            'reason': f'Price rejected from POC (${poc:.2f}) with selling Delta.',
+            'confidence': 75, 'entry': price, 'tp': val, 'sl': vah
+        })
+    elif dist_to_poc < 0.5 and delta > 0 and price < poc:
+        signals.append({
+            'type': 'BUY', 'title': 'POC Support Bounce',
+            'reason': f'Price bounced from POC (${poc:.2f}) with buying Delta.',
+            'confidence': 75, 'entry': price, 'tp': vah, 'sl': val
+        })
+
+    # Signal 3: CVD Divergence
+    if len(df) > 10:
+        price_trend = df['Close'].iloc[-1] - df['Close'].iloc[-10]
+        cvd_trend = df['CVD'].iloc[-1] - df['CVD'].iloc[-10]
+
+        if price_trend > 0 and cvd_trend < 0:
+            signals.append({
+                'type': 'SELL', 'title': 'Bearish CVD Divergence',
+                'reason': 'Price making higher highs but CVD making lower highs (Absorption).',
+                'confidence': 80, 'entry': price, 'tp': price * 0.98, 'sl': price * 1.01
+            })
+        elif price_trend < 0 and cvd_trend > 0:
+            signals.append({
+                'type': 'BUY', 'title': 'Bullish CVD Divergence',
+                'reason': 'Price making lower lows but CVD making higher lows (Accumulation).',
+                'confidence': 80, 'entry': price, 'tp': price * 1.02, 'sl': price * 0.99
+            })
+
+    if not signals:
+        signals.append({'type': 'NEUTRAL', 'title': 'Inside Value Area',
+                        'reason': 'Price is ranging within Value Area. Wait for breakout.', 'confidence': 50,
+                        'entry': price, 'tp': None, 'sl': None})
+
+    return signals
+
+
+# --- UI Builders ---
+def build_kpi_card(title, value, css_class=""):
+    return html.Div([
+        html.Div(title, className="kpi-label"),
+        html.Div(value, className=f"kpi-value {css_class}")
+    ], className="kpi-card")
+
+
+def build_charts(metrics, symbol):
+    df = metrics['df']
+
+    # 1. Price & Profile Chart
+    fig1 = make_subplots(rows=1, cols=2, shared_yaxes=True, column_widths=[0.75, 0.25], horizontal_spacing=0.01)
+
+    # Candlesticks
+    fig1.add_trace(go.Candlestick(
+        x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
+        increasing_line_color='#00e676', decreasing_line_color='#ff5252',
+        increasing_fillcolor='#00e676', decreasing_fillcolor='#ff5252',
+        showlegend=False
+    ), row=1, col=1)
+
+    # VWAP Line
+    fig1.add_trace(go.Scatter(x=df.index, y=df['VWAP'], mode='lines', name='VWAP',
+                              line=dict(color='#ffeb3b', width=1, dash='dot')), row=1, col=1)
+
+    # Volume Profile
+    bins = metrics['bins']
+    profile = metrics['vol_profile']
+    y_vals = (bins[:-1] + bins[1:]) / 2
+
+    fig1.add_trace(go.Bar(
+        x=profile, y=y_vals, orientation='h',
+        marker_color=np.where(y_vals == metrics['poc'], '#ffeb3b', '#4db8ff'),
+        opacity=0.6, showlegend=False
+    ), row=1, col=2)
+
+    # POC, VAH, VAL Lines
+    for level, name, color in [(metrics['poc'], 'POC', '#ffeb3b'), (metrics['vah'], 'VAH', '#00e676'),
+                               (metrics['val'], 'VAL', '#ff5252')]:
+        fig1.add_hline(y=level, line_dash="dash", line_color=color, opacity=0.7, row=1, col=1)
+        fig1.add_annotation(x=1, y=level, text=name, showarrow=False, font=dict(color=color, size=10), xref="paper",
+                            row=1, col=1)
+
+    fig1.update_layout(
+        template="plotly_dark", paper_bgcolor="#1f2833", plot_bgcolor="#1f2833",
+        margin=dict(l=20, r=20, t=30, b=20), height=500,
+        title=f"{symbol} Price & Volume Profile", title_font=dict(size=14, color="#c5c6c7")
+    )
+    fig1.update_yaxes(autorange="reversed", gridcolor="#2d3748")
+    fig1.update_xaxes(gridcolor="#2d3748")
+
+    # 2. CVD Chart
+    fig2 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.3, 0.7])
+
+    # Delta Histogram
+    colors = ['#00e676' if d >= 0 else '#ff5252' for d in df['Delta']]
+    fig2.add_trace(go.Bar(x=df.index, y=df['Delta'], marker_color=colors, showlegend=False), row=1, col=1)
+
+    # CVD Line
+    fig2.add_trace(go.Scatter(x=df.index, y=df['CVD'], mode='lines', name='CVD',
+                              line=dict(color='#4db8ff', width=2), fill='tozeroy', fillcolor='rgba(77, 184, 255, 0.1)'),
+                   row=2, col=1)
+
+    fig2.update_layout(
+        template="plotly_dark", paper_bgcolor="#1f2833", plot_bgcolor="#1f2833",
+        margin=dict(l=20, r=20, t=30, b=20), height=500, showlegend=False,
+        title="Cumulative Volume Delta (CVD)", title_font=dict(size=14, color="#c5c6c7")
+    )
+    fig2.update_yaxes(gridcolor="#2d3748")
+    fig2.update_xaxes(gridcolor="#2d3748")
+
+    return fig1, fig2
+
+
+# --- Main Callback ---
+@app.callback(
+    [Output("kpi-price", "children"), Output("kpi-poc", "children"), Output("kpi-vah-val", "children"),
+     Output("kpi-cvd", "children"), Output("kpi-vwap", "children"), Output("kpi-sentiment", "children"),
+     Output("price-profile-chart", "figure"), Output("cvd-chart", "figure"),
+     Output("signals-container", "children"), Output("signal-history", "children"),
+     Output("live-status", "children"), Output("live-btn", "color"), Output("live-btn", "children"),
+     Output("live-interval", "disabled"), Output("history-store", "data")],
+    [Input("generate-btn", "n_clicks"), Input("live-interval", "n_intervals"), Input("live-btn", "n_clicks")],
+    [State("symbol-input", "value"), State("interval-dropdown", "value"), State("period-dropdown", "value"),
+     State("levels-input", "value"), State("live-btn", "n_clicks"), State("history-store", "data")]
+)
+def update_dashboard(gen_clicks, live_int, live_clicks, symbol, interval, period, levels, live_state, history):
+    ctx = callback_context
+    if not ctx.triggered:
+        return [no_update] * 15
+
+    trigger = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    # Handle Live Toggle
+    if trigger == 'live-btn':
+        is_active = live_state % 2 == 1
+        status = html.Span(
+            [html.Span(className="live-dot active"), "Live Mode Active"]) if is_active else "Live Mode Inactive"
+        btn_color = "success" if is_active else "danger"
+        btn_text = "?? Stop Live" if is_active else "?? Start Live"
+        disabled = not is_active
+        return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, status, btn_color, btn_text, disabled, no_update
+
+    if trigger not in ['generate-btn', 'live-interval']:
+        return [no_update] * 15
+
+    try:
+        # Fetch Data
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period=period, interval=interval)
+        if df.empty: raise ValueError("No data found")
+
+        # Calculate Metrics
+        levels = int(levels) if levels else 50
+        metrics = calculate_advanced_metrics(df, levels)
+        signals = generate_pro_signals(metrics)
+
+        # Update History
+        if history is None: history = []
+        if signals and signals[0]['type'] != 'NEUTRAL':
+            history.insert(0, {
+                'time': datetime.now().strftime('%H:%M'), 'type': signals[0]['type'],
+                'title': signals[0]['title'], 'price': metrics['current_price']
+            })
+            history = history[:15]
+
+        # Build UI
+        price = metrics['current_price']
+        vwap = metrics['vwap']
+        price_class = "text-bullish" if price > vwap else "text-bearish"
+
+        kpi_price = build_kpi_card("Price", f"${price:,.2f}", price_class)
+        kpi_poc = build_kpi_card("POC", f"${metrics['poc']:,.2f}", "text-neutral")
+        kpi_vah_val = build_kpi_card("VAH / VAL", f"${metrics['vah']:,.0f} / ${metrics['val']:,.0f}", "text-neutral")
+        kpi_cvd = build_kpi_card("CVD", f"{metrics['cvd']:,.0f}",
+                                 "text-bullish" if metrics['cvd'] > 0 else "text-bearish")
+        kpi_vwap = build_kpi_card("VWAP", f"${vwap:,.2f}", "text-neutral")
+
+        buy_sig = sum(1 for s in signals if s['type'] == 'BUY')
+        sell_sig = sum(1 for s in signals if s['type'] == 'SELL')
+        sentiment = "BULLISH" if buy_sig > sell_sig else "BEARISH" if sell_sig > buy_sig else "NEUTRAL"
+        sent_class = "text-bullish" if sentiment == "BULLISH" else "text-bearish" if sentiment == "BEARISH" else "text-neutral"
+        kpi_sentiment = build_kpi_card("Sentiment", sentiment, sent_class)
+
+        fig1, fig2 = build_charts(metrics, symbol)
+
+        # Signals UI
+        sig_html = []
+        for s in signals:
+            cls = "signal-buy" if s['type'] == 'BUY' else "signal-sell" if s['type'] == 'SELL' else ""
+            sig_html.append(html.Div([
+                html.H6(f"{s['title']} ({s['confidence']}%)",
+                        className=f"fw-bold {'text-bullish' if s['type'] == 'BUY' else 'text-bearish' if s['type'] == 'SELL' else 'text-muted'}"),
+                html.P(s['reason'], className="small mb-1"),
+                html.Div(f"Entry: ${s['entry']:,.2f} | TP: ${s['tp']:,.2f} | SL: ${s['sl']:,.2f}",
+                         className="small text-muted") if s['tp'] else html.Div("No Targets",
+                                                                                className="small text-muted")
+            ], className=f"signal-box {cls}"))
+
+        # History UI
+        hist_html = []
+        for h in history:
+            color = "text-bullish" if h['type'] == 'BUY' else "text-bearish"
+            hist_html.append(html.Div(f"{h['time']} | {h['type']} | ${h['price']:,.2f} | {h['title']}",
+                                      className=f"small {color} mb-1"))
+
+        status = html.Span(
+            [html.Span(className="live-dot"), "Generating..."]) if trigger == 'live-interval' else "Ready"
+
+        return kpi_price, kpi_poc, kpi_vah_val, kpi_cvd, kpi_vwap, kpi_sentiment, fig1, fig2, sig_html, hist_html, status, no_update, no_update, no_update, history
+
+    except Exception as e:
+        logging.error(f"Error: {str(e)}")
+        err_fig = go.Figure().add_annotation(text=f"Error: {str(e)}", xref="paper", yref="paper", x=0.5, y=0.5,
+                                             showarrow=False, font=dict(color="#ff5252"))
+        err_fig.update_layout(template="plotly_dark", paper_bgcolor="#1f2833", plot_bgcolor="#1f2833", height=500)
+        return [no_update] * 6 + [err_fig, err_fig] + [html.P("Error generating signals", className="text-danger")] + [
+            no_update] * 5
+
+
+if __name__ == '__main__':
+    app.run(debug=True, port=8050)

@@ -1,0 +1,941 @@
+import dash
+from dash import dcc, html, Input, Output, State, callback_context
+import plotly.graph_objects as go
+import numpy as np
+import math
+import threading
+import time
+from datetime import datetime
+from collections import deque
+import requests
+
+
+# ????????????????????????????????????????????????????????
+# LIVE DATA ENGINE (REST Polling: Binance -> Fallback CoinGecko + Prefill)
+# ????????????????????????????????????????????????????????
+
+class LiveDataEngine:
+    def __init__(self, maxlen=500):
+        self.lock = threading.Lock()
+        self.price = None
+        self.prev_price = None
+        self.volume_buy = 0.0
+        self.volume_sell = 0.0
+        self.price_hist = deque(maxlen=maxlen)
+        self.time_hist = deque(maxlen=maxlen)
+        self.vol_hist = deque(maxlen=maxlen)
+        self.delta_hist = deque(maxlen=60)
+        self.kline_open = None
+        self.kline_high = None
+        self.kline_low = None
+        self.kline_close = None
+        self.kline_vol = 0.0
+        self.kline_trades = 0
+        self.connected = False
+        self.error_msg = ""
+        self.tick_count = 0
+        self.source = "œ— Õ«· Ã” ÃÊ..."
+        self._stop = False
+        self._last_kline_ts = time.time()
+
+    def _prefill_history(self):
+        """œ—Ì«›   «—ÌŒçÂ ê–‘ Â «“ CoinGecko »—«Ì Ã·ÊêÌ—Ì «“ Œÿ ’«› ‘œ‰ ‰„Êœ«— œ— ·ÕŸÂ «Ã—«"""
+        try:
+            url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=1"
+            res = requests.get(url, timeout=10)
+
+            if res.status_code == 200:
+                data = res.json()
+                prices = data.get("prices", [])
+                volumes = data.get("total_volumes", [])
+
+                prices = prices[-120:]
+                volumes = volumes[-120:]
+
+                with self.lock:
+                    for i in range(len(prices)):
+                        ts = prices[i][0] / 1000.0
+                        c = float(prices[i][1])
+                        v = float(volumes[i][1]) if i < len(volumes) else 0.0
+
+                        self.time_hist.append(ts)
+                        self.price_hist.append(c)
+                        self.vol_hist.append(v)
+
+                        is_green = True
+                        if i > 0:
+                            is_green = c >= float(prices[i - 1][1])
+
+                        self.delta_hist.append(v * (0.001 if is_green else -0.001))
+
+                    if prices:
+                        self.price = float(prices[-1][1])
+        except Exception as e:
+            print(f"CoinGecko Prefill Error: {e}")
+            pass
+
+    def start(self):
+        self._stop = False
+        t = threading.Thread(target=self._run_loop, daemon=True)
+        t.start()
+
+    def stop(self):
+        self._stop = True
+
+    def _run_loop(self):
+        self._prefill_history()
+        session = requests.Session()
+        use_binance = True
+
+        while not self._stop:
+            try:
+                now = time.time()
+                p = None
+
+                if use_binance:
+                    res = session.get("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT", timeout=3)
+                    if res.status_code == 200:
+                        data = res.json()
+                        p = float(data["lastPrice"])
+                        self.source = "Binance"
+                    else:
+                        use_binance = False
+
+                if not use_binance:
+                    res = session.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd",
+                                      timeout=5)
+                    if res.status_code == 200:
+                        data = res.json()
+                        p = float(data["bitcoin"]["usd"])
+                        self.source = "CoinGecko"
+                    else:
+                        raise Exception(f"HTTP {res.status_code}")
+
+                if p is not None:
+                    with self.lock:
+                        self.connected = True
+                        self.error_msg = ""
+
+                        if self.price != p:
+                            self.prev_price = self.price or p
+                            self.price = p
+                            self.tick_count += 1
+
+                            self.price_hist.append(p)
+                            self.time_hist.append(now)
+
+                            diff = p - self.prev_price
+                            pseudo_vol = abs(diff) * 1.5
+                            self.vol_hist.append(pseudo_vol)
+
+                            if diff < 0:
+                                self.volume_sell += pseudo_vol
+                            else:
+                                self.volume_buy += pseudo_vol
+
+                            self.delta_hist.append(self.volume_buy - self.volume_sell)
+                            self.volume_buy = 0.0
+                            self.volume_sell = 0.0
+
+                            if now - self._last_kline_ts >= 60 or self.kline_open is None:
+                                self.kline_open = p
+                                self.kline_high = p
+                                self.kline_low = p
+                                self.kline_close = p
+                                self.kline_vol = 0
+                                self.kline_trades = 0
+                                self._last_kline_ts = now
+                            else:
+                                self.kline_high = max(self.kline_high, p)
+                                self.kline_low = min(self.kline_low, p)
+                                self.kline_close = p
+                                self.kline_vol += pseudo_vol
+                                self.kline_trades += 1
+
+            except Exception as e:
+                with self.lock:
+                    self.connected = False
+                    self.error_msg = str(e)[:30]
+                    use_binance = False
+
+            time.sleep(2.5 if use_binance else 10)
+
+
+engine = LiveDataEngine()
+engine.start()
+
+# ????????????????????????????????????????????????????????
+# —‰êù»‰œÌ
+# ????????????????????????????????????????????????????????
+DARK_BG = "#0a0e1a"
+PANEL_BG = "#0f1523"
+CARD_BG = "#121928"
+GOLD = "#c9a84c"
+GOLD_LIGHT = "#f0d080"
+GOLD_DIM = "#7a6030"
+RED_ZONE = "#ff3a3a"
+GREEN_ZONE = "#00e676"
+BLUE_ACC = "#1a78c2"
+TEXT_MAIN = "#e8dcc8"
+TEXT_DIM = "#6a7090"
+RING_COL = "#1e2a45"
+ORANGE = "#ff9900"
+
+# ????????????????????????????????????????????????????????
+# “Ê«Ì«Ì ê«‰
+# ????????????????????????????????????????????????????????
+GANN_ANGLES = {
+    0: {"label": "0∞", "type": "major", "weight": 5, "desc": "Å«ÌÂ ç—ŒÂ"},
+    45: {"label": "45∞", "type": "major", "weight": 5, "desc": "1◊1 ê«‰"},
+    90: {"label": "90∞", "type": "major", "weight": 4, "desc": "—»⁄ ç—ŒÂ"},
+    135: {"label": "135∞", "type": "mid", "weight": 3, "desc": "3◊1 ê«‰"},
+    180: {"label": "180∞", "type": "major", "weight": 5, "desc": "‰Ì„Â ç—ŒÂ"},
+    225: {"label": "225∞", "type": "mid", "weight": 3, "desc": "5◊1 ê«‰"},
+    270: {"label": "270∞", "type": "major", "weight": 4, "desc": "”ÂùçÂ«—„"},
+    315: {"label": "315∞", "type": "mid", "weight": 3, "desc": "7◊1 ê«‰"},
+    30: {"label": "30∞", "type": "minor", "weight": 2, "desc": "1/12"},
+    60: {"label": "60∞", "type": "minor", "weight": 2, "desc": "1/6"},
+    120: {"label": "120∞", "type": "minor", "weight": 2, "desc": "1/3"},
+    150: {"label": "150∞", "type": "minor", "weight": 1, "desc": "5/12"},
+    210: {"label": "210∞", "type": "minor", "weight": 1, "desc": "7/12"},
+    240: {"label": "240∞", "type": "minor", "weight": 1, "desc": "2/3"},
+    300: {"label": "300∞", "type": "minor", "weight": 1, "desc": "5/6"},
+    330: {"label": "330∞", "type": "minor", "weight": 1, "desc": "11/12"},
+}
+ANGLE_COLORS = {"major": GOLD, "mid": "#e06030", "minor": "#3a5a8a"}
+
+FIBO_LEVELS = [0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.272, 1.618]
+FIBO_WEIGHTS = {0.236: 1, 0.382: 3, 0.5: 3, 0.618: 4, 0.786: 2, 1.0: 2, 1.272: 1.5, 1.618: 3}
+
+
+# ????????????????????????????????????????????????????????
+#  Ê«»⁄  Õ·Ì·
+# ????????????????????????????????????????????????????????
+
+def gann_confluence(price, base, step, n_rings=6, tol=0.9):
+    score = 0
+    hits = []
+    if base <= 0 or step <= 0: return 0, []
+    for ring in range(1, n_rings + 1):
+        rw = 6 / (ring + 1)
+        for ang, info in GANN_ANGLES.items():
+            gp = base + (ang / 360) * step * ring
+            dp = abs(gp - price) / price * 100
+            if dp <= tol:
+                prox = 1 - dp / tol
+                s = info["weight"] * rw * prox
+                score += s
+                hits.append({"angle": ang, "ring": ring, "label": info["label"],
+                             "gann_p": gp, "diff_pct": dp, "score": s, "type": info["type"]})
+    return score, hits
+
+
+def fibo_confluence(price, sw_lo, sw_hi, tol=0.9):
+    score = 0
+    hits = []
+    if sw_lo <= 0 or sw_hi <= sw_lo: return 0, []
+    rng = sw_hi - sw_lo
+    for fib in FIBO_LEVELS:
+        ret_p = sw_hi - rng * fib
+        dp = abs(ret_p - price) / price * 100
+        if dp <= tol:
+            w = FIBO_WEIGHTS.get(fib, 1)
+            prox = 1 - dp / tol
+            score += w * prox
+            hits.append({"level": fib, "price": ret_p, "diff": dp})
+    return score, hits
+
+
+def signal_label(total):
+    if total >= 15: return "STRONG REVERSAL", RED_ZONE
+    if total >= 8:  return "LIKELY ZONE", ORANGE
+    if total >= 4:  return "WATCH", BLUE_ACC
+    return "", TEXT_DIM
+
+
+def scan_zones(base, step, sw_lo, sw_hi, p_min, p_max):
+    zones = []
+    sz = max(50, int((p_max - p_min) / 600))
+    for price in range(int(p_min), int(p_max), sz):
+        gs, gh = gann_confluence(price, base, step)
+        fs, fh = fibo_confluence(price, sw_lo, sw_hi)
+        total = gs + fs * 1.5
+        if total >= 3:
+            zones.append({"price": price, "gann": gs, "fibo": fs,
+                          "total": total, "gann_hits": gh, "fib_hits": fh})
+    zones.sort(key=lambda x: x["price"])
+    merged = []
+    i = 0
+    while i < len(zones):
+        cluster = [zones[i]]
+        j = i + 1
+        while j < len(zones) and zones[j]["price"] - zones[j - 1]["price"] < 600:
+            cluster.append(zones[j])
+            j += 1
+        best = max(cluster, key=lambda x: x["total"])
+        merged.append(best)
+        i = j
+    return sorted(merged, key=lambda x: -x["total"])
+
+
+def price_to_angle(price, base, step):
+    if base <= 0 or step <= 0: return 0
+    return ((price - base) / step * 360) % 360
+
+
+def momentum_signal(prices, window=20):
+    if len(prices) < window: return 0, "??"
+    arr = list(prices)[-window:]
+    mom = (arr[-1] - arr[0]) / arr[0] * 100
+    accel = arr[-1] - 2 * arr[-window // 2] + arr[0]
+    return mom, accel
+
+
+def nearest_gann(price, base, step, n_rings=6):
+    best = None
+    best_d = 99999
+    if base <= 0 or step <= 0: return None, None, None
+    for ring in range(1, n_rings + 1):
+        for ang, info in GANN_ANGLES.items():
+            gp = base + (ang / 360) * step * ring
+            d = abs(gp - price)
+            if d < best_d:
+                best_d = d
+                best = gp
+                best_info = {"angle": ang, "ring": ring, "type": info["type"], "label": info["label"]}
+    return best, best_d, best_info
+
+
+def compute_delta_score(delta_hist):
+    if not delta_hist: return 0, ""
+    dl = list(delta_hist)[-10:]
+    cumulative = sum(dl)
+    if cumulative > 0.5:
+        return cumulative, "BUY PRESSURE"
+    elif cumulative < -0.5:
+        return cumulative, "SELL PRESSURE"
+    return cumulative, "NEUTRAL"
+
+
+# ????????????????????????????????????????????????????????
+# Dash App
+# ????????????????????????????????????????????????????????
+app = dash.Dash(__name__, suppress_callback_exceptions=True)
+
+app.index_string = '''<!DOCTYPE html>
+<html><head>{%metas%}<title>Gann Time Machine ∑ Live</title>{%favicon%}{%css%}
+<style>
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#0a0e1a;font-family:monospace}
+#react-entry-point,._dash-loading,#_dash-app-content{height:100%;width:100%}
+.js-plotly-plot,.plot-container{height:100%!important}
+::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:#0a0e1a}
+::-webkit-scrollbar-thumb{background:#7a6030;border-radius:2px}
+input[type=number]::-webkit-inner-spin-button{opacity:.4}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.live-dot{animation:pulse 1.2s infinite}
+</style>
+</head><body>{%app_entry%}<footer>{%config%}{%scripts%}{%renderer%}</footer></body></html>'''
+
+IS = {"width": "100%", "background": DARK_BG, "border": f"1px solid {GOLD_DIM}",
+      "color": GOLD_LIGHT, "padding": "6px 9px", "fontFamily": "monospace",
+      "fontSize": "0.88rem", "borderRadius": "4px", "outline": "none", "boxSizing": "border-box"}
+LS = {"color": TEXT_DIM, "fontSize": "0.6rem", "letterSpacing": "1.5px",
+      "display": "block", "marginBottom": "3px"}
+SS = {"marginBottom": "10px"}
+BS = {"border": "none", "padding": "5px 10px", "fontFamily": "monospace",
+      "fontSize": "0.78rem", "borderRadius": "4px", "cursor": "pointer", "fontWeight": 700}
+
+# ????????????????????????????????????????????????????????
+# ·«ÌÂù«Ê 
+# ????????????????????????????????????????????????????????
+app.layout = html.Div([
+    dcc.Store(id="rotation-store", data=0),
+    dcc.Store(id="timer-running", data=False),
+    dcc.Store(id="zones-store", data=[]),
+    dcc.Store(id="signal-history-store", data=[]),  # –ŒÌ—Âù”«“Ì  «—ÌŒçÂ
+    dcc.Interval(id="live-interval", interval=1000, n_intervals=0),
+    dcc.Interval(id="slow-interval", interval=5000, n_intervals=0),
+    dcc.Interval(id="wheel-interval", interval=5 * 60 * 1000, n_intervals=0, disabled=True),
+    dcc.Interval(id="clock-interval", interval=1000, n_intervals=0),
+
+    html.Div([
+        html.Div([
+            html.Span("? ", style={"fontSize": "1.4rem", "color": GOLD}),
+            html.Span("GANN TIME MACHINE", style={"fontSize": "1rem", "letterSpacing": "4px",
+                                                  "color": GOLD_LIGHT, "fontWeight": 700}),
+            html.Span("  BTC/USDT", style={"fontSize": "0.65rem",
+                                           "color": TEXT_DIM, "letterSpacing": "2px", "marginRight": "12px"}),
+        ], style={"display": "flex", "alignItems": "center", "gap": "6px"}),
+        html.Div([
+            html.Span("?", id="conn-dot", className="live-dot",
+                      style={"color": TEXT_DIM, "marginLeft": "8px", "fontSize": "0.7rem"}),
+            html.Span(id="conn-label", style={"color": TEXT_DIM, "fontSize": "0.65rem",
+                                              "marginLeft": "4px"}),
+            html.Span(id="live-clock", style={"fontSize": "0.85rem", "color": GOLD,
+                                              "letterSpacing": "2px", "marginRight": "12px"}),
+        ], style={"display": "flex", "alignItems": "center", "gap": "6px"}),
+    ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center",
+              "padding": "7px 16px", "borderBottom": f"1px solid {GOLD_DIM}",
+              "background": "rgba(10,14,26,0.95)", "flexShrink": 0}),
+
+    html.Div([
+        html.Div([
+            html.Div([
+                html.Div([html.Label("ﬁÌ„  Å«ÌÂ", style=LS),
+                          dcc.Input(id="base-price", type="number", value=50000, debounce=True, style=IS)], style=SS),
+                html.Div([html.Label("ê«„ ç—ŒÂ", style=LS),
+                          dcc.Input(id="step-size", type="number", value=10000, debounce=True, style=IS)], style=SS),
+            ], style={"borderBottom": f"1px solid {GOLD_DIM}33", "paddingBottom": "10px", "marginBottom": "10px"}),
+
+            html.Div([
+                html.P("”Ê∆Ì‰ê «ŒÌ—", style={"color": GOLD, "fontSize": "0.65rem",
+                                             "letterSpacing": "2px", "margin": "0 0 6px", "fontWeight": 700}),
+                html.Div([html.Label("ò› (Lo)", style=LS),
+                          dcc.Input(id="swing-lo", type="number", value=50000, debounce=True,
+                                    style={**IS, "borderColor": GREEN_ZONE})], style=SS),
+                html.Div([html.Label("”ﬁ› (Hi)", style=LS),
+                          dcc.Input(id="swing-hi", type="number", value=70000, debounce=True,
+                                    style={**IS, "borderColor": RED_ZONE})], style=SS),
+            ], style={"borderBottom": f"1px solid {GOLD_DIM}33", "paddingBottom": "10px", "marginBottom": "10px"}),
+
+            html.Div([
+                html.Label("ç—Œ‘ œ” Ì (∞)", style=LS),
+                dcc.Slider(id="manual-rotation", min=0, max=359, step=1, value=0,
+                           marks={0: "0", 90: "90", 180: "180", 270: "270"},
+                           tooltip={"placement": "bottom", "always_visible": True}, updatemode="drag"),
+            ], style={**SS, "marginTop": "4px", "borderBottom": f"1px solid {GOLD_DIM}33",
+                      "paddingBottom": "10px", "marginBottom": "10px"}),
+
+            html.Div([
+                html.Label(" «Ì„— (5min=5∞)", style=LS),
+                html.Div([
+                    html.Button("?", id="btn-start", n_clicks=0,
+                                style={**BS, "background": f"linear-gradient(135deg,{GOLD_DIM},{GOLD})",
+                                       "color": DARK_BG, "marginLeft": "4px"}),
+                    html.Button("?", id="btn-stop", n_clicks=0,
+                                style={**BS, "background": "transparent",
+                                       "color": RED_ZONE, "border": f"1px solid {RED_ZONE}", "marginLeft": "4px"}),
+                    html.Button("?", id="btn-reset", n_clicks=0,
+                                style={**BS, "background": "transparent",
+                                       "color": TEXT_DIM, "border": f"1px solid {TEXT_DIM}"}),
+                ], style={"display": "flex", "gap": "4px", "marginBottom": "5px"}),
+                html.Div(id="timer-status", style={"fontSize": "0.7rem", "color": TEXT_DIM, "minHeight": "16px"}),
+            ], style={**SS, "borderBottom": f"1px solid {GOLD_DIM}33", "paddingBottom": "10px",
+                      "marginBottom": "10px"}),
+
+        ], style={"width": "210px", "flexShrink": 0, "padding": "12px", "background": PANEL_BG,
+                  "borderRight": f"1px solid {GOLD_DIM}", "overflowY": "auto", "minHeight": 0}),
+
+        html.Div([
+            html.Div([
+                dcc.Graph(id="wheel-graph", config={"displayModeBar": False},
+                          style={"height": "100%", "width": "100%"}),
+            ], style={"flex": "1 1 0", "minHeight": 0, "overflow": "hidden"}),
+
+            html.Div([
+                html.Div([
+                    html.Span("‰„Êœ«— ·«ÌÊ BTC/USDT", style={"color": GOLD, "fontSize": "0.62rem",
+                                                             "letterSpacing": "2px", "fontWeight": 700}),
+                    html.Span(id="price-ticker", style={"color": GREEN_ZONE, "fontSize": "1rem",
+                                                        "fontWeight": 700, "marginRight": "8px"}),
+                    html.Span(id="price-change", style={"fontSize": "0.75rem"}),
+                ], style={"display": "flex", "alignItems": "center", "justifyContent": "space-between",
+                          "padding": "3px 8px", "borderBottom": f"1px solid {GOLD_DIM}33"}),
+                dcc.Graph(id="price-chart", config={"displayModeBar": False},
+                          style={"height": "calc(100% - 28px)", "width": "100%"}),
+            ], style={"height": "35%", "flexShrink": 0, "borderTop": f"1px solid {GOLD_DIM}"}),
+
+        ], style={"flex": 1, "display": "flex", "flexDirection": "column",
+                  "minWidth": 0, "background": PANEL_BG, "overflow": "hidden"}),
+
+        html.Div([
+            html.Div([
+                html.P("”Ìê‰«· ·«ÌÊ", style={"color": GOLD, "fontSize": "0.65rem",
+                                             "letterSpacing": "2px", "margin": "0 0 6px", "fontWeight": 700}),
+                html.Div(id="live-signal-box"),
+            ], style={"borderBottom": f"1px solid {GOLD_DIM}33", "paddingBottom": "10px", "marginBottom": "10px"}),
+
+            html.P("‰ﬁ«ÿ »«“ê‘ ", style={"color": GOLD, "fontSize": "0.65rem",
+                                         "letterSpacing": "2px", "margin": "0 0 6px", "fontWeight": 700}),
+            html.Div(id="signal-table", style={"maxHeight": "250px", "overflowY": "auto"}),
+
+            # Å‰·  «—ÌŒçÂ ”Ìê‰«·ùÂ«
+            html.Div([
+                html.P(" «—ÌŒçÂ ”Ìê‰«·ùÂ«", style={"color": GOLD, "fontSize": "0.65rem",
+                                                   "letterSpacing": "2px", "margin": "0 0 6px", "fontWeight": 700}),
+                html.Div(id="signal-history-display", style={"height": "180px", "overflowY": "auto", "padding": "4px"})
+            ], style={"borderTop": f"1px solid {GOLD_DIM}33", "paddingTop": "10px", "marginTop": "10px"})
+
+        ], style={"width": "230px", "flexShrink": 0, "padding": "12px", "background": PANEL_BG,
+                  "borderLeft": f"1px solid {GOLD_DIM}", "overflowY": "auto", "minHeight": 0}),
+
+    ], style={"display": "flex", "flex": 1, "overflow": "hidden", "minHeight": 0}),
+
+], style={"display": "flex", "flexDirection": "column", "height": "100vh",
+          "width": "100vw", "overflow": "hidden", "margin": 0, "padding": 0})
+
+
+# ????????????????????????????????????????????????????????
+# ò«·ù»òùÂ«
+# ????????????????????????????????????????????????????????
+
+@app.callback(Output("live-clock", "children"), Input("clock-interval", "n_intervals"))
+def clock(_): return datetime.now().strftime("%H:%M:%S")
+
+
+@app.callback(
+    Output("wheel-interval", "disabled"), Output("timer-running", "data"),
+    Output("timer-status", "children"),
+    Input("btn-start", "n_clicks"), Input("btn-stop", "n_clicks"),
+    State("timer-running", "data"), prevent_initial_call=True)
+def toggle_timer(s, st, running):
+    ctx = callback_context.triggered[0]["prop_id"]
+    if "start" in ctx: return False, True, html.Span([html.Span("? ", style={"color": GREEN_ZONE}), "›⁄«·"])
+    return True, False, html.Span([html.Span("? ", style={"color": RED_ZONE}), "„ Êﬁ›"])
+
+
+@app.callback(
+    Output("rotation-store", "data"), Output("manual-rotation", "value"),
+    Input("wheel-interval", "n_intervals"), Input("btn-reset", "n_clicks"),
+    Input("manual-rotation", "value"),
+    State("rotation-store", "data"), State("timer-running", "data"),
+    prevent_initial_call=True)
+def update_rot(ni, rst, manual, cur, running):
+    ctx = callback_context.triggered[0]["prop_id"]
+    if "reset" in ctx: return 0, 0
+    if "manual" in ctx: return manual, manual
+    if "interval" in ctx and running:
+        nr = (cur + 5) % 360
+        return nr, nr
+    return cur, manual
+
+
+@app.callback(
+    Output("zones-store", "data"),
+    Input("slow-interval", "n_intervals"),
+    State("base-price", "value"), State("step-size", "value"),
+    State("swing-lo", "value"), State("swing-hi", "value"),
+    State("zones-store", "data"))
+def update_zones(_, base, step, sl, sh, prev_zones):
+    bp = base or 0
+    st = step or 1
+    slo = sl or 0
+    shi = sh or 0
+    if bp <= 0 or st <= 0: return prev_zones
+    with engine.lock: cp = engine.price
+    ref = cp or bp
+    p_min = min(bp, slo, ref) * 0.92
+    p_max = max(bp + st * 7, shi, ref) * 1.08
+    zones = scan_zones(bp, st, slo, shi, p_min, p_max)
+    return [{"price": z["price"], "gann": z["gann"], "fibo": z["fibo"],
+             "total": z["total"],
+             "gann_hits": [{"angle": h["angle"], "ring": h["ring"], "type": h["type"],
+                            "label": h["label"], "score": h["score"]} for h in z["gann_hits"][:4]],
+             "fib_hits": [{"level": h["level"]} for h in z["fib_hits"][:2]]}
+            for z in zones[:20]]
+
+
+#  —òÌ» œÊ  «»⁄ «’·Ì »—«Ì »Âù—Ê“—”«‰Ì “‰œÂ
+@app.callback(
+    [Output("conn-dot", "style"), Output("conn-label", "children"),
+     Output("price-ticker", "children"), Output("price-change", "children"),
+     Output("price-chart", "figure"), Output("wheel-graph", "figure"),
+     Output("live-signal-box", "children"), Output("signal-table", "children"),
+     Output('signal-history-display', 'children'), Output('signal-history-store', 'data')],
+    [Input("live-interval", "n_intervals")],
+    [State("base-price", "value"), State("step-size", "value"),
+     State("swing-lo", "value"), State("swing-hi", "value"),
+     State("rotation-store", "data"), State("zones-store", "data"),
+     State("signal-history-store", "data")])
+def update_live_and_history(_, base, step, sl, sh, rotation, zones, history_data):
+    bp = base or 0
+    st = step or 1
+    slo = sl or 0
+    shi = sh or 0
+    rot = rotation or 0
+    history_data = history_data or []
+
+    with engine.lock:
+        price = engine.price
+        prev_price = engine.prev_price
+        ph = list(engine.price_hist)
+        th = list(engine.time_hist)
+        dh = list(engine.delta_hist)
+        connected = engine.connected
+        tick_count = engine.tick_count
+        kopen = engine.kline_open
+        khigh = engine.kline_high
+        klow = engine.kline_low
+        kclose = engine.kline_close
+        kvol = engine.kline_vol
+        err = engine.error_msg
+        source = getattr(engine, "source", "Connecting...")
+
+    dot_style = {"color": GREEN_ZONE if connected else RED_ZONE,
+                 "marginLeft": "8px", "fontSize": "0.75rem"}
+    if connected:
+        conn_label = f"{source} ∑ {tick_count} Ticks"
+    else:
+        conn_label = f"DISCONNECTED {err[:30]}" if err else "« ’«·..."
+    if "live-dot" not in str(dot_style): dot_style["className"] = "live-dot"
+
+    cp = price or 0
+    price_str = f"${cp:,.1f}" if cp else "--"
+    if prev_price and cp and prev_price > 0:
+        chg = (cp - prev_price) / prev_price * 100
+        chg_col = GREEN_ZONE if chg >= 0 else RED_ZONE
+        chg_str = f"{'?' if chg >= 0 else '?'} {abs(chg):.4f}%"
+    else:
+        chg_col = TEXT_DIM
+        chg_str = ""
+    price_change = html.Span(chg_str, style={"color": chg_col, "fontSize": "0.75rem"})
+
+    pfig = go.Figure()
+    if ph and th:
+        times = [datetime.fromtimestamp(t) for t in th]
+        pfig.add_trace(go.Scatter(x=times, y=ph, mode="lines",
+                                  line=dict(color=GOLD, width=1.5), fill="tozeroy",
+                                  fillcolor="rgba(201,168,76,0.06)", showlegend=False, hoverinfo="skip"))
+
+        if zones:
+            sig_x, sig_y, sig_colors = [], [], []
+            strong_zones = [z for z in zones if z.get("total", 0) >= 5]
+
+            for z in strong_zones[:4]:
+                sc = signal_label(z["total"])[1]
+                pfig.add_hline(y=z["price"], line=dict(color=sc, width=1, dash="dot"),
+                               annotation=dict(text=f"Zone {z['total']:.0f}", font=dict(color=sc, size=9),
+                                               xanchor="left"))
+                for i in range(len(ph)):
+                    if abs(ph[i] - z["price"]) / ph[i] < 0.0015:
+                        sig_x.append(times[i])
+                        sig_y.append(ph[i])
+                        sig_colors.append(sc)
+
+            if sig_x:
+                pfig.add_trace(go.Scatter(x=sig_x, y=sig_y, mode="markers",
+                                          marker=dict(symbol="star", size=9, color=sig_colors,
+                                                      line=dict(width=1, color=DARK_BG)),
+                                          hoverinfo="skip", showlegend=False))
+
+        if bp > 0 and st > 0:
+            gann_n, _, ginfo = nearest_gann(cp, bp, st) if cp else (None, None, None)
+            if gann_n:
+                pfig.add_hline(y=gann_n,
+                               line=dict(color=ANGLE_COLORS.get(ginfo["type"], GOLD), width=1, dash="dash"),
+                               annotation=dict(text=f"{ginfo['label']} R{ginfo['ring']} ${gann_n:,.0f}",
+                                               font=dict(color=GOLD, size=9), xanchor="left"))
+        if slo > 0 and shi > slo:
+            rng = shi - slo
+            for fib in [0.382, 0.5, 0.618]:
+                fp = shi - rng * fib
+                if ph and min(ph) * 0.99 < fp < max(ph) * 1.01:
+                    pfig.add_hline(y=fp,
+                                   line=dict(color=BLUE_ACC, width=0.7, dash="dot"),
+                                   annotation=dict(text=f"Fib{fib}",
+                                                   font=dict(color=BLUE_ACC, size=8), xanchor="right"))
+        if dh:
+            d_times = [datetime.fromtimestamp(th[-min(len(dh), len(th))] + i)
+                       for i in range(len(dh))]
+            d_cols = [GREEN_ZONE if d >= 0 else RED_ZONE for d in dh]
+            ymin = min(ph) * 0.9995 if ph else 0
+            pfig.add_trace(go.Bar(x=d_times[-len(ph):], y=[abs(d) * 0.0001 for d in dh[-len(ph):]],
+                                  base=ymin, marker_color=d_cols[-len(ph):],
+                                  opacity=0.5, showlegend=False, hoverinfo="skip"))
+
+    if ph:
+        y_min = min(ph) * 0.999
+        y_max = max(ph) * 1.001
+    else:
+        y_min, y_max = None, None
+
+    pfig.update_layout(
+        paper_bgcolor=PANEL_BG,
+        plot_bgcolor=DARK_BG,
+        margin=dict(l=50, r=8, t=4, b=24),
+        autosize=True,
+        showlegend=False,
+        xaxis=dict(
+            showgrid=False,
+            zeroline=False,
+            tickfont=dict(color=TEXT_DIM, size=8)
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor=RING_COL,
+            zeroline=False,
+            tickfont=dict(color=TEXT_DIM, size=8),
+            tickformat="$,.0f",
+            autorange=False if ph else True,
+            range=[y_min, y_max] if ph else None,
+            fixedrange=False
+        ),
+        hoverlabel=dict(bgcolor=PANEL_BG, font_color=TEXT_MAIN)
+    )
+
+    wfig = go.Figure()
+    R_INNER = 0.15
+    R_RINGS = [0.35, 0.58, 0.80]
+    R_LABEL = 0.93
+    theta = np.linspace(0, 2 * np.pi, 300)
+    for r in R_RINGS:
+        wfig.add_trace(go.Scatter(x=r * np.cos(theta), y=r * np.sin(theta),
+                                  mode="lines", line=dict(color=RING_COL, width=1.5),
+                                  hoverinfo="skip", showlegend=False))
+    wfig.add_trace(go.Scatter(x=R_INNER * np.cos(theta), y=R_INNER * np.sin(theta),
+                              mode="lines", line=dict(color=GOLD_DIM, width=2),
+                              fill="toself", fillcolor="rgba(201,168,76,0.08)",
+                              hoverinfo="skip", showlegend=False))
+
+    for ang, info in GANN_ANGLES.items():
+        rad = math.radians(90 - (ang + rot))
+        c, s = math.cos(rad), math.sin(rad)
+        col = ANGLE_COLORS[info["type"]]
+        w = 2 if info["type"] == "major" else (1.5 if info["type"] == "mid" else 0.7)
+        dk = "dot" if info["type"] == "minor" else "solid"
+        wfig.add_trace(go.Scatter(x=[R_INNER * c, R_RINGS[-1] * c],
+                                  y=[R_INNER * s, R_RINGS[-1] * s], mode="lines",
+                                  line=dict(color=col, width=w, dash=dk), hoverinfo="skip", showlegend=False))
+        wfig.add_trace(go.Scatter(x=[R_LABEL * c], y=[R_LABEL * s], mode="text",
+                                  text=[f"{ang}∞"], textfont=dict(color=col,
+                                                                  size=8 if info["type"] == "minor" else 10,
+                                                                  family="monospace"),
+                                  hoverinfo="skip", showlegend=False))
+
+    if bp > 0 and st > 0:
+        for ring in range(1, 4):
+            for ang, info in GANN_ANGLES.items():
+                eff = (ang - rot) % 360
+                gp = bp + (eff / 360) * st * ring
+                r = R_RINGS[ring - 1]
+                rad = math.radians(90 - (ang + rot))
+                c, s = math.cos(rad), math.sin(rad)
+                col = ANGLE_COLORS[info["type"]]
+                gs, _ = gann_confluence(gp, bp, st)
+                fs, _ = fibo_confluence(gp, slo, shi)
+                tot = gs + fs * 1.5
+                mc = RED_ZONE if tot >= 15 else (ORANGE if tot >= 8 else col)
+                sz = 10 if info["type"] == "major" else (8 if info["type"] == "mid" else 6)
+                wfig.add_trace(go.Scatter(x=[r * c], y=[r * s],
+                                          mode="markers+text",
+                                          marker=dict(color=mc, size=sz * 1.3, symbol="circle",
+                                                      line=dict(color=DARK_BG, width=1)),
+                                          text=[f"${gp:,.0f}"], textposition="middle center",
+                                          textfont=dict(color=DARK_BG, size=6, family="monospace"),
+                                          hovertemplate=f"<b>{info['label']}</b><br>Õ·ﬁÂ {ring}<br>${gp:,.0f}<br>Conf:{tot:.1f}<extra></extra>",
+                                          showlegend=False))
+
+    if cp and bp > 0:
+        ca = price_to_angle(cp, bp, st)
+        rad = math.radians(90 - (ca + rot))
+        c, s = math.cos(rad), math.sin(rad)
+        for r in R_RINGS:
+            wfig.add_trace(go.Scatter(x=[r * c], y=[r * s], mode="markers",
+                                      marker=dict(color=GREEN_ZONE, size=12, symbol="diamond",
+                                                  line=dict(color="white", width=1.5)),
+                                      hoverinfo="skip", showlegend=False))
+        wfig.add_trace(go.Scatter(x=[0, R_RINGS[-1] * c], y=[0, R_RINGS[-1] * s],
+                                  mode="lines", line=dict(color=GREEN_ZONE, width=2.5),
+                                  hoverinfo="skip", showlegend=False))
+
+    wfig.add_trace(go.Scatter(x=[0, 0], y=[0.02, R_RINGS[-1] + 0.05],
+                              mode="lines", line=dict(color=RED_ZONE, width=3),
+                              hoverinfo="skip", showlegend=False))
+    wfig.add_trace(go.Scatter(x=[0], y=[R_RINGS[-1] + 0.05], mode="markers",
+                              marker=dict(color=RED_ZONE, size=8, symbol="triangle-up"),
+                              hoverinfo="skip", showlegend=False))
+    wfig.add_trace(go.Scatter(x=[0], y=[0], mode="text",
+                              text=[f"{rot:.0f}∞"], textfont=dict(color=GOLD_LIGHT, size=13, family="monospace"),
+                              hoverinfo="skip", showlegend=False))
+
+    wfig.update_layout(paper_bgcolor=PANEL_BG, plot_bgcolor=PANEL_BG,
+                       margin=dict(l=4, r=4, t=4, b=4), autosize=True, showlegend=False,
+                       xaxis=dict(range=[-1.12, 1.12], showgrid=False, zeroline=False,
+                                  showticklabels=False, scaleanchor="y"),
+                       yaxis=dict(range=[-1.12, 1.12], showgrid=False, zeroline=False, showticklabels=False),
+                       hoverlabel=dict(bgcolor=PANEL_BG, font_color=TEXT_MAIN, font_family="monospace"))
+
+    signal_box_children = []
+
+    #  Ê·Ìœ  «—ÌŒçÂ Ê »«ò” ”Ìê‰«·
+    if cp and bp > 0 and st > 0:
+        gs, gh = gann_confluence(cp, bp, st)
+        fs, fh = fibo_confluence(cp, slo, shi)
+        total = gs + fs * 1.5
+        sig, sig_col = signal_label(total)
+        gann_n, gann_d, ginfo = nearest_gann(cp, bp, st)
+        mom, accel = momentum_signal(ph)
+        delta_val, delta_label = compute_delta_score(dh)
+
+        # „ò«‰Ì“„ «÷«›Â ò—œ‰ »Â  «—ÌŒçÂ ›ﬁÿ Êﬁ Ì ”Ìê‰«· ﬁÊÌ Â”  Ê  ò—«—Ì œ— Â„«‰ œﬁÌﬁÂ ‰Ì” 
+        if sig:
+            now_time = datetime.now().strftime("%H:%M:%S")
+            add_it = False
+            if not history_data:
+                add_it = True
+            else:
+                last_sig = history_data[0]
+                # Ã·ÊêÌ—Ì «“ «”Å„ ‘œ‰ Ìò ”Ìê‰«· œ— Ìò œﬁÌﬁÂ
+                if last_sig['type'] != sig or last_sig['time'][:5] != now_time[:5]:
+                    add_it = True
+
+            if add_it:
+                history_data.insert(0, {
+                    'time': now_time,
+                    'price': cp,
+                    'type': sig,
+                    'color': sig_col
+                })
+                history_data = history_data[:30]  # „ÕœÊœÌ   «—ÌŒçÂ »Â 30  «Ì ¬Œ—
+
+        signal_box_children = [
+            html.Div([
+                html.Span(f"${cp:,.1f}", style={"color": GREEN_ZONE, "fontSize": "1.1rem", "fontWeight": 700}),
+                html.Span(f"  {price_to_angle(cp, bp, st):.1f}∞",
+                          style={"color": GOLD, "fontSize": "0.85rem"}),
+            ], style={"marginBottom": "6px"}),
+
+            html.Div([
+                html.Div([
+                    html.Span("Confluence", style={"color": TEXT_DIM, "fontSize": "0.62rem"}),
+                    html.Span(f" {total:.1f}", style={"color": sig_col, "fontWeight": 700, "fontSize": "0.85rem"}),
+                ], style={"display": "flex", "justifyContent": "space-between"}),
+                html.Div(style={"background": RING_COL, "borderRadius": "3px", "height": "5px", "margin": "3px 0"},
+                         children=[html.Div(style={"height": "100%", "borderRadius": "3px", "background": sig_col,
+                                                   "width": f"{min(100, total / 20 * 100):.0f}%",
+                                                   "transition": "width .3s ease"})]),
+            ], style={"marginBottom": "5px"}),
+
+            html.Div(sig, style={"color": sig_col, "fontWeight": 700, "fontSize": "0.78rem",
+                                 "border": f"1px solid {sig_col}", "borderRadius": "3px",
+                                 "padding": "2px 6px", "display": "inline-block",
+                                 "marginBottom": "6px"}) if sig else html.Div(),
+
+            html.Div([
+                html.Span("‰“œÌòù —Ì‰ ê«‰: ", style={"color": TEXT_DIM, "fontSize": "0.65rem"}),
+                html.Span(f"${gann_n:,.0f} ",
+                          style={"color": ANGLE_COLORS.get(ginfo["type"], GOLD), "fontSize": "0.75rem",
+                                 "fontWeight": 700}),
+                html.Span(f"({ginfo['label']} R{ginfo['ring']})",
+                          style={"color": TEXT_DIM, "fontSize": "0.65rem"}),
+            ], style={"marginBottom": "3px"}) if gann_n else html.Div(),
+            html.Div([
+                html.Span("›«’·Â: ", style={"color": TEXT_DIM, "fontSize": "0.65rem"}),
+                html.Span(f"${gann_d:,.0f}", style={"color": GOLD_LIGHT, "fontSize": "0.72rem"}),
+                html.Span(f" ({gann_d / cp * 100:.2f}%)", style={"color": TEXT_DIM, "fontSize": "0.65rem"}),
+            ], style={"marginBottom": "6px"}) if gann_n else html.Div(),
+
+            html.Div([
+                html.Div([
+                    html.Span("Momentum: ", style={"color": TEXT_DIM, "fontSize": "0.65rem"}),
+                    html.Span(f"{'?' if mom > 0 else '?'} {abs(mom):.3f}%",
+                              style={"color": GREEN_ZONE if mom > 0 else RED_ZONE, "fontSize": "0.72rem"}),
+                ]),
+                html.Div([
+                    html.Span("Delta: ", style={"color": TEXT_DIM, "fontSize": "0.65rem"}),
+                    html.Span(f"{delta_label}",
+                              style={"color": GREEN_ZONE if delta_val > 0 else RED_ZONE, "fontSize": "0.72rem"}),
+                ]),
+            ], style={"borderTop": f"1px solid {GOLD_DIM}33", "paddingTop": "5px", "marginTop": "3px"}),
+
+            html.Div([
+                html.P("ò‰œ· 1min", style={"color": TEXT_DIM, "fontSize": "0.6rem", "margin": "5px 0 3px"}),
+                html.Div([
+                    html.Span("O ", style={"color": TEXT_DIM, "fontSize": "0.65rem"}),
+                    html.Span(f"${kopen:,.0f}" if kopen else "--",
+                              style={"color": TEXT_MAIN, "fontSize": "0.68rem"}),
+                    html.Span("  H ", style={"color": TEXT_DIM, "fontSize": "0.65rem"}),
+                    html.Span(f"${khigh:,.0f}" if khigh else "--",
+                              style={"color": GREEN_ZONE, "fontSize": "0.68rem"}),
+                    html.Span("  L ", style={"color": TEXT_DIM, "fontSize": "0.65rem"}),
+                    html.Span(f"${klow:,.0f}" if klow else "--",
+                              style={"color": RED_ZONE, "fontSize": "0.68rem"}),
+                ]),
+                html.Div([
+                    html.Span("Vol: ", style={"color": TEXT_DIM, "fontSize": "0.65rem"}),
+                    html.Span(f"{kvol:.3f} BTC" if kvol else "--",
+                              style={"color": GOLD, "fontSize": "0.68rem"}),
+                    html.Span(f"  {engine.kline_trades} trades",
+                              style={"color": TEXT_DIM, "fontSize": "0.62rem"}),
+                ]),
+            ], style={"background": DARK_BG, "borderRadius": "4px", "padding": "5px 7px", "marginTop": "5px"}),
+        ]
+    else:
+        signal_box_children = [html.Div([
+            html.Span("? ", className="live-dot", style={"color": GREEN_ZONE if connected else RED_ZONE}),
+            html.Span("œ— «‰ Ÿ«— œÌ «..." if connected else "œ— Õ«· « ’«·...",
+                      style={"color": TEXT_DIM, "fontSize": "0.8rem"})
+        ])]
+
+    # ”«Œ ‰ UI  «—ÌŒçÂ
+    history_ui = []
+    for item in history_data:
+        history_ui.append(
+            html.Div([
+                html.Span(f"{item['time']} - ", style={'color': TEXT_DIM, 'fontSize': '10px'}),
+                html.Span(f"${item['price']:,.0f}", style={'color': '#fff', 'marginRight': '6px', 'fontSize': '11px'}),
+                html.Span(item['type'],
+                          style={'color': item.get('color', GOLD), 'fontWeight': 'bold', 'fontSize': '10px'})
+            ], style={'borderBottom': f'1px solid {GOLD_DIM}33', 'padding': '4px 0'})
+        )
+    if not history_ui:
+        history_ui = html.Div("”Ìê‰«·Ì À»  ‰‘œÂ", style={'color': TEXT_DIM, 'fontSize': '10px'})
+
+    if not zones:
+        ztable = html.P("œ— Õ«· „Õ«”»Â...", style={"color": TEXT_DIM, "fontSize": "0.75rem"})
+    else:
+        zs = sorted(zones, key=lambda x: abs(x["price"] - (cp or bp))) if cp else zones
+        cards = []
+        for z in zs[:8]:
+            sig, sc = signal_label(z["total"])
+            if not sig: continue
+            is_hot = z["total"] >= 15
+            dist_v = abs(z["price"] - (cp or bp))
+            dist_s = f"${dist_v:,.0f}" if cp else ""
+            dir_s = ("?" if z["price"] > (cp or bp) else "?") if cp else ""
+            dir_c = GREEN_ZONE if dir_s == "?" else RED_ZONE
+            top_g = sorted(z["gann_hits"], key=lambda x: -x["score"])[:2]
+            top_f = z["fib_hits"][:1]
+            cards.append(html.Div([
+                html.Div([
+                    html.Span(f"${z['price']:,}",
+                              style={"color": sc, "fontWeight": 700, "fontSize": "0.88rem"}),
+                    html.Span(f"{z['total']:.0f}",
+                              style={"color": sc, "fontSize": "0.65rem",
+                                     "border": f"1px solid {sc}", "borderRadius": "3px",
+                                     "padding": "0 4px"}),
+                ], style={"display": "flex", "justifyContent": "space-between", "marginBottom": "3px"}),
+                html.Div(style={"background": RING_COL, "borderRadius": "2px", "height": "2px",
+                                "marginBottom": "4px"},
+                         children=[html.Div(style={"height": "100%", "background": sc,
+                                                   "width": f"{min(100, z['total'] / 20 * 100):.0f}%"})]),
+                html.Div([
+                    *[html.Span(f"{h['angle']}∞R{h['ring']} ",
+                                style={"color": ANGLE_COLORS.get(h["type"], GOLD), "fontSize": "0.68rem"})
+                      for h in top_g],
+                    *[html.Span(f"F{h['level']} ",
+                                style={"color": BLUE_ACC, "fontSize": "0.68rem"}) for h in top_f],
+                ], style={"marginBottom": "2px"}),
+                html.Div([
+                             html.Span(dir_s + " ", style={"color": dir_c, "fontSize": "0.72rem"}),
+                             html.Span(dist_s, style={"color": TEXT_DIM, "fontSize": "0.68rem"}),
+                         ] if cp else []),
+            ], style={
+                "background": "rgba(255,58,58,0.05)" if is_hot else "rgba(201,168,76,0.03)",
+                "border": f"1px solid {sc}44", "borderRadius": "4px",
+                "padding": "6px 8px", "marginBottom": "6px"}))
+        ztable = html.Div(cards) if cards else html.P("“Ê‰ ﬁÊÌ ÅÌœ« ‰‘œ",
+                                                      style={"color": TEXT_DIM, "fontSize": "0.75rem"})
+
+    return (dot_style, conn_label, price_str, price_change,
+            pfig, wfig, signal_box_children, ztable, history_ui, history_data)
+
+
+if __name__ == "__main__":
+    print("?? GANN TIME MACHINE ∑ Polling Edition")
+    print("?" * 45)
+    print("?? œ— Õ«· «” «—  „Ê Ê— API...")
+    print("?? „—Ê—ê—: http://127.0.0.1:8050")
+    print("?" * 45)
+    app.run(debug=False, port=8050)

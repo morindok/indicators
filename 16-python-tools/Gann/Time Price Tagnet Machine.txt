@@ -1,0 +1,71 @@
+import dash
+from dash import dcc, html
+from dash.dependencies import Input, Output
+import datetime
+import math
+
+app = dash.Dash(__name__)
+
+app.layout = html.Div(
+    style={'backgroundColor': '#1e1e1e', 'color': 'white', 'fontFamily': 'Arial', 'padding': '50px',
+           'textAlign': 'center'},
+    children=[
+        html.H1("„«‘Ì‰ “„«‰ ê«‰:  ﬁ«ÿ⁄ „ÿ·ﬁ ﬁÌ„  Ê “„«‰"),
+
+        html.Div([
+            html.Label("ﬁÌ„  Å«ÌÂ »Ì ùòÊÌ‰ (Base Price): "),
+            dcc.Input(id='base-price-input', type='number', value=65000, step=1,
+                      style={'fontSize': '20px', 'textAlign': 'center'})
+        ], style={'margin': '20px'}),
+
+        html.H2(id='time-display', style={'color': '#00ffcc'}),
+
+        html.Div([
+            html.Div(id='resistance-display',
+                     style={'fontSize': '30px', 'color': '#ff4d4d', 'margin': '20px', 'fontWeight': 'bold'}),
+            html.Div(id='support-display',
+                     style={'fontSize': '30px', 'color': '#00ffcc', 'margin': '20px', 'fontWeight': 'bold'})
+        ], style={'border': '1px solid #444', 'padding': '30px', 'borderRadius': '10px', 'display': 'inline-block'}),
+
+        dcc.Interval(id='clock-interval', interval=1000, n_intervals=0)  # ¬ÅœÌ  Â— 1 À«‰ÌÂ
+    ]
+)
+
+
+@app.callback(
+    [Output('time-display', 'children'),
+     Output('resistance-display', 'children'),
+     Output('support-display', 'children')],
+    [Input('clock-interval', 'n_intervals'),
+     Input('base-price-input', 'value')]
+)
+def update_absolute_points(n, base_price):
+    if not base_price or base_price <= 0:
+        return "Invalid Price", "-", "-"
+
+    # œ—Ì«›  “„«‰ œﬁÌﬁ ›⁄·Ì
+    now = datetime.datetime.now()
+
+    # „Õ«”»Â “„«‰ »Â ⁄‰Ê«‰ Ìò ò”— ÅÌÊ” Â «“ —Ê“ (œﬁ   « „Ì·ÌùÀ«‰ÌÂ »—«Ì Õ—ò  ‰—„)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    seconds_passed = (now - midnight).total_seconds()
+
+    # 86400 À«‰ÌÂ œ— —Ê“ œ«—Ì„. ‰ê«‘  »Â ÷—Ì» ê«‰ (Õœ«òÀ— 2 »—«Ì 360 œ—ÃÂ)
+    # F_t = (seconds / 86400) * 2
+    f_t = (seconds_passed / 86400.0) * 2.0
+
+    # „Õ«”»Â —Ì«÷Ì ê«‰
+    sqrt_p = math.sqrt(base_price)
+
+    resistance = (sqrt_p + f_t) ** 2
+    support = (sqrt_p - f_t) ** 2
+
+    time_str = f"“„«‰ ›⁄·Ì: {now.strftime('%H:%M:%S')} | ÷—Ì» “„«‰Ì ê«‰: {f_t:.4f}"
+    res_str = f"„ﬁ«Ê„  „ÿ·ﬁ: {resistance:.4f} $"
+    sup_str = f"Õ„«Ì  „ÿ·ﬁ: {support:.4f} $"
+
+    return time_str, res_str, sup_str
+
+
+if __name__ == '__main__':
+    app.run(debug=True)

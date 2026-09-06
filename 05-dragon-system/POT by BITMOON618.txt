@@ -1,0 +1,214 @@
+//@version=5
+indicator("POT{Morindok} by @BITMOON618", overlay=true, max_lines_count=10, max_boxes_count=5)
+
+// --- Ê—ÊœÌùÂ« ---
+pivot_len   = input.int(5, title="ÿÊ· ÅÌÊÊ  (Pivot Length)", minval=1)
+htf         = input.timeframe("240", title=" «Ì„ù›—Ì„ Âœ› »—«Ì —”„ ŒÿÊÿ (HTF)")
+z_threshold = input.float(0.8, title="¬” «‰Â «⁄ »«— ¬„«—Ì (Z-Score)", step=0.1, minval=0.1, tooltip="„⁄Ì«— Z-Score »—«Ì  ‘ŒÌ’ ”Ìê‰«·ùÂ«Ì „⁄ »—. „ﬁ«œÌ— »«·« — ”Ìê‰«·ùÂ«Ì ò„ — «„« œﬁÌﬁù —Ì „ÌùœÂ‰œ.")
+
+// ---  Ê«»⁄ ---
+//  «»⁄ œ—Ì«›  ÅÌÊÊ ùÂ« Ê “„«‰ ¬‰ùÂ«
+f_get_pivots(len) =>
+    ph = ta.pivothigh(high, len, len)
+    pl = ta.pivotlow(low, len, len)
+    
+    var float last_ph_price = na
+    var int   last_ph_time  = na
+    var float last_pl_price = na
+    var int   last_pl_time  = na
+    
+    if not na(ph)
+        last_ph_price := ph
+        last_ph_time  := time[len]
+        
+    if not na(pl)
+        last_pl_price := pl
+        last_pl_time  := time[len]
+        
+    [last_ph_price, last_ph_time, last_pl_price, last_pl_time]
+
+//  «»⁄ „Õ«”»Â —Ê‰œ »— «”«” ÅÌÊÊ ùÂ« Ê ﬁÌ„  ·«ÌÊ
+f_calc_trend(php, pht, plp, plt) =>
+    string trend_status = "œ— «‰ Ÿ«—..."
+    color  trend_color  = color.gray
+    bool   is_range     = false
+    
+    if not na(php) and not na(plp) and not na(pht) and not na(plt)
+        ctf_ms = timeframe.in_seconds(timeframe.period) * 1000
+        bars_ph = math.max(1, (time - pht) / ctf_ms)
+        bars_pl = math.max(1, (time - plt) / ctf_ms)
+        
+        slope_pl = ((close - plp) / plp) * 100 / bars_pl
+        slope_ph = ((close - php) / php) * 100 / bars_ph
+        
+        if slope_pl > 0 and slope_ph > 0
+            trend_status := "’⁄ÊœÌ (Bullish)"
+            trend_color  := color.green
+        else if slope_pl < 0 and slope_ph < 0
+            trend_status := "‰“Ê·Ì (Bearish)"
+            trend_color  := color.red
+        else
+            // „‰ÿﬁ Ê÷⁄Ì  —‰Ã Ê „Õ«”»Â Œÿ „Ì«‰Ì
+            is_range := true
+            mid_price = (php + plp) / 2
+            dist_pct = (math.abs(close - mid_price) / mid_price) * 100
+            dist_str = str.tostring(dist_pct, "#.##") + "%"
+            
+            if close > mid_price
+                trend_status := "œ— «‰ Ÿ«— ’⁄Êœ\n(›«’·Â: " + dist_str + ")"
+                trend_color  := color.new(color.teal, 10)
+            else if close < mid_price
+                trend_status := "œ— «‰ Ÿ«— ‰“Ê·\n(›«’·Â: " + dist_str + ")"
+                trend_color  := color.new(color.orange, 10)
+            else
+                trend_status := "Ê”ÿ —‰Ã"
+                trend_color  := color.gray
+            
+    [trend_status, trend_color, is_range]
+
+// --- ”Ì” „ ¬„«—Ì ÂÊ‘„‰œ (Smart Statistical System) ---
+// „Õ«”»Â ‘Ì»ùÂ«Ì ﬁÌ„ Ì œ— »«“ÂùÂ«Ì „Œ ·› (Slopes)
+slope_5  = (close - close[5]) / close[5] * 100
+slope_10 = (close - close[10]) / close[10] * 100
+slope_20 = (close - close[20]) / close[20] * 100
+
+// „Õ«”»Â ‘Ì» „Ì«‰êÌ‰ „ Õ—ò ‰„«ÌÌ (EMA Slope)
+ema10 = ta.ema(close, 10)
+ema10_slope = (ema10 - ema10[5]) / ema10[5] * 100
+
+// „Õ«”»Â ‘ «» ﬁÌ„  (Acceleration -  €ÌÌ—«  ‘Ì» òÊ «Âù„œ )
+accel_5 = slope_5 - slope_5[5]
+
+// «„ Ì«“œÂÌ  —òÌ»Ì (Composite Score) »« Ê“‰ùœÂÌ »Â ⁄Ê«„· „Œ ·›
+stat_score = slope_5 * 0.4 + slope_10 * 0.3 + slope_20 * 0.2 + ema10_slope * 0.1 + accel_5 * 0.5
+
+// „Õ«”»Â „⁄Ì«— ¬„«—Ì (Z-Score) »—«Ì ”‰Ã‘ «⁄ »«— ”Ìê‰«·
+score_mean = ta.sma(stat_score, 100)
+score_std  = ta.stdev(stat_score, 100)
+z_score    = score_std > 0 ? (stat_score - score_mean) / score_std : 0
+
+// „‰ÿﬁ ÅÌ‘ù»Ì‰Ì —Ê‰œ »«  Œ„Ì‰ „œ  «⁄ »«—
+string pred_trend = "Œ‰ÀÌ / ‰«„‘Œ’"
+color  pred_color = color.gray
+float  confidence = math.abs(z_score) * 100 //  »œÌ· »Â œ—’œ
+int    validity_minutes = 0 // „œ  «⁄ »«— ÅÌ‘ù»Ì‰Ì »Â œﬁÌﬁÂ
+
+// „Õ«”»Â ﬁœ—  ”Ìê‰«· (Signal Strength) »— «”«” Z-Score Ê ‘ «»
+signal_strength = math.abs(z_score) + math.abs(accel_5) * 10
+
+if z_score > z_threshold
+    pred_trend := "’⁄ÊœÌ ÅÌ‘ù»Ì‰Ì „Ìù‘Êœ ??"
+    pred_color := color.green
+    // „Õ«”»Â „œ  «⁄ »«— »— «”«” ﬁœ—  ”Ìê‰«·
+    if signal_strength > 3.0
+        validity_minutes := 120 // 2 ”«⁄ 
+    else if signal_strength > 2.0
+        validity_minutes := 90  // 1.5 ”«⁄ 
+    else if signal_strength > 1.5
+        validity_minutes := 60  // 1 ”«⁄ 
+    else
+        validity_minutes := 30  // 30 œﬁÌﬁÂ
+        
+else if z_score < -z_threshold
+    pred_trend := "‰“Ê·Ì ÅÌ‘ù»Ì‰Ì „Ìù‘Êœ ??"
+    pred_color := color.red
+    // „Õ«”»Â „œ  «⁄ »«— »— «”«” ﬁœ—  ”Ìê‰«·
+    if signal_strength > 3.0
+        validity_minutes := 120 // 2 ”«⁄ 
+    else if signal_strength > 2.0
+        validity_minutes := 90  // 1.5 ”«⁄ 
+    else if signal_strength > 1.5
+        validity_minutes := 60  // 1 ”«⁄ 
+    else
+        validity_minutes := 30  // 30 œﬁÌﬁÂ
+else
+    pred_trend := "—‰Ã / «‰ Ÿ«— »—«Ì ”Ìê‰«·"
+    pred_color := color.orange
+    validity_minutes := 0
+
+conf_str = str.tostring(math.min(confidence, 99.9), "#.#") + "%"
+validity_str = validity_minutes > 0 ? str.tostring(validity_minutes) + " œﬁÌﬁÂ" : "‰«„‘Œ’"
+
+// --- œ—Ì«›  «ÿ·«⁄«   «Ì„ù›—Ì„ùÂ« ---
+// ?.  «Ì„ù›—Ì„ «‰ Œ«» ‘œÂ »—«Ì —”„ ŒÿÊÿ —ÊÌ ç«— 
+[ph_price, ph_time, pl_price, pl_time] = request.security(syminfo.tickerid, htf, f_get_pivots(pivot_len), lookahead=barmerge.lookahead_off)
+
+// ?.  «Ì„ù›—Ì„ùÂ«Ì «” «‰œ«—œ »—«Ì ÃœÊ·
+[ph5, pht5, pl5, plt5]       = request.security(syminfo.tickerid, "5",   f_get_pivots(pivot_len), lookahead=barmerge.lookahead_off)
+[ph15, pht15, pl15, plt15]   = request.security(syminfo.tickerid, "15",  f_get_pivots(pivot_len), lookahead=barmerge.lookahead_off)
+[ph60, pht60, pl60, plt60]   = request.security(syminfo.tickerid, "60",  f_get_pivots(pivot_len), lookahead=barmerge.lookahead_off)
+[ph240, pht240, pl240, plt240] = request.security(syminfo.tickerid, "240", f_get_pivots(pivot_len), lookahead=barmerge.lookahead_off)
+[phD, phtD, plD, pltD]       = request.security(syminfo.tickerid, "D",   f_get_pivots(pivot_len), lookahead=barmerge.lookahead_off)
+[phW, phtW, plW, pltW]       = request.security(syminfo.tickerid, "W",   f_get_pivots(pivot_len), lookahead=barmerge.lookahead_off)
+
+// --- „Õ«”»Â —Ê‰œ »—«Ì Â—  «Ì„ù›—Ì„ ---
+[tr_htf, col_htf, is_range_htf] = f_calc_trend(ph_price, ph_time, pl_price, pl_time)
+
+[tr5, col5, isR5]       = f_calc_trend(ph5, pht5, pl5, plt5)
+[tr15, col15, isR15]     = f_calc_trend(ph15, pht15, pl15, plt15)
+[tr60, col60, isR60]     = f_calc_trend(ph60, pht60, pl60, plt60)
+[tr240, col240, isR240]   = f_calc_trend(ph240, pht240, pl240, plt240)
+[trD, colD, isRD]       = f_calc_trend(phD, phtD, plD, pltD)
+[trW, colW, isRW]       = f_calc_trend(phW, phtW, plW, pltW)
+
+// --- —”„ ŒÿÊÿ° »«ò” Ê ÃœÊ· (›ﬁÿ œ— ò‰œ· ·«ÌÊ) ---
+var line line_ph = na
+var line line_pl = na
+var box  range_box = na
+//  €ÌÌ— «‰œ«“Â ÃœÊ· »Â 10 —œÌ› »—«Ì «÷«›Â ò—œ‰ »Œ‘ „œ  «⁄ »«—
+var table mtf_table = table.new(position.top_right, 2, 10, border_width=1, border_color=color.black)
+
+if barstate.islast
+    // Å«ò ò—œ‰ —”Ê„ ﬁ»·Ì
+    line.delete(line_ph)
+    line.delete(line_pl)
+    box.delete(range_box)
+    
+    // —”„ ŒÿÊÿ »—«Ì  «Ì„ù›—Ì„ «’·Ì (HTF)
+    if not na(ph_time)
+        line_ph := line.new(x1=ph_time, y1=ph_price, x2=time, y2=close, xloc=xloc.bar_time, color=color.red, width=2, style=line.style_arrow_right)
+    if not na(pl_time)
+        line_pl := line.new(x1=pl_time, y1=pl_price, x2=time, y2=close, xloc=xloc.bar_time, color=color.green, width=2, style=line.style_arrow_right)
+        
+    // —”„ „ÕœÊœÂ —‰Ã (»«ò”)
+    if is_range_htf and not na(ph_time) and not na(pl_time)
+        left_time = math.min(ph_time, pl_time)
+        top_price = math.max(ph_price, pl_price)
+        bot_price = math.min(ph_price, pl_price)
+        
+        range_box := box.new(left=left_time, top=top_price, right=time, bottom=bot_price, xloc=xloc.bar_time, 
+             border_color=color.orange, border_style=line.style_dashed, border_width=2, 
+             bgcolor=color.new(color.orange, 85), 
+             text="„ÕœÊœÂ —‰Ã\n" + tr_htf, text_size=size.small, text_color=color.orange)
+
+    // --- »—Ê“—”«‰Ì ÃœÊ· Multi-Timeframe ---
+    table.cell(mtf_table, 0, 0, " «Ì„ù›—Ì„", bgcolor=color.new(color.gray, 20), text_color=color.white)
+    table.cell(mtf_table, 1, 0, "Ê÷⁄Ì  —Ê‰œ", bgcolor=color.new(color.gray, 20), text_color=color.white)
+    
+    table.cell(mtf_table, 0, 1, "5 œﬁÌﬁÂ", bgcolor=color.new(color.gray, 80), text_color=color.white)
+    table.cell(mtf_table, 1, 1, tr5, bgcolor=col5, text_color=color.white)
+    
+    table.cell(mtf_table, 0, 2, "15 œﬁÌﬁÂ", bgcolor=color.new(color.gray, 80), text_color=color.white)
+    table.cell(mtf_table, 1, 2, tr15, bgcolor=col15, text_color=color.white)
+    
+    table.cell(mtf_table, 0, 3, "1 ”«⁄ Â", bgcolor=color.new(color.gray, 80), text_color=color.white)
+    table.cell(mtf_table, 1, 3, tr60, bgcolor=col60, text_color=color.white)
+    
+    table.cell(mtf_table, 0, 4, "4 ”«⁄ Â", bgcolor=color.new(color.gray, 80), text_color=color.white)
+    table.cell(mtf_table, 1, 4, tr240, bgcolor=col240, text_color=color.white)
+    
+    table.cell(mtf_table, 0, 5, "—Ê“«‰Â (1D)", bgcolor=color.new(color.gray, 80), text_color=color.white)
+    table.cell(mtf_table, 1, 5, trD, bgcolor=colD, text_color=color.white)
+    
+    table.cell(mtf_table, 0, 6, "Â› êÌ (1W)", bgcolor=color.new(color.gray, 80), text_color=color.white)
+    table.cell(mtf_table, 1, 6, trW, bgcolor=colW, text_color=color.white)
+    
+    // --- «÷«›Â ò—œ‰ —œÌ›ùÂ«Ì ÅÌ‘ù»Ì‰Ì ÂÊ‘„‰œ ---
+    table.cell(mtf_table, 0, 7, "ÅÌ‘ù»Ì‰Ì —Ê‰œ", bgcolor=color.new(color.blue, 20), text_color=color.white)
+    table.cell(mtf_table, 1, 7, pred_trend, bgcolor=pred_color, text_color=color.white)
+    
+    table.cell(mtf_table, 0, 8, "„œ  «⁄ »«— ÅÌ‘ù»Ì‰Ì", bgcolor=color.new(color.purple, 20), text_color=color.white)
+    table.cell(mtf_table, 1, 8, validity_str, bgcolor=color.new(color.purple, 50), text_color=color.white)
+    
+    table.cell(mtf_table, 0, 9, "«ÿ„Ì‰«‰ ¬„«—Ì", bgcolor=color.new(color.blue, 20), text_color=color.white)
+    table.cell(mtf_table, 1, 9, conf_str, bgcolor=color.new(color.blue, 50), text_color=color.white)

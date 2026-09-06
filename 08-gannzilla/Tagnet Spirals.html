@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ابزار تحلیل اسپیرال گن - موتور رزونانس داینامیک</title>
+    <!-- TailwindCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 4px; }
+        .glow-text { text-shadow: 0 0 10px rgba(59, 130, 246, 0.8); }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <div class="bg-gradient-to-r from-blue-700 via-indigo-600 to-blue-700 text-white text-center py-3 shadow-lg font-bold tracking-wider z-50">
+        💎 کانال تخصصی تحلیل و ابزارهای مالی: <a href="https://t.me/BITMOON618" target="_blank" class="underline hover:text-yellow-300">@BITMOON618</a> 💎
+    </div>
+
+    <div class="flex-grow p-4 md:p-6 grid grid-cols-1 lg:grid-cols-4 gap-6">
+        
+        <!-- تنظیمات -->
+        <div class="glass-panel p-5 flex flex-col gap-4 lg:col-span-1 shadow-2xl z-10">
+            <h2 class="text-xl font-bold text-blue-400 mb-2 border-b border-gray-600 pb-2">کنترل رزونانس گن</h2>
+
+            <div>
+                <label class="block text-sm font-semibold mb-1 text-gray-300">پیووت‌های قیمت:</label>
+                <textarea id="pivotsInput" rows="4" class="w-full bg-slate-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500" dir="ltr">
+63216.95
+59129.75
+61261.65</textarea>
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold mb-1 text-gray-300">فاصله زمانی (دقیقه):</label>
+                <input type="number" id="timeInterval" value="60" class="w-full bg-slate-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500" dir="ltr">
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold mb-1 text-gray-300">نوع اسپیرال:</label>
+                <select id="spiralType" class="w-full bg-slate-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500">
+                    <option value="archimedean">آرشمیدس (خطی)</option>
+                    <option value="golden">لگاریتمی (طلایی)</option>
+                    <option value="fermat">فرما (رادیکالی)</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold mb-1 text-gray-300">روش گام:</label>
+                <select id="stepMethod" class="w-full bg-slate-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500" onchange="toggleManualStep()">
+                    <option value="autofibo">اتوماتیک فیبوناچی (0.618)</option>
+                    <option value="distance">فاصله واقعی پیووت‌ها</option>
+                    <option value="manual">دستی</option>
+                </select>
+            </div>
+
+            <div id="manualStepContainer" class="hidden">
+                <label class="block text-sm font-semibold mb-1 text-gray-300">ضریب گام دستی:</label>
+                <input type="number" id="manualStep" value="1000" class="w-full bg-slate-700 text-white rounded p-2 focus:ring-2 focus:ring-blue-500" dir="ltr">
+            </div>
+
+            <!-- دکمه‌های انیمیشن -->
+            <div class="grid grid-cols-2 gap-2 mt-2">
+                <button onclick="calculateStatic()" class="bg-slate-600 hover:bg-slate-500 transition text-white text-sm font-bold py-2 rounded shadow">
+                    رسم ثابت
+                </button>
+                <button id="animBtn" onclick="toggleAnimation()" class="bg-indigo-600 hover:bg-indigo-500 transition text-white text-sm font-bold py-2 rounded shadow flex items-center justify-center gap-1">
+                    <span id="animIcon">▶️</span> شروع چرخش
+                </button>
+            </div>
+
+            <div class="mt-4 flex-grow flex flex-col">
+                <h3 class="text-md font-bold text-yellow-400 mb-2 border-b border-gray-600 pb-1">تارگت‌های مماس کامل (Tangency)</h3>
+                <div id="tangentList" class="bg-slate-800 rounded p-3 overflow-y-auto max-h-48 text-sm font-mono flex-grow border border-slate-600" dir="ltr">
+                    <span class="text-gray-400">اسپیرال‌ها را بچرخانید...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- نمودار -->
+        <div class="glass-panel lg:col-span-3 p-4 flex flex-col shadow-2xl relative min-h-[500px]">
+            <div id="chartDiv" class="w-full h-full flex-grow"></div>
+        </div>
+
+    </div>
+
+    <script>
+        // State variables
+        let isAnimating = false;
+        let animationId = null;
+        let currentPhase = 0;
+        let hasChartInit = false;
+
+        function toggleManualStep() {
+            document.getElementById('manualStepContainer').classList.toggle('hidden', document.getElementById('stepMethod').value !== 'manual');
+        }
+
+        // Fast Bounding Box Check (AABB)
+        function aabbIntersect(p1, p2, p3, p4) {
+            return Math.max(p1.x, p2.x) >= Math.min(p3.x, p4.x) &&
+                   Math.min(p1.x, p2.x) <= Math.max(p3.x, p4.x) &&
+                   Math.max(p1.y, p2.y) >= Math.min(p3.y, p4.y) &&
+                   Math.min(p1.y, p2.y) <= Math.max(p3.y, p4.y);
+        }
+
+        // Exact Intersection Calculation
+        function getIntersection(p1, p2, p3, p4) {
+            if (!aabbIntersect(p1, p2, p3, p4)) return null;
+
+            const s1_x = p2.x - p1.x, s1_y = p2.y - p1.y;
+            const s2_x = p4.x - p3.x, s2_y = p4.y - p3.y;
+            const denom = (-s2_x * s1_y + s1_x * s2_y);
+            
+            if (denom === 0) return null; // Parallel
+
+            const s = (-s1_y * (p1.x - p3.x) + s1_x * (p1.y - p3.y)) / denom;
+            const t = ( s2_x * (p1.y - p3.y) - s2_y * (p1.x - p3.x)) / denom;
+
+            if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
+                return { x: p1.x + (t * s1_x), y: p1.y + (t * s1_y) };
+            }
+            return null;
+        }
+
+        // Angle between segments for tangency
+        function getIntersectionAngle(p1, p2, p3, p4) {
+            const v1x = p2.x - p1.x, v1y = p2.y - p1.y;
+            const v2x = p4.x - p3.x, v2y = p4.y - p3.y;
+            const dot = v1x * v2x + v1y * v2y;
+            const mag1 = Math.sqrt(v1x*v1x + v1y*v1y);
+            const mag2 = Math.sqrt(v2x*v2x + v2y*v2y);
+            if (mag1 === 0 || mag2 === 0) return 0;
+            
+            const cosTheta = Math.max(-1, Math.min(1, dot / (mag1 * mag2)));
+            let angleDeg = Math.acos(cosTheta) * (180 / Math.PI);
+            if (angleDeg > 90) angleDeg = 180 - angleDeg;
+            return angleDeg;
+        }
+
+        function calculateStatic() {
+            if(isAnimating) toggleAnimation(); // Stop if running
+            currentPhase = 0;
+            renderSpirals(0, false);
+        }
+
+        function toggleAnimation() {
+            const btn = document.getElementById('animBtn');
+            const icon = document.getElementById('animIcon');
+            
+            if (isAnimating) {
+                isAnimating = false;
+                cancelAnimationFrame(animationId);
+                btn.classList.replace('bg-red-600', 'bg-indigo-600');
+                btn.classList.replace('hover:bg-red-500', 'hover:bg-indigo-500');
+                icon.innerText = '▶️';
+                // Render high-res version once stopped
+                renderSpirals(currentPhase, false); 
+            } else {
+                isAnimating = true;
+                // Add a small jump so it doesn't instantly get stuck on the same tangent
+                currentPhase += 0.05; 
+                btn.classList.replace('bg-indigo-600', 'bg-red-600');
+                btn.classList.replace('hover:bg-indigo-500', 'hover:bg-red-500');
+                icon.innerText = '⏹️';
+                animateLoop();
+            }
+        }
+
+        function animateLoop() {
+            if (!isAnimating) return;
+            
+            currentPhase += 0.03; // Rotation Speed
+            const isTangentFound = renderSpirals(currentPhase, true);
+
+            if (isTangentFound) {
+                // Tangency detected! Stop animation.
+                toggleAnimation(); 
+                document.getElementById('tangentList').innerHTML = 
+                    `<div class="py-2 border-b border-green-700 bg-green-900/30 flex justify-between items-center px-2 rounded mt-1">
+                        <span class="text-green-400 font-bold text-lg glow-text">🎯 ${isTangentFound.y.toFixed(2)}</span>
+                        <span class="text-xs text-white">مماس کامل</span>
+                    </div>` + document.getElementById('tangentList').innerHTML;
+            } else {
+                animationId = requestAnimationFrame(animateLoop);
+            }
+        }
+
+        function renderSpirals(phase, fastRender) {
+            const pivotsText = document.getElementById('pivotsInput').value;
+            const pivots = pivotsText.split('\n').map(p => parseFloat(p.trim())).filter(p => !isNaN(p));
+            if (pivots.length < 2) return false;
+
+            const timeInterval = parseFloat(document.getElementById('timeInterval').value) || 60;
+            const spiralType = document.getElementById('spiralType').value;
+            const stepMethod = document.getElementById('stepMethod').value;
+            const manualStep = parseFloat(document.getElementById('manualStep').value) || 1000;
+
+            const traces = [];
+            const spiralData = []; 
+
+            // 1. Pivot Trace
+            const pivotX = [], pivotY = [];
+            for (let i = 0; i < pivots.length; i++) {
+                pivotX.push(i * timeInterval);
+                pivotY.push(pivots[i]);
+            }
+            traces.push({
+                x: pivotX, y: pivotY, mode: 'lines+markers', name: 'پیووت‌ها',
+                line: { color: '#ffffff', width: 2, dash: 'dot' },
+                marker: { color: '#fbbf24', size: 10, symbol: 'diamond' },
+                hoverinfo: 'none'
+            });
+
+            // 2. Spiral Generation
+            const thetaMax = 8 * Math.PI; 
+            // در حالت انیمیشن رزولوشن را پایین می‌آوریم تا 60FPS بگیریم
+            const steps = fastRender ? 250 : 1080; 
+
+            for (let i = 0; i < pivots.length; i++) {
+                const centerX = i * timeInterval;
+                const centerY = pivots[i];
+                
+                let b = manualStep;
+                if (stepMethod !== 'manual') {
+                    const nextI = i < pivots.length - 1 ? i + 1 : i - 1;
+                    const dx = timeInterval;
+                    const dy = pivots[nextI] - pivots[i];
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    b = (stepMethod === 'autofibo') ? dist * 0.618 : dist;
+                }
+
+                if (spiralType === 'golden') b = b * 0.05; 
+
+                const pts = [];
+                const sx = [], sy = [];
+
+                for (let j = 0; j <= steps; j++) {
+                    const theta = (j / steps) * thetaMax;
+                    let r = 0;
+                    switch(spiralType) {
+                        case 'archimedean': r = (b / (2 * Math.PI)) * theta; break;
+                        case 'golden': r = b * Math.exp(0.3063489 * theta); break;
+                        case 'fermat': r = b * Math.sqrt(theta); break;
+                    }
+
+                    // اعمال فاز چرخش به زاویه
+                    const px = centerX + r * Math.cos(theta + phase);
+                    const py = centerY + r * Math.sin(theta + phase);
+                    
+                    sx.push(px); sy.push(py);
+                    pts.push({x: px, y: py});
+                }
+                spiralData.push(pts);
+                traces.push({
+                    x: sx, y: sy, mode: 'lines', name: `اسپیرال ${i+1}`,
+                    line: { width: fastRender ? 1 : 1.5 }, opacity: 0.8, hoverinfo: 'none'
+                });
+            }
+
+            // 3. Find Intersections & Tangency
+            let exactTangentPoint = null;
+            const tangencyAngleThreshold = 4.0; // اگر زاویه کمتر از ۴ درجه بود مماس تلقی می‌شود
+
+            const validIntersections = [];
+
+            for (let i = 0; i < spiralData.length; i++) {
+                for (let j = i + 1; j < spiralData.length; j++) {
+                    const spiralA = spiralData[i];
+                    const spiralB = spiralData[j];
+
+                    for (let a = 0; a < spiralA.length - 1; a++) {
+                        for (let b = 0; b < spiralB.length - 1; b++) {
+                            const intersect = getIntersection(spiralA[a], spiralA[a+1], spiralB[b], spiralB[b+1]);
+                            if (intersect) {
+                                validIntersections.push(intersect);
+                                
+                                // چک کردن مماس فقط در حالت انیمیشن برای توقف هوشمند
+                                if (fastRender && !exactTangentPoint) {
+                                    const angle = getIntersectionAngle(spiralA[a], spiralA[a+1], spiralB[b], spiralB[b+1]);
+                                    if (angle < tangencyAngleThreshold) {
+                                        exactTangentPoint = intersect;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 4. Trace Intersections
+            if (validIntersections.length > 0 && !fastRender) {
+                traces.push({
+                    x: validIntersections.map(p => p.x),
+                    y: validIntersections.map(p => p.y),
+                    mode: 'markers', name: 'نقاط تقاطع',
+                    marker: { color: 'rgba(255, 255, 255, 0.4)', size: 5 }
+                });
+            }
+
+            if (exactTangentPoint && !fastRender) {
+                 traces.push({
+                    x: [exactTangentPoint.x],
+                    y: [exactTangentPoint.y],
+                    mode: 'markers', name: 'گره مماس کامل',
+                    marker: { color: '#ef4444', size: 14, symbol: 'cross', line: {color:'white', width:2} }
+                });
+            }
+
+            // 5. Render
+            const layout = {
+                paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(30,41,59,0.5)',
+                font: { color: '#f8fafc', family: 'Tahoma' },
+                title: `تحلیل رزونانس - فاز چرخش: ${(phase * 180 / Math.PI).toFixed(1)}°`,
+                xaxis: { title: 'زمان (دقیقه)', gridcolor: '#334155', zerolinecolor: '#475569' },
+                yaxis: { title: 'قیمت (Price)', gridcolor: '#334155', zerolinecolor: '#475569' },
+                margin: { l: 60, r: 20, t: 50, b: 50 },
+                showlegend: false,
+                datarevision: phase // forces plotly update
+            };
+
+            if (!hasChartInit) {
+                Plotly.newPlot('chartDiv', traces, layout, {responsive: true});
+                hasChartInit = true;
+            } else {
+                Plotly.react('chartDiv', traces, layout);
+            }
+
+            return exactTangentPoint;
+        }
+
+        // Init
+        window.onload = calculateStatic;
+    </script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "generation": 0,
+  "birth_time": "2026-08-21T09:07:24.046967",
+  "corpus_size": 60541,
+  "learning_history": [
+    {
+      "time": "2026-08-21T09:07:36.788160",
+      "source": "internet",
+      "chars": 60541,
+      "generation": 0
+    }
+  ]
+}

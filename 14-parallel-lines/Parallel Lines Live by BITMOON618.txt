@@ -1,0 +1,128 @@
+//@version=5
+indicator("Parallel Lines Live{Morindok} by BITMOON618", overlay=true, max_lines_count=100)
+// تنظیمات کاربر
+i_step_mult = input.float(1.0, "ضریب گسترش فیبوناچی", step=0.1)
+
+// --- مبنای هندسی شبکه (بدون زمان، مبتنی بر فرکتال) ---
+var float phi_ratio = 1.0 + (0.001618 * i_step_mult)
+
+// حافظه تحلیل گذشته چارت
+var touch_map = map.new<int, int>()
+var bull_map  = map.new<int, int>()
+var bear_map  = map.new<int, int>()
+
+// --- سنجش احتمالات تا قبل از زمان برخورد ---
+// شرط زیر باعث می‌شود کندل لایو (که در حال نوسان است) در آمار محاسبه نشود 
+// درصدها تا ثانیه آخرِ قبل از برخورد سنجیده می‌شوند و دست‌نخورده باقی می‌مانند
+bool update_history = barstate.ishistory or barstate.isconfirmed
+
+if update_history
+    if low > 0 and high > 0
+        int min_N = int(math.ceil(math.log(low) / math.log(phi_ratio)))
+        int max_N = int(math.floor(math.log(high) / math.log(phi_ratio)))
+        
+        if min_N <= max_N
+            for i = min_N to max_N
+                float lvl = math.pow(phi_ratio, i)
+                
+                // ثبت دیتای برخورد و پیروزی در تاریخچه
+                int current_tc = touch_map.get(i)
+                touch_map.put(i, na(current_tc) ? 1 : current_tc + 1)
+                
+                if close > lvl
+                    int current_bull = bull_map.get(i)
+                    bull_map.put(i, na(current_bull) ? 1 : current_bull + 1)
+                else if close < lvl
+                    int current_bear = bear_map.get(i)
+                    bear_map.put(i, na(current_bear) ? 1 : current_bear + 1)
+
+// --- رسم خطوط و پردازش برخورد لایو (قطعی شدن) ---
+if barstate.islast
+    // شناسایی نزدیک‌ترین خطوط مقاومت (بالا) و حمایت (پایین)
+    int below_idx = int(math.floor(math.log(close) / math.log(phi_ratio)))
+    int above_idx = int(math.ceil(math.log(close) / math.log(phi_ratio)))
+    
+    if below_idx == above_idx
+        above_idx += 1
+
+    int center_N = int(math.round(math.log(close) / math.log(phi_ratio)))
+    
+    // رسم خطوط هندسی
+    for i = center_N - 50 to center_N + 49
+        float lvl = math.pow(phi_ratio, i)
+        
+        color line_col = color.new(#d4af37, 75)
+        int line_wid = 1
+        
+        if i == above_idx
+            line_col := color.new(color.red, 20)
+            line_wid := 2
+        else if i == below_idx
+            line_col := color.new(color.green, 20)
+            line_wid := 2
+            
+        line.new(bar_index, lvl, bar_index + 10, lvl, color=line_col, width=line_wid, extend=extend.right)
+        
+    // --- جدول وضعیت و اعلام قطعی شدن سیگنال ---
+    var table prob_table = table.new(position.top_right, 4, 12, border_width=1, border_color=color.rgb(40, 40, 40))
+    
+    color bg_header = color.rgb(15, 15, 15)
+    color text_header = color.rgb(212, 175, 55)
+    
+    table.cell(prob_table, 0, 0, "سطح هندسی", bgcolor=bg_header, text_color=text_header)
+    table.cell(prob_table, 1, 0, "وضعیت تحلیل", bgcolor=bg_header, text_color=text_header)
+    table.cell(prob_table, 2, 0, "صعود قطعی", bgcolor=bg_header, text_color=text_header)
+    table.cell(prob_table, 3, 0, "نزول قطعی", bgcolor=bg_header, text_color=text_header)
+
+    int row = 1
+    for i = center_N + 5 to center_N - 5
+        float lvl = math.pow(phi_ratio, i)
+        
+        // استخراج احتمالات قفل شده
+        int tc = touch_map.get(i)
+        int bull = bull_map.get(i)
+        int bear = bear_map.get(i)
+        
+        tc := na(tc) ? 0 : tc
+        bull := na(bull) ? 0 : bull
+        bear := na(bear) ? 0 : bear
+        
+        float bull_prob = tc > 0 ? (float(bull) / float(tc)) * 100.0 : 0.0
+        float bear_prob = tc > 0 ? (float(bear) / float(tc)) * 100.0 : 0.0
+        
+        // تشخیص برخورد لایو قیمت با خط
+        bool is_touched_now = (high >= lvl) and (low <= lvl)
+        
+        string status_text = ""
+        color bg_c = color.rgb(25, 25, 25)
+        color text_c = color.rgb(180, 180, 180)
+        
+        // منطق نمایش وضعیت
+        if is_touched_now
+            // لحظه برخورد: احتمال قطعی شد
+            status_text := "💥 قطعی شد"
+            bg_c := color.rgb(184, 134, 11) // پس‌زمینه طلایی تیره برای هایلایت برخورد لایو
+            text_c := color.white
+        else if i == above_idx
+            status_text := "مقاومت (در حال سنجش)"
+            bg_c := color.new(color.red, 70)
+            text_c := color.white
+        else if i == below_idx
+            status_text := "حمایت (در حال سنجش)"
+            bg_c := color.new(color.green, 80)
+            text_c := color.white
+        else
+            status_text := "آماده برخورد"
+            
+        color bg_bull = color.rgb(10, 40, 10)
+        color text_bull = color.rgb(80, 255, 80)
+        
+        color bg_bear = color.rgb(40, 10, 10)
+        color text_bear = color.rgb(255, 80, 80)
+        
+        table.cell(prob_table, 0, row, str.tostring(math.round(lvl, 5)), bgcolor=bg_c, text_color=text_c)
+        table.cell(prob_table, 1, row, status_text, bgcolor=bg_c, text_color=text_c)
+        table.cell(prob_table, 2, row, str.tostring(math.round(bull_prob, 1)) + "%", bgcolor=bg_bull, text_color=text_bull)
+        table.cell(prob_table, 3, row, str.tostring(math.round(bear_prob, 1)) + "%", bgcolor=bg_bear, text_color=text_bear)
+        
+        row += 1

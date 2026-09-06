@@ -1,0 +1,120 @@
+//@version=5
+indicator("Super Mirror Guide {Morindok}", overlay=true)
+
+// ==========================================
+//  ‰ŸÌ„«  «’·Ì
+// ==========================================
+pivot_time = input.time(0, title="Pivot Point", confirm=true)
+guide_min  = input.int(2,  title="Fibo Min (bars)", minval=1,  group="Fibonacci Guide")
+guide_max  = input.int(21, title="Fibo Max (bars)", minval=2,  group="Fibonacci Guide")
+tf_input   = input.timeframe("", title="Timeframe")
+
+guide_color1 = input.color(color.new(color.yellow, 0), title="Point 1 Line Color", group="Display")
+guide_color2 = input.color(color.new(color.orange, 0), title="Point 2 Line Color", group="Display")
+lbl_size     = input.string("small", title="Label Size", options=["tiny", "small", "normal"], group="Display")
+
+// ==========================================
+// ”«Œ  œ‰»«·Â ›Ì»Ê‰«çÌ
+// ==========================================
+var array<int> fibSeq = array.new_int()
+if barstate.isfirst
+    a = 1
+    b = 1
+    array.push(fibSeq, a)
+    array.push(fibSeq, b)
+    for i = 2 to 60
+        c = a + b
+        if c > guide_max * 3
+            break
+        if c >= guide_min
+            array.push(fibSeq, c)
+        a := b
+        b := c
+
+// ==========================================
+// „Õ«”»Â nextFib œÌ‰«„Ìò
+// ==========================================
+var int nextFib   = na
+var int stepCount = na
+
+if barstate.islast and array.size(fibSeq) >= 2
+    idxMin      = -1
+    idxMax      = -1
+    bestMinDiff = 999999
+    bestMaxDiff = 999999
+    for i = 0 to array.size(fibSeq) - 1
+        v       = array.get(fibSeq, i)
+        diffMin = math.abs(v - guide_min)
+        diffMax = math.abs(v - guide_max)
+        if diffMin < bestMinDiff
+            bestMinDiff := diffMin
+            idxMin      := i
+        if diffMax < bestMaxDiff
+            bestMaxDiff := diffMax
+            idxMax      := i
+    if idxMin >= 0 and idxMax >= 0 and idxMax > idxMin
+        stepCount := idxMax - idxMin
+        nextIdx    = idxMax + stepCount
+        if nextIdx < array.size(fibSeq)
+            nextFib := array.get(fibSeq, nextIdx)
+        else
+            lastA = array.get(fibSeq, array.size(fibSeq) - 2)
+            lastB = array.get(fibSeq, array.size(fibSeq) - 1)
+            for i = array.size(fibSeq) to nextIdx
+                c     = lastA + lastB
+                lastA := lastB
+                lastB := c
+            nextFib := lastB
+
+// ==========================================
+// „Õ«”»Â “„«‰ œÊ Œÿ
+// ==========================================
+bar_ms   = timeframe.in_seconds(tf_input == "" ? timeframe.period : tf_input) * 1000
+t1_guide = pivot_time + math.round(nextFib * 0.618) * bar_ms
+t2_guide = pivot_time + nextFib * bar_ms
+
+// ==========================================
+// —”„ Œÿ ⁄„ÊœÌ pivot
+// ==========================================
+var line pivot_line = na
+if barstate.islast and pivot_time > 0
+    line.delete(pivot_line)
+    pivot_line := line.new(pivot_time, low, pivot_time, high, xloc=xloc.bar_time, extend=extend.both, color=color.new(color.gray, 60), style=line.style_dotted, width=1)
+
+// ==========================================
+// —”„ œÊ Œÿ —«Â‰„«
+// ==========================================
+var line line1 = na
+var line line2 = na
+
+if barstate.islast and not na(nextFib) and pivot_time > 0
+    line.delete(line1)
+    line.delete(line2)
+    line1 := line.new(t1_guide, low, t1_guide, high, xloc=xloc.bar_time, extend=extend.both, color=guide_color1, style=line.style_dashed, width=2)
+    line2 := line.new(t2_guide, low, t2_guide, high, xloc=xloc.bar_time, extend=extend.both, color=guide_color2, style=line.style_dashed, width=2)
+
+// ==========================================
+// ·Ì»·ùÂ«Ì —«Â‰„«
+// ==========================================
+var label lbl_pivot = na
+var label lbl1      = na
+var label lbl2      = na
+
+sz = lbl_size == "tiny" ? size.tiny : lbl_size == "normal" ? size.normal : size.small
+
+if barstate.islast and not na(nextFib) and pivot_time > 0
+    label.delete(lbl_pivot)
+    label.delete(lbl1)
+    label.delete(lbl2)
+
+    lbl_pivot := label.new(pivot_time, high, "Pivot", xloc=xloc.bar_time, style=label.style_label_down, color=color.new(color.gray, 40), textcolor=color.white, size=sz)
+
+    lbl1 := label.new(t1_guide, high,
+             "? Point 1\nFib◊0.618\n(" + str.tostring(math.round(nextFib * 0.618)) + " bars)",
+             xloc=xloc.bar_time, style=label.style_label_down,
+             color=guide_color1, textcolor=color.black, size=sz)
+
+    lbl2 := label.new(t2_guide, high,
+             "? Point 2\nFib◊1.0\n(" + str.tostring(nextFib) + " bars)",
+             xloc=xloc.bar_time, style=label.style_label_down,
+             color=guide_color2, textcolor=color.black, size=sz)

@@ -1,0 +1,162 @@
+//@version=6
+indicator("Bmoon System Signals{Morindok}", overlay=true, max_lines_count=500)
+n = input.int(100, title="Periods", minval=2)
+lineMode = input.string("Unified Highs/Lows (Yellow/Green)", title="Line Mode", options=["Separated Individual (Yellow/Green)", "Individual Chronological (White)", "Individual Alternating (Orange)", "Unified Alternating (Red)", "Unified Highs/Lows (Yellow/Green)"])
+useLog = input.bool(true, title="Use Logarithmic Scale")
+
+mirrorLevel1 = input.price(0, title="P1 Mirror Level", confirm=true)
+selectedTime1 = input.time(0, title="P1 Reference Time", confirm=true)
+
+mirrorLevel2 = input.price(0, title="P2 Mirror Level", confirm=true)
+selectedTime2 = input.time(0, title="P2 Reference Time", confirm=true)
+
+mOpen1  = useLog ? (mirrorLevel1 * mirrorLevel1 / open)  : float(2.0 * mirrorLevel1 - open)
+mHigh1  = useLog ? (mirrorLevel1 * mirrorLevel1 / low)   : float(2.0 * mirrorLevel1 - low)
+mLow1   = useLog ? (mirrorLevel1 * mirrorLevel1 / high)  : float(2.0 * mirrorLevel1 - high)
+mClose1 = useLog ? (mirrorLevel1 * mirrorLevel1 / close) : float(2.0 * mirrorLevel1 - close)
+
+mOpen2  = useLog ? (mirrorLevel2 * mirrorLevel2 / open)  : float(2.0 * mirrorLevel2 - open)
+mHigh2  = useLog ? (mirrorLevel2 * mirrorLevel2 / low)   : float(2.0 * mirrorLevel2 - low)
+mLow2   = useLog ? (mirrorLevel2 * mirrorLevel2 / high)  : float(2.0 * mirrorLevel2 - high)
+mClose2 = useLog ? (mirrorLevel2 * mirrorLevel2 / close) : float(2.0 * mirrorLevel2 - close)
+
+bool u_dn = true, bool u_u0 = true, bool u_u1 = true, bool u_u2 = true, bool u_u3 = true, bool u_u4 = true
+bool d_dn = true, bool d_u0 = true, bool d_u1 = true, bool d_u2 = true, bool d_u3 = true, bool d_u4 = true
+
+for i = 1 to n
+    u_dn := u_dn and (high[n-i] < high[n])
+    u_u0 := u_u0 and (high[n+i] < high[n])
+    u_u1 := u_u1 and (high[n+1] <= high[n] and high[n+i+1] < high[n])
+    u_u2 := u_u2 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i+2] < high[n])
+    u_u3 := u_u3 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i+3] < high[n])
+    u_u4 := u_u4 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i+4] < high[n])
+    
+    d_dn := d_dn and (low[n-i] > low[n])
+    d_u0 := d_u0 and (low[n+i] > low[n])
+    d_u1 := d_u1 and (low[n+1] >= low[n] and low[n+i+1] > low[n])
+    d_u2 := d_u2 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i+2] > low[n])
+    d_u3 := d_u3 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i+3] > low[n])
+    d_u4 := d_u4 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i+4] > low[n])
+
+flagUp = u_u0 or u_u1 or u_u2 or u_u3 or u_u4
+flagDn = d_u0 or d_u1 or d_u2 or d_u3 or d_u4
+
+upFractal1 = u_dn and flagUp and time[n] < selectedTime1
+downFractal1 = d_dn and flagDn and time[n] < selectedTime1
+upFractal2 = u_dn and flagUp and time[n] < selectedTime2
+downFractal2 = d_dn and flagDn and time[n] < selectedTime2
+
+var int refBarIndex1 = na, var int refBarIndex2 = na
+if time <= selectedTime1
+    refBarIndex1 := bar_index
+if time <= selectedTime2
+    refBarIndex2 := bar_index
+
+var upFracIdx1 = array.new_int(0), var dnFracIdx1 = array.new_int(0)
+if upFractal1
+    array.push(upFracIdx1, int(bar_index - n))
+if downFractal1
+    array.push(dnFracIdx1, int(bar_index - n))
+
+var upFracIdx2 = array.new_int(0), var dnFracIdx2 = array.new_int(0)
+if upFractal2
+    array.push(upFracIdx2, int(bar_index - n))
+if downFractal2
+    array.push(dnFracIdx2, int(bar_index - n))
+
+bool p1Up = not na(refBarIndex1) and bar_index > refBarIndex1 and array.indexof(upFracIdx1, 2 * refBarIndex1 - bar_index) >= 0
+bool p1Dn = not na(refBarIndex1) and bar_index > refBarIndex1 and array.indexof(dnFracIdx1, 2 * refBarIndex1 - bar_index) >= 0
+bool p2Up = not na(refBarIndex2) and bar_index > refBarIndex2 and array.indexof(upFracIdx2, 2 * refBarIndex2 - bar_index) >= 0
+bool p2Dn = not na(refBarIndex2) and bar_index > refBarIndex2 and array.indexof(dnFracIdx2, 2 * refBarIndex2 - bar_index) >= 0
+
+var chart.point uniLastYellowPt = na, var chart.point uniLastGreenPt = na
+var int yPrevX = na, var float yPrevY = na, var int yCurrX = na, var float yCurrY = na
+var int gPrevX = na, var float gPrevY = na, var int gCurrX = na, var float gCurrY = na
+
+var float prevPrevIntersectX = na, var float prevPrevIntersectY = na
+var float prevIntersectX = na, var float prevIntersectY = na
+
+bool triggerIntersectionCheck = false
+
+var float[] activeLineY = array.new_float(0)
+var int[] activeLineConfirmX = array.new_int(0)
+
+if lineMode == "Unified Highs/Lows (Yellow/Green)"
+    if p1Up
+        chart.point pt = chart.point.from_index(bar_index, mHigh1)
+        uniLastYellowPt := pt, yPrevX := yCurrX, yPrevY := yCurrY, yCurrX := bar_index, yCurrY := mHigh1, triggerIntersectionCheck := true
+    if p2Up
+        chart.point pt = chart.point.from_index(bar_index, mHigh2)
+        uniLastYellowPt := pt, yPrevX := yCurrX, yPrevY := yCurrY, yCurrX := bar_index, yCurrY := mHigh2, triggerIntersectionCheck := true
+    if p1Dn
+        chart.point pt = chart.point.from_index(bar_index, mLow1)
+        uniLastGreenPt := pt, gPrevX := gCurrX, gPrevY := gCurrY, gCurrX := bar_index, gCurrY := mLow1, triggerIntersectionCheck := true
+    if p2Dn
+        chart.point pt = chart.point.from_index(bar_index, mLow2)
+        uniLastGreenPt := pt, gPrevX := gCurrX, gPrevY := gCurrY, gCurrX := bar_index, gCurrY := mLow2, triggerIntersectionCheck := true
+
+    if triggerIntersectionCheck and not na(yPrevX) and not na(yCurrX) and not na(gPrevX) and not na(gCurrX)
+        if (yCurrX != yPrevX) and (gCurrX != gPrevX)
+            float yp = useLog ? math.log(yPrevY) : yPrevY
+            float yc = useLog ? math.log(yCurrY) : yCurrY
+            float gp = useLog ? math.log(gPrevY) : gPrevY
+            float gc = useLog ? math.log(gCurrY) : gCurrY
+            float m1 = (yc - yp) / (yCurrX - yPrevX)
+            float m2 = (gc - gp) / (gCurrX - gPrevX)
+            if m1 != m2
+                float ix = (m1 * yPrevX - m2 * gPrevX + gp - yp) / (m1 - m2)
+                if ix >= math.max(yPrevX, gPrevX) and ix <= math.min(yCurrX, gCurrX)
+                    float iy_val = m1 * (ix - yPrevX) + yp
+                    float iy = useLog ? math.exp(iy_val) : iy_val
+                    float startX = ix
+                    bool isShifted = false
+                    
+                    if not na(prevIntersectX)
+                        if not na(prevPrevIntersectX) and prevIntersectX != prevPrevIntersectX
+                            float prevY_v = useLog ? math.log(prevIntersectY) : prevIntersectY
+                            float prevPrevY_v = useLog ? math.log(prevPrevIntersectY) : prevPrevIntersectY
+                            float currentY_v = useLog ? math.log(iy) : iy
+                            float m_dashed = (prevY_v - prevPrevY_v) / (prevIntersectX - prevPrevIntersectX)
+                            
+                            if m_dashed != 0
+                                float calcX = prevPrevIntersectX + (currentY_v - prevPrevY_v) / m_dashed
+                                startX := math.max(ix, calcX)
+                                if calcX > ix
+                                    isShifted := true
+                    
+                    if startX > bar_index + 490
+                        startX := bar_index + 490
+                        
+                    // ÇÖÇÝå ÔÏä ÎØ Èå áíÓÊ ÈÑÇí ÈÑÑÓí ÈÑÎæÑÏ
+                    array.push(activeLineY, iy)
+                    array.push(activeLineConfirmX, bar_index)
+                    
+                    prevPrevIntersectX := prevIntersectX
+                    prevPrevIntersectY := prevIntersectY
+                    prevIntersectX := ix
+                    prevIntersectY := iy
+
+bool buySignal = false
+bool sellSignal = false
+
+int arrSize = array.size(activeLineY)
+if arrSize > 0
+    for i = arrSize - 1 to 0
+        float ly = array.get(activeLineY, i)
+        int confirmX = array.get(activeLineConfirmX, i)
+        
+        if bar_index > confirmX
+            bool touchFromAbove = (mLow1[1] > ly and mLow1 <= ly) or (mLow2[1] > ly and mLow2 <= ly)
+            bool touchFromBelow = (mHigh1[1] < ly and mHigh1 >= ly) or (mHigh2[1] < ly and mHigh2 >= ly)
+            
+            if touchFromAbove
+                sellSignal := true 
+                array.remove(activeLineY, i)
+                array.remove(activeLineConfirmX, i)
+            else if touchFromBelow
+                buySignal := true 
+                array.remove(activeLineY, i)
+                array.remove(activeLineConfirmX, i)
+
+plotshape(buySignal, title="Buy Signal", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small)
+plotshape(sellSignal, title="Sell Signal", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small)

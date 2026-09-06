@@ -1,0 +1,124 @@
+//@version=6
+indicator("Fractal Field Smoother", shorttitle="FFS", format=format.price, precision=0, overlay=true, max_lines_count=500)
+
+n         = input.int(2,    "Periods",        minval=2)
+mass      = input.float(6.0,"Field Strength", minval=0.1, maxval=20.0, step=0.1)
+smooth_k  = input.float(0.3,"Smooth Speed",   minval=0.01, maxval=1.0,  step=0.01)
+show_orig = input.bool(true, "Show Original")
+show_band = input.bool(true, "Show Band")
+phi       = 1.6180339887
+
+// ??? ›—«ò «· ÊÌ·Ì«„“ ??????????????????????????????????????????
+bool upflagDownFrontier  = true
+bool upflagUpFrontier0   = true
+bool upflagUpFrontier1   = true
+bool upflagUpFrontier2   = true
+bool upflagUpFrontier3   = true
+bool upflagUpFrontier4   = true
+for i = 1 to n
+    upflagDownFrontier := upflagDownFrontier and (high[n-i] < high[n])
+    upflagUpFrontier0  := upflagUpFrontier0  and (high[n+i] < high[n])
+    upflagUpFrontier1  := upflagUpFrontier1  and (high[n+1] <= high[n] and high[n+i+1] < high[n])
+    upflagUpFrontier2  := upflagUpFrontier2  and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i+2] < high[n])
+    upflagUpFrontier3  := upflagUpFrontier3  and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i+3] < high[n])
+    upflagUpFrontier4  := upflagUpFrontier4  and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i+4] < high[n])
+flagUpFrontier = upflagUpFrontier0 or upflagUpFrontier1 or upflagUpFrontier2 or upflagUpFrontier3 or upflagUpFrontier4
+upFractal      = upflagDownFrontier and flagUpFrontier
+
+bool downflagDownFrontier = true
+bool downflagUpFrontier0  = true
+bool downflagUpFrontier1  = true
+bool downflagUpFrontier2  = true
+bool downflagUpFrontier3  = true
+bool downflagUpFrontier4  = true
+for i = 1 to n
+    downflagDownFrontier := downflagDownFrontier and (low[n-i] > low[n])
+    downflagUpFrontier0  := downflagUpFrontier0  and (low[n+i] > low[n])
+    downflagUpFrontier1  := downflagUpFrontier1  and (low[n+1] >= low[n] and low[n+i+1] > low[n])
+    downflagUpFrontier2  := downflagUpFrontier2  and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i+2] > low[n])
+    downflagUpFrontier3  := downflagUpFrontier3  and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i+3] > low[n])
+    downflagUpFrontier4  := downflagUpFrontier4  and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i+4] > low[n])
+flagDownFrontier = downflagUpFrontier0 or downflagUpFrontier1 or downflagUpFrontier2 or downflagUpFrontier3 or downflagUpFrontier4
+downFractal      = downflagDownFrontier and flagDownFrontier
+
+// ??? –ŒÌ—Â œ«Ì—ÂùÂ« ????????????????????????????????????????????
+var float[] circ_cy = array.new_float(20, na)
+var float[] circ_r  = array.new_float(20, na)
+var int   last_frac_time  = na
+var float last_frac_price = na
+
+if upFractal or downFractal
+    int   curr_time  = time[n]
+    float curr_price = upFractal ? high[n] : low[n]
+    if not na(last_frac_time)
+        float r_time  = math.abs(curr_time  - last_frac_time)
+        float r_price = math.abs(curr_price - last_frac_price)
+        if r_time > 0 and r_price > 0
+            float cy_mid = (last_frac_price + curr_price) / 2.0
+            array.unshift(circ_cy, cy_mid)
+            array.unshift(circ_r,  r_price)
+            if array.size(circ_cy) > 20
+                array.pop(circ_cy)
+                array.pop(circ_r)
+            // —”„ œ«Ì—Â
+            int   prev_cx = na
+            float prev_cy = na
+            for i = 0 to 36
+                float angle = float(i) * (2.0 * math.pi / 36.0)
+                int   lx    = math.round(last_frac_time + (r_time  * math.cos(angle)))
+                float ly    = cy_mid                   + (r_price * math.sin(angle))
+                if not na(prev_cx)
+                    line.new(prev_cx, prev_cy, lx, ly, xloc=xloc.bar_time, color=color.new(color.blue, 60), width=1)
+                prev_cx := lx
+                prev_cy := ly
+    last_frac_time  := curr_time
+    last_frac_price := curr_price
+
+// ??? „Ìœ«‰ ê—«‰‘Ì ?????????????????????????????????????????????
+// Ã„⁄ Ê“‰Ì ê«Ê”Ì «“ Â„Â œ«Ì—ÂùÂ«
+p_sum = 0.0
+w_sum = 0.0
+for i = 0 to array.size(circ_cy) - 1
+    cy_i = array.get(circ_cy, i)
+    r_i  = array.get(circ_r,  i)
+    if not na(cy_i) and not na(r_i) and r_i > 0
+        d = close - cy_i
+        w = mass * math.exp(-(d * d) / (2.0 * r_i * r_i))
+        p_sum += cy_i * w
+        w_sum += w
+
+field_price = w_sum > 1e-8 ? p_sum / w_sum : close
+
+// ??? ›Ì· — IIR  ÿ»ÌﬁÌ ?????????????????????????????????????????
+// ? òÊçÌò = ‰—„ù — (Õ«›ŸÂ »Ì‘ —)
+// ? »“—ê  = Ê«ò‰‘ ”—Ì⁄ù —
+// Êﬁ Ì œ«Œ· „Ìœ«‰ ﬁÊÌù«Ì„ ? ? òÊçÌòù — ? ‰—„ù —
+var float p_smooth = na
+if na(p_smooth)
+    p_smooth := close
+
+// ﬁœ—  „Ìœ«‰ œ— „Êﬁ⁄Ì  ›⁄·Ì
+field_strength = w_sum / (w_sum + mass)// »Ì‰ 0 Ê 1
+// ?: Êﬁ Ì „Ìœ«‰ ﬁÊÌùÂ ‰—„ù —° Êﬁ Ì ÷⁄Ì›Â ”—Ì⁄ù —
+alpha = smooth_k * (1.0 - field_strength * 0.85)
+alpha := math.max(alpha, 0.01)
+
+// ›Ì· — »«“ê‘ Ì: »Â ”„  field_price ò‘ÌœÂ „Ìù‘Â ‰Â close Œ«„
+p_smooth := (1.0 - alpha) * p_smooth + alpha * field_price
+
+// ??? »«‰œ ?????????????????????????????????????????????????????
+atr14   = ta.atr(14)
+grad    = p_smooth - p_smooth[1]
+kappa   = math.abs(grad - grad[1]) / math.pow(1.0 + grad * grad, 1.5)
+band_w  = atr14 * 0.9 / (kappa * 60.0 + 1.0)
+p_upper = p_smooth + band_w * phi
+p_lower = p_smooth - band_w / phi
+
+// ??? —”„ ??????????????????????????????????????????????????????
+line_col = grad >= 0.0 ? color.new(color.aqua, 0) : color.new(color.orange, 0)
+
+plot(show_orig ? close : na, "Original", color=color.new(color.gray, 75), linewidth=1)
+plot(p_smooth, "Gravity Field", color=line_col, linewidth=2)
+pu = plot(show_band ? p_upper : na, "Upper", color=color.new(color.purple, 45), linewidth=1)
+pd = plot(show_band ? p_lower : na, "Lower", color=color.new(color.orange, 45), linewidth=1)
+fill(pu, pd, color=color.new(color.teal, 90))

@@ -1,0 +1,227 @@
+//@version=6
+indicator("Volume Power Zones Live{Morindok} by BITMOON618.txt", overlay=true, max_boxes_count=50, max_labels_count=10)
+
+// ================= ورودی‌ها =================
+lookbackBars      = input.int(6, "تعداد کندل هر دوره (شامل کندل زنده)", minval=2, maxval=20, group="تنظیمات باکس")
+zoneCount         = input.int(7, "تعداد نواحی تقسیم", minval=2, maxval=15, group="تنظیمات باکس")
+edgePadFraction   = input.float(0.35, "میزان حاشیه اطراف کندل‌ها (کسری از یک کندل)", minval=0.0, maxval=1.0, step=0.05, group="تنظیمات باکس")
+
+showHeaderLabel   = input.bool(true, "نمایش لیبل خلاصه بالای باکس حاضر", group="نمایش")
+minPowerForSolid  = input.float(60.0, "حداقل قدرت برای رنگ پررنگ (%)", minval=50.0, maxval=100.0, group="نمایش")
+
+showTable         = input.bool(true, "نمایش جدول مقایسه قدرت پول", group="نمایش")
+tablePosInput     = input.string("top_right", "موقعیت جدول", options=["top_left", "top_center", "top_right", "middle_right", "middle_center", "bottom_right", "bottom_center", "bottom_left", "middle_left"], group="نمایش")
+
+colorBuyStrong    = input.color(color.new(#00c853, 0),  "رنگ خرید قوی", group="رنگ‌ها")
+colorBuyWeak      = input.color(color.new(#00c853, 70), "رنگ خرید ضعیف", group="رنگ‌ها")
+colorSellStrong   = input.color(color.new(#ff1744, 0),  "رنگ فروش قوی", group="رنگ‌ها")
+colorSellWeak     = input.color(color.new(#ff1744, 70), "رنگ فروش ضعیف", group="رنگ‌ها")
+colorBorder       = input.color(color.new(#787b86, 0), "رنگ حاشیه", group="رنگ‌ها")
+colorNeutralText  = input.color(color.white, "رنگ متن", group="رنگ‌ها")
+
+// ================= توابع کمکی =================
+f_formatVol(v) =>
+    string _txt = na
+    if v >= 1000000
+        _txt := str.tostring(v / 1000000, "#.##") + "M"
+    else if v >= 1000
+        _txt := str.tostring(v / 1000, "#.##") + "K"
+    else
+        _txt := str.tostring(v, "#")
+    _txt
+
+getPosition(string pos) =>
+    switch pos
+        "top_left"      => position.top_left
+        "top_center"    => position.top_center
+        "top_right"     => position.top_right
+        "middle_right"  => position.middle_right
+        "middle_center" => position.middle_center
+        "bottom_right"  => position.bottom_right
+        "bottom_center" => position.bottom_center
+        "bottom_left"   => position.bottom_left
+        "middle_left"   => position.middle_left
+        => position.top_right // مقدار پیش‌فرض
+
+// ================= اشیاء گرافیکی پایدار =================
+var array<box> prevZoneBoxes = array.new<box>()
+var array<box> currZoneBoxes = array.new<box>()
+var box prevOuterBox = na
+var box currOuterBox = na
+var label headerLabel = na
+var table compTable = na
+
+if barstate.isfirst
+    for i = 0 to zoneCount - 1
+        array.push(prevZoneBoxes, box.new(na, na, na, na, xloc=xloc.bar_time, border_color=color.new(colorBorder, 60), bgcolor=color.new(color.gray, 100)))
+        array.push(currZoneBoxes, box.new(na, na, na, na, xloc=xloc.bar_time, border_color=color.new(colorBorder, 60), bgcolor=color.new(color.gray, 100)))
+    prevOuterBox := box.new(na, na, na, na, xloc=xloc.bar_time, border_color=colorBorder, border_width=2, bgcolor=color.new(color.gray, 100))
+    currOuterBox := box.new(na, na, na, na, xloc=xloc.bar_time, border_color=colorBorder, border_width=2, bgcolor=color.new(color.gray, 100))
+    headerLabel := label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_down, color=color.new(color.black, 20), textcolor=colorNeutralText, size=size.small)
+    
+    compTable := table.new(position=getPosition(tablePosInput), columns=4, rows=4, border_width=1, border_color=color.gray, frame_color=color.gray, frame_width=1)
+
+// ta.highest/ta.lowest باید در هر بار (بدون شرط) اجرا بشن وگرنه نتیجه‌شون نامعتبر می‌مونه
+// محاسبه روی 2 برابر دوره برای هم‌ترازی کامل نواحی قیمتی بین دو باکس
+float boxTop    = ta.highest(high, lookbackBars * 2)
+float boxBottom = ta.lowest(low, lookbackBars * 2)
+
+// ================= محاسبات اصلی روی کندل زنده =================
+if barstate.islast and bar_index >= lookbackBars * 2 - 1
+    int tfMs = timeframe.in_seconds() * 1000
+    
+    // زمان‌های باکس حاضر
+    int currLeftTime  = int(time[lookbackBars - 1] - tfMs * edgePadFraction)
+    int currRightTime = int(time + tfMs * (1 + edgePadFraction))
+    
+    // زمان‌های باکس قبل
+    int prevLeftTime  = int(time[lookbackBars * 2 - 1] - tfMs * edgePadFraction)
+    int prevRightTime = int(time[lookbackBars] + tfMs * (1 + edgePadFraction))
+
+    float zoneHeight = (boxTop - boxBottom) / zoneCount
+
+    float currTotalBuy  = 0.0
+    float currTotalSell = 0.0
+    float prevTotalBuy  = 0.0
+    float prevTotalSell = 0.0
+
+    for i = 0 to zoneCount - 1
+        float zLow  = boxBottom + i * zoneHeight
+        float zHigh = zLow + zoneHeight
+
+        float currGreenVol = 0.0
+        float currRedVol   = 0.0
+        float prevGreenVol = 0.0
+        float prevRedVol   = 0.0
+
+        for j = 0 to lookbackBars * 2 - 1
+            float bO = open[j]
+            float bH = high[j]
+            float bL = low[j]
+            float bC = close[j]
+            float bV = volume[j]
+            float bRange = bH - bL
+            float overlap = math.min(bH, zHigh) - math.max(bL, zLow)
+
+            if overlap > 0 or (bRange <= 0 and bC >= zLow and bC <= zHigh)
+                float fraction = bRange > 0 ? overlap / bRange : 1.0
+                float volAlloc = bV * fraction
+                
+                if j < lookbackBars
+                    // محاسبه برای باکس حاضر
+                    if bC >= bO
+                        currGreenVol := currGreenVol + volAlloc
+                    else
+                        currRedVol := currRedVol + volAlloc
+                else
+                    // محاسبه برای باکس قبل
+                    if bC >= bO
+                        prevGreenVol := prevGreenVol + volAlloc
+                    else
+                        prevRedVol := prevRedVol + volAlloc
+
+        // ================= پردازش باکس حاضر =================
+        float currZoneTotal = currGreenVol + currRedVol
+        float currPower = currZoneTotal > 0 ? math.abs(currGreenVol - currRedVol) / currZoneTotal * 100 : 0.0
+        bool currBuyDominant = currGreenVol >= currRedVol
+        currTotalBuy  := currTotalBuy + currGreenVol
+        currTotalSell := currTotalSell + currRedVol
+
+        color currZoneColor = currBuyDominant ? (currPower >= minPowerForSolid ? colorBuyStrong : colorBuyWeak) : (currPower >= minPowerForSolid ? colorSellStrong : colorSellWeak)
+        int currTransparencyVal = int(math.max(40, math.min(90, 90 - currPower * 0.5)))
+        string currZoneText = (currBuyDominant ? "🟢 " : "🔴 ") + str.tostring(currPower, "#.#") + "%" + "\n" + "خرید:" + f_formatVol(currGreenVol) + "\nفروش:" + f_formatVol(currRedVol)
+
+        box currZBox = array.get(currZoneBoxes, i)
+        box.set_lefttop(currZBox, currLeftTime, zHigh)
+        box.set_rightbottom(currZBox, currRightTime, zLow)
+        box.set_bgcolor(currZBox, color.new(currZoneColor, currTransparencyVal))
+        box.set_border_color(currZBox, color.new(colorBorder, 40))
+        box.set_text(currZBox, currZoneText)
+        box.set_text_color(currZBox, colorNeutralText)
+        box.set_text_size(currZBox, size.small)
+        box.set_text_halign(currZBox, text.align_center)
+        box.set_text_valign(currZBox, text.align_center)
+
+        // ================= پردازش باکس قبل =================
+        float prevZoneTotal = prevGreenVol + prevRedVol
+        float prevPower = prevZoneTotal > 0 ? math.abs(prevGreenVol - prevRedVol) / prevZoneTotal * 100 : 0.0
+        bool prevBuyDominant = prevGreenVol >= prevRedVol
+        prevTotalBuy  := prevTotalBuy + prevGreenVol
+        prevTotalSell := prevTotalSell + prevRedVol
+
+        color prevZoneColor = prevBuyDominant ? (prevPower >= minPowerForSolid ? colorBuyStrong : colorBuyWeak) : (prevPower >= minPowerForSolid ? colorSellStrong : colorSellWeak)
+        int prevTransparencyVal = int(math.max(40, math.min(90, 90 - prevPower * 0.5)))
+        string prevZoneText = (prevBuyDominant ? "🟢 " : "🔴 ") + str.tostring(prevPower, "#.#") + "%" + "\n" + "خرید:" + f_formatVol(prevGreenVol) + "\nفروش:" + f_formatVol(prevRedVol)
+
+        box prevZBox = array.get(prevZoneBoxes, i)
+        box.set_lefttop(prevZBox, prevLeftTime, zHigh)
+        box.set_rightbottom(prevZBox, prevRightTime, zLow)
+        box.set_bgcolor(prevZBox, color.new(prevZoneColor, prevTransparencyVal))
+        box.set_border_color(prevZBox, color.new(colorBorder, 40))
+        box.set_text(prevZBox, prevZoneText)
+        box.set_text_color(prevZBox, colorNeutralText)
+        box.set_text_size(prevZBox, size.small)
+        box.set_text_halign(prevZBox, text.align_center)
+        box.set_text_valign(prevZBox, text.align_center)
+
+    // ================= تنظیم باکس‌های بیرونی =================
+    box.set_lefttop(prevOuterBox, prevLeftTime, boxTop)
+    box.set_rightbottom(prevOuterBox, prevRightTime, boxBottom)
+    
+    box.set_lefttop(currOuterBox, currLeftTime, boxTop)
+    box.set_rightbottom(currOuterBox, currRightTime, boxBottom)
+
+    // ================= لیبل بالایی (مخصوص دوره حاضر) =================
+    if showHeaderLabel
+        float grandTotal = currTotalBuy + currTotalSell
+        float grandPower = grandTotal > 0 ? (currTotalBuy - currTotalSell) / grandTotal * 100 : 0.0
+        string headerText = "دوره حاضر: قدرت " + str.tostring(grandPower, "#.#") + "%" + " | خرید:" + f_formatVol(currTotalBuy) + " | فروش:" + f_formatVol(currTotalSell)
+        int midTime = int(math.avg(currLeftTime, currRightTime))
+        label.set_xy(headerLabel, midTime, boxTop + zoneHeight * 0.5)
+        label.set_text(headerLabel, headerText)
+        label.set_textcolor(headerLabel, grandPower >= 0 ? colorBuyStrong : colorSellStrong)
+
+    // ================= جدول مقایسه قدرت پول بین دو باکس =================
+    if showTable
+        float currGrandTotal = currTotalBuy + currTotalSell
+        float currGrandPower = currGrandTotal > 0 ? (currTotalBuy - currTotalSell) / currGrandTotal * 100 : 0.0
+        
+        float prevGrandTotal = prevTotalBuy + prevTotalSell
+        float prevGrandPower = prevGrandTotal > 0 ? (prevTotalBuy - prevTotalSell) / prevGrandTotal * 100 : 0.0
+        
+        float powerDiff = currGrandPower - prevGrandPower
+        float buyDiff = currTotalBuy - prevTotalBuy
+        float sellDiff = currTotalSell - prevTotalSell
+
+        // هدر جدول
+        table.cell(compTable, 0, 0, "معیار", text_color=color.white, text_size=size.small, text_halign=text.align_center, bgcolor=color.new(color.gray, 30))
+        table.cell(compTable, 1, 0, "دوره قبل", text_color=color.white, text_size=size.small, text_halign=text.align_center, bgcolor=color.new(color.gray, 30))
+        table.cell(compTable, 2, 0, "دوره حاضر", text_color=color.white, text_size=size.small, text_halign=text.align_center, bgcolor=color.new(color.gray, 30))
+        table.cell(compTable, 3, 0, "تغییر", text_color=color.white, text_size=size.small, text_halign=text.align_center, bgcolor=color.new(color.gray, 30))
+
+        // ردیف 1: قدرت خالص
+        color pwrColor = currGrandPower >= 0 ? colorBuyStrong : colorSellStrong
+        color prevPwrColor = prevGrandPower >= 0 ? colorBuyStrong : colorSellStrong
+        color diffPwrColor = powerDiff > 0 ? colorBuyStrong : (powerDiff < 0 ? colorSellStrong : color.white)
+        string diffPwrSign = powerDiff > 0 ? "+" : ""
+        
+        table.cell(compTable, 0, 1, "قدرت خالص (%)", text_color=color.white, text_size=size.small, text_halign=text.align_right, text_valign=text.align_center)
+        table.cell(compTable, 1, 1, str.tostring(prevGrandPower, "#.#") + "%", text_color=prevPwrColor, text_size=size.small, text_halign=text.align_center, text_valign=text.align_center)
+        table.cell(compTable, 2, 1, str.tostring(currGrandPower, "#.#") + "%", text_color=pwrColor, text_size=size.small, text_halign=text.align_center, text_valign=text.align_center)
+        table.cell(compTable, 3, 1, diffPwrSign + str.tostring(powerDiff, "#.#") + "%", text_color=diffPwrColor, text_size=size.normal, text_halign=text.align_center, text_valign=text.align_center)
+
+        // ردیف 2: حجم خرید
+        color buyDiffColor = buyDiff > 0 ? colorBuyStrong : (buyDiff < 0 ? colorSellStrong : color.white)
+        string buyDiffSign = buyDiff > 0 ? "+" : ""
+        table.cell(compTable, 0, 2, "حجم خرید", text_color=color.white, text_size=size.small, text_halign=text.align_right, text_valign=text.align_center)
+        table.cell(compTable, 1, 2, f_formatVol(prevTotalBuy), text_color=colorBuyStrong, text_size=size.small, text_halign=text.align_center, text_valign=text.align_center)
+        table.cell(compTable, 2, 2, f_formatVol(currTotalBuy), text_color=colorBuyStrong, text_size=size.small, text_halign=text.align_center, text_valign=text.align_center)
+        table.cell(compTable, 3, 2, buyDiffSign + f_formatVol(buyDiff), text_color=buyDiffColor, text_size=size.small, text_halign=text.align_center, text_valign=text.align_center)
+
+        // ردیف 3: حجم فروش
+        color sellDiffColor = sellDiff > 0 ? colorSellStrong : (sellDiff < 0 ? colorBuyStrong : color.white)
+        string sellDiffSign = sellDiff > 0 ? "+" : ""
+        table.cell(compTable, 0, 3, "حجم فروش", text_color=color.white, text_size=size.small, text_halign=text.align_right, text_valign=text.align_center)
+        table.cell(compTable, 1, 3, f_formatVol(prevTotalSell), text_color=colorSellStrong, text_size=size.small, text_halign=text.align_center, text_valign=text.align_center)
+        table.cell(compTable, 2, 3, f_formatVol(currTotalSell), text_color=colorSellStrong, text_size=size.small, text_halign=text.align_center, text_valign=text.align_center)
+        table.cell(compTable, 3, 3, sellDiffSign + f_formatVol(sellDiff), text_color=sellDiffColor, text_size=size.small, text_halign=text.align_center, text_valign=text.align_center)

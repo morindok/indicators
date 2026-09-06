@@ -1,0 +1,143 @@
+//@version=5
+indicator("Gann Auto-Step & Multiplier + Range Info", overlay=true)
+
+// --- ÊäÙíãÇÊ æÑæÏí ---
+startTime = input.time(0, "äÞØå ÔÑæÚ ÈÇÒå", confirm=true)
+endTime = input.time(0, "äÞØå ÇíÇä ÈÇÒå", confirm=true)
+
+step_mode = input.string("1% of Price", "ÑæÔ ãÍÇÓÈå Çã", options=["1% of Price", "ATR", "1/8 of Range", "Manual"])
+manual_step = input.float(100.0, "Çã ÏÓÊí (ÏÑ ÕæÑÊ ÇäÊÎÇÈ Manual)")
+pivot_length = input.int(10, "Øæá íæÊ (ÈÑÇí ÓÞÝ/˜Ý ãÍáí)")
+
+// --- ãÊÛíÑåÇí ÒãÇäí ---
+realStart = math.min(startTime, endTime)
+realEnd = math.max(startTime, endTime)
+float rangeTimeMinutes = (realEnd - realStart) / (1000 * 60)
+inRange = time >= realStart and time <= realEnd
+
+// --- ãÊÛíÑåÇí ÈÇÒå (Absolute) æ Ñä ˜äÏáåÇ ---
+var float rangeHigh = na
+var float rangeLow = na
+var float greenHigh = na
+var float greenLow = na
+var float redHigh = na
+var float redLow = na
+
+// --- ãÊÛíÑåÇí ÓÞÝ æ ˜Ý ãÍáí (Swing) ---
+ph = ta.pivothigh(high, pivot_length, pivot_length)
+pl = ta.pivotlow(low, pivot_length, pivot_length)
+var float last_ph = na
+var float last_pl = na
+
+// ÂÏíÊ íæÊåÇ ÊÇ ÑÓíÏä Èå ÇíÇä ÈÇÒå (ãÓÊÞá ÇÒ ÚÑÖ ÈÇÒå ÑÓã ÔÏå)
+if time <= realEnd
+    if not na(ph)
+        last_ph := ph
+    if not na(pl)
+        last_pl := pl
+
+// ãÍÇÓÈå ÈÇáÇÊÑíä æ ÇííäÊÑíä ÞíãÊ ÏÑ ÈÇÒå Èå ÊÝ˜í˜ Ñä ˜äÏá
+if inRange
+    rangeHigh := na(rangeHigh) ? high : math.max(rangeHigh, high)
+    rangeLow  := na(rangeLow) ? low : math.min(rangeLow, low)
+    
+    if close > open
+        greenHigh := na(greenHigh) ? high : math.max(greenHigh, high)
+        greenLow  := na(greenLow) ? low : math.min(greenLow, low)
+    else if close < open
+        redHigh := na(redHigh) ? high : math.max(redHigh, high)
+        redLow  := na(redLow) ? low : math.min(redLow, low)
+
+// --- ãÍÇÓÈÇÊ äåÇíí ÏÑ ˜äÏá ÇíÇä ÈÇÒå ---
+var float finalHeight = na
+var float finalGreenHeight = na
+var float finalRedHeight = na
+var float step_val = na
+var float distance = na
+var float raw_multiplier = na
+var float suggested_multiplier = na
+
+atr_val = ta.atr(14)
+
+if time == realEnd
+    // ãÍÇÓÈÇÊ ÇÑÊÝÇÚ
+    finalHeight := rangeHigh - rangeLow
+    finalGreenHeight := not na(greenHigh) and not na(greenLow) ? greenHigh - greenLow : na
+    finalRedHeight := not na(redHigh) and not na(redLow) ? redHigh - redLow : na
+    
+    // ãÍÇÓÈå Çã
+    if step_mode == "1% of Price"
+        step_val := close * 0.01
+    else if step_mode == "ATR"
+        step_val := atr_val
+    else if step_mode == "1/8 of Range"
+        step_val := finalHeight / 8
+    else
+        step_val := manual_step
+
+    // ãÍÇÓÈå ÖÑíÈ Çä ÈÑ ÇÓÇÓ ÓÞÝ æ ˜Ý ãÍáí
+    if not na(last_ph) and not na(last_pl)
+        distance := last_ph - last_pl
+        raw_multiplier := distance / step_val
+        
+        // íÏÇ ˜ÑÏä äÒÏí˜ÊÑíä ÖÑíÈ ÇÓÊÇäÏÇÑÏ
+        float m = raw_multiplier
+        float[] ratios = array.from(0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.272, 1.44, 1.618, 2.0, 2.618, 3.618, 4.236)
+        
+        float min_diff = na
+        float best_ratio = na
+        for i = 0 to array.size(ratios) - 1
+            float r = array.get(ratios, i)
+            float diff = math.abs(m - r)
+            if na(min_diff) or diff < min_diff
+                min_diff := diff
+                best_ratio := r
+        suggested_multiplier := best_ratio
+
+// --- ÑÓã ÌÏæá ÏÑ ÂÎÑíä ˜äÏá ---
+var tbl = table.new(position.top_right, 2, 11, border_width=1, border_color=color.black)
+if barstate.islast
+    color grayBg  = color.new(color.gray, 20)
+    color greenBg = color.new(color.green, 20)
+    color redBg   = color.new(color.red, 20)
+    color purpleBg = color.new(color.purple, 20)
+    color txtCol  = color.white
+
+    table.cell(tbl, 0, 0, "ãÔÎÕå", bgcolor=color.blue, text_color=color.white)
+    table.cell(tbl, 1, 0, "ãÞÏÇÑ", bgcolor=color.blue, text_color=color.white)
+    
+    if not na(rangeHigh)
+        // ÇØáÇÚÇÊ ÈÇÒå
+        table.cell(tbl, 0, 1, "High ÈÇÒå", bgcolor=grayBg, text_color=txtCol)
+        table.cell(tbl, 1, 1, str.tostring(rangeHigh, "#.####"), bgcolor=grayBg, text_color=txtCol)
+        
+        table.cell(tbl, 0, 2, "Low ÈÇÒå", bgcolor=grayBg, text_color=txtCol)
+        table.cell(tbl, 1, 2, str.tostring(rangeLow, "#.####"), bgcolor=grayBg, text_color=txtCol)
+        
+        table.cell(tbl, 0, 3, "ÇÑÊÝÇÚ ˜á", bgcolor=grayBg, text_color=txtCol)
+        table.cell(tbl, 1, 3, str.tostring(finalHeight, "#.####"), bgcolor=grayBg, text_color=txtCol)
+        
+        table.cell(tbl, 0, 4, "ÇÑÊÝÇÚ ÓÈÒåÇ", bgcolor=greenBg, text_color=txtCol)
+        table.cell(tbl, 1, 4, str.tostring(finalGreenHeight, "#.####"), bgcolor=greenBg, text_color=txtCol)
+        
+        table.cell(tbl, 0, 5, "ÇÑÊÝÇÚ ÞÑãÒåÇ", bgcolor=redBg, text_color=txtCol)
+        table.cell(tbl, 1, 5, str.tostring(finalRedHeight, "#.####"), bgcolor=redBg, text_color=txtCol)
+        
+        table.cell(tbl, 0, 6, "ÒãÇä (ÏÞíÞå)", bgcolor=grayBg, text_color=txtCol)
+        table.cell(tbl, 1, 6, str.tostring(rangeTimeMinutes, "#.#"), bgcolor=grayBg, text_color=txtCol)
+        
+        // ÇØáÇÚÇÊ Çã æ ÖÑíÈ
+        table.cell(tbl, 0, 7, "ãÞÏÇÑ Çã (" + step_mode + ")", bgcolor=purpleBg, text_color=txtCol)
+        table.cell(tbl, 1, 7, str.tostring(step_val, "#.####"), bgcolor=purpleBg, text_color=txtCol)
+
+        table.cell(tbl, 0, 8, "ÝÇÕáå Swing ãÍáí", bgcolor=purpleBg, text_color=txtCol)
+        table.cell(tbl, 1, 8, not na(distance) ? str.tostring(distance, "#.####") : "N/A", bgcolor=purpleBg, text_color=txtCol)
+
+        table.cell(tbl, 0, 9, "ÖÑíÈ ÎÇã", bgcolor=purpleBg, text_color=txtCol)
+        table.cell(tbl, 1, 9, not na(raw_multiplier) ? str.tostring(raw_multiplier, "#.####") : "N/A", bgcolor=purpleBg, text_color=txtCol)
+
+        table.cell(tbl, 0, 10, "ÖÑíÈ íÔäåÇÏí", bgcolor=color.new(color.orange, 10), text_color=txtCol)
+        table.cell(tbl, 1, 10, not na(suggested_multiplier) ? str.tostring(suggested_multiplier, "#.####") : "N/A", bgcolor=color.new(color.orange, 10), text_color=txtCol)
+
+// åÇíáÇíÊ ÓÒãíäå äÇÍíå ÇäÊÎÇÈ ÔÏå
+bgcolor(inRange ? color.new(color.blue, 90) : na)

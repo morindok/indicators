@@ -1,0 +1,192 @@
+//@version=5
+indicator(title="سیستم چرخش سرمایه ارزها {Morindok} v5.2 - Money Power", shorttitle="Capital Route Pro", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// =================== ورودی‌های نمادها (۲۰ ارز) ===================
+grpSymbols = "ارزهای تحت پایش (۲۰ ارز)"
+
+sym1 = input.symbol("BINANCE:BTCUSDT", "۱", group=grpSymbols, inline="1")
+lbl1 = input.string("BTC", "", group=grpSymbols, inline="1")
+sym2 = input.symbol("BINANCE:ETHUSDT", "۲", group=grpSymbols, inline="2")
+lbl2 = input.string("ETH", "", group=grpSymbols, inline="2")
+sym3 = input.symbol("BINANCE:BNBUSDT", "۳", group=grpSymbols, inline="3")
+lbl3 = input.string("BNB", "", group=grpSymbols, inline="3")
+sym4 = input.symbol("BINANCE:SOLUSDT", "۴", group=grpSymbols, inline="4")
+lbl4 = input.string("SOL", "", group=grpSymbols, inline="4")
+sym5 = input.symbol("BINANCE:XRPUSDT", "۵", group=grpSymbols, inline="5")
+lbl5 = input.string("XRP", "", group=grpSymbols, inline="5")
+sym6 = input.symbol("BINANCE:ADAUSDT", "۶", group=grpSymbols, inline="6")
+lbl6 = input.string("ADA", "", group=grpSymbols, inline="6")
+sym7 = input.symbol("BINANCE:DOGEUSDT", "۷", group=grpSymbols, inline="7")
+lbl7 = input.string("DOGE", "", group=grpSymbols, inline="7")
+sym8 = input.symbol("BINANCE:AVAXUSDT", "۸", group=grpSymbols, inline="8")
+lbl8 = input.string("AVAX", "", group=grpSymbols, inline="8")
+sym9 = input.symbol("BINANCE:LINKUSDT", "۹", group=grpSymbols, inline="9")
+lbl9 = input.string("LINK", "", group=grpSymbols, inline="9")
+sym10 = input.symbol("BINANCE:DOTUSDT", "۱۰", group=grpSymbols, inline="10")
+lbl10 = input.string("DOT", "", group=grpSymbols, inline="10")
+sym11 = input.symbol("BINANCE:ATOMUSDT", "۱۱", group=grpSymbols, inline="11")
+lbl11 = input.string("ATOM", "", group=grpSymbols, inline="11")
+sym12 = input.symbol("BINANCE:UNIUSDT", "۱۲", group=grpSymbols, inline="12")
+lbl12 = input.string("UNI", "", group=grpSymbols, inline="12")
+sym13 = input.symbol("BINANCE:LTCUSDT", "۱۳", group=grpSymbols, inline="13")
+lbl13 = input.string("LTC", "", group=grpSymbols, inline="13")
+sym14 = input.symbol("BINANCE:BCHUSDT", "۱۴", group=grpSymbols, inline="14")
+lbl14 = input.string("BCH", "", group=grpSymbols, inline="14")
+sym15 = input.symbol("BINANCE:NEARUSDT", "۱۵", group=grpSymbols, inline="15")
+lbl15 = input.string("NEAR", "", group=grpSymbols, inline="15")
+sym16 = input.symbol("BINANCE:ICPUSDT", "۱۶", group=grpSymbols, inline="16")
+lbl16 = input.string("ICP", "", group=grpSymbols, inline="16")
+sym17 = input.symbol("BINANCE:APTUSDT", "۱۷", group=grpSymbols, inline="17")
+lbl17 = input.string("APT", "", group=grpSymbols, inline="17")
+sym18 = input.symbol("BINANCE:SUIUSDT", "۱۸", group=grpSymbols, inline="18")
+lbl18 = input.string("SUI", "", group=grpSymbols, inline="18")
+sym19 = input.symbol("BINANCE:INJUSDT", "۱۹", group=grpSymbols, inline="19")
+lbl19 = input.string("INJ", "", group=grpSymbols, inline="19")
+sym20 = input.symbol("BINANCE:TRXUSDT", "۲۰", group=grpSymbols, inline="20")
+lbl20 = input.string("TRX", "", group=grpSymbols, inline="20")
+
+grpCalc = "تنظیمات محاسبه پیشرفته"
+volLen = input.int(14, "دوره میانگین حجم", minval=2, group=grpCalc)
+smoothLen = input.int(1, "هموارسازی امتیاز (۱ = بدون تاخیر)", minval=1, group=grpCalc)
+flowThreshold = input.float(0.15, "آستانه حساسیت جریان", minval=0.0, step=0.05, group=grpCalc)
+
+grpTable = "تنظیمات جدول"
+tblPosStr = input.string("بالا-چپ", "موقعیت جدول", options=["بالا-راست", "بالا-چپ", "پایین-راست", "پایین-چپ", "وسط-راست"], group=grpTable)
+txtSize = input.string("small", "اندازه متن", options=["tiny", "small", "normal", "large"], group=grpTable)
+showHeatBg = input.bool(true, "رنگ‌آمیزی گرادیانت پس‌زمینه", group=grpTable)
+
+// =================== تابع محاسبه جریان پیشرفته + قدرت انتقال پول ===================
+f_flow(sym) =>
+    [o, h, l, c0, c1, c2, v, vAvg] = request.security(sym, timeframe.period, [open, high, low, close, close[1], close[2], volume, ta.sma(volume, volLen)], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+    
+    // محاسبات پایه
+    pct = c1 != 0 ? (c0 - c1) / c1 * 100 : 0.0
+    volRatio = vAvg > 0 ? v / vAvg : 1.0
+    momentum = c1 != 0 ? (c1 - c2) / c2 * 100 : 0.0
+    
+    // --- شبیه‌سازی قدرت انتقال پول (جایگزین فرمول TSETMC) ---
+    range_hl = h - l
+    // تخمین حجم خریدار و فروشنده بر اساس پرایس اکشن کندل
+    buy_vol = range_hl != 0 ? v * ((c0 - l) / range_hl) : (c0 >= o ? v : 0)
+    sell_vol = range_hl != 0 ? v * ((h - c0) / range_hl) : (c0 < o ? v : 0)
+    
+    // محاسبه نسبت قدرت خریدار به فروشنده (Money Power)
+    buyer_power = sell_vol > 0 ? (buy_vol / sell_vol) : (buy_vol > 0 ? 5.0 : 1.0)
+    buyer_power := math.round(buyer_power * 10) / 10 // اِعمال فرمول رُند کردن شما
+    
+    // --- اعمال قدرت پول در امتیاز نهایی سیستم ---
+    // امتیاز خام در ضریب قدرت خریدار ضرب می‌شود تا تاثیر ورود پول به شدت بالا برود
+    rawScore = (pct * 0.7 + momentum * 0.3) * volRatio * (buyer_power > 0 ? math.sqrt(buyer_power) : 1.0)
+    
+    [pct, volRatio, rawScore, buyer_power]
+
+[pct1, vr1, sc1, bp1] = f_flow(sym1)
+[pct2, vr2, sc2, bp2] = f_flow(sym2)
+[pct3, vr3, sc3, bp3] = f_flow(sym3)
+[pct4, vr4, sc4, bp4] = f_flow(sym4)
+[pct5, vr5, sc5, bp5] = f_flow(sym5)
+[pct6, vr6, sc6, bp6] = f_flow(sym6)
+[pct7, vr7, sc7, bp7] = f_flow(sym7)
+[pct8, vr8, sc8, bp8] = f_flow(sym8)
+[pct9, vr9, sc9, bp9] = f_flow(sym9)
+[pct10, vr10, sc10, bp10] = f_flow(sym10)
+[pct11, vr11, sc11, bp11] = f_flow(sym11)
+[pct12, vr12, sc12, bp12] = f_flow(sym12)
+[pct13, vr13, sc13, bp13] = f_flow(sym13)
+[pct14, vr14, sc14, bp14] = f_flow(sym14)
+[pct15, vr15, sc15, bp15] = f_flow(sym15)
+[pct16, vr16, sc16, bp16] = f_flow(sym16)
+[pct17, vr17, sc17, bp17] = f_flow(sym17)
+[pct18, vr18, sc18, bp18] = f_flow(sym18)
+[pct19, vr19, sc19, bp19] = f_flow(sym19)
+[pct20, vr20, sc20, bp20] = f_flow(sym20)
+
+names = array.from(lbl1, lbl2, lbl3, lbl4, lbl5, lbl6, lbl7, lbl8, lbl9, lbl10, lbl11, lbl12, lbl13, lbl14, lbl15, lbl16, lbl17, lbl18, lbl19, lbl20)
+scores = array.from(ta.ema(sc1, smoothLen), ta.ema(sc2, smoothLen), ta.ema(sc3, smoothLen), ta.ema(sc4, smoothLen), ta.ema(sc5, smoothLen), ta.ema(sc6, smoothLen), ta.ema(sc7, smoothLen), ta.ema(sc8, smoothLen), ta.ema(sc9, smoothLen), ta.ema(sc10, smoothLen), ta.ema(sc11, smoothLen), ta.ema(sc12, smoothLen), ta.ema(sc13, smoothLen), ta.ema(sc14, smoothLen), ta.ema(sc15, smoothLen), ta.ema(sc16, smoothLen), ta.ema(sc17, smoothLen), ta.ema(sc18, smoothLen), ta.ema(sc19, smoothLen), ta.ema(sc20, smoothLen))
+pcts = array.from(pct1, pct2, pct3, pct4, pct5, pct6, pct7, pct8, pct9, pct10, pct11, pct12, pct13, pct14, pct15, pct16, pct17, pct18, pct19, pct20)
+vrs = array.from(vr1, vr2, vr3, vr4, vr5, vr6, vr7, vr8, vr9, vr10, vr11, vr12, vr13, vr14, vr15, vr16, vr17, vr18, vr19, vr20)
+bps = array.from(bp1, bp2, bp3, bp4, bp5, bp6, bp7, bp8, bp9, bp10, bp11, bp12, bp13, bp14, bp15, bp16, bp17, bp18, bp19, bp20)
+
+sortedIdx = array.sort_indices(scores, order.descending)
+
+// =================== تشخیص رژیم کلی بازار ===================
+float netMarketFlow = array.sum(scores)
+marketIsBullish = netMarketFlow > 0
+marketIsBearish = netMarketFlow < 0
+
+// =================== تنظیمات جدول ===================
+tblPos = tblPosStr == "بالا-راست" ? position.top_right : tblPosStr == "بالا-چپ" ? position.top_left : tblPosStr == "پایین-راست" ? position.bottom_right : tblPosStr == "پایین-چپ" ? position.bottom_left : position.middle_right
+sz = txtSize == "tiny" ? size.tiny : txtSize == "small" ? size.small : txtSize == "normal" ? size.normal : size.large
+
+// افزایش تعداد ستون‌ها به ۸ برای نمایش قدرت پول
+var table t = table.new(position=tblPos, columns=8, rows=21, border_width=1, border_color=color.new(color.gray, 70), frame_width=1, frame_color=color.new(color.gray, 70))
+
+if barstate.islast
+    string strongest_coin = array.get(names, array.get(sortedIdx, 0))
+    string weakest_coin = array.get(names, array.get(sortedIdx, 19))
+    
+    table.cell(t, 0, 0, "رتبه", text_color=color.white, bgcolor=color.new(color.black, 10), text_size=sz)
+    table.cell(t, 1, 0, "نماد", text_color=color.white, bgcolor=color.new(color.black, 10), text_size=sz)
+    table.cell(t, 2, 0, "تغییر٪", text_color=color.white, bgcolor=color.new(color.black, 10), text_size=sz)
+    table.cell(t, 3, 0, "حجم", text_color=color.white, bgcolor=color.new(color.black, 10), text_size=sz)
+    table.cell(t, 4, 0, "قدرت پول", text_color=color.yellow, bgcolor=color.new(color.black, 10), text_size=sz) // ستون جدید
+    table.cell(t, 5, 0, "امتیاز", text_color=color.white, bgcolor=color.new(color.black, 10), text_size=sz)
+    table.cell(t, 6, 0, "وضعیت", text_color=color.white, bgcolor=color.new(color.black, 10), text_size=sz)
+    table.cell(t, 7, 0, "مسیر جریان", text_color=color.yellow, bgcolor=color.new(color.blue, 70), text_size=sz)
+    
+    for i = 0 to 19
+        idx = array.get(sortedIdx, i)
+        nm = array.get(names, idx)
+        sc = array.get(scores, idx)
+        pc = array.get(pcts, idx)
+        vr = array.get(vrs, idx)
+        bp = array.get(bps, idx) // دریافت قدرت پول برای نماد
+        
+        rowColor = showHeatBg ? color.from_gradient(sc, -5.0, 5.0, color.new(color.red, 50), color.new(color.green, 50)) : color.new(color.gray, 80)
+        
+        string status = ""
+        string route = ""
+        color statusColor = color.silver
+        color routeCol = color.silver
+        
+        // رنگ‌بندی داینامیک برای ستون قدرت پول
+        color bpColor = bp >= 1.5 ? color.lime : (bp <= 0.8 ? color.red : color.white)
+        
+        if sc > flowThreshold
+            status := "جذب قوی"
+            statusColor := color.lime
+            if marketIsBullish
+                route := "تتر ➔ " + nm
+                routeCol := color.lime
+            else
+                route := weakest_coin + " ➔ " + nm
+                routeCol := color.yellow
+        else if sc < -flowThreshold
+            status := "دفع قوی"
+            statusColor := color.red
+            if marketIsBearish
+                route := nm + " ➔ تتر"
+                routeCol := color.red
+            else
+                route := nm + " ➔ " + strongest_coin
+                routeCol := color.orange
+        else
+            if pc >= 0
+                status := "جذب ضعیف"
+                statusColor := color.green
+                route := "تراکم: " + nm
+                routeCol := color.gray
+            else
+                status := "دفع ضعیف"
+                statusColor := color.maroon
+                route := "توزیع: " + nm
+                routeCol := color.gray
+
+        table.cell(t, 0, i + 1, str.tostring(i + 1), text_color=color.white, bgcolor=rowColor, text_size=sz)
+        table.cell(t, 1, i + 1, nm, text_color=color.white, bgcolor=rowColor, text_size=sz)
+        table.cell(t, 2, i + 1, str.tostring(pc, "#.##") + "%", text_color=color.white, bgcolor=rowColor, text_size=sz)
+        table.cell(t, 3, i + 1, str.tostring(vr, "#.##") + "x", text_color=color.white, bgcolor=rowColor, text_size=sz)
+        table.cell(t, 4, i + 1, str.tostring(bp, "#.##"), text_color=bpColor, bgcolor=color.new(color.black, 40), text_size=sz) // نمایش قدرت پول
+        table.cell(t, 5, i + 1, str.tostring(sc, "#.##"), text_color=color.white, bgcolor=rowColor, text_size=sz)
+        table.cell(t, 6, i + 1, status, text_color=statusColor, bgcolor=color.new(color.black, 60), text_size=sz)
+        table.cell(t, 7, i + 1, route, text_color=routeCol, bgcolor=color.new(color.black, 40), text_size=sz, text_halign=text.align_left)

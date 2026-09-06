@@ -1,0 +1,1259 @@
+# -*- coding: utf-8 -*-
+"""
+💿 Multi-Disk Timeline Pro + Live Scanner
+(موتور واقع‌گرایانه با ورود در ری‌تست سطح + زمان‌های UTC)
+"""
+import math, base64, json
+from datetime import datetime, timezone, timedelta
+import numpy as np
+import pandas as pd
+import requests
+import plotly.graph_objects as go
+import dash
+from dash import dcc, html, Input, Output, State, dash_table, clientside_callback, no_update
+import dash_bootstrap_components as dbc
+
+# ==============================================================================
+# 0) تنظیمات
+# ==============================================================================
+BG = "#070b14"; CARD2 = "#101c38"; LINE = "#22304e"
+TXT = "#eef2fb"; MUT = "#8ea0c4"; GOLD = "#f3ba2f"
+UP = "#1fd7a6"; DN = "#ff5d6c"; BLUE = "#4f8dfd"
+PURPLE = "#b57bf0"; ORANGE = "#ff9f43"; CYAN = "#38d9d9"; PINK = "#ff6bd6"
+DEFAULT_SYMBOL = "BTCUSDT"; DEFAULT_INTERVAL = "15"
+FONT_FAMILY = "Vazirmatn, Tahoma, Arial, sans-serif"
+RING_PALETTE = [BLUE, PURPLE, ORANGE, CYAN, PINK, GOLD, UP]
+
+TRADING_CONFIG = {
+    "taker_fee": 0.00055,   # 0.055% هر طرف
+    "spread_pct": 0.0004,   # 0.04%
+    "max_leverage": 10.0,
+    "min_sl_pct": 0.006,
+    "atr_mult_sl": 1.5,
+}
+
+# ✅ تنظیمات ورود در ری‌تست (مشترک بک‌تست و لایو)
+RETEST_WINDOW = 30          # حداکثر کندل انتظار برای بازگشت قیمت به سطح
+RETEST_TOUCH_ATR = 0.5      # قیمت باید تا این فاصله (ضربدر ATR) به سطح برسد
+RETEST_HOLD_ATR = 1.0       # سطح باید هنوز نشکسته باشد (کلوز این‌طرف سطح)
+
+PLANET_CYCLES = {
+    "ماه (سینودیک ۲۹.۵ روز)": 29.53059, "عطارد (سینودیک)": 115.88,
+    "زهره (سینودیک)": 583.92, "مریخ (سینودیک)": 779.94,
+    "مشتری (سینودیک)": 398.88, "زحل (سینودیک)": 378.09,
+}
+MIN_CYCLES_REQUIRED = 3; ALPHA = 0.05; N_PERM = 150
+
+SCANNER_SYMBOLS = [
+    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
+    "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT",
+    "MATICUSDT", "LTCUSDT", "ATOMUSDT", "UNIUSDT", "APTUSDT",
+    "ARBUSDT", "OPUSDT", "NEARUSDT", "INJUSDT", "SUIUSDT", "XAUUSDT",
+]
+
+BEEP_SOUND_LONG = "data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbsGczGk2j1OvZdlM2RKXW7Nl2UDhLqtjt2XdXPUmr2O3Zd1k+SqzY7dl3Wj5Krdjt2XdZPkqt2O3Zd1k+Sq3Y"
+
+
+def fmt_price(p):
+    p = float(p)
+    if abs(p) >= 1000: return f"{p:,.2f}"
+    if abs(p) >= 1: return f"{p:,.4f}"
+    return f"{p:,.6f}"
+
+
+def fmt_utc(dt_or_iso, seconds=False):
+    if isinstance(dt_or_iso, str):
+        dt = datetime.fromisoformat(dt_or_iso)
+    else:
+        dt = dt_or_iso.to_pydatetime() if isinstance(dt_or_iso, pd.Timestamp) else dt_or_iso
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    dt = dt.astimezone(timezone.utc)
+    return dt.strftime("%m-%d %H:%M UTC") if not seconds else dt.strftime("%H:%M:%S UTC")
+
+
+# ==============================================================================
+# 1) REST Bybit
+# ==============================================================================
+REST_CANDIDATES = ["https://api.bybit.com", "https://api.bytick.com", "https://api.bybit.kz"]
+SESSION = requests.Session()
+SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 Chrome/120.0 Safari/537.36",
+    "Accept": "application/json", "Referer": "https://www.bybit.com/",
+})
+_ACTIVE_REST_BASE = {"url": None}
+
+
+def bybit_get(path, params, timeout=10):
+    cands = ([_ACTIVE_REST_BASE["url"]] if _ACTIVE_REST_BASE["url"] else []) + \
+            [b for b in REST_CANDIDATES if b != _ACTIVE_REST_BASE["url"]]
+    for base in cands:
+        try:
+            r = SESSION.get(f"{base}{path}", params=params, timeout=timeout)
+            if r.status_code in (403, 451): continue
+            r.raise_for_status()
+            d = r.json()
+            if d.get("retCode") == 0:
+                _ACTIVE_REST_BASE["url"] = base
+                return d
+        except:
+            continue
+    return None
+
+
+def get_server_time():
+    d = bybit_get("/v5/market/time", {})
+    try:
+        res = (d or {}).get("result") or {}
+        nano = res.get("timeNano")
+        if nano: return datetime.fromtimestamp(int(nano) / 1e9, tz=timezone.utc)
+        sec = res.get("timeSecond")
+        if sec:
+            v = int(sec); s = str(v)
+            sec_f = v / 1e9 if len(s) >= 19 else v / 1e6 if len(s) >= 16 else v / 1e3 if len(s) >= 13 else float(v)
+            return datetime.fromtimestamp(sec_f, tz=timezone.utc)
+    except:
+        pass
+    return datetime.now(timezone.utc)
+
+
+def get_interval_minutes(interval):
+    s = str(interval).strip().lower()
+    if s == "d": return 1440
+    try:
+        return int(s)
+    except:
+        return 15
+
+
+def get_klines_extended(symbol, interval, category="linear", total_bars=3000, batch=1000, max_batches=20):
+    frames = []; end_ts = None; remaining = total_bars
+    for _ in range(max_batches):
+        if remaining <= 0: break
+        params = {"category": category, "symbol": symbol, "interval": interval, "limit": min(batch, remaining)}
+        if end_ts is not None: params["end"] = end_ts
+        d = bybit_get("/v5/market/kline", params)
+        lst = ((d or {}).get("result") or {}).get("list") or []
+        if not lst: break
+        chunk = pd.DataFrame(lst, columns=["ts", "open", "high", "low", "close", "volume", "turnover"])
+        chunk["ts"] = chunk["ts"].astype(np.int64)
+        frames.append(chunk)
+        end_ts = int(chunk["ts"].min()) - 1
+        remaining -= len(chunk)
+        if len(chunk) < batch: break
+    if not frames: return pd.DataFrame()
+    full = pd.concat(frames, ignore_index=True).drop_duplicates(subset="ts")
+    full["ts"] = pd.to_datetime(full["ts"], unit="ms", utc=True)
+    for c in ["open", "high", "low", "close", "volume"]: full[c] = full[c].astype(float)
+    return full.sort_values("ts").reset_index(drop=True)
+
+
+# ==============================================================================
+# 1.5) موتور معاملاتی واقع‌گرایانه
+# ==============================================================================
+def plan_trade(direction, signal_price, atr, capital, risk_pct, rr_ratio, cfg=None):
+    cfg = cfg or TRADING_CONFIG
+    spread = cfg["spread_pct"]
+    entry = signal_price * (1 + spread / 2) if direction == 1 else signal_price * (1 - spread / 2)
+    sl_dist = max(atr * cfg["atr_mult_sl"], entry * cfg["min_sl_pct"])
+    if direction == 1:
+        sl = entry - sl_dist; tp = entry + sl_dist * rr_ratio
+    else:
+        sl = entry + sl_dist; tp = entry - sl_dist * rr_ratio
+    planned_risk = capital * (risk_pct / 100.0)
+    size_by_risk = planned_risk / sl_dist
+    size_by_lev = (capital * cfg["max_leverage"]) / entry
+    position_size = min(size_by_risk, size_by_lev)
+    position_value = position_size * entry
+    leverage = position_value / capital if capital > 0 else 0
+    actual_risk = position_size * sl_dist
+    est_fees = position_value * cfg["taker_fee"] * 2
+    return {
+        "entry_price": float(entry), "sl_price": float(sl), "tp_price": float(tp),
+        "sl_distance": float(sl_dist), "position_size": float(position_size),
+        "position_value": float(position_value), "leverage": float(leverage),
+        "risk_amount": float(actual_risk), "planned_risk": float(planned_risk),
+        "est_fees": float(est_fees),
+    }
+
+
+def trade_net_pnl(direction, entry, exit_price, size, fee):
+    gross = (exit_price - entry) * size if direction == 1 else (entry - exit_price) * size
+    fees = fee * size * (entry + exit_price)
+    return gross - fees, fees
+
+
+# ==============================================================================
+# 2) موتور چرخه‌ها و سطوح
+# ==============================================================================
+def bars_for_days(days, interval_min): return (days * 1440.0) / interval_min
+
+def fit_sinusoid(t, y, period_bars):
+    if period_bars <= 1: return None
+    w = 2 * np.pi / period_bars
+    X = np.column_stack([np.cos(w * t), np.sin(w * t), np.ones_like(t, dtype=float)])
+    coef, *_ = np.linalg.lstsq(X, y, rcond=None)
+    a, b, _c = coef
+    y_hat = X @ coef
+    ss_res = np.sum((y - y_hat) ** 2)
+    ss_tot = np.sum((y - np.mean(y)) ** 2)
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    return {"amp": math.hypot(a, b), "phase": math.atan2(b, a), "r2": float(r2), "w": w}
+
+def permutation_pvalue(t, y, period_bars, n_perm=N_PERM, rng=None):
+    rng = rng or np.random.default_rng(42)
+    obs = fit_sinusoid(t, y, period_bars)
+    if obs is None: return 1.0, None
+    obs_r2 = obs["r2"]
+    y_perm = y.copy(); count = 0
+    for _ in range(n_perm):
+        rng.shuffle(y_perm)
+        f = fit_sinusoid(t, y_perm, period_bars)
+        if f and f["r2"] >= obs_r2: count += 1
+    return (count + 1) / (n_perm + 1), obs
+
+def detect_significant_cycles(df, interval_min, top_fft_k=5, alpha=ALPHA, n_perm=N_PERM):
+    closes = df["close"].values
+    n = len(closes); t = np.arange(n, dtype=float)
+    trend_coef = np.polyfit(t, closes, 1)
+    y_detrend = closes - np.polyval(trend_coef, t)
+    candidates = []
+    win = np.hanning(n)
+    fft = np.fft.fft(y_detrend * win)
+    freqs = np.fft.fftfreq(n, d=1)
+    mags = np.abs(fft); mags[0] = 0
+    pos = np.where(freqs > 0)[0]
+    if len(pos):
+        top_idx = pos[np.argsort(mags[pos])[::-1][:top_fft_k]]
+        for idx in top_idx:
+            period_bars = 1.0 / freqs[idx]
+            if 4 <= period_bars <= n: candidates.append((f"چرخه تجربی ~{period_bars:.1f} کندلی", period_bars, "fft"))
+    tested_planets, skipped_planets = [], []
+    for name, days in PLANET_CYCLES.items():
+        period_bars = bars_for_days(days, interval_min)
+        if n >= period_bars * MIN_CYCLES_REQUIRED and period_bars <= n / 2:
+            candidates.append((name, period_bars, "planet")); tested_planets.append(name)
+        else:
+            skipped_planets.append(name)
+    n_tested = max(len(candidates), 1); alpha_eff = alpha / n_tested
+    significant = []
+    for label, period_bars, source in candidates:
+        p_val, fit = permutation_pvalue(t, y_detrend, period_bars, n_perm=n_perm)
+        if fit and p_val <= alpha_eff:
+            significant.append({"label": label, "period_bars": period_bars, "source": source,
+                                "amp": fit["amp"], "phase": fit["phase"], "w": fit["w"], "p_value": p_val})
+    meta = {"n_candidates": n_tested, "alpha_eff": alpha_eff, "tested_planets": tested_planets,
+            "skipped_planets": skipped_planets}
+    return significant, trend_coef, t, n, meta
+
+def forecast_from_cycles(cycles, trend_coef, n, steps):
+    t_ext = np.arange(n, n + steps, dtype=float)
+    path = np.polyval(trend_coef, t_ext)
+    for c in cycles: path += c["amp"] * np.cos(c["w"] * t_ext - c["phase"])
+    return path
+
+def find_turning_points(expected_path, last_ts, interval_min):
+    diffs = np.diff(expected_path); signs = np.sign(diffs); signs[signs == 0] = 1
+    crossings = np.where(signs[:-1] != signs[1:])[0] + 1
+    turning_points = []
+    for idx in crossings:
+        idx_int = int(idx)
+        t_future = last_ts + timedelta(minutes=interval_min * idx_int)
+        price = float(expected_path[idx_int])
+        is_peak = False
+        if 0 < idx_int < len(expected_path) - 1:
+            is_peak = expected_path[idx_int] > expected_path[idx_int - 1] and expected_path[idx_int] > expected_path[idx_int + 1]
+        elif idx_int > 0:
+            is_peak = expected_path[idx_int] > expected_path[idx_int - 1]
+        turning_points.append({"time": t_future, "price": price, "type": "قله (Peak)" if is_peak else "کف (Trough)"})
+    return turning_points
+
+def compute_atr(df, period=14):
+    high, low, close = df["high"].values, df["low"].values, df["close"].values
+    n = len(df); tr = np.zeros(n)
+    tr[0] = high[0] - low[0]
+    for i in range(1, n): tr[i] = max(high[i] - low[i], abs(high[i] - close[i - 1]), abs(low[i] - close[i - 1]))
+    return pd.Series(tr).rolling(period, min_periods=1).mean().values
+
+def detect_fractal_pivots(df, left=3, right=3):
+    highs, lows = df["high"].values, df["low"].values; n = len(df)
+    pivot_highs, pivot_lows = [], []
+    for i in range(left, n - right):
+        wh = highs[i - left:i + right + 1]
+        if highs[i] == wh.max() and np.argmax(wh) == left: pivot_highs.append((i, highs[i]))
+        wl = lows[i - left:i + right + 1]
+        if lows[i] == wl.min() and np.argmin(wl) == left: pivot_lows.append((i, lows[i]))
+    return pivot_highs, pivot_lows
+
+def build_volume_profile(df, bins=50):
+    prices, volumes = df["close"].values, df["volume"].values
+    lo, hi = prices.min(), prices.max()
+    if hi <= lo: return np.array([]), np.array([])
+    edges = np.linspace(lo, hi, bins + 1); hist = np.zeros(bins)
+    idx = np.clip(np.digitize(prices, edges) - 1, 0, bins - 1)
+    for i, v in zip(idx, volumes): hist[i] += v
+    return (edges[:-1] + edges[1:]) / 2, hist
+
+def find_volume_nodes(centers, hist, top_k=8):
+    if len(hist) == 0: return []
+    order = np.argsort(hist)[::-1][:top_k]; total = hist.sum()
+    return [{"price": float(centers[i]), "volume_share": float(hist[i] / total * 100) if total > 0 else 0.0} for i in order]
+
+def classic_pivot_levels(df, lookback=96):
+    seg = df.tail(lookback)
+    if seg.empty: return []
+    H, L, C = seg["high"].max(), seg["low"].min(), seg["close"].iloc[-1]
+    P = (H + L + C) / 3
+    R1, S1 = 2 * P - L, 2 * P - H
+    R2, S2 = P + (H - L), P - (H - L)
+    R3, S3 = H + 2 * (P - L), L - 2 * (H - P)
+    return [{"price": p, "weight": 0.8, "kind": "classic_pivot"} for p in [P, R1, R2, R3, S1, S2, S3]]
+
+def cluster_levels(levels, tolerance):
+    if not levels: return []
+    levels_sorted = sorted(levels, key=lambda x: x["price"])
+    clusters, current = [], [levels_sorted[0]]
+    for lv in levels_sorted[1:]:
+        if lv["price"] - current[-1]["price"] <= tolerance:
+            current.append(lv)
+        else:
+            clusters.append(current); current = [lv]
+    clusters.append(current); result = []
+    for c in clusters:
+        total_w = sum(x["weight"] for x in c)
+        wavg = (sum(x["price"] * x["weight"] for x in c) / total_w) if total_w > 0 else np.mean([x["price"] for x in c])
+        result.append({"price": float(wavg), "weight": float(total_w)})
+    return result
+
+def validate_level_reliability(df, level_price, tolerance):
+    highs, lows, closes = df["high"].values, df["low"].values, df["close"].values
+    n = len(df); touches = bounces = 0; i = 0
+    while i < n:
+        if lows[i] - tolerance <= level_price <= highs[i] + tolerance:
+            touches += 1
+            future = closes[i + 1:i + 4]
+            if len(future) > 0:
+                if level_price >= closes[i]:
+                    if future.min() < closes[i] - tolerance * 0.3: bounces += 1
+                else:
+                    if future.max() > closes[i] + tolerance * 0.3: bounces += 1
+            i += 3
+        else:
+            i += 1
+    reliability = (bounces / touches * 100) if touches > 0 else 0.0
+    return touches, round(reliability, 1)
+
+def find_support_resistance(df, num_levels=5):
+    n = len(df)
+    if n < 30: return [], []
+    atr = compute_atr(df, 14)
+    current_atr = atr[-1] if len(atr) and atr[-1] > 0 else (df["high"].max() - df["low"].min()) / 20
+    current_price = float(df["close"].iloc[-1])
+    tolerance = max(current_atr * 0.35, current_price * 0.0015)
+    pivot_highs, pivot_lows = detect_fractal_pivots(df, 3, 3)
+    avg_vol = df["volume"].mean() if df["volume"].mean() > 0 else 1.0
+    now_idx = n - 1; levels = []
+    for i, price in pivot_highs:
+        recency = math.exp(-(now_idx - i) / max(n * 0.5, 1))
+        weight = (0.5 + recency) * (0.5 + min(df["volume"].iloc[i] / avg_vol, 3.0))
+        levels.append({"price": float(price), "weight": weight, "kind": "pivot_high"})
+    for i, price in pivot_lows:
+        recency = math.exp(-(now_idx - i) / max(n * 0.5, 1))
+        weight = (0.5 + recency) * (0.5 + min(df["volume"].iloc[i] / avg_vol, 3.0))
+        levels.append({"price": float(price), "weight": weight, "kind": "pivot_low"})
+    levels.extend(classic_pivot_levels(df))
+    clustered = cluster_levels(levels, tolerance)
+    centers, hist = build_volume_profile(df, bins=50)
+    vol_nodes = find_volume_nodes(centers, hist, top_k=8)
+    for cl in clustered:
+        cl["confluence"] = False
+        for node in vol_nodes:
+            if abs(cl["price"] - node["price"]) <= tolerance * 1.5:
+                cl["weight"] *= (1.0 + node["volume_share"] / 100.0 * 2.0); cl["confluence"] = True
+    if not clustered: return [], []
+    max_w = max(c["weight"] for c in clustered)
+    for cl in clustered:
+        weight_score = (cl["weight"] / max_w * 100) if max_w > 0 else 0.0
+        touches, reliability = validate_level_reliability(df, cl["price"], tolerance)
+        cl["touches"], cl["reliability"] = touches, reliability
+        cl["score"] = round(0.55 * weight_score + 0.45 * reliability, 1) if touches > 0 else round(weight_score * 0.85, 1)
+        cl["type"] = "support" if cl["price"] < current_price else "resistance"
+        cl["distance_pct"] = round((cl["price"] - current_price) / current_price * 100, 2)
+    supports = sorted([c for c in clustered if c["type"] == "support"], key=lambda x: -x["score"])[:num_levels]
+    resistances = sorted([c for c in clustered if c["type"] == "resistance"], key=lambda x: -x["score"])[:num_levels]
+    supports = sorted(supports, key=lambda x: -x["price"]);
+    resistances = sorted(resistances, key=lambda x: x["price"])
+    return supports, resistances
+
+
+# ==============================================================================
+# 2.5) بک‌تست واقع‌گرایانه با ورود در ری‌تست
+# ==============================================================================
+def backtest_confluence_trades(df, rr_ratio=2.0, risk_pct=2.0, initial_capital=500.0, atr_mult_sl=1.5):
+    cfg = dict(TRADING_CONFIG); cfg["atr_mult_sl"] = atr_mult_sl
+    spread = cfg["spread_pct"]; fee = cfg["taker_fee"]
+    highs = df['high'].values; lows = df['low'].values; closes = df['close'].values
+    atr = compute_atr(df, 14)
+    supports, resistances = find_support_resistance(df, num_levels=10)
+    all_levels = supports + resistances
+    pivot_highs, pivot_lows = detect_fractal_pivots(df, left=3, right=3)
+    signals = []
+    for idx, price in pivot_lows: signals.append((idx + 3, 1, price))
+    for idx, price in pivot_highs: signals.append((idx + 3, -1, price))
+    signals.sort(key=lambda x: x[0])
+    filtered_signals = []
+    for sig_idx, direction, pivot_price in signals:
+        if sig_idx >= len(df) - 5: continue
+        current_atr = atr[sig_idx] if atr[sig_idx] > 0 else (highs[sig_idx] - lows[sig_idx])
+        tolerance = current_atr * 1.5
+        nearest_level = None
+        for level in all_levels:
+            if abs(pivot_price - level['price']) <= tolerance:
+                nearest_level = level; break
+        if nearest_level: filtered_signals.append((sig_idx, direction, pivot_price, nearest_level))
+    max_i = len(df) - 1; trades = []
+    equity_x = [df['ts'].iloc[0]]; equity_y = [initial_capital]; current_eq = initial_capital
+    checked = ok = skipped_no_retest = 0
+    for sig_idx, direction, pivot_price, nearest_level in filtered_signals:
+        if current_eq <= 0: break
+        # ✅ ورود در ری‌تست: اردر لیمیت روی سطح — فقط اگر قیمت برگشت وارد می‌شویم
+        lv = nearest_level['price']
+        entry_idx = None; entry_market = None
+        for j in range(sig_idx, min(sig_idx + RETEST_WINDOW, max_i + 1)):
+            a = atr[j] if atr[j] > 0 else (highs[j] - lows[j])
+            if direction == 1:
+                if lows[j] <= lv + a * RETEST_TOUCH_ATR and closes[j] >= lv - a * RETEST_HOLD_ATR:
+                    entry_idx = j; entry_market = closes[j]; break
+            else:
+                if highs[j] >= lv - a * RETEST_TOUCH_ATR and closes[j] <= lv + a * RETEST_HOLD_ATR:
+                    entry_idx = j; entry_market = closes[j]; break
+        if entry_idx is None:
+            skipped_no_retest += 1; continue
+        if entry_idx >= max_i - 5: continue
+        plan = plan_trade(direction, entry_market, atr[entry_idx], current_eq, risk_pct, rr_ratio, cfg)
+        entry = plan["entry_price"]; sl_price = plan["sl_price"]; tp_price = plan["tp_price"]
+        size = plan["position_size"]
+        checked += 1
+        c_ok = (lows[entry_idx] * (1 - spread) <= entry <= highs[entry_idx] * (1 + spread)) \
+               and (plan["leverage"] <= cfg["max_leverage"] + 1e-9) \
+               and (plan["sl_distance"] >= entry * cfg["min_sl_pct"] * 0.999)
+        if c_ok: ok += 1
+        outcome = "TIMEOUT"; exit_idx = min(entry_idx + 100, max_i); exit_price = closes[exit_idx]
+        for j in range(entry_idx + 1, min(entry_idx + 100, max_i + 1)):
+            if direction == 1:
+                low_bid = lows[j] * (1 - spread / 2); high_bid = highs[j] * (1 - spread / 2)
+                if low_bid <= sl_price: outcome = "LOSS"; exit_idx = j; exit_price = sl_price; break
+                if high_bid >= tp_price: outcome = "WIN"; exit_idx = j; exit_price = tp_price; break
+            else:
+                high_ask = highs[j] * (1 + spread / 2); low_ask = lows[j] * (1 + spread / 2)
+                if high_ask >= sl_price: outcome = "LOSS"; exit_idx = j; exit_price = sl_price; break
+                if low_ask <= tp_price: outcome = "WIN"; exit_idx = j; exit_price = tp_price; break
+        net_pnl, fees = trade_net_pnl(direction, entry, exit_price, size, fee)
+        actual_pnl_pct = (net_pnl / current_eq * 100) if current_eq > 0 else 0
+        r_multiple = (net_pnl / plan["risk_amount"]) if plan["risk_amount"] > 0 else 0
+        entry_time = df['ts'].iloc[entry_idx]; exit_time = df['ts'].iloc[exit_idx]
+        duration_minutes = (exit_time - entry_time).total_seconds() / 60
+        equity_before = current_eq; current_eq += net_pnl
+        trades.append({
+            "entry_time": entry_time, "exit_time": exit_time, "duration_min": round(duration_minutes, 1),
+            "direction": "LONG" if direction == 1 else "SHORT",
+            "entry_price": entry, "exit_price": float(exit_price),
+            "sl_price": sl_price, "tp_price": tp_price, "sl_distance": plan["sl_distance"],
+            "sr_price": lv,
+            "position_size": size, "position_value": plan["position_value"],
+            "leverage": plan["leverage"], "risk_amount": plan["risk_amount"], "fees": fees,
+            "outcome": outcome, "pnl": net_pnl, "pnl_pct": actual_pnl_pct,
+            "r_multiple": r_multiple, "equity_before": equity_before, "equity_after": current_eq
+        })
+        equity_x.append(df['ts'].iloc[exit_idx]); equity_y.append(current_eq)
+    completed_trades = [t for t in trades if t['outcome'] != 'TIMEOUT']
+    total_trades = len(completed_trades)
+    wins = len([t for t in completed_trades if t['outcome'] == 'WIN'])
+    losses = len([t for t in completed_trades if t['outcome'] == 'LOSS'])
+    win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
+    gross_profit = sum(t['pnl'] for t in completed_trades if t['outcome'] == 'WIN')
+    gross_loss = abs(sum(t['pnl'] for t in completed_trades if t['outcome'] == 'LOSS'))
+    profit_factor = gross_profit / gross_loss if gross_loss > 0 else (float('inf') if gross_profit > 0 else 0)
+    expectancy = sum(t['r_multiple'] for t in completed_trades) / total_trades if total_trades > 0 else 0
+    max_eq = initial_capital; max_dd = 0
+    for eq in equity_y:
+        if eq > max_eq: max_eq = eq
+        dd = (max_eq - eq) / max_eq * 100 if max_eq > 0 else 0
+        if dd > max_dd: max_dd = dd
+    net_profit = current_eq - initial_capital
+    net_profit_pct = (net_profit / initial_capital * 100) if initial_capital > 0 else 0
+    integrity = (f"✅ صحت‌سنجی: {ok}/{checked} معامله منطبق بر کندل ورود | "
+                 f"لوریج ≤ {cfg['max_leverage']:.0f}x | حداقل SL {cfg['min_sl_pct'] * 100:.1f}% | "
+                 f"ورود در ری‌تست سطح | {skipped_no_retest} سیگنال بدون ری‌تست (رد شد) | زمان‌ها UTC")
+    return {
+        "equity_x": equity_x, "equity_y": equity_y, "trades": trades, "integrity": integrity,
+        "win_rate": win_rate, "final_capital": current_eq, "net_profit_pct": net_profit_pct,
+        "net_profit": net_profit, "max_drawdown": max_dd, "total_trades": total_trades,
+        "profit_factor": profit_factor, "expectancy": expectancy,
+        "wins": wins, "losses": losses, "gross_profit": gross_profit, "gross_loss": gross_loss,
+    }
+
+
+# ==============================================================================
+# 3) Live Scanner با ورود در ری‌تست
+# ==============================================================================
+def generate_trade_signal(symbol, interval, rr_ratio, risk_pct, capital):
+    try:
+        df = get_klines_extended(symbol, interval, total_bars=500, batch=500, max_batches=1)
+        if df.empty or len(df) < 100: return None
+        closes = df['close'].values
+        current_price = float(closes[-1])
+        atr = compute_atr(df, 14)
+        current_atr = float(atr[-1])
+        ema_fast = pd.Series(closes).ewm(span=12, adjust=False).mean().values
+        ema_slow = pd.Series(closes).ewm(span=26, adjust=False).mean().values
+        macd_hist = (ema_fast - ema_slow)
+        macd_signal = pd.Series(macd_hist).ewm(span=9, adjust=False).mean().values
+        macd_hist = macd_hist - macd_signal
+        delta = pd.Series(closes).diff()
+        gain = delta.where(delta > 0, 0).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / loss.replace(0, 1e-10)
+        current_rsi = float((100 - (100 / (1 + rs))).iloc[-1])
+        supports, resistances = find_support_resistance(df, num_levels=5)
+        # امتیازدهی جهت
+        score = 0.0; direction = 0
+        if macd_hist[-1] > 0 and macd_hist[-1] > macd_hist[-2]: score += 0.3; direction = 1
+        elif macd_hist[-1] < 0 and macd_hist[-1] < macd_hist[-2]: score -= 0.3; direction = -1
+        if current_rsi < 30: score += 0.25; direction = 1
+        elif current_rsi > 70: score -= 0.25; direction = -1
+        if direction == 0: return None
+        # ✅ شرط ری‌تست: فقط وقتی قیمت الان روی سطح است وارد می‌شویم
+        touch = max(current_atr * RETEST_TOUCH_ATR * 1.5, current_price * 0.003)
+        at_level = False; level_price = None
+        if direction == 1:
+            for s in supports[:3]:
+                if abs(current_price - s["price"]) <= touch and current_price >= s["price"] - current_atr * RETEST_HOLD_ATR:
+                    at_level = True; level_price = s["price"]; score += 0.25; break
+        else:
+            for r in resistances[:3]:
+                if abs(current_price - r["price"]) <= touch and current_price <= r["price"] + current_atr * RETEST_HOLD_ATR:
+                    at_level = True; level_price = r["price"]; score += 0.25; break
+        if not at_level: return None  # صبر می‌کنیم تا قیمت به سطح برسد
+        confidence = min(100, abs(score) * 100 + 20)
+        plan = plan_trade(direction, current_price, current_atr, capital, risk_pct, rr_ratio)
+        now = datetime.now(timezone.utc)
+        return {
+            "symbol": symbol, "direction": direction, "confidence": float(confidence),
+            "rsi": current_rsi, "macd_hist": float(macd_hist[-1]), "atr": current_atr,
+            "level_price": level_price,
+            "entry_price": plan["entry_price"], "sl_price": plan["sl_price"], "tp_price": plan["tp_price"],
+            "sl_distance": plan["sl_distance"], "position_size": plan["position_size"],
+            "position_value": plan["position_value"], "leverage": plan["leverage"],
+            "risk_amount": plan["risk_amount"], "fees": plan["est_fees"], "capital": float(capital),
+            "entry_ts_ms": int(now.timestamp() * 1000), "timestamp": now.isoformat(),
+            "status": "OPEN", "current_price": current_price, "exit_price": None,
+            "pnl": 0.0, "pnl_pct": 0.0, "r_multiple": 0.0,
+        }
+    except Exception:
+        return None
+
+
+def get_live_quote(symbol, interval, start_ms=None):
+    params = {"category": "linear", "symbol": symbol, "interval": interval, "limit": 500}
+    if start_ms: params["start"] = start_ms
+    d = bybit_get("/v5/market/kline", params)
+    lst = ((d or {}).get("result") or {}).get("list") or []
+    if not lst: return None
+    highs = [float(x[2]) for x in lst]; lows = [float(x[3]) for x in lst]
+    return {"last": float(lst[0][4]), "high": max(highs), "low": min(lows)}
+
+
+def update_live_trades(trades, interval):
+    spread = TRADING_CONFIG["spread_pct"]; fee = TRADING_CONFIG["taker_fee"]
+    for t in trades:
+        if t["status"] != "OPEN": continue
+        q = get_live_quote(t["symbol"], interval, start_ms=t["entry_ts_ms"])
+        if not q: continue
+        d = t["direction"]; last = q["last"]
+        t["current_price"] = last
+        exit_px = last * (1 - spread / 2) if d == 1 else last * (1 + spread / 2)
+        net, fees = trade_net_pnl(d, t["entry_price"], exit_px, t["position_size"], fee)
+        t["pnl"] = net; t["fees"] = fees
+        t["pnl_pct"] = (net / t["capital"] * 100) if t["capital"] > 0 else 0
+        t["r_multiple"] = (net / t["risk_amount"]) if t["risk_amount"] > 0 else 0
+        if d == 1:
+            low_bid = q["low"] * (1 - spread / 2); high_bid = q["high"] * (1 - spread / 2)
+            if low_bid <= t["sl_price"]: _close_trade(t, t["sl_price"], "LOSS", fee)
+            elif high_bid >= t["tp_price"]: _close_trade(t, t["tp_price"], "WIN", fee)
+        else:
+            high_ask = q["high"] * (1 + spread / 2); low_ask = q["low"] * (1 + spread / 2)
+            if high_ask >= t["sl_price"]: _close_trade(t, t["sl_price"], "LOSS", fee)
+            elif low_ask <= t["tp_price"]: _close_trade(t, t["tp_price"], "WIN", fee)
+
+
+def _close_trade(t, exit_price, status, fee):
+    net, fees = trade_net_pnl(t["direction"], t["entry_price"], exit_price, t["position_size"], fee)
+    t["status"] = status; t["exit_price"] = exit_price
+    t["pnl"] = net; t["fees"] = fees
+    t["pnl_pct"] = (net / t["capital"] * 100) if t["capital"] > 0 else 0
+    t["r_multiple"] = (net / t["risk_amount"]) if t["risk_amount"] > 0 else 0
+
+
+# ==============================================================================
+# 4) نمودارها
+# ==============================================================================
+def build_cd_figure(df, expected_path, turning_points, supports, resistances, cycles, now_utc, symbol, interval):
+    interval_min = get_interval_minutes(interval); steps = len(expected_path)
+    last_ts = pd.Timestamp(df.iloc[-1]["ts"]).to_pydatetime().astimezone(timezone.utc); n = len(df)
+    def get_theta(dt):
+        minutes = dt.hour * 60 + dt.minute; return (minutes / 1440) * 360
+    R0 = 1.0
+    all_prices = list(expected_path) + [s["price"] for s in supports] + [r["price"] for r in resistances]
+    min_p, max_p = float(np.min(all_prices)), float(np.max(all_prices))
+    p_range = max_p - min_p if max_p > min_p else 1.0
+    def price_to_r(price): return R0 + 0.2 * (price - (min_p + max_p) / 2) / (p_range / 2)
+    r_groove = price_to_r(expected_path)
+    thetas = [get_theta(last_ts + timedelta(minutes=interval_min * (s + 1))) for s in range(steps)]
+    fig = go.Figure()
+    for r in np.linspace(0.4, 1.6, 15):
+        fig.add_trace(go.Scatterpolar(r=[r] * 361, theta=np.linspace(0, 360, 361), mode="lines",
+                                      line=dict(color="#1a233a", width=1), opacity=0.4, hoverinfo="skip", showlegend=False))
+    for s in supports:
+        r_val = price_to_r(s["price"])
+        fig.add_trace(go.Scatterpolar(r=[r_val] * 361, theta=np.linspace(0, 360, 361), mode="lines",
+                                      line=dict(color=UP, width=1 + s["score"] / 100 * 3.5, dash="dot"),
+                                      opacity=0.30 + s["score"] / 100 * 0.55,
+                                      name=f"حمایت {s['price']:,.1f} ({s['score']:.0f}%)", hoverinfo="name"))
+    for r_lvl in resistances:
+        r_val = price_to_r(r_lvl["price"])
+        fig.add_trace(go.Scatterpolar(r=[r_val] * 361, theta=np.linspace(0, 360, 361), mode="lines",
+                                      line=dict(color=DN, width=1 + r_lvl["score"] / 100 * 3.5, dash="dot"),
+                                      opacity=0.30 + r_lvl["score"] / 100 * 0.55,
+                                      name=f"مقاومت {r_lvl['price']:,.1f} ({r_lvl['score']:.0f}%)", hoverinfo="name"))
+    fig.add_trace(go.Scatterpolar(r=r_groove, theta=thetas, mode="lines", line=dict(color=GOLD, width=2.5),
+                                  name="شیار خط زمانی",
+                                  hovertemplate="زمان: %{text}<br>قیمت: %{r:.2f}<extra></extra>",
+                                  text=[(last_ts + timedelta(minutes=interval_min * (s + 1))).strftime("%H:%M") for s in range(steps)]))
+    if turning_points:
+        tp_thetas = [get_theta(tp["time"]) for tp in turning_points]
+        tp_r = [price_to_r(tp["price"]) for tp in turning_points]
+        tp_colors = [UP if tp["type"] == "قله (Peak)" else DN for tp in turning_points]
+        tp_symbols = ["diamond" if tp["type"] == "قله (Peak)" else "square" for tp in turning_points]
+        fig.add_trace(go.Scatterpolar(r=tp_r, theta=tp_thetas, mode="markers+text",
+                                      marker=dict(size=14, color=tp_colors, symbol=tp_symbols, line=dict(width=1.5, color="white")),
+                                      text=[tp["type"] for tp in turning_points], textposition="top center",
+                                      textfont=dict(size=10, color=TXT, family=FONT_FAMILY), name="نقاط چرخش",
+                                      customdata=[tp["time"].strftime("%H:%M") for tp in turning_points]))
+    now_theta = get_theta(now_utc)
+    fig.add_trace(go.Scatterpolar(r=[0, 1.6], theta=[now_theta, now_theta], mode="lines",
+                                  line=dict(color=DN, width=3, dash="dash"), name="اکنون", opacity=0.8))
+    max_r = 1.6
+    for i, c in enumerate(cycles):
+        ring_r = 1.7 + i * 0.13; max_r = max(max_r, ring_r)
+        color = RING_PALETTE[i % len(RING_PALETTE)]
+        phase_now_deg = ((c["w"] * (n - 1) - c["phase"]) % (2 * np.pi)) * 180 / np.pi
+        fig.add_trace(go.Scatterpolar(r=[ring_r] * 361, theta=np.linspace(0, 360, 361), mode="lines",
+                                      line=dict(color=color, width=1.2, dash="dashdot"), opacity=0.55, hoverinfo="skip", showlegend=False))
+        fig.add_trace(go.Scatterpolar(r=[ring_r], theta=[phase_now_deg], mode="markers+text",
+                                      marker=dict(size=12, color=color, symbol="circle", line=dict(width=1, color="white")),
+                                      text=[""], textposition="top center", name=f"{c['label']} | p={c['p_value']:.3f}",
+                                      hovertemplate=f"{c['label']}<br>p-value: {c['p_value']:.4f}<br>دامنه: {c['amp']:.2f}<extra></extra>"))
+    fig.update_layout(polar=dict(bgcolor=BG, radialaxis=dict(visible=False, range=[0, max_r + 0.25]),
+                                 angularaxis=dict(visible=True, direction="clockwise", rotation=90, tickmode="array",
+                                                  tickvals=[0, 90, 180, 270], ticktext=["00:00", "06:00", "12:00", "18:00"],
+                                                  tickfont=dict(color=MUT, size=13, family=FONT_FAMILY))),
+                      paper_bgcolor=BG, plot_bgcolor=BG, font=dict(family=FONT_FAMILY, color=TXT), showlegend=True,
+                      legend=dict(bgcolor="rgba(15,24,48,0.8)", bordercolor=LINE, borderwidth=1, font=dict(size=10)),
+                      margin=dict(l=40, r=40, t=60, b=40),
+                      title=dict(text=f"💿 Multi-Disk Timeline: {symbol} | {interval}m (UTC)", x=0.5,
+                                 font=dict(color=GOLD, size=18, family=FONT_FAMILY)))
+    return fig
+
+def empty_fig(msg):
+    fig = go.Figure()
+    fig.update_layout(template="plotly_dark", paper_bgcolor=BG, plot_bgcolor=BG)
+    fig.add_annotation(x=0.5, y=0.5, xref="paper", yref="paper", text=msg, showarrow=False,
+                       font=dict(size=16, color=DN, family=FONT_FAMILY))
+    return fig
+
+
+# ==============================================================================
+# 5) Dash UI
+# ==============================================================================
+FONT_URL = "https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;800&display=swap"
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.CYBORG, FONT_URL], suppress_callback_exceptions=True)
+app.title = "Multi-Disk Timeline Pro + Live Alarm"
+server = app.server
+
+app.index_string = """<!DOCTYPE html>
+<html>
+<head>
+{%metas%}<title>{%title%}</title>{%favicon%}{%css%}
+<style>
+body { background: #070b14; direction: rtl; }
+* { font-family: 'Vazirmatn', Tahoma, Arial, sans-serif !important; }
+.glass-card { background: linear-gradient(145deg, rgba(16,28,56,0.85), rgba(10,17,35,0.85));
+    border: 1px solid #22304e; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.35); backdrop-filter: blur(6px); }
+.stat-value { font-weight: 800; font-size: 18px; }
+.stat-label { font-size: 11px; color: #8ea0c4; }
+table { border-collapse: separate; border-spacing: 0 8px; width: 100%; }
+th { padding: 10px; font-weight: 600; color: #8ea0c4; font-size: 12px; text-align: center; }
+td { padding: 10px; text-align: center; background: rgba(34, 48, 78, 0.3); border-top: 1px solid #22304e; border-bottom: 1px solid #22304e; }
+td:first-child { border-right: 1px solid #22304e; border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
+td:last-child { border-left: 1px solid #22304e; border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
+.alarm-pulse { animation: pulse 1.5s infinite; }
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(255, 93, 108, 0.7); }
+    70% { box-shadow: 0 0 0 20px rgba(255, 93, 108, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 93, 108, 0); }
+}
+.trade-row-win { background: rgba(31, 215, 166, 0.08) !important; }
+.trade-row-loss { background: rgba(255, 93, 108, 0.08) !important; }
+</style>
+</head>
+<body>{%app_entry%}<footer>{%config%}{%scripts%}{%renderer%}</footer>
+<audio id="beep-long" src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbsGczGk2j1OvZdlM2RKXW7Nl2UDhLqtjt2XdXPUmr2O3Zd1k+SqzY7dl3Wj5Krdjt2XdZPkqt2O3Zd1k+Sq3Y" preload="auto"></audio>
+</body>
+</html>"""
+
+INTERVAL_OPTS = [{"label": lbl, "value": val} for lbl, val in
+                 [("1m", "1"), ("5m", "5"), ("15m", "15"), ("30m", "30"), ("1h", "60"), ("4h", "240"), ("1D", "D")]]
+
+
+def stat_card(id_prefix, label, color=TXT):
+    return dbc.Col(html.Div([html.Div(label, className="stat-label"),
+                             html.Div("—", id=f"{id_prefix}-value", className="stat-value", style={"color": color})],
+                            className="glass-card", style={"padding": "10px 14px", "textAlign": "center"}), md=True,
+                   xs=6, style={"marginBottom": 10})
+
+
+def create_sr_table(levels, kind="support"):
+    if not levels: return html.Div("سطحی یافت نشد.", style={"color": MUT, "textAlign": "center", "padding": "20px"})
+    color = UP if kind == "support" else DN
+    rows = []
+    for lv in levels:
+        rows.append(html.Tr([html.Td(f"{lv['price']:,.2f}", style={"color": color, "fontWeight": "bold"}),
+                             html.Td(f"{lv['score']:.0f}%", style={"color": GOLD}),
+                             html.Td(f"{lv['reliability']:.0f}%"), html.Td(f"{lv['touches']}"),
+                             html.Td(f"{lv['distance_pct']:+.2f}%"), html.Td("✅" if lv.get("confluence") else "—")]))
+    return html.Table([html.Thead(html.Tr([html.Th("قیمت"), html.Th("امتیاز"), html.Th("اطمینان"),
+                                           html.Th("برخورد"), html.Th("فاصله"), html.Th("هم‌راستا با حجم")])),
+                       html.Tbody(rows)])
+
+
+def create_cycles_table(cycles, meta):
+    header = html.Div([html.Span(
+        f"آستانه‌ی معناداری تصحیح‌شده: α = {meta['alpha_eff']:.4f} روی {meta['n_candidates']} فرضیه",
+        style={"color": MUT, "fontSize": 11})], style={"marginBottom": 8, "textAlign": "center"})
+    if not cycles: return html.Div([header, html.Div("هیچ چرخه‌ی معناداری یافت نشد.",
+                                                     style={"color": MUT, "textAlign": "center", "padding": "16px"})])
+    rows = []
+    for c in cycles:
+        badge = "🪐 سیاره‌ای" if c["source"] == "planet" else "📊 تجربی"
+        rows.append(html.Tr([html.Td(c["label"]), html.Td(badge), html.Td(f"{c['amp']:.2f}", style={"color": GOLD}),
+                             html.Td(f"{c['p_value']:.4f}", style={"color": UP if c['p_value'] < 0.01 else TXT})]))
+    table = html.Table([html.Thead(html.Tr([html.Th("چرخه"), html.Th("منبع"), html.Th("دامنه"), html.Th("p-value")])),
+                        html.Tbody(rows)])
+    return html.Div([header, table])
+
+
+# ==============================================================================
+# Layout
+# ==============================================================================
+app.layout = html.Div([
+    html.Audio(id="alarm-sound", autoPlay=False, controls=False, style={"display": "none"}),
+    html.Div(id="dummy-trigger", style={"display": "none"}),
+
+    html.Div([
+        html.H2("💿 Multi-Disk Timeline Pro", style={"color": GOLD, "fontWeight": 800, "margin": 0}),
+        html.P("ورود در ری‌تست سطح + اسپرد/کمیسیون/سقف لوریج + زمان‌های UTC (یکسان در بک‌تست و لایو)",
+               style={"color": MUT, "fontSize": 13, "margin": "4px 0"})
+    ], style={"textAlign": "center", "marginTop": 20}),
+
+    dbc.Card(dbc.CardBody(dbc.Row([
+        dbc.Col([html.Label("نماد اصلی", style={"color": MUT, "fontSize": 12}),
+                 dcc.Input(id="symbol", value=DEFAULT_SYMBOL, type="text", className="form-control",
+                           style={"backgroundColor": CARD2, "color": TXT, "borderColor": LINE})], md=3),
+        dbc.Col([html.Label("تایم‌فریم", style={"color": MUT, "fontSize": 12}),
+                 dcc.Dropdown(id="interval", options=INTERVAL_OPTS, value=DEFAULT_INTERVAL, clearable=False,
+                              style={"backgroundColor": CARD2, "color": TXT})], md=3),
+        dbc.Col([html.Label("عمق تاریخچه (کندل)", style={"color": MUT, "fontSize": 12}),
+                 dcc.Input(id="history_bars", value=3000, type="number", min=500, max=15000, step=500,
+                           className="form-control",
+                           style={"backgroundColor": CARD2, "color": TXT, "borderColor": LINE})], md=3),
+        dbc.Col([html.Button("⚡ بروزرسانی داده‌ها", id="btn-update-data", n_clicks=0,
+                             style={"marginTop": 24, "backgroundColor": GOLD, "color": BG, "border": "none",
+                                    "borderRadius": 8, "padding": "8px 16px", "fontWeight": "bold", "width": "100%",
+                                    "cursor": "pointer"})], md=3),
+    ], align="center")), className="glass-card", style={"maxWidth": "1300px", "margin": "20px auto"}),
+
+    dcc.Tabs(id="main-tabs", value="tab-analysis", children=[
+        dcc.Tab(label="🪐 تحلیل چند-دیسکی", value="tab-analysis", children=[
+            dbc.Card(dbc.CardBody(dbc.Row([
+                dbc.Col([html.Label("افق پیش‌بینی (ساعت)", style={"color": MUT, "fontSize": 12}),
+                         dcc.Input(id="forecast_hours", value=24, type="number", min=6, max=72,
+                                   className="form-control",
+                                   style={"backgroundColor": CARD2, "color": TXT, "borderColor": LINE})], md=4),
+                dbc.Col([html.Button("🔄 تحلیل چرخه‌ها و سطوح", id="btn-update-analysis", n_clicks=0,
+                                     style={"marginTop": 24, "backgroundColor": BLUE, "color": TXT, "border": "none",
+                                            "borderRadius": 8, "padding": "8px 16px", "fontWeight": "bold",
+                                            "width": "100%", "cursor": "pointer"})], md=4),
+            ])), className="glass-card", style={"maxWidth": "1300px", "margin": "10px auto"}),
+            dbc.Row([
+                dbc.Col([dcc.Graph(id="cd-graph", config={"displayModeBar": False}, style={"height": "620px"})], md=8),
+                dbc.Col([html.Div([
+                    html.H5("🪐 چرخه‌های معنادار", style={"color": GOLD, "textAlign": "center", "marginBottom": 10, "fontWeight": 800}),
+                    html.Div(id="cycles-table"),
+                ], className="glass-card", style={"padding": 20, "height": "100%"})], md=4)
+            ], style={"maxWidth": "1300px", "margin": "20px auto"}),
+            dbc.Row([
+                dbc.Col([html.Div([html.H5("🟢 سطوح حمایت", style={"color": UP, "textAlign": "center", "marginBottom": 15, "fontWeight": 800}),
+                                   html.Div(id="support-table")], className="glass-card", style={"padding": 20})], md=6),
+                dbc.Col([html.Div([html.H5("🔴 سطوح مقاومت", style={"color": DN, "textAlign": "center", "marginBottom": 15, "fontWeight": 800}),
+                                   html.Div(id="resistance-table")], className="glass-card", style={"padding": 20})], md=6),
+            ], style={"maxWidth": "1300px", "margin": "10px auto"}),
+        ]),
+
+        dcc.Tab(label="📊 بک‌تست هوشمند", value="tab-backtest", children=[
+            dbc.Card(dbc.CardBody(dbc.Row([
+                dbc.Col([html.Label("نسبت R:R", style={"color": MUT, "fontSize": 12}),
+                         dcc.Dropdown(id="rr-ratio",
+                                      options=[{"label": f"1:{r}", "value": r} for r in [1.5, 2.0, 2.5, 3.0, 4.0]],
+                                      value=2.0, clearable=False, style={"backgroundColor": CARD2, "color": TXT})], md=3),
+                dbc.Col([html.Label("ریسک (%)", style={"color": MUT, "fontSize": 12}),
+                         dcc.Input(id="risk-pct", value=2.0, type="number", min=0.5, max=10, step=0.5,
+                                   className="form-control",
+                                   style={"backgroundColor": CARD2, "color": TXT, "borderColor": LINE})], md=3),
+                dbc.Col([html.Label("سرمایه اولیه ($)", style={"color": MUT, "fontSize": 12}),
+                         dcc.Input(id="initial-capital", value=500, type="number", min=100, step=100,
+                                   className="form-control",
+                                   style={"backgroundColor": CARD2, "color": TXT, "borderColor": LINE})], md=3),
+                dbc.Col([html.Button("🔄 اجرای بک‌تست", id="btn-backtest", n_clicks=0,
+                                     style={"marginTop": 24, "backgroundColor": CYAN, "color": BG, "border": "none",
+                                            "borderRadius": 8, "padding": "8px 16px", "fontWeight": "bold",
+                                            "width": "100%", "cursor": "pointer"})], md=3),
+            ])), className="glass-card", style={"maxWidth": "1300px", "margin": "10px auto"}),
+            dbc.Row([
+                stat_card("bt-winrate", "وین ریت", UP), stat_card("bt-final-cap", "سرمایه نهایی", GOLD),
+                stat_card("bt-net-profit", "سود خالص ($)", CYAN), stat_card("bt-net-profit-pct", "سود خالص (%)", CYAN),
+                stat_card("bt-max-dd", "Max Drawdown", DN), stat_card("bt-profit-factor", "Profit Factor", PURPLE),
+            ], style={"maxWidth": "1300px", "margin": "10px auto"}),
+            dbc.Row([
+                dbc.Col([html.Div([
+                    html.H5("📈 منحنی رشد سرمایه", style={"color": GOLD, "textAlign": "center", "marginBottom": 15, "fontWeight": 800}),
+                    dcc.Graph(id="equity-graph", config={"displayModeBar": False}, style={"height": "450px"})
+                ], className="glass-card", style={"padding": 20})], md=12)
+            ], style={"maxWidth": "1300px", "margin": "10px auto"}),
+            dbc.Card(dbc.CardBody([
+                html.H5("📋 تاریخچه معاملات بک‌تست (زمان‌ها UTC)", style={"color": GOLD, "textAlign": "center", "fontWeight": 800, "marginBottom": 10}),
+                html.Div(id="bt-integrity", style={"textAlign": "center", "marginBottom": 10}),
+                html.Div(id="trades-journal-table"),
+            ]), className="glass-card", style={"maxWidth": "1400px", "margin": "20px auto", "padding": "20px"}),
+        ]),
+
+        dcc.Tab(label="🔔 اسکنر زنده (معاملات لایو)", value="tab-scanner", children=[
+            dbc.Card(dbc.CardBody(dbc.Row([
+                dbc.Col([html.Label("💰 سرمایه ($)", style={"color": MUT, "fontSize": 12}),
+                         dcc.Input(id="scan-capital", value=500, type="number", min=100, step=100,
+                                   className="form-control",
+                                   style={"backgroundColor": CARD2, "color": TXT, "borderColor": LINE})], md=2),
+                dbc.Col([html.Label("ریسک (%)", style={"color": MUT, "fontSize": 12}),
+                         dcc.Input(id="scan-risk-pct", value=2.0, type="number", min=0.5, max=10, step=0.5,
+                                   className="form-control",
+                                   style={"backgroundColor": CARD2, "color": TXT, "borderColor": LINE})], md=2),
+                dbc.Col([html.Label("R:R", style={"color": MUT, "fontSize": 12}),
+                         dcc.Dropdown(id="scan-rr-ratio",
+                                      options=[{"label": f"1:{r}", "value": r} for r in [1.5, 2.0, 2.5, 3.0, 4.0]],
+                                      value=2.0, clearable=False, style={"backgroundColor": CARD2, "color": TXT})], md=2),
+                dbc.Col([html.Label("حداقل اعتماد (%)", style={"color": MUT, "fontSize": 12}),
+                         dcc.Slider(id="scanner-min-conf", min=40, max=90, step=5, value=65,
+                                    marks={i: str(i) for i in range(40, 91, 10)},
+                                    tooltip={"placement": "bottom", "always_visible": True})], md=3),
+                dbc.Col([html.Label("فاصله اسکن (ثانیه)", style={"color": MUT, "fontSize": 12}),
+                         dcc.Dropdown(id="scanner-interval", options=[
+                             {"label": "30 ثانیه", "value": 30},
+                             {"label": "60 ثانیه", "value": 60},
+                             {"label": "120 ثانیه", "value": 120},
+                         ], value=60, clearable=False, style={"backgroundColor": CARD2, "color": TXT})], md=2),
+                dbc.Col([dbc.Switch(id="alarm-enabled", label="🔔 آلارم", value=True, className="mt-3")], md=1),
+            ], align="center")), className="glass-card", style={"maxWidth": "1400px", "margin": "10px auto"}),
+
+            html.Div("⚙️ ورود فقط در ری‌تست سطح | کمیسیون ۰.۰۵٪ | اسپرد ۰.۰۴٪ | سقف لوریج ۱۰x | زمان‌ها UTC",
+                     style={"color": MUT, "fontSize": 11, "textAlign": "center", "margin": "6px 0"}),
+
+            dbc.Row([
+                stat_card("scan-open-trades", "معاملات باز", BLUE),
+                stat_card("scan-win-rate", "Win Rate", UP),
+                stat_card("scan-realized-pnl", "PnL تحقق‌یافته ($)", CYAN),
+                stat_card("scan-unrealized-pnl", "PnL لایو ($)", ORANGE),
+                stat_card("scan-total-trades", "کل معاملات", GOLD),
+                stat_card("scan-last", "آخرین اسکن (UTC)", MUT),
+            ], style={"maxWidth": "1400px", "margin": "10px auto"}),
+
+            dbc.Card(dbc.CardBody([
+                html.H5("📋 معاملات لایو (ورود در ری‌تست) — PnL خالص پس از کمیسیون — زمان‌ها UTC",
+                        style={"color": GOLD, "textAlign": "center", "fontWeight": 800, "marginBottom": 15}),
+                html.Div(id="scanner-trades-table"),
+            ]), className="glass-card", style={"maxWidth": "1400px", "margin": "10px auto"}),
+
+            dbc.Modal([
+                dbc.ModalHeader(dbc.ModalTitle(id="alarm-modal-title", style={"color": GOLD, "fontWeight": 800})),
+                dbc.ModalBody(id="alarm-modal-body"),
+                dbc.ModalFooter(dbc.Button("بستن", id="alarm-modal-close", className="ms-auto", n_clicks=0)),
+            ], id="alarm-modal", is_open=False, size="lg", centered=True, className="alarm-pulse"),
+
+            dcc.Interval(id="scanner-interval-component", interval=60 * 1000, n_intervals=0),
+            dcc.Store(id="scanner-trades-store", data=[]),
+        ]),
+    ], style={"maxWidth": "1400px", "margin": "0 auto"})
+], style={"backgroundColor": BG, "minHeight": "100vh", "paddingBottom": 50})
+
+
+# ==============================================================================
+# Callbacks: تحلیل
+# ==============================================================================
+@app.callback(
+    [Output("cd-graph", "figure"), Output("cycles-table", "children"),
+     Output("support-table", "children"), Output("resistance-table", "children")],
+    [Input("btn-update-analysis", "n_clicks"), Input("btn-update-data", "n_clicks")],
+    [State("symbol", "value"), State("interval", "value"), State("forecast_hours", "value"),
+     State("history_bars", "value")]
+)
+def update_analysis(n1, n2, symbol, interval, forecast_hours, history_bars):
+    symbol = (symbol or DEFAULT_SYMBOL).upper().strip()
+    hb = int(history_bars) if history_bars else 3000
+    interval_min = get_interval_minutes(interval)
+    df = get_klines_extended(symbol, interval, total_bars=hb)
+    now_utc = get_server_time()
+    if df.empty or len(df) < 60:
+        empty = empty_fig("داده کافی دریافت نشد"); na = "—"
+        return empty, html.Div("—"), html.Div("—"), html.Div("—")
+    fh = forecast_hours if forecast_hours else 24
+    steps = int((fh * 60) / interval_min)
+    last_ts = pd.Timestamp(df.iloc[-1]["ts"]).to_pydatetime().astimezone(timezone.utc)
+    cycles, trend_coef, t, n, meta = detect_significant_cycles(df, interval_min, top_fft_k=5, alpha=ALPHA, n_perm=N_PERM)
+    expected_path = forecast_from_cycles(cycles, trend_coef, n, steps)
+    turning_points = find_turning_points(expected_path, last_ts, interval_min)
+    supports, resistances = find_support_resistance(df, num_levels=5)
+    fig = build_cd_figure(df, expected_path, turning_points, supports, resistances, cycles, now_utc, symbol, interval)
+    cycles_table = create_cycles_table(cycles, meta)
+    support_table = create_sr_table(supports, "support")
+    resistance_table = create_sr_table(resistances, "resistance")
+    return fig, cycles_table, support_table, resistance_table
+
+
+# ==============================================================================
+# Callbacks: بک‌تست
+# ==============================================================================
+@app.callback(
+    [Output("equity-graph", "figure"), Output("bt-winrate-value", "children"), Output("bt-final-cap-value", "children"),
+     Output("bt-net-profit-value", "children"), Output("bt-net-profit-pct-value", "children"),
+     Output("bt-max-dd-value", "children"), Output("bt-profit-factor-value", "children"),
+     Output("trades-journal-table", "children"), Output("bt-integrity", "children")],
+    [Input("btn-backtest", "n_clicks"), Input("btn-update-data", "n_clicks")],
+    [State("symbol", "value"), State("interval", "value"), State("history_bars", "value"),
+     State("rr-ratio", "value"), State("risk-pct", "value"), State("initial-capital", "value")]
+)
+def run_backtest(n1, n2, symbol, interval, history_bars, rr_ratio, risk_pct, initial_capital):
+    na = "—"; empty = empty_fig("برای مشاهده نتایج، دکمه اجرای بک‌تست را بزنید.")
+    if not dash.callback_context.triggered:
+        return empty, na, na, na, na, na, na, html.Div("—"), html.Div("")
+    symbol = (symbol or DEFAULT_SYMBOL).upper().strip()
+    df = get_klines_extended(symbol, interval, total_bars=int(history_bars) if history_bars else 3000)
+    if df.empty or len(df) < 100:
+        empty_msg = empty_fig("داده کافی برای بک‌تست وجود ندارد.")
+        return empty_msg, na, na, na, na, na, na, html.Div("—"), html.Div("")
+    bt = backtest_confluence_trades(df, rr_ratio=rr_ratio, risk_pct=risk_pct, initial_capital=initial_capital)
+    eq_fig = go.Figure()
+    eq_fig.add_trace(go.Scatter(x=bt['equity_x'], y=bt['equity_y'], mode="lines", line=dict(color=GOLD, width=3),
+                                fill="tozeroy", fillcolor="rgba(243, 186, 47, 0.1)", name="سرمایه"))
+    eq_fig.add_hline(y=initial_capital, line_dash="dash", line_color=MUT, opacity=0.5)
+    eq_fig.update_layout(template="plotly_dark", paper_bgcolor=BG, plot_bgcolor=BG,
+                         font=dict(family=FONT_FAMILY, color=TXT),
+                         margin=dict(l=40, r=40, t=40, b=40), xaxis=dict(title="زمان (UTC)", gridcolor=LINE),
+                         yaxis=dict(title="سرمایه ($)", gridcolor=LINE),
+                         title=dict(text=f"منحنی رشد سرمایه | R:R = 1:{rr_ratio} | ریسک = {risk_pct}%", x=0.5,
+                                    font=dict(color=GOLD, size=16, family=FONT_FAMILY)))
+    wr = f"{bt['win_rate']:.1f}%"
+    fc = f"${bt['final_capital']:,.2f}"
+    np_usd = f"${bt['net_profit']:+,.2f}"
+    np_pct = f"{bt['net_profit_pct']:+.1f}%"
+    mdd = f"{bt['max_drawdown']:.1f}%"
+    pf = f"{bt['profit_factor']:.2f}" if bt['profit_factor'] != float('inf') else "∞"
+    trades_html = create_trades_journal_html(bt['trades'])
+    integrity_html = html.Div(bt['integrity'], style={"color": UP, "fontSize": 12, "fontWeight": "bold"})
+    return eq_fig, wr, fc, np_usd, np_pct, mdd, pf, trades_html, integrity_html
+
+
+def create_trades_journal_html(trades):
+    if not trades:
+        return html.Div("معامله‌ای یافت نشد.", style={"color": MUT, "textAlign": "center", "padding": "20px"})
+    header = html.Tr([
+        html.Th("#"), html.Th("زمان ورود (UTC)"), html.Th("جهت"), html.Th("ورود"), html.Th("خروج"),
+        html.Th("سطح"), html.Th("SL"), html.Th("TP"), html.Th("لوریج"), html.Th("ریسک"),
+        html.Th("کمیسیون"), html.Th("PnL خالص"), html.Th("PnL %"), html.Th("R"), html.Th("وضعیت"),
+    ], style={"color": GOLD, "fontSize": "11px", "textAlign": "center", "fontWeight": "bold"})
+    rows = []
+    for i, t in enumerate(trades, 1):
+        dir_color = UP if t['direction'] == "LONG" else DN
+        if t['outcome'] == "WIN": outcome_color = UP; row_bg = "rgba(31, 215, 166, 0.1)"
+        elif t['outcome'] == "LOSS": outcome_color = DN; row_bg = "rgba(255, 93, 108, 0.1)"
+        else: outcome_color = MUT; row_bg = "transparent"
+        pnl_color = UP if t['pnl'] > 0 else (DN if t['pnl'] < 0 else MUT)
+        rows.append(html.Tr([
+            html.Td(str(i)),
+            html.Td(fmt_utc(t['entry_time']), style={"whiteSpace": "nowrap"}),
+            html.Td(t['direction'], style={"color": dir_color, "fontWeight": "bold"}),
+            html.Td(fmt_price(t['entry_price'])),
+            html.Td(fmt_price(t['exit_price'])),
+            html.Td(fmt_price(t['sr_price']), style={"color": GOLD}),
+            html.Td(fmt_price(t['sl_price']), style={"color": DN}),
+            html.Td(fmt_price(t['tp_price']), style={"color": UP}),
+            html.Td(f"{t['leverage']:.2f}x", style={"color": ORANGE}),
+            html.Td(f"${t['risk_amount']:.2f}"),
+            html.Td(f"${t['fees']:.2f}", style={"color": MUT}),
+            html.Td(f"${t['pnl']:+,.2f}", style={"color": pnl_color, "fontWeight": "bold"}),
+            html.Td(f"{t['pnl_pct']:+.2f}%", style={"color": pnl_color}),
+            html.Td(f"{t['r_multiple']:+.2f}R", style={"color": pnl_color}),
+            html.Td(t['outcome'], style={"color": outcome_color, "fontWeight": "bold"}),
+        ], style={"background": row_bg, "textAlign": "center", "fontSize": "11px"}))
+    return html.Div([
+        html.Table([html.Thead(header), html.Tbody(rows)],
+                   style={"width": "100%", "borderCollapse": "separate", "borderSpacing": "0 4px"}),
+    ], style={"maxHeight": "600px", "overflowY": "auto"})
+
+
+# ==============================================================================
+# Callbacks: اسکنر زنده
+# ==============================================================================
+@app.callback(
+    [Output("scanner-interval-component", "interval"),
+     Output("scanner-interval-component", "disabled")],
+    [Input("scanner-interval", "value"), Input("main-tabs", "value")]
+)
+def update_scanner_interval(interval_sec, active_tab_value):
+    if active_tab_value != "tab-scanner":
+        return 60 * 1000, True
+    return int(interval_sec) * 1000, False
+
+
+@app.callback(
+    [Output("scanner-trades-table", "children"),
+     Output("scan-open-trades-value", "children"),
+     Output("scan-win-rate-value", "children"),
+     Output("scan-realized-pnl-value", "children"),
+     Output("scan-unrealized-pnl-value", "children"),
+     Output("scan-total-trades-value", "children"),
+     Output("scan-last-value", "children"),
+     Output("alarm-modal", "is_open"),
+     Output("alarm-modal-title", "children"),
+     Output("alarm-modal-body", "children"),
+     Output("scanner-trades-store", "data"),
+     Output("alarm-sound", "src")],
+    [Input("scanner-interval-component", "n_intervals"),
+     Input("main-tabs", "value")],
+    [State("interval", "value"), State("scanner-min-conf", "value"),
+     State("alarm-enabled", "value"),
+     State("scanner-trades-store", "data"),
+     State("scan-capital", "value"), State("scan-risk-pct", "value"),
+     State("scan-rr-ratio", "value")]
+)
+def run_scanner(n_intervals, active_tab_value, interval, min_conf, alarm_enabled,
+                existing_trades, capital, risk_pct, rr_ratio):
+    if active_tab_value != "tab-scanner":
+        return (no_update, no_update, no_update, no_update, no_update, no_update, no_update,
+                False, "", "", no_update, no_update)
+
+    capital = float(capital or 500)
+    risk_pct = float(risk_pct or 2.0)
+    rr_ratio = float(rr_ratio or 2.0)
+    existing_trades = existing_trades or []
+    now = datetime.now(timezone.utc)
+
+    update_live_trades(existing_trades, interval)
+
+    new_signals = []
+    open_symbols = {t["symbol"] for t in existing_trades if t["status"] == "OPEN"}
+    recent_signals = {t["symbol"]: datetime.fromisoformat(t["timestamp"]) for t in existing_trades[-20:]}
+    for symbol in SCANNER_SYMBOLS:
+        if symbol in open_symbols: continue
+        if symbol in recent_signals and (now - recent_signals[symbol]).total_seconds() < 600: continue
+        signal = generate_trade_signal(symbol, interval, rr_ratio, risk_pct, capital)
+        if signal and signal["confidence"] >= min_conf:
+            new_signals.append(signal)
+    new_signals.sort(key=lambda x: x["confidence"], reverse=True)
+
+    added_new_strong = False
+    for sig in new_signals[:3]:
+        existing_trades.insert(0, sig)
+        if sig["confidence"] >= 75: added_new_strong = True
+    existing_trades = existing_trades[:50]
+
+    open_trades = [t for t in existing_trades if t["status"] == "OPEN"]
+    closed_trades = [t for t in existing_trades if t["status"] in ("WIN", "LOSS")]
+    wins = [t for t in closed_trades if t["status"] == "WIN"]
+    win_rate = (len(wins) / len(closed_trades) * 100) if closed_trades else 0
+    realized_pnl = sum(t["pnl"] for t in closed_trades)
+    unrealized_pnl = sum(t["pnl"] for t in open_trades)
+
+    trades_html = create_live_trades_table(existing_trades)
+
+    modal_open = False; modal_title = ""; modal_body = ""; sound_src = ""
+    if added_new_strong and alarm_enabled and new_signals:
+        top_sig = new_signals[0]
+        modal_open = True
+        modal_title = f"🚨 سیگنال جدید: {top_sig['symbol']}"
+        modal_body = build_signal_modal(top_sig)
+        sound_src = BEEP_SOUND_LONG
+
+    return (
+        trades_html,
+        str(len(open_trades)), f"{win_rate:.1f}%",
+        f"${realized_pnl:+,.2f}", f"${unrealized_pnl:+,.2f}",
+        str(len(existing_trades)), fmt_utc(now, seconds=True),
+        modal_open, modal_title, modal_body,
+        existing_trades, sound_src
+    )
+
+
+def create_live_trades_table(trades):
+    if not trades:
+        return html.Div("هنوز سیگنالی تولید نشده است. در حال اسکن...",
+                        style={"color": MUT, "textAlign": "center", "padding": "30px"})
+    header = html.Tr([
+        html.Th("وضعیت"), html.Th("نماد"), html.Th("زمان ورود (UTC)"), html.Th("جهت"),
+        html.Th("ورود"), html.Th("سطح"), html.Th("فعلی/خروج"), html.Th("SL"), html.Th("TP"),
+        html.Th("لوریج"), html.Th("ریسک"), html.Th("کمیسیون"),
+        html.Th("PnL خالص"), html.Th("PnL %"), html.Th("R"),
+    ], style={"color": GOLD, "fontSize": "11px", "fontWeight": "bold", "textAlign": "center"})
+    rows = []
+    for t in trades:
+        status = t["status"]; d = t["direction"]
+        dir_text = "🟢 LONG" if d == 1 else "🔴 SHORT"
+        dir_color = UP if d == 1 else DN
+        if status == "WIN": status_color = UP; row_class = "trade-row-win"
+        elif status == "LOSS": status_color = DN; row_class = "trade-row-loss"
+        else: status_color = BLUE; row_class = ""
+        pnl_color = UP if t["pnl"] > 0 else (DN if t["pnl"] < 0 else MUT)
+        status_badge = {"OPEN": "🟡 باز", "WIN": "✅ WIN", "LOSS": "❌ LOSS"}.get(status, status)
+        last_px = t.get("exit_price") or t.get("current_price") or t["entry_price"]
+        rows.append(html.Tr([
+            html.Td(status_badge, style={"color": status_color, "fontWeight": "bold"}),
+            html.Td(t["symbol"].replace("USDT", ""), style={"color": GOLD, "fontWeight": "bold"}),
+            html.Td(fmt_utc(t["timestamp"]), style={"whiteSpace": "nowrap"}),
+            html.Td(dir_text, style={"color": dir_color, "fontWeight": "bold"}),
+            html.Td(fmt_price(t["entry_price"])),
+            html.Td(fmt_price(t.get("level_price", 0)), style={"color": GOLD}),
+            html.Td(fmt_price(last_px), style={"color": TXT, "fontWeight": "bold"}),
+            html.Td(fmt_price(t["sl_price"]), style={"color": DN}),
+            html.Td(fmt_price(t["tp_price"]), style={"color": UP}),
+            html.Td(f"{t['leverage']:.2f}x", style={"color": ORANGE, "fontWeight": "bold"}),
+            html.Td(f"${t['risk_amount']:.2f}"),
+            html.Td(f"${t['fees']:.2f}", style={"color": MUT}),
+            html.Td(f"${t['pnl']:+,.2f}", style={"color": pnl_color, "fontWeight": "bold"}),
+            html.Td(f"{t['pnl_pct']:+.2f}%", style={"color": pnl_color, "fontWeight": "bold"}),
+            html.Td(f"{t['r_multiple']:+.2f}R", style={"color": pnl_color}),
+        ], className=row_class, style={"textAlign": "center", "fontSize": "12px"}))
+    return html.Div([
+        html.Table([html.Thead(header), html.Tbody(rows)],
+                   style={"width": "100%", "borderCollapse": "separate", "borderSpacing": "0 4px"}),
+    ], style={"maxHeight": "700px", "overflowY": "auto"})
+
+
+def build_signal_modal(sig):
+    d = sig["direction"]
+    dir_text = "🟢 LONG" if d == 1 else "🔴 SHORT"
+    dir_color = UP if d == 1 else DN
+    return html.Div([
+        html.Div([
+            html.Div([html.Div("نماد", className="stat-label"),
+                      html.Div(sig['symbol'], className="stat-value", style={"color": GOLD})],
+                     className="glass-card", style={"padding": "10px", "textAlign": "center"}),
+            html.Div([html.Div("جهت", className="stat-label"),
+                      html.Div(dir_text, className="stat-value", style={"color": dir_color})],
+                     className="glass-card", style={"padding": "10px", "textAlign": "center"}),
+            html.Div([html.Div("اطمینان", className="stat-label"),
+                      html.Div(f"{sig['confidence']:.0f}%", className="stat-value", style={"color": UP})],
+                     className="glass-card", style={"padding": "10px", "textAlign": "center"}),
+            html.Div([html.Div("زمان سیگنال (UTC)", className="stat-label"),
+                      html.Div(fmt_utc(sig['timestamp']), className="stat-value", style={"color": TXT, "fontSize": "14px"})],
+                     className="glass-card", style={"padding": "10px", "textAlign": "center"}),
+        ], style={"display": "grid", "gridTemplateColumns": "repeat(4, 1fr)", "gap": "10px", "marginBottom": "15px"}),
+        html.H5("🎯 ورود در ری‌تست سطح", style={"color": GOLD, "textAlign": "center", "marginBottom": "10px"}),
+        dbc.Row([
+            dbc.Col(html.Div([html.Div("سطح ورود", className="stat-label"),
+                              html.Div(fmt_price(sig.get('level_price', 0)), className="stat-value", style={"color": GOLD})]), md=3),
+            dbc.Col(html.Div([html.Div("قیمت ورود", className="stat-label"),
+                              html.Div(fmt_price(sig['entry_price']), className="stat-value", style={"color": TXT})]), md=3),
+            dbc.Col(html.Div([html.Div("حد ضرر (SL)", className="stat-label"),
+                              html.Div(fmt_price(sig['sl_price']), className="stat-value", style={"color": DN})]), md=3),
+            dbc.Col(html.Div([html.Div("حد سود (TP)", className="stat-label"),
+                              html.Div(fmt_price(sig['tp_price']), className="stat-value", style={"color": UP})]), md=3),
+        ], style={"marginBottom": "10px"}),
+        dbc.Row([
+            dbc.Col(html.Div([html.Div("لوریج (سقف ۱۰x)", className="stat-label"),
+                              html.Div(f"{sig['leverage']:.2f}x", className="stat-value", style={"color": PURPLE})]), md=3),
+            dbc.Col(html.Div([html.Div("حجم پوزیشن", className="stat-label"),
+                              html.Div(f"{sig['position_size']:,.4f}", className="stat-value", style={"color": CYAN})]), md=3),
+            dbc.Col(html.Div([html.Div("ارزش پوزیشن", className="stat-label"),
+                              html.Div(f"${sig['position_value']:,.2f}", className="stat-value", style={"color": TXT})]), md=3),
+            dbc.Col(html.Div([html.Div("ریسک واقعی", className="stat-label"),
+                              html.Div(f"${sig['risk_amount']:.2f}", className="stat-value", style={"color": DN})]), md=3),
+        ], style={"marginBottom": "10px"}),
+        dbc.Row([
+            dbc.Col(html.Div([html.Div("کمیسیون تقریبی (۲ طرف)", className="stat-label"),
+                              html.Div(f"${sig['fees']:.2f}", className="stat-value", style={"color": MUT})]), md=6),
+            dbc.Col(html.Div([html.Div("RSI", className="stat-label"),
+                              html.Div(f"{sig['rsi']:.1f}", className="stat-value", style={"color": CYAN})]), md=3),
+            dbc.Col(html.Div([html.Div("ATR", className="stat-label"),
+                              html.Div(fmt_price(sig['atr']), className="stat-value", style={"color": PURPLE})]), md=3),
+        ]),
+        html.Div([
+            html.Hr(style={"borderColor": LINE}),
+            html.Div("⚠️ ورود فقط وقتی قیمت روی سطح است (ری‌تست) — شامل اسپرد/کمیسیون/سقف لوریج — زمان‌ها UTC.",
+                     style={"color": MUT, "fontSize": "12px", "textAlign": "center", "padding": "10px",
+                            "borderRadius": "8px", "background": "rgba(255, 159, 67, 0.1)"})
+        ])
+    ])
+
+
+# ==============================================================================
+# Clientside Callbacks
+# ==============================================================================
+clientside_callback(
+    """
+    function playSound(src, alarm_open) {
+        if (src && alarm_open) {
+            try {
+                const audio = document.getElementById('beep-long');
+                if (audio) { audio.src = src; audio.play().catch(e => console.log('Audio play failed:', e)); }
+                if (Notification && Notification.permission === 'granted') {
+                    new Notification('🚨 سیگنال جدید Multi-Disk', { body: 'یک سیگنال قوی شناسایی شد!' });
+                }
+            } catch (e) { console.log('Sound error:', e); }
+        }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("dummy-trigger", "children"),
+    Input("alarm-sound", "src"),
+    Input("alarm-modal", "is_open"),
+)
+
+
+@app.callback(
+    Output("alarm-modal", "is_open", allow_duplicate=True),
+    Input("alarm-modal-close", "n_clicks"),
+    prevent_initial_call=True
+)
+def close_alarm_modal(n):
+    return False
+
+
+# ==============================================================================
+# Main
+# ==============================================================================
+if __name__ == "__main__":
+    print("=" * 60)
+    print("💿 Multi-Disk Timeline Pro — ورود در ری‌تست سطح")
+    print("⚙️ اسپرد 0.04% | کمیسیون 0.055% | سقف لوریج 10x | حداقل SL 0.6%")
+    print("🕐 همه زمان‌ها: UTC")
+    print(f"🌐 http://127.0.0.1:8050")
+    print("=" * 60)
+    app.run(debug=True, port=8050, host="127.0.0.1")

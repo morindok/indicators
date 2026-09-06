@@ -1,0 +1,1194 @@
+"""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║           Bybit Professional Trading Analysis Dashboard — PRO                ║
+║           سیستم تحلیل و معاملات حرفه‌ای بایبیت (نسخه Confluence Engine)      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Version: 3.0.0 (Confluence Engine + Parallel Scanning)
+
+تغییرات نسبت به نسخه 2.2.0:
+  1) موتور تحلیل تکنیکال جدید (EMA / RSI / MACD / Bollinger / ATR / ADX-DI)
+  2) موتور "امتیاز همگرایی" (Confluence Score) برای سیگنال‌ها — فقط بهترین
+     ستاپ‌ها که چند فاکتور مستقل را همزمان تایید می‌کنند، سیگنال صادر می‌کنند
+  3) فیلتر رژیم بازار (ADX) برای حذف سیگنال در بازارهای رنج/شلوغ
+  4) فیلتر ریسک‌به‌ریوارد حداقلی (R/R >= 1.5)
+  5) بهینه‌سازی شبکه: هر نماد فقط یک بار /recent-trade می‌گیرد و بین همه
+     تایم‌فریم‌ها به اشتراک گذاشته می‌شود (کاهش ۷ برابری درخواست‌ها)
+  6) اسکن موازی (ThreadPoolExecutor) روی ۳۰ نماد به‌جای اسکن سریالی با sleep
+  7) نمودارهای عمیق‌تر: قیمت + EMA + Bollinger، RSI، MACD، پنل همگرایی
+     (Confluence Panel) به‌صورت نمودار میله‌ای فاکتورها، و بج رژیم بازار
+  8) ایمنی Thread برای کش و Rate-Limit
+"""
+
+import os
+import json
+import time
+import math
+import logging
+import threading
+import warnings
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple, Any
+
+import requests
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+import dash
+from dash import dcc, html, Input, Output, State, callback_context
+from dash.exceptions import PreventUpdate
+import dash_bootstrap_components as dbc
+
+warnings.filterwarnings("ignore")
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+log = logging.getLogger("morindok_dashboard")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+BYBIT_ENDPOINTS = [
+    "https://api.bybit.com",
+    "https://api.bytick.com",
+    "https://api.bybit.kz",
+]
+
+TOP_30_SYMBOLS = [
+    "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT",
+    "ADAUSDT", "DOGEUSDT", "TRXUSDT", "AVAXUSDT", "LINKUSDT",
+    "TONUSDT", "SUIUSDT", "SHIBUSDT", "DOTUSDT", "LTCUSDT",
+    "BCHUSDT", "UNIUSDT", "NEARUSDT", "APTUSDT", "MATICUSDT",
+    "ICPUSDT", "FILUSDT", "ETCUSDT", "XLMUSDT", "ATOMUSDT",
+    "ARBUSDT", "OPUSDT", "INJUSDT", "RNDRUSDT", "FETUSDT",
+]
+
+TIMEFRAMES = {
+    "1m": {"interval": 1, "weight": 1.0, "bybit": "1"},
+    "5m": {"interval": 5, "weight": 1.5, "bybit": "5"},
+    "15m": {"interval": 15, "weight": 2.0, "bybit": "15"},
+    "30m": {"interval": 30, "weight": 2.5, "bybit": "30"},
+    "1h": {"interval": 60, "weight": 3.5, "bybit": "60"},
+    "4h": {"interval": 240, "weight": 5.0, "bybit": "240"},
+    "1d": {"interval": 1440, "weight": 7.0, "bybit": "D"},
+}
+
+# فاکتورهای موتور همگرایی سیگنال — مجموع وزن‌ها = 1.0
+CONFLUENCE_WEIGHTS = {
+    "قدرت حجمی": 0.22,
+    "روند EMA": 0.18,
+    "مومنتوم RSI": 0.12,
+    "تایید MACD": 0.16,
+    "قدرت روند ADX": 0.14,
+    "سلامت حجم": 0.10,
+    "تایید HTF": 0.08,
+}
+MIN_CONFLUENCE_SCORE = 72.0     # حداقل امتیاز برای صدور سیگنال
+MIN_ADX_TRENDING = 18.0         # زیر این مقدار = بازار رنج، سیگنال صادر نمی‌شود
+MIN_RISK_REWARD = 1.5           # حداقل نسبت ریسک به ریوارد قابل قبول
+MAX_VOLUME_SUSPICION = 80       # بالاتر از این، حجم مشکوک تلقی و سیگنال رد می‌شود
+
+COLORS = {
+    "bg_dark": "#0a0e1a",
+    "bg_card": "#111827",
+    "bg_card_hover": "#1f2937",
+    "border": "#374151",
+    "text_primary": "#f3f4f6",
+    "text_secondary": "#9ca3af",
+    "buy": "#10b981",
+    "buy_light": "#34d399",
+    "sell": "#ef4444",
+    "sell_light": "#f87171",
+    "accent": "#3b82f6",
+    "accent_light": "#60a5fa",
+    "warning": "#f59e0b",
+    "purple": "#8b5cf6",
+    "cyan": "#06b6d4",
+    "pink": "#ec4899",
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DATA ENGINE  (Thread-Safe)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class BybitDataEngine:
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update({
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        })
+        self._cache: Dict[str, dict] = {}
+        self._cache_time: Dict[str, float] = {}
+        self._cache_ttl = 5
+        self._last_request_time = 0.0
+        self._min_interval = 0.05
+        self._active_base = BYBIT_ENDPOINTS[0]
+        self._cache_lock = threading.Lock()
+        self._rate_lock = threading.Lock()
+
+    def _rate_limit(self):
+        with self._rate_lock:
+            elapsed = time.time() - self._last_request_time
+            if elapsed < self._min_interval:
+                time.sleep(self._min_interval - elapsed)
+            self._last_request_time = time.time()
+
+    def _get(self, endpoint: str, params: dict = None, use_cache: bool = True) -> dict:
+        cache_key = f"{endpoint}_{json.dumps(params or {}, sort_keys=True)}"
+
+        if use_cache:
+            with self._cache_lock:
+                cached = self._cache.get(cache_key)
+                if cached is not None and time.time() - self._cache_time.get(cache_key, 0) < self._cache_ttl:
+                    return cached
+
+        self._rate_limit()
+        last_error = ""
+
+        for base in BYBIT_ENDPOINTS:
+            try:
+                url = f"{base}{endpoint}"
+                resp = self.session.get(url, params=params, timeout=12)
+                resp.raise_for_status()
+                data = resp.json()
+
+                if data.get("retCode") == 0:
+                    self._active_base = base
+                    if use_cache:
+                        with self._cache_lock:
+                            self._cache[cache_key] = data
+                            self._cache_time[cache_key] = time.time()
+                    return data
+                else:
+                    last_error = f"API Error: {data.get('retMsg')}"
+            except requests.exceptions.SSLError:
+                last_error = "خطای SSL"
+            except requests.exceptions.ConnectionError:
+                last_error = f"عدم دسترسی به {base}"
+            except requests.exceptions.Timeout:
+                last_error = f"تایم‌اوت در {base}"
+            except Exception as e:
+                last_error = str(e)
+
+        log.warning(f"[CONNECTION FAILED] {endpoint} -> {last_error}")
+        return {"retCode": -1, "result": {}, "error": last_error}
+
+    def get_klines(self, symbol: str, timeframe: str, limit: int = 200) -> pd.DataFrame:
+        tf_map = {"1m": "1", "5m": "5", "15m": "15", "30m": "30", "1h": "60", "4h": "240", "1d": "D"}
+        interval = tf_map.get(timeframe, "15")
+
+        data = self._get("/v5/market/kline", {
+            "category": "linear", "symbol": symbol, "interval": interval, "limit": limit,
+        })
+
+        if data.get("retCode") != 0:
+            return pd.DataFrame()
+
+        rows = data.get("result", {}).get("list", [])
+        if not rows:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close", "volume", "turnover"])
+        df["timestamp"] = pd.to_datetime(df["timestamp"].astype(float), unit="ms")
+        for col in ["open", "high", "low", "close", "volume", "turnover"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        return df.sort_values("timestamp").reset_index(drop=True)
+
+    def get_recent_trades(self, symbol: str, limit: int = 1000) -> pd.DataFrame:
+        data = self._get("/v5/market/recent-trade", {
+            "category": "linear", "symbol": symbol, "limit": min(limit, 1000),
+        }, use_cache=False)
+
+        if data.get("retCode") != 0:
+            return pd.DataFrame()
+
+        rows = data.get("result", {}).get("list", [])
+        if not rows:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(rows)
+        df["price"] = pd.to_numeric(df["price"], errors="coerce")
+        df["size"] = pd.to_numeric(df["size"], errors="coerce")
+        df["time"] = pd.to_datetime(df["time"].astype(float), unit="ms")
+        return df
+
+    def get_ticker(self, symbol: str) -> dict:
+        data = self._get("/v5/market/tickers", {"category": "linear", "symbol": symbol})
+        if data.get("retCode") == 0:
+            result_list = data.get("result", {}).get("list", [])
+            if len(result_list) > 0:
+                return result_list[0]
+        return {}
+
+    def get_all_tickers(self) -> pd.DataFrame:
+        data = self._get("/v5/market/tickers", {"category": "linear"})
+        if data.get("retCode") != 0:
+            return pd.DataFrame()
+
+        rows = data.get("result", {}).get("list", [])
+        if not rows:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(rows)
+        numeric_cols = ["lastPrice", "price24hPcnt", "volume24h", "turnover24h"]
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+        return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TECHNICAL INDICATORS ENGINE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TechnicalIndicators:
+    """مجموعه اندیکاتورهای تکنیکال محاسبه‌شده به‌صورت برداری (vectorized)."""
+
+    @staticmethod
+    def ema(series: pd.Series, period: int) -> pd.Series:
+        return series.ewm(span=period, adjust=False).mean()
+
+    @staticmethod
+    def rsi(series: pd.Series, period: int = 14) -> pd.Series:
+        delta = series.diff()
+        gain = delta.where(delta > 0, 0.0)
+        loss = -delta.where(delta < 0, 0.0)
+        avg_gain = gain.ewm(alpha=1 / period, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1 / period, adjust=False).mean()
+        rs = avg_gain / avg_loss.replace(0, np.nan)
+        rsi_val = 100 - (100 / (1 + rs))
+        return rsi_val.fillna(50)
+
+    @staticmethod
+    def macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9):
+        ema_fast = series.ewm(span=fast, adjust=False).mean()
+        ema_slow = series.ewm(span=slow, adjust=False).mean()
+        macd_line = ema_fast - ema_slow
+        signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+        hist = macd_line - signal_line
+        return macd_line, signal_line, hist
+
+    @staticmethod
+    def bollinger(series: pd.Series, period: int = 20, num_std: float = 2.0):
+        ma = series.rolling(period).mean()
+        sd = series.rolling(period).std()
+        upper = ma + num_std * sd
+        lower = ma - num_std * sd
+        return ma, upper, lower
+
+    @staticmethod
+    def true_range(df: pd.DataFrame) -> pd.Series:
+        prev_close = df["close"].shift(1)
+        tr = pd.concat([
+            df["high"] - df["low"],
+            (df["high"] - prev_close).abs(),
+            (df["low"] - prev_close).abs(),
+        ], axis=1).max(axis=1)
+        return tr
+
+    @staticmethod
+    def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+        tr = TechnicalIndicators.true_range(df)
+        return tr.ewm(alpha=1 / period, adjust=False).mean()
+
+    @staticmethod
+    def adx(df: pd.DataFrame, period: int = 14):
+        """بازمی‌گرداند: (ADX, +DI, -DI) — قدرت و جهت روند به روش Wilder."""
+        high, low, close = df["high"], df["low"], df["close"]
+        up_move = high.diff()
+        down_move = -low.diff()
+
+        plus_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
+        minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
+
+        tr = TechnicalIndicators.true_range(df)
+        atr = tr.ewm(alpha=1 / period, adjust=False).mean()
+
+        plus_di = 100 * (plus_dm.ewm(alpha=1 / period, adjust=False).mean() / atr.replace(0, np.nan))
+        minus_di = 100 * (minus_dm.ewm(alpha=1 / period, adjust=False).mean() / atr.replace(0, np.nan))
+
+        dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
+        adx_val = dx.ewm(alpha=1 / period, adjust=False).mean()
+        return adx_val.fillna(0), plus_di.fillna(0), minus_di.fillna(0)
+
+    @staticmethod
+    def enrich(df: pd.DataFrame) -> pd.DataFrame:
+        """تمام اندیکاتورهای موردنیاز را روی دیتافریم کندل اضافه می‌کند."""
+        if df.empty or len(df) < 30:
+            return df
+        out = df.copy()
+        out["ema9"] = TechnicalIndicators.ema(out["close"], 9)
+        out["ema21"] = TechnicalIndicators.ema(out["close"], 21)
+        out["ema50"] = TechnicalIndicators.ema(out["close"], 50)
+        out["ema200"] = TechnicalIndicators.ema(out["close"], 200)
+        out["rsi"] = TechnicalIndicators.rsi(out["close"], 14)
+        macd_line, signal_line, hist = TechnicalIndicators.macd(out["close"])
+        out["macd_line"] = macd_line
+        out["macd_signal"] = signal_line
+        out["macd_hist"] = hist
+        bb_mid, bb_up, bb_low = TechnicalIndicators.bollinger(out["close"], 20, 2.0)
+        out["bb_mid"] = bb_mid
+        out["bb_upper"] = bb_up
+        out["bb_lower"] = bb_low
+        out["atr"] = TechnicalIndicators.atr(out, 14)
+        adx_val, plus_di, minus_di = TechnicalIndicators.adx(out, 14)
+        out["adx"] = adx_val
+        out["plus_di"] = plus_di
+        out["minus_di"] = minus_di
+        return out
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ANALYTICS ENGINE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class PowerMetrics:
+    timeframe: str
+    buy_volume: float = 0.0
+    sell_volume: float = 0.0
+    buy_count: int = 0
+    sell_count: int = 0
+    ratio: float = 1.0
+    net_volume: float = 0.0
+    timestamp: Optional[datetime] = None
+
+
+@dataclass
+class Signal:
+    id: str
+    symbol: str
+    side: str
+    entry_price: float
+    stop_loss: float
+    take_profit: float
+    leverage: float
+    reason: str
+    confidence: float
+    timeframe: str
+    created_at: datetime
+    status: str = "OPEN"
+    closed_at: Optional[datetime] = None
+    pnl: float = 0.0
+    factors: Dict[str, float] = field(default_factory=dict)
+    risk_reward: float = 0.0
+    market_regime: str = ""
+
+
+class AnalyticsEngine:
+    def __init__(self, data_engine: BybitDataEngine):
+        self.data = data_engine
+        self._signals: List[Signal] = []
+        self._signal_id_counter = 0
+        self._historical_signals: List[Signal] = []
+        self._lock = threading.Lock()
+
+    # ── قدرت خریدار/فروشنده (با یک بار دریافت trades برای همه تایم‌فریم‌ها) ──
+
+    def _power_from_trades(self, trades: pd.DataFrame, timeframe: str) -> PowerMetrics:
+        if trades.empty:
+            return PowerMetrics(timeframe=timeframe)
+
+        now = datetime.now()
+        tf_minutes = TIMEFRAMES[timeframe]["interval"]
+        window_start = now - timedelta(minutes=tf_minutes * 5)
+        window = trades[trades["time"] >= window_start]
+
+        if window.empty:
+            return PowerMetrics(timeframe=timeframe)
+
+        buy_trades = window[window["side"] == "Buy"]
+        sell_trades = window[window["side"] == "Sell"]
+
+        buy_volume = buy_trades["size"].sum() if not buy_trades.empty else 0
+        sell_volume = sell_trades["size"].sum() if not sell_trades.empty else 0
+        buy_count = len(buy_trades)
+        sell_count = len(sell_trades)
+
+        avg_buy = buy_volume / buy_count if buy_count > 0 else 0
+        avg_sell = sell_volume / sell_count if sell_count > 0 else 0
+
+        ratio = round((avg_buy / avg_sell) * 10) / 10 if avg_sell > 0 else 10.0
+        display_ratio = ratio / 10.0 if ratio > 0 else 1.0
+
+        return PowerMetrics(
+            timeframe=timeframe, buy_volume=buy_volume, sell_volume=sell_volume,
+            buy_count=buy_count, sell_count=sell_count, ratio=display_ratio,
+            net_volume=buy_volume - sell_volume, timestamp=window["time"].max(),
+        )
+
+    def calculate_all_powers(self, symbol: str, trades: Optional[pd.DataFrame] = None) -> Dict[str, PowerMetrics]:
+        """✅ بهینه‌شده: به‌جای ۷ درخواست جداگانه، فقط یک بار trades می‌گیرد."""
+        if trades is None:
+            trades = self.data.get_recent_trades(symbol, 1000)
+        return {tf: self._power_from_trades(trades, tf) for tf in TIMEFRAMES.keys()}
+
+    def calculate_power(self, symbol: str, timeframe: str) -> PowerMetrics:
+        trades = self.data.get_recent_trades(symbol, 1000)
+        return self._power_from_trades(trades, timeframe)
+
+    def calculate_weighted_power(self, powers: Dict[str, PowerMetrics]) -> dict:
+        weighted_ratio, total_weight, net_volumes = 0.0, 0.0, []
+        for tf, metric in powers.items():
+            weight = TIMEFRAMES[tf]["weight"]
+            weighted_ratio += metric.ratio * weight
+            total_weight += weight
+            net_volumes.append(metric.net_volume)
+
+        overall_ratio = weighted_ratio / total_weight if total_weight > 0 else 1.0
+        higher_tf_bias = (powers.get("1d", PowerMetrics("1d")).ratio * 0.3 +
+                           powers.get("4h", PowerMetrics("4h")).ratio * 0.25 +
+                           powers.get("1h", PowerMetrics("1h")).ratio * 0.2 +
+                           powers.get("30m", PowerMetrics("30m")).ratio * 0.15 +
+                           powers.get("15m", PowerMetrics("15m")).ratio * 0.1)
+
+        return {
+            "overall_ratio": overall_ratio,
+            "higher_tf_bias": higher_tf_bias,
+            "net_volume_trend": np.mean(net_volumes) if net_volumes else 0,
+            "direction": "BULLISH" if overall_ratio > 1.2 else "BEARISH" if overall_ratio < 0.8 else "NEUTRAL",
+        }
+
+    def analyze_volume_suspicion(self, symbol: str, timeframe: str = "5m", df: Optional[pd.DataFrame] = None) -> dict:
+        if df is None:
+            df = self.data.get_klines(symbol, timeframe, limit=50)
+        if df.empty or len(df) < 20:
+            return {"status": "NO_DATA", "score": 50}
+
+        df = df.copy()
+        df["volume_ma20"] = df["volume"].rolling(20).mean()
+        df["volume_std20"] = df["volume"].rolling(20).std()
+        df["volume_zscore"] = (df["volume"] - df["volume_ma20"]) / df["volume_std20"].replace(0, 1)
+
+        current, prev = df.iloc[-1], df.iloc[-2] if len(df) > 1 else df.iloc[-1]
+        volume_spike = current["volume_zscore"] > 2.5
+        price_change = (current["close"] - prev["close"]) / prev["close"] * 100 if prev["close"] != 0 else 0
+        volume_change = (current["volume"] - prev["volume"]) / prev["volume"] * 100 if prev["volume"] != 0 else 0
+        divergence = (price_change > 1 and volume_change < -20) or (price_change < -1 and volume_change < -20)
+
+        score = 50
+        if volume_spike: score += 20
+        if divergence: score += 15
+        if current["volume_zscore"] > 4: score += 15
+
+        status = "NORMAL"
+        if score >= 80: status = "HIGHLY_SUSPICIOUS"
+        elif score >= 65: status = "SUSPICIOUS"
+        elif score <= 30: status = "HEALTHY"
+
+        return {"status": status, "score": min(score, 100), "volume_zscore": round(current["volume_zscore"], 2)}
+
+    def analyze_capital_flow(self, target_symbol: str) -> pd.DataFrame:
+        tickers = self.data.get_all_tickers()
+        if tickers.empty:
+            return pd.DataFrame()
+
+        target_ticker = tickers[tickers["symbol"] == target_symbol]
+        if target_ticker.empty:
+            return pd.DataFrame()
+
+        target_change = float(target_ticker.iloc[0].get("price24hPcnt", 0))
+        flows = []
+
+        for sym in TOP_30_SYMBOLS:
+            if sym == target_symbol:
+                continue
+            sym_data = tickers[tickers["symbol"] == sym]
+            if sym_data.empty:
+                continue
+
+            row = sym_data.iloc[0]
+            sym_change = float(row.get("price24hPcnt", 0))
+            sym_volume = float(row.get("turnover24h", 0))
+
+            flow_score = (target_change - sym_change) * math.log1p(sym_volume / 1e6)
+            flows.append({
+                "symbol": sym.replace("USDT", ""),
+                "flow_score": round(flow_score * 100, 2),
+                "volume_usd": round(sym_volume / 1e6, 2),
+                "direction": "INTO_TARGET" if flow_score > 0.01 else "OUT_OF_TARGET" if flow_score < -0.01 else "NEUTRAL",
+            })
+
+        flow_df = pd.DataFrame(flows)
+        return flow_df.sort_values("flow_score", ascending=False).reset_index(drop=True) if not flow_df.empty else pd.DataFrame()
+
+    # ── موتور همگرایی (Confluence Engine) ──────────────────────────────────
+
+    def _compute_confluence(self, symbol: str) -> Optional[dict]:
+        """محاسبه تمام فاکتورهای مورد نیاز برای تصمیم سیگنال. یک دیکشنری
+        شامل امتیاز هر فاکتور، امتیاز کل، جهت پیشنهادی، قیمت، ATR و رژیم
+        بازار برمی‌گرداند. اگر داده کافی نباشد None برمی‌گرداند."""
+
+        trades = self.data.get_recent_trades(symbol, 1000)
+        powers = self.calculate_all_powers(symbol, trades=trades)
+        weighted = self.calculate_weighted_power(powers)
+
+        df = self.data.get_klines(symbol, "15m", limit=210)
+        if df.empty or len(df) < 60:
+            return None
+        df = TechnicalIndicators.enrich(df)
+
+        vol_analysis = self.analyze_volume_suspicion(symbol, "5m")
+        ticker = self.data.get_ticker(symbol)
+        if not ticker or float(ticker.get("lastPrice", 0)) == 0:
+            return None
+        current_price = float(ticker.get("lastPrice", 0))
+
+        last, prev = df.iloc[-1], df.iloc[-2]
+        atr_val = last["atr"] if not np.isnan(last["atr"]) else 0
+        rsi_val = last["rsi"]
+        adx_val = last["adx"] if not np.isnan(last["adx"]) else 0
+        macd_hist_val = last["macd_hist"]
+        macd_hist_prev = prev["macd_hist"]
+        macd_rising = macd_hist_val > macd_hist_prev
+
+        bullish_trend = last["ema9"] > last["ema21"] > last["ema50"]
+        bearish_trend = last["ema9"] < last["ema21"] < last["ema50"]
+
+        ratio = weighted["overall_ratio"]
+        higher_bias = weighted["higher_tf_bias"]
+        direction = weighted["direction"]
+
+        regime = "TRENDING" if adx_val >= MIN_ADX_TRENDING else "RANGING"
+
+        side_bias = "LONG" if ratio >= 1.0 else "SHORT"
+        factors: Dict[str, float] = {}
+
+        if side_bias == "LONG":
+            factors["قدرت حجمی"] = float(np.clip((ratio - 1) * 80, 0, 100))
+            factors["روند EMA"] = 100.0 if bullish_trend else 35.0
+            factors["مومنتوم RSI"] = 100.0 if 50 < rsi_val < 72 else (60.0 if rsi_val <= 50 else 30.0)
+            factors["تایید MACD"] = 100.0 if (macd_hist_val > 0 and macd_rising) else (55.0 if macd_hist_val > 0 else 20.0)
+            factors["قدرت روند ADX"] = float(np.clip(adx_val * 2.2, 0, 100))
+            factors["سلامت حجم"] = 100.0 - vol_analysis["score"]
+            factors["تایید HTF"] = 100.0 if higher_bias > 1.2 else 55.0
+        else:
+            factors["قدرت حجمی"] = float(np.clip(((1 / ratio) - 1) * 80 if ratio > 0 else 100, 0, 100))
+            factors["روند EMA"] = 100.0 if bearish_trend else 35.0
+            factors["مومنتوم RSI"] = 100.0 if 28 < rsi_val < 50 else (60.0 if rsi_val >= 50 else 30.0)
+            factors["تایید MACD"] = 100.0 if (macd_hist_val < 0 and not macd_rising) else (55.0 if macd_hist_val < 0 else 20.0)
+            factors["قدرت روند ADX"] = float(np.clip(adx_val * 2.2, 0, 100))
+            factors["سلامت حجم"] = 100.0 - vol_analysis["score"]
+            factors["تایید HTF"] = 100.0 if higher_bias < 0.8 else 55.0
+
+        total_score = sum(factors[k] * CONFLUENCE_WEIGHTS[k] for k in factors)
+
+        return {
+            "symbol": symbol, "side_bias": side_bias, "factors": factors,
+            "total_score": total_score, "current_price": current_price,
+            "atr": atr_val, "adx": adx_val, "rsi": rsi_val,
+            "macd_hist": macd_hist_val, "regime": regime,
+            "direction": direction, "ratio": ratio, "higher_bias": higher_bias,
+            "vol_analysis": vol_analysis, "bullish_trend": bullish_trend,
+            "bearish_trend": bearish_trend, "df": df,
+        }
+
+    def get_confluence_snapshot(self, symbol: str) -> Optional[dict]:
+        """نسخه نمایشی (بدون فیلترهای نهایی) برای پنل «همگرایی زنده» در UI."""
+        try:
+            return self._compute_confluence(symbol)
+        except Exception as e:
+            log.warning(f"confluence snapshot failed for {symbol}: {e}")
+            return None
+
+    def generate_signal(self, symbol: str) -> Optional[Signal]:
+        """فقط زمانی سیگنال صادر می‌شود که:
+        - بازار در رژیم روندی باشد (ADX >= آستانه)
+        - جهت قدرت حجمی، روند EMA، MACD و RSI همسو باشند
+        - امتیاز همگرایی کل >= آستانه حداقلی
+        - حجم مشکوک نباشد
+        - نسبت ریسک‌به‌ریوارد قابل قبول باشد
+        """
+        try:
+            snap = self._compute_confluence(symbol)
+        except Exception as e:
+            log.warning(f"generate_signal failed for {symbol}: {e}")
+            return None
+
+        if snap is None:
+            return None
+
+        if snap["vol_analysis"]["score"] > MAX_VOLUME_SUSPICION:
+            return None
+        if snap["adx"] < MIN_ADX_TRENDING:
+            return None
+
+        side_bias = snap["side_bias"]
+        direction = snap["direction"]
+        ratio = snap["ratio"]
+
+        # جهت قدرت حجمی و بایاس کلی باید هم‌راستا باشند و روند EMA تایید کند
+        if side_bias == "LONG":
+            if not (direction == "BULLISH" and ratio > 1.25 and snap["bullish_trend"]):
+                return None
+        else:
+            if not (direction == "BEARISH" and ratio < 0.8 and snap["bearish_trend"]):
+                return None
+
+        total_score = snap["total_score"]
+        if total_score < MIN_CONFLUENCE_SCORE:
+            return None
+
+        current_price = snap["current_price"]
+        atr_val = snap["atr"]
+        if atr_val <= 0:
+            return None
+
+        adx_val = snap["adx"]
+        atr_mult_sl = 2.2
+        atr_mult_tp = 3.5 + min(adx_val / 20.0, 1.5)
+
+        if side_bias == "LONG":
+            sl = current_price - atr_val * atr_mult_sl
+            tp = current_price + atr_val * atr_mult_tp
+        else:
+            sl = current_price + atr_val * atr_mult_sl
+            tp = current_price - atr_val * atr_mult_tp
+
+        risk = abs(current_price - sl)
+        reward = abs(tp - current_price)
+        rr = reward / risk if risk > 0 else 0
+        if rr < MIN_RISK_REWARD:
+            return None
+
+        lev = 10.0 if (atr_val / current_price) * 100 < 0.5 else 5.0
+        reason = (f"امتیاز همگرایی {total_score:.0f}/100 | RSI:{snap['rsi']:.0f} "
+                  f"ADX:{adx_val:.0f} | R/R:{rr:.2f} | رژیم:{snap['regime']}")
+
+        with self._lock:
+            self._signal_id_counter += 1
+            sig = Signal(
+                id=f"SIG_{self._signal_id_counter:04d}", symbol=symbol, side=side_bias,
+                entry_price=current_price, stop_loss=round(sl, 4), take_profit=round(tp, 4),
+                leverage=lev, reason=reason, confidence=round(min(total_score, 99), 1),
+                timeframe="MULTI-CONFLUENCE", created_at=datetime.now(),
+                factors=snap["factors"], risk_reward=round(rr, 2), market_regime=snap["regime"],
+            )
+            self._signals.append(sig)
+            self._historical_signals.append(sig)
+            return sig
+
+    def scan_all_symbols_for_signals(self):
+        """✅ اسکن موازی: به‌جای اسکن سریالی با sleep، از ThreadPoolExecutor
+        استفاده می‌شود تا زمان اسکن ۳۰ نماد به‌شدت کاهش یابد."""
+        log.info("[SCAN] در حال اسکن موازی تمام ۳۰ ارز برای بهترین سیگنال‌ها...")
+        found = 0
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {executor.submit(self.generate_signal, sym): sym for sym in TOP_30_SYMBOLS}
+            for future in as_completed(futures):
+                sym = futures[future]
+                try:
+                    result = future.result()
+                    if result is not None:
+                        found += 1
+                except Exception as e:
+                    log.warning(f"scan error for {sym}: {e}")
+        log.info(f"[SCAN] پایان یافت — {found} سیگنال با کیفیت بالا یافت شد.")
+        return found
+
+    def update_signals(self):
+        """فقط نمادهایی که سیگنال باز دارند بررسی می‌شوند (بهینه)."""
+        with self._lock:
+            symbols_to_check = list(set(sig.symbol for sig in self._signals if sig.status == "OPEN"))
+
+        if not symbols_to_check:
+            return
+
+        def _check(sym):
+            try:
+                ticker = self.data.get_ticker(sym)
+                if not ticker:
+                    return
+                current_price = float(ticker.get("lastPrice", 0))
+                if current_price == 0:
+                    return
+
+                with self._lock:
+                    for sig in self._signals:
+                        if sig.symbol != sym or sig.status != "OPEN":
+                            continue
+
+                        if sig.side == "LONG":
+                            if current_price <= sig.stop_loss:
+                                sig.status, sig.closed_at, sig.pnl = "STOPPED", datetime.now(), -((sig.entry_price - sig.stop_loss) / sig.entry_price * 100 * sig.leverage)
+                            elif current_price >= sig.take_profit:
+                                sig.status, sig.closed_at, sig.pnl = "CLOSED", datetime.now(), ((sig.take_profit - sig.entry_price) / sig.entry_price * 100 * sig.leverage)
+                        else:
+                            if current_price >= sig.stop_loss:
+                                sig.status, sig.closed_at, sig.pnl = "STOPPED", datetime.now(), -((sig.stop_loss - sig.entry_price) / sig.entry_price * 100 * sig.leverage)
+                            elif current_price <= sig.take_profit:
+                                sig.status, sig.closed_at, sig.pnl = "CLOSED", datetime.now(), ((sig.entry_price - sig.take_profit) / sig.entry_price * 100 * sig.leverage)
+            except Exception as e:
+                log.warning(f"Error updating signal for {sym}: {e}")
+
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            list(executor.map(_check, symbols_to_check))
+
+    def get_all_open_signals(self) -> List[Signal]:
+        with self._lock:
+            return [s for s in self._signals if s.status == "OPEN"]
+
+    def get_all_signals_history(self) -> List[Signal]:
+        with self._lock:
+            return self._historical_signals.copy()
+
+    def get_statistics(self, symbol: str) -> dict:
+        with self._lock:
+            relevant = [s for s in self._historical_signals if s.symbol == symbol]
+        if not relevant:
+            return {"total": 0, "wins": 0, "losses": 0, "win_rate": 0, "avg_pnl": 0, "total_pnl": 0,
+                    "avg_leverage": 0, "best_trade": 0, "worst_trade": 0, "profit_factor": 0, "open": 0}
+
+        closed = [s for s in relevant if s.status in ("CLOSED", "STOPPED")]
+        if not closed:
+            return {"total": len(relevant), "wins": 0, "losses": 0, "win_rate": 0, "avg_pnl": 0, "total_pnl": 0,
+                    "avg_leverage": np.mean([s.leverage for s in relevant]), "best_trade": 0, "worst_trade": 0,
+                    "profit_factor": 0, "open": len([s for s in relevant if s.status == "OPEN"])}
+
+        wins = [s for s in closed if s.pnl > 0]
+        losses = [s for s in closed if s.pnl <= 0]
+        pnls = [s.pnl for s in closed]
+        win_sum, loss_sum = sum(s.pnl for s in wins), sum(s.pnl for s in losses)
+
+        return {
+            "total": len(relevant), "open": len([s for s in relevant if s.status == "OPEN"]),
+            "wins": len(wins), "losses": len(losses),
+            "win_rate": round(len(wins) / len(closed) * 100, 1),
+            "avg_pnl": round(np.mean(pnls), 2), "total_pnl": round(sum(pnls), 2),
+            "avg_leverage": round(np.mean([s.leverage for s in closed]), 1),
+            "best_trade": round(max(pnls), 2), "worst_trade": round(min(pnls), 2),
+            "profit_factor": round(abs(win_sum / loss_sum), 2) if loss_sum != 0 else float("inf"),
+        }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VISUALIZATION ENGINE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ChartEngine:
+    def __init__(self):
+        self.template = "plotly_dark"
+
+    def create_price_chart(self, df: pd.DataFrame, powers: Dict[str, PowerMetrics], symbol: str) -> go.Figure:
+        df = TechnicalIndicators.enrich(df)
+        has_indicators = "ema9" in df.columns
+
+        fig = make_subplots(
+            rows=5, cols=1, shared_xaxes=True, vertical_spacing=0.025,
+            row_heights=[0.42, 0.14, 0.14, 0.14, 0.16],
+            subplot_titles=(f"نمودار قیمت {symbol} + EMA + Bollinger Bands", "حجم",
+                             "RSI (14)", "MACD (12,26,9)", "شاخص قدرت خریدار/فروشنده"),
+        )
+
+        if has_indicators:
+            fig.add_trace(go.Scatter(x=df["timestamp"], y=df["bb_upper"], line=dict(color="rgba(139,92,246,0.35)", width=1),
+                                      name="BB بالا", showlegend=False), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df["timestamp"], y=df["bb_lower"], line=dict(color="rgba(139,92,246,0.35)", width=1),
+                                      fill="tonexty", fillcolor="rgba(139,92,246,0.08)", name="باند بولینگر", showlegend=True), row=1, col=1)
+
+        fig.add_trace(go.Candlestick(x=df["timestamp"], open=df["open"], high=df["high"], low=df["low"], close=df["close"],
+                                      name="قیمت", increasing_line_color=COLORS["buy"], decreasing_line_color=COLORS["sell"]), row=1, col=1)
+
+        if has_indicators:
+            fig.add_trace(go.Scatter(x=df["timestamp"], y=df["ema9"], line=dict(color=COLORS["cyan"], width=1.3), name="EMA9"), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df["timestamp"], y=df["ema21"], line=dict(color=COLORS["warning"], width=1.3), name="EMA21"), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df["timestamp"], y=df["ema50"], line=dict(color=COLORS["pink"], width=1.5), name="EMA50"), row=1, col=1)
+
+        colors = [COLORS["buy"] if df["close"].iloc[i] >= df["open"].iloc[i] else COLORS["sell"] for i in range(len(df))]
+        fig.add_trace(go.Bar(x=df["timestamp"], y=df["volume"], name="حجم", marker_color=colors, opacity=0.7, showlegend=False), row=2, col=1)
+
+        if has_indicators:
+            fig.add_trace(go.Scatter(x=df["timestamp"], y=df["rsi"], line=dict(color=COLORS["accent_light"], width=1.5), name="RSI", showlegend=False), row=3, col=1)
+            fig.add_hline(y=70, line_dash="dash", line_color=COLORS["sell_light"], row=3, col=1)
+            fig.add_hline(y=30, line_dash="dash", line_color=COLORS["buy_light"], row=3, col=1)
+            fig.add_hline(y=50, line_dash="dot", line_color="gray", row=3, col=1)
+
+            macd_colors = [COLORS["buy"] if v >= 0 else COLORS["sell"] for v in df["macd_hist"].fillna(0)]
+            fig.add_trace(go.Bar(x=df["timestamp"], y=df["macd_hist"], name="MACD Hist", marker_color=macd_colors, showlegend=False), row=4, col=1)
+            fig.add_trace(go.Scatter(x=df["timestamp"], y=df["macd_line"], line=dict(color=COLORS["accent"], width=1.2), name="MACD", showlegend=False), row=4, col=1)
+            fig.add_trace(go.Scatter(x=df["timestamp"], y=df["macd_signal"], line=dict(color=COLORS["warning"], width=1.2), name="Signal", showlegend=False), row=4, col=1)
+
+        power_values = [powers[tf].ratio if tf in powers else 1.0 for tf in ["1d", "4h", "1h", "30m", "15m", "5m", "1m"]]
+        power_timeline = [1.0] * len(df)
+        for i in range(min(len(df), len(power_values))):
+            power_timeline[-(i + 1)] = power_values[i]
+
+        fig.add_trace(go.Scatter(x=df["timestamp"], y=power_timeline, name="قدرت نسبی", line=dict(color=COLORS["accent"], width=2), showlegend=False), row=5, col=1)
+        fig.add_hline(y=1.0, line_dash="dash", line_color="gray", annotation_text="تعادل", row=5, col=1)
+
+        fig.update_layout(template=self.template, paper_bgcolor=COLORS["bg_dark"], plot_bgcolor=COLORS["bg_card"],
+                           font=dict(color=COLORS["text_primary"], family="Tahoma, sans-serif"),
+                           xaxis_rangeslider_visible=False, height=1000, margin=dict(l=50, r=50, t=60, b=30),
+                           legend=dict(orientation="h", y=1.03))
+        return fig
+
+    def create_power_gauge(self, powers: Dict[str, PowerMetrics], weighted: dict) -> go.Figure:
+        ratios, labels = [], []
+        for tf in ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]:
+            if tf in powers:
+                ratios.append(powers[tf].ratio)
+                labels.append(tf)
+
+        fig = go.Figure()
+        colors = [COLORS["buy"] if r > 1.2 else COLORS["sell"] if r < 0.8 else COLORS["warning"] for r in ratios]
+        fig.add_trace(go.Bar(y=labels, x=ratios, orientation="h", marker_color=colors, text=[f"{r:.2f}" for r in ratios], textposition="outside"))
+        fig.add_vline(x=1.0, line_dash="dash", line_color="white")
+
+        overall = weighted.get("overall_ratio", 1.0)
+        fig.add_trace(go.Indicator(mode="gauge+number+delta", value=overall, domain={'x': [0.65, 0.95], 'y': [0.55, 0.95]},
+                                    title={'text': "قدرت کلی"}, gauge={'axis': {'range': [0, 3]}, 'bar': {'color': COLORS["buy"] if overall > 1 else COLORS["sell"]},
+                                    'steps': [{'range': [0, 0.8], 'color': "rgba(239,68,68,0.3)"}, {'range': [0.8, 1.2], 'color': "rgba(245,158,11,0.3)"},
+                                              {'range': [1.2, 3], 'color': "rgba(16,185,129,0.3)"}]}))
+
+        fig.update_layout(template=self.template, paper_bgcolor=COLORS["bg_dark"], plot_bgcolor=COLORS["bg_card"],
+                           font=dict(color=COLORS["text_primary"], family="Tahoma, sans-serif"), height=460, margin=dict(l=100, r=50, t=60, b=30))
+        return fig
+
+    def create_confluence_chart(self, snapshot: Optional[dict]) -> go.Figure:
+        """پنل جدید: نمایش زنده امتیاز هر فاکتور موتور همگرایی برای نماد
+        انتخاب‌شده — حتی اگر سیگنالی صادر نشده باشد، دلیل رد شدن آن مشخص است."""
+        fig = go.Figure()
+        if snapshot is None:
+            fig.update_layout(template=self.template, paper_bgcolor=COLORS["bg_dark"], height=460,
+                               title="داده کافی برای تحلیل همگرایی موجود نیست")
+            return fig
+
+        factors = snapshot["factors"]
+        labels = list(factors.keys())
+        values = [factors[k] for k in labels]
+        bar_colors = [COLORS["buy"] if v >= 65 else COLORS["warning"] if v >= 45 else COLORS["sell"] for v in values]
+
+        fig.add_trace(go.Bar(y=labels, x=values, orientation="h", marker_color=bar_colors,
+                              text=[f"{v:.0f}" for v in values], textposition="outside"))
+        fig.add_vline(x=MIN_CONFLUENCE_SCORE, line_dash="dash", line_color="white", annotation_text="آستانه سیگنال")
+
+        total = snapshot["total_score"]
+        side_fa = "لانگ (خرید)" if snapshot["side_bias"] == "LONG" else "شورت (فروش)"
+        regime_fa = "روندی ✅" if snapshot["regime"] == "TRENDING" else "رنج/بدون‌روند ⚠️"
+        subtitle = f"امتیاز کل: {total:.0f}/100 | بایاس: {side_fa} | رژیم بازار: {regime_fa} | ADX: {snapshot['adx']:.1f}"
+
+        fig.update_layout(template=self.template, paper_bgcolor=COLORS["bg_dark"], plot_bgcolor=COLORS["bg_card"],
+                           font=dict(color=COLORS["text_primary"], family="Tahoma, sans-serif"),
+                           height=460, margin=dict(l=110, r=50, t=80, b=30), xaxis=dict(range=[0, 110]),
+                           title=dict(text=f"پنل همگرایی سیگنال (Confluence Panel)<br><span style='font-size:12px;color:#9ca3af'>{subtitle}</span>"))
+        return fig
+
+    def create_flow_chart(self, flow_df: pd.DataFrame) -> go.Figure:
+        if flow_df.empty:
+            fig = go.Figure()
+            fig.update_layout(template="plotly_dark", paper_bgcolor=COLORS["bg_dark"], title="داده‌ای برای نمایش جریان سرمایه موجود نیست")
+            return fig
+
+        flow_df = flow_df.copy()
+        flow_df["abs_flow"] = flow_df["flow_score"].abs()
+        top_flows = flow_df.nlargest(15, "abs_flow").sort_values("flow_score")
+        colors = [COLORS["buy"] if x > 0 else COLORS["sell"] for x in top_flows["flow_score"]]
+
+        fig = go.Figure()
+        fig.add_trace(go.Bar(y=top_flows["symbol"], x=top_flows["flow_score"], orientation="h", marker_color=colors,
+                              text=[f"{x:+.1f}" for x in top_flows["flow_score"]], textposition="outside"))
+        fig.add_vline(x=0, line_color="white", line_width=2)
+        fig.update_layout(template=self.template, paper_bgcolor=COLORS["bg_dark"], plot_bgcolor=COLORS["bg_card"],
+                           font=dict(color=COLORS["text_primary"], family="Tahoma, sans-serif"), height=500, margin=dict(l=80, r=50, t=80, b=50))
+        return fig
+
+    def create_volume_analysis_chart(self, df: pd.DataFrame, suspicion: dict) -> go.Figure:
+        df = df.copy()
+        df["volume_ma20"] = df["volume"].rolling(20).mean()
+        df["volume_std20"] = df["volume"].rolling(20).std()
+        df["volume_zscore"] = (df["volume"] - df["volume_ma20"]) / df["volume_std20"].replace(0, 1)
+
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, subplot_titles=("حجم و میانگین", "Z-Score حجم"))
+        fig.add_trace(go.Bar(x=df["timestamp"], y=df["volume"], name="حجم", marker_color=COLORS["accent_light"], opacity=0.6), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df["timestamp"], y=df["volume_ma20"], name="میانگین 20", line=dict(color=COLORS["warning"], width=2)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df["timestamp"], y=df["volume_zscore"], name="Z-Score", line=dict(color=COLORS["purple"], width=2)), row=2, col=1)
+        fig.add_hline(y=2.5, line_dash="dash", line_color=COLORS["sell"], row=2, col=1)
+        fig.add_hline(y=-2, line_dash="dash", line_color=COLORS["buy"], row=2, col=1)
+
+        status_color = COLORS["sell"] if suspicion["score"] > 70 else COLORS["warning"] if suspicion["score"] > 50 else COLORS["buy"]
+        fig.add_annotation(x=0.02, y=0.98, xref="paper", yref="paper", text=f"<b>وضعیت: {suspicion['status']}</b><br>امتیاز مشکوک: {suspicion['score']}/100",
+                            showarrow=False, font=dict(size=14, color=status_color), bgcolor="rgba(0,0,0,0.7)", bordercolor=status_color, borderwidth=2, borderpad=8, align="right")
+        fig.update_layout(template=self.template, paper_bgcolor=COLORS["bg_dark"], plot_bgcolor=COLORS["bg_card"],
+                           font=dict(color=COLORS["text_primary"], family="Tahoma, sans-serif"), height=500, margin=dict(l=50, r=50, t=80, b=50))
+        return fig
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DASH APPLICATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def create_app() -> dash.Dash:
+    app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY], suppress_callback_exceptions=True)
+    data_engine = BybitDataEngine()
+    analytics = AnalyticsEngine(data_engine)
+    charts = ChartEngine()
+
+    app.layout = dbc.Container([
+        dbc.Row([dbc.Col([html.Div([
+            html.H1("🚀 سیستم تحلیل و معاملات حرفه‌ای بایبیت — Confluence Engine", className="text-center my-3",
+                    style={"color": COLORS["accent_light"], "fontWeight": "bold", "fontFamily": "Tahoma, sans-serif"}),
+            html.P("تحلیل چندتایم‌فریمی | EMA/RSI/MACD/ADX | موتور امتیاز همگرایی | فقط بهترین سیگنال‌ها", className="text-center text-muted mb-4",
+                   style={"fontFamily": "Tahoma, sans-serif"}),
+        ])])], className="mb-2"),
+
+        dbc.Row([dbc.Col([dbc.Card([dbc.CardBody([dbc.Row([
+            dbc.Col([html.Label("ارز مورد نظر (برای تحلیل عمیق):", style={"color": COLORS["text_primary"], "fontWeight": "bold"}),
+                     dcc.Dropdown(id="symbol-dropdown", options=[{"label": s, "value": s} for s in TOP_30_SYMBOLS], value="BTCUSDT", clearable=False, style={"color": "#000"})], width=3),
+            dbc.Col([html.Label("تایم‌فریم نمودار:", style={"color": COLORS["text_primary"], "fontWeight": "bold"}),
+                     dcc.Dropdown(id="chart-timeframe", options=[{"label": k, "value": k} for k in TIMEFRAMES.keys()], value="15m", clearable=False, style={"color": "#000"})], width=2),
+            dbc.Col([html.Label("وضعیت اتصال:", style={"color": COLORS["text_primary"]}),
+                     html.Div(id="connection-status", children=[dbc.Badge("در حال بررسی...", color="secondary", className="p-2")])], width=2, className="d-flex align-items-end"),
+            dbc.Col([html.Label("رژیم بازار:", style={"color": COLORS["text_primary"]}),
+                     html.Div(id="market-regime-badge", children=[dbc.Badge("--", color="secondary", className="p-2")])], width=2, className="d-flex align-items-end"),
+            dbc.Col([html.Label("آخرین به‌روزرسانی:", style={"color": COLORS["text_primary"]}),
+                     html.Div(id="last-update-time", children="--:--:--", style={"color": COLORS["text_secondary"]})], width=1, className="d-flex align-items-end"),
+            dbc.Col([dbc.Button("🔄 اسکن موازی ۳۰ ارز برای بهترین سیگنال‌ها", id="btn-scan-all", color="warning", className="w-100",
+                                 style={"fontFamily": "Tahoma, sans-serif", "fontWeight": "bold"})], width=2, className="d-flex align-items-end"),
+        ])])], style={"backgroundColor": COLORS["bg_card"], "border": f"1px solid {COLORS['border']}"})], width=12)], className="mb-4"),
+
+        dbc.Tabs([
+            dbc.Tab(label="📊 تحلیل و آنالیز", tab_id="tab-analysis", children=[
+                dbc.Row([dbc.Col([html.H4("📈 قدرت خریدار/فروشنده", className="mt-4 mb-3", style={"color": COLORS["text_primary"], "fontWeight": "bold"}), html.Div(id="power-cards-container")], width=12)]),
+                dbc.Row([dbc.Col([dcc.Graph(id="price-chart", config={'displayModeBar': True})], width=12)], className="mb-4"),
+                dbc.Row([dbc.Col([dcc.Graph(id="power-gauge-chart", config={'displayModeBar': False})], width=6),
+                         dbc.Col([dcc.Graph(id="confluence-chart", config={'displayModeBar': False})], width=6)], className="mb-4"),
+                dbc.Row([dbc.Col([dcc.Graph(id="volume-analysis-chart", config={'displayModeBar': False})], width=12)], className="mb-4"),
+                dbc.Row([dbc.Col([html.H4("💰 جریان سرمایه از ۳۰ ارز معتبر", className="mb-3", style={"color": COLORS["text_primary"], "fontWeight": "bold"}), dcc.Graph(id="flow-chart", config={'displayModeBar': False})], width=12)]),
+            ]),
+
+            dbc.Tab(label="🎯 سیگنال‌های معاملاتی (جهانی)", tab_id="tab-signals", children=[
+                dbc.Row([dbc.Col([
+                    html.Div([
+                        html.H4("سیگنال‌های فعال با بالاترین کیفیت", className="mt-4 mb-3", style={"color": COLORS["text_primary"], "fontWeight": "bold"}),
+                        html.P(f"سیگنال فقط زمانی صادر می‌شود که امتیاز همگرایی >= {MIN_CONFLUENCE_SCORE:.0f}, بازار روندی (ADX>={MIN_ADX_TRENDING:.0f}) و R/R >= {MIN_RISK_REWARD} باشد.",
+                               style={"color": COLORS["text_secondary"], "fontSize": "14px"}),
+                    ]),
+                    html.Div(id="active-signals-container"),
+                ], width=12)]),
+                dbc.Row([dbc.Col([
+                    html.H4("تاریخچه سیگنال‌ها (همه ارزها)", className="mt-4 mb-3", style={"color": COLORS["text_primary"], "fontWeight": "bold"}),
+                    html.Div(id="signal-history-container"),
+                ], width=12)]),
+            ]),
+
+            dbc.Tab(label="📉 آمار و وین‌ریت", tab_id="tab-stats", children=[
+                dbc.Row([dbc.Col([html.H4("آمار عملکرد سیستم", className="mt-4 mb-3", style={"color": COLORS["text_primary"], "fontWeight": "bold"}), html.Div(id="stats-container")], width=12)]),
+                dbc.Row([dbc.Col([dcc.Graph(id="pnl-chart", config={'displayModeBar': False})], width=12)], className="mb-4"),
+            ]),
+        ], id="main-tabs", active_tab="tab-analysis", style={"fontFamily": "Tahoma, sans-serif"}),
+
+        dcc.Interval(id="interval-component", interval=20000, n_intervals=0),
+    ], fluid=True, style={"backgroundColor": COLORS["bg_dark"], "minHeight": "100vh", "direction": "rtl", "fontFamily": "Tahoma, sans-serif"})
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # CALLBACKS
+    # ═══════════════════════════════════════════════════════════════════════
+
+    @app.callback(
+        [Output("price-chart", "figure"), Output("power-gauge-chart", "figure"), Output("confluence-chart", "figure"),
+         Output("volume-analysis-chart", "figure"), Output("flow-chart", "figure"), Output("power-cards-container", "children"),
+         Output("last-update-time", "children"), Output("connection-status", "children"), Output("market-regime-badge", "children")],
+        [Input("interval-component", "n_intervals"), Input("symbol-dropdown", "value"), Input("chart-timeframe", "value")],
+    )
+    def update_analysis(n, symbol, chart_tf):
+        try:
+            df = data_engine.get_klines(symbol, chart_tf, limit=200)
+            trades = data_engine.get_recent_trades(symbol, 1000)
+            powers = analytics.calculate_all_powers(symbol, trades=trades)
+            weighted = analytics.calculate_weighted_power(powers)
+            flow_df = analytics.analyze_capital_flow(symbol)
+            vol_suspicion = analytics.analyze_volume_suspicion(symbol, chart_tf, df=df if not df.empty else None)
+            snapshot = analytics.get_confluence_snapshot(symbol)
+
+            analytics.update_signals()
+
+            price_fig = charts.create_price_chart(df, powers, symbol) if not df.empty else go.Figure()
+            gauge_fig = charts.create_power_gauge(powers, weighted)
+            confluence_fig = charts.create_confluence_chart(snapshot)
+            vol_fig = charts.create_volume_analysis_chart(df, vol_suspicion) if not df.empty else go.Figure()
+            flow_fig = charts.create_flow_chart(flow_df)
+
+            power_cards = []
+            for tf in ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]:
+                if tf in powers:
+                    p = powers[tf]
+                    ratio = p.ratio
+                    color = COLORS["buy"] if ratio > 1.2 else COLORS["sell"] if ratio < 0.8 else COLORS["warning"]
+                    icon = "🟢" if ratio > 1.2 else "🔴" if ratio < 0.8 else "🟡"
+                    power_cards.append(dbc.Card([dbc.CardBody([
+                        html.H5(f"{tf}", className="card-title text-center", style={"color": COLORS["text_secondary"], "fontSize": "14px"}),
+                        html.H3(f"{icon} {ratio:.2f}", className="text-center", style={"color": color, "fontWeight": "bold", "fontSize": "22px"}),
+                        html.P(f"خرید: {p.buy_volume:.0f} | فروش: {p.sell_volume:.0f}", className="text-center mb-0", style={"fontSize": "11px", "color": COLORS["text_secondary"]}),
+                    ], className="p-2")], style={"backgroundColor": COLORS["bg_card"], "border": f"2px solid {color}", "borderRadius": "12px", "minWidth": "130px"}, className="mx-1 mb-2"))
+
+            overall = weighted.get("overall_ratio", 1.0)
+            overall_color = COLORS["buy"] if overall > 1.2 else COLORS["sell"] if overall < 0.8 else COLORS["warning"]
+            power_cards.insert(0, dbc.Card([dbc.CardBody([
+                html.H5("⚖️ قدرت کلی", className="card-title text-center", style={"color": COLORS["accent_light"], "fontSize": "14px"}),
+                html.H3(f"{'📈' if overall > 1.2 else '📉' if overall < 0.8 else '➖'} {overall:.2f}", className="text-center", style={"color": overall_color, "fontWeight": "bold", "fontSize": "26px"}),
+                html.P(f"جهت: {weighted.get('direction', 'NEUTRAL')}", className="text-center mb-0", style={"fontSize": "12px", "color": COLORS["text_primary"]}),
+            ], className="p-2")], style={"backgroundColor": COLORS["bg_card"], "border": f"3px solid {COLORS['accent']}", "borderRadius": "12px", "minWidth": "150px"}, className="mx-1 mb-2"))
+
+            if snapshot is not None:
+                if snapshot["regime"] == "TRENDING":
+                    regime_badge = dbc.Badge(f"روندی (ADX {snapshot['adx']:.0f}) ✅", color="success", className="p-2")
+                else:
+                    regime_badge = dbc.Badge(f"رنج (ADX {snapshot['adx']:.0f}) ⚠️", color="warning", className="p-2")
+            else:
+                regime_badge = dbc.Badge("--", color="secondary", className="p-2")
+
+            return (price_fig, gauge_fig, confluence_fig, vol_fig, flow_fig,
+                    dbc.Row(power_cards, className="flex-nowrap overflow-auto pb-2", style={"flexWrap": "nowrap"}),
+                    datetime.now().strftime("%H:%M:%S"), dbc.Badge("متصل ✅", color="success", className="p-2"), regime_badge)
+
+        except Exception as e:
+            log.error(f"Error in update_analysis: {e}")
+            empty_fig = go.Figure()
+            empty_fig.update_layout(template="plotly_dark", paper_bgcolor=COLORS["bg_dark"])
+            return (empty_fig, empty_fig, empty_fig, empty_fig, empty_fig, html.Div(f"خطا در دریافت داده: {str(e)}"),
+                    "--:--:--", dbc.Badge("قطع ❌", color="danger", className="p-2"), dbc.Badge("--", color="secondary", className="p-2"))
+
+    @app.callback(
+        [Output("active-signals-container", "children"), Output("signal-history-container", "children")],
+        [Input("interval-component", "n_intervals"), Input("btn-scan-all", "n_clicks")],
+    )
+    def update_signals_tab(n, n_clicks):
+        ctx = callback_context
+        if ctx.triggered and "btn-scan-all" in ctx.triggered[0]["prop_id"] and n_clicks:
+            analytics.scan_all_symbols_for_signals()
+
+        open_sigs = analytics.get_all_open_signals()
+        all_sigs = analytics.get_all_signals_history()
+
+        if not open_sigs:
+            active_html = dbc.Alert("هیچ سیگنال باکیفیتی در کل بازار وجود ندارد. دکمه 'اسکن موازی ۳۰ ارز' را بزنید.", color="info", className="mt-3")
+        else:
+            active_cards = []
+            for sig in open_sigs:
+                side_color = COLORS["buy"] if sig.side == "LONG" else COLORS["sell"]
+                factor_badges = [
+                    dbc.Badge(f"{k}: {v:.0f}", color="light", text_color="dark", className="me-1 mb-1")
+                    for k, v in sig.factors.items()
+                ]
+                active_cards.append(dbc.Card([dbc.CardBody([dbc.Row([
+                    dbc.Col([
+                        html.H5(f"{sig.symbol}", style={"color": COLORS["accent_light"], "fontWeight": "bold", "fontSize": "18px"}),
+                        html.H6(f"{'🟢' if sig.side == 'LONG' else '🔴'} {sig.side}", style={"color": side_color, "fontWeight": "bold"}),
+                        dbc.Badge(f"امتیاز {sig.confidence:.0f}/100", color="primary", className="mt-1"),
+                    ], width=2),
+                    dbc.Col([
+                        html.P(f"ورود: {sig.entry_price:,.4f}", className="mb-1"),
+                        html.P(f"حد ضرر: {sig.stop_loss:,.4f}", style={"color": COLORS["sell"]}, className="mb-1"),
+                        html.P(f"حد سود: {sig.take_profit:,.4f}", style={"color": COLORS["buy"]}, className="mb-1"),
+                    ], width=3),
+                    dbc.Col([
+                        html.P(f"لوریج: {sig.leverage}x", style={"color": COLORS["warning"]}, className="mb-1"),
+                        html.P(f"R/R: {sig.risk_reward:.2f}", className="mb-1"),
+                        html.P(f"رژیم: {sig.market_regime}", className="mb-1"),
+                        html.P(f"زمان: {sig.created_at.strftime('%H:%M:%S')}", style={"fontSize": "12px", "color": COLORS["text_secondary"]}),
+                    ], width=3),
+                    dbc.Col([
+                        html.P(sig.reason, style={"fontSize": "12px", "color": COLORS["text_secondary"]}, className="mb-2"),
+                        html.Div(factor_badges),
+                        dbc.Badge("فعال ⏳", color="success", className="mt-1"),
+                    ], width=4),
+                ])])], style={"backgroundColor": COLORS["bg_card"], "border": f"2px solid {side_color}", "borderRadius": "10px", "marginBottom": "10px"}))
+            active_html = html.Div(active_cards)
+
+        if not all_sigs:
+            history_html = dbc.Alert("هنوز سیگنالی در تاریخچه ثبت نشده است.", color="secondary", className="mt-3")
+        else:
+            history_rows = []
+            for sig in reversed(all_sigs[-30:]):
+                status_color = {"OPEN": "primary", "CLOSED": "success", "STOPPED": "danger"}.get(sig.status, "secondary")
+                pnl_color = COLORS["buy"] if sig.pnl > 0 else COLORS["sell"] if sig.pnl < 0 else COLORS["text_secondary"]
+                history_rows.append(html.Tr([
+                    html.Td(sig.symbol, style={"fontWeight": "bold", "color": COLORS["accent_light"]}),
+                    html.Td(sig.id),
+                    html.Td(sig.side, style={"color": COLORS["buy"] if sig.side == "LONG" else COLORS["sell"]}),
+                    html.Td(f"{sig.entry_price:,.4f}"),
+                    html.Td(f"{sig.take_profit:,.4f}"),
+                    html.Td(f"{sig.confidence:.0f}"),
+                    html.Td(f"{sig.risk_reward:.2f}"),
+                    html.Td(f"{sig.leverage}x"),
+                    html.Td(dbc.Badge(sig.status, color=status_color)),
+                    html.Td(f"{sig.pnl:+.2f}%", style={"color": pnl_color, "fontWeight": "bold"}),
+                    html.Td(sig.closed_at.strftime("%m-%d %H:%M") if sig.closed_at else sig.created_at.strftime("%m-%d %H:%M")),
+                ]))
+            history_html = dbc.Table([html.Thead(html.Tr([html.Th("ارز"), html.Th("شناسه"), html.Th("جهت"), html.Th("ورود"), html.Th("TP"),
+                                                            html.Th("امتیاز"), html.Th("R/R"), html.Th("لوریج"), html.Th("وضعیت"), html.Th("PnL"), html.Th("زمان")],
+                                                           style={"color": COLORS["text_primary"]})), html.Tbody(history_rows)],
+                                      bordered=True, hover=True, responsive=True, style={"color": COLORS["text_primary"], "backgroundColor": COLORS["bg_card"]})
+
+        return active_html, history_html
+
+    @app.callback(
+        [Output("stats-container", "children"), Output("pnl-chart", "figure")],
+        [Input("interval-component", "n_intervals"), Input("symbol-dropdown", "value")],
+    )
+    def update_stats(n, symbol):
+        stats = analytics.get_statistics(symbol)
+
+        def make_stat_card(title, value, color):
+            return dbc.Card([dbc.CardBody([
+                html.H6(title, className="text-center", style={"color": COLORS["text_secondary"], "fontSize": "13px"}),
+                html.H4(str(value), className="text-center", style={"color": color, "fontWeight": "bold", "fontSize": "20px"}),
+            ], className="p-2")], style={"backgroundColor": COLORS["bg_card"], "border": f"1px solid {COLORS['border']}", "borderRadius": "8px"})
+
+        stats_html = html.Div([
+            dbc.Row([dbc.Col(make_stat_card("📊 کل سیگنال‌ها", stats["total"], COLORS["accent_light"]), width=2),
+                     dbc.Col(make_stat_card("🟢 سود", stats["wins"], COLORS["buy"]), width=2),
+                     dbc.Col(make_stat_card("🔴 ضرر", stats["losses"], COLORS["sell"]), width=2),
+                     dbc.Col(make_stat_card("📈 وین‌ریت", f"{stats['win_rate']}%", COLORS["buy"] if stats['win_rate'] > 50 else COLORS["sell"]), width=2),
+                     dbc.Col(make_stat_card("💰 سود/ضرر کل", f"{stats['total_pnl']:+.2f}%", COLORS["buy"] if stats['total_pnl'] > 0 else COLORS["sell"]), width=2),
+                     dbc.Col(make_stat_card("⚖️ فاکتور سود", stats["profit_factor"], COLORS["warning"]), width=2)], className="mb-4"),
+            dbc.Row([dbc.Col(make_stat_card("📉 میانگین PnL", f"{stats['avg_pnl']:+.2f}%", COLORS["cyan"]), width=3),
+                     dbc.Col(make_stat_card("🏆 بهترین ترید", f"{stats['best_trade']:+.2f}%", COLORS["buy"]), width=3),
+                     dbc.Col(make_stat_card("💀 بدترین ترید", f"{stats['worst_trade']:+.2f}%", COLORS["sell"]), width=3),
+                     dbc.Col(make_stat_card("⚡ میانگین لوریج", f"{stats['avg_leverage']}x", COLORS["purple"]), width=3)], className="mb-4"),
+        ])
+
+        all_sigs = analytics.get_all_signals_history()
+        closed_sigs = [s for s in all_sigs if s.status in ("CLOSED", "STOPPED")]
+
+        if len(closed_sigs) < 2:
+            pnl_fig = go.Figure()
+            pnl_fig.update_layout(template="plotly_dark", paper_bgcolor=COLORS["bg_dark"], plot_bgcolor=COLORS["bg_card"],
+                                   title="نمودار سود/ضرر تجمعی - داده کافی نیست", font=dict(color=COLORS["text_primary"]))
+        else:
+            cumulative, running, dates = [], 0, []
+            for sig in closed_sigs:
+                running += sig.pnl
+                cumulative.append(running)
+                dates.append(sig.closed_at or sig.created_at)
+            pnl_fig = go.Figure()
+            pnl_fig.add_trace(go.Scatter(x=dates, y=cumulative, mode="lines+markers", name="PnL تجمعی",
+                                          line=dict(color=COLORS["accent"], width=2), fill="tozeroy", fillcolor="rgba(59,130,246,0.2)"))
+            pnl_fig.add_hline(y=0, line_dash="dash", line_color="gray")
+            pnl_fig.update_layout(template="plotly_dark", paper_bgcolor=COLORS["bg_dark"], plot_bgcolor=COLORS["bg_card"],
+                                   title="نمودار سود/ضرر تجمعی (%)", xaxis_title="زمان", yaxis_title="PnL تجمعی (%)",
+                                   font=dict(color=COLORS["text_primary"], family="Tahoma, sans-serif"), height=400)
+
+        return stats_html, pnl_fig
+
+    return app
+
+
+if __name__ == "__main__":
+    print("=" * 74)
+    print("  Bybit Professional Trading Dashboard v3.0.0 (Confluence Engine)")
+    print("  سیستم تحلیل و معاملات حرفه‌ای بایبیت")
+    print("=" * 74)
+    print("  Dependencies: pip install dash dash-bootstrap-components plotly pandas numpy requests")
+    print("  Server running on: http://127.0.0.1:8050")
+    print("=" * 74)
+    app = create_app()
+    app.run(debug=False, host="0.0.0.0", port=8050)

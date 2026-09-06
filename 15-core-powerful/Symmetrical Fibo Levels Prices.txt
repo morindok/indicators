@@ -1,0 +1,47 @@
+//@version=5
+indicator("Symmetric Price Mirror", overlay=true)
+lev1 = input.price(0, "Level 1", confirm=true)
+lev2 = input.price(0, "Level 2", confirm=true)
+t0 = input.time(0, "Pivot Time", confirm=true)
+t1 = input.time(0, "End Time", confirm=true)
+ang1 = input.float(45, "Angle Level 1 (deg)", minval=-89, maxval=89)
+ang2 = input.float(45, "Angle Level 2 (deg)", minval=-89, maxval=89)
+scaleBars = input.int(50, "Bars for 45° (bisector scale)", minval=1)
+ratioSlope = input.bool(false, "Multiply slope by ratio")
+boxDiag = input.bool(false, "Use box diagonals for slope")
+invertDiag = input.bool(false, "Invert diagonal angles")
+ratL = input.float(0.382, "Ratio Lower", step=0.001)
+ratH = input.float(0.618, "Ratio Upper", step=0.001)
+h = math.max(lev1, lev2)
+l = math.min(lev1, lev2)
+rng = h - l
+dt = bar_index - (bar_index + math.round((t0 - time) / (1000 * 60 * timeframe.multiplier)))
+boxBars = math.max(1, math.abs(math.round((t1 - t0) / (1000 * 60 * timeframe.multiplier))))
+bisector = rng / scaleBars
+diagSlope = rng / boxBars
+s1 = boxDiag ? (invertDiag ? -diagSlope : diagSlope) : math.tan(ang1 * math.pi / 180) * bisector
+s2 = boxDiag ? (invertDiag ? diagSlope : -diagSlope) : math.tan(ang2 * math.pi / 180) * bisector
+hh = h + s1 * dt
+ll = l + s2 * dt
+fL = ratioSlope ? (l + rng * ratL) + s2 * ratL * dt : ll + rng * ratL
+fH = ratioSlope ? (l + rng * ratH) + s2 * ratH * dt : ll + rng * ratH
+extH = ratioSlope ? (l + rng * 1.618) + s2 * 1.618 * dt : ll + rng * 1.618
+extL = ratioSlope ? (l + rng * -0.618) + s2 * -0.618 * dt : ll + rng * -0.618
+symL = 2 * ll - close
+symH = 2 * hh - close
+finL = 2 * fL - symL
+finH = 2 * fH - symH
+symExtH = 2 * extH - close
+symExtL = 2 * extL - close
+plot(hh, "Input High", color=color.blue, style=plot.style_line, linewidth=2)
+plot(ll, "Input Low", color=color.blue, style=plot.style_line, linewidth=2)
+plot(fL, "Ratio Lower Level", color=color.orange, style=plot.style_line, linewidth=2)
+plot(fH, "Ratio Upper Level", color=color.orange, style=plot.style_line, linewidth=2)
+plot(extH, "Static 1.618", color=color.teal, style=plot.style_line, linewidth=2)
+plot(extL, "Static -0.618", color=color.teal, style=plot.style_line, linewidth=2)
+plotcandle(symH, symH + (high - close), symH - (close - low), symH + (close - open), "Sym High", color=color.new(color.red, 50), wickcolor=color.red, bordercolor=color.red)
+plotcandle(symL, symL + (high - close), symL - (close - low), symL + (close - open), "Sym Low", color=color.new(color.green, 50), wickcolor=color.green, bordercolor=color.green)
+plotcandle(finH, finH + (high - close), finH - (close - low), finH + (close - open), "Final High", color=color.new(color.purple, 50), wickcolor=color.purple, bordercolor=color.purple)
+plotcandle(finL, finL + (high - close), finL - (close - low), finL + (close - open), "Final Low", color=color.new(color.purple, 50), wickcolor=color.purple, bordercolor=color.purple)
+plotcandle(symExtH, symExtH + (high - close), symExtH - (close - low), symExtH + (close - open), "Sym 1.618", color=color.new(color.black, 50), wickcolor=color.black, bordercolor=color.black)
+plotcandle(symExtL, symExtL + (high - close), symExtL - (close - low), symExtL + (close - open), "Sym -0.618", color=color.new(color.black, 50), wickcolor=color.black, bordercolor=color.black)

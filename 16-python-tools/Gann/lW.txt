@@ -1,0 +1,74 @@
+//@version=5
+indicator("Interactive Range & Price Curve Offset (9 Levels)", overlay=true)
+
+// ÏÑíÇÝÊ ÒãÇä ÔÑæÚ æ ÇíÇä
+startTime = input.time(0, "äÞØå ÔÑæÚ ÈÇÒå", confirm=true)
+endTime = input.time(0, "äÞØå ÇíÇä ÈÇÒå", confirm=true)
+
+realStart = math.min(startTime, endTime)
+realEnd = math.max(startTime, endTime)
+
+float rangeTimeMinutes = (realEnd - realStart) / (1000 * 60)
+inRange = time >= realStart and time <= realEnd
+
+var float rangeHigh = na
+var float rangeLow = na
+
+var float greenHigh = na
+var float greenLow = na
+var float redHigh = na
+var float redLow = na
+
+// ãÍÇÓÈå ÈÇáÇÊÑíä æ ÇííäÊÑíä ÞíãÊ ÏÑ ÈÇÒå Èå ÊÝ˜í˜ Ñä ˜äÏá
+if inRange
+    rangeHigh := na(rangeHigh) ? high : math.max(rangeHigh, high)
+    rangeLow  := na(rangeLow) ? low : math.min(rangeLow, low)
+    
+    if close > open
+        greenHigh := na(greenHigh) ? high : math.max(greenHigh, high)
+        greenLow  := na(greenLow) ? low : math.min(greenLow, low)
+    else if close < open
+        redHigh := na(redHigh) ? high : math.max(redHigh, high)
+        redLow  := na(redLow) ? low : math.min(redLow, low)
+
+// ÐÎíÑå ÇÑÊÝÇÚ äåÇíí Ó ÇÒ ÚÈæÑ ÇÒ ÈÇÒå
+var float finalHeight = na
+var float finalGreenHeight = na
+var float finalRedHeight = na
+
+if time == realEnd
+    finalHeight := rangeHigh - rangeLow
+    finalGreenHeight := not na(greenHigh) and not na(greenLow) ? greenHigh - greenLow : na
+    finalRedHeight := not na(redHigh) and not na(redLow) ? redHigh - redLow : na
+
+// ÑÓã ÌÏæá ÇØáÇÚÇÊ ÏÑ ÂÎÑíä ˜äÏá
+var tbl = table.new(position.top_right, 2, 7, border_width=1, border_color=color.black)
+if barstate.islast
+    color grayBg  = color.new(color.gray, 20)
+    color greenBg = color.new(color.green, 20)
+    color redBg   = color.new(color.red, 20)
+    color txtCol  = color.white
+
+    table.cell(tbl, 0, 0, "ãÔÎÕå", bgcolor=color.blue, text_color=color.white)
+    table.cell(tbl, 1, 0, "ãÞÏÇÑ", bgcolor=color.blue, text_color=color.white)
+    
+    if not na(rangeHigh)
+        table.cell(tbl, 0, 1, "High ÈÇÒå", bgcolor=grayBg, text_color=txtCol)
+        table.cell(tbl, 1, 1, str.tostring(rangeHigh, "#.####"), bgcolor=grayBg, text_color=txtCol)
+        
+        table.cell(tbl, 0, 2, "Low ÈÇÒå", bgcolor=grayBg, text_color=txtCol)
+        table.cell(tbl, 1, 2, str.tostring(rangeLow, "#.####"), bgcolor=grayBg, text_color=txtCol)
+        
+        table.cell(tbl, 0, 3, "ÇÑÊÝÇÚ ˜á", bgcolor=grayBg, text_color=txtCol)
+        table.cell(tbl, 1, 3, str.tostring(finalHeight, "#.####"), bgcolor=grayBg, text_color=txtCol)
+        
+        table.cell(tbl, 0, 4, "ÇÑÊÝÇÚ ÓÈÒåÇ", bgcolor=greenBg, text_color=txtCol)
+        table.cell(tbl, 1, 4, str.tostring(finalGreenHeight, "#.####"), bgcolor=greenBg, text_color=txtCol)
+        
+        table.cell(tbl, 0, 5, "ÇÑÊÝÇÚ ÞÑãÒåÇ", bgcolor=redBg, text_color=txtCol)
+        table.cell(tbl, 1, 5, str.tostring(finalRedHeight, "#.####"), bgcolor=redBg, text_color=txtCol)
+        
+        table.cell(tbl, 0, 6, "ÒãÇä (ÏÞíÞå)", bgcolor=grayBg, text_color=txtCol)
+        table.cell(tbl, 1, 6, str.tostring(rangeTimeMinutes, "#.#"), bgcolor=grayBg, text_color=txtCol)
+
+bgcolor(inRange ? color.new(color.blue, 90) : na)

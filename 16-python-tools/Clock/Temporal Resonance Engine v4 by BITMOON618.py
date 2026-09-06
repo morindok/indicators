@@ -1,0 +1,1598 @@
+# -*- coding: utf-8 -*-
+"""
+🌌 Temporal Resonance Engine v7 — موتور معاملاتی رزونانس چرخه‌های زمانی
+=========================================================================
+{Morindok}
+
+✓ داده واقعی از Bybit
+✓ دیتابیس SQLite ماندگار
+✓ قابلیت بستن دستی هر معامله باز
+✓ معاملات باز با اسکن مجدد یا بستن برنامه بسته نمی‌شوند
+"""
+
+import math
+import os
+import time
+import sqlite3
+from datetime import datetime, timezone, timedelta
+
+import requests
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+import dash
+from dash import dcc, html, Input, Output, State, ALL, ctx
+import dash_bootstrap_components as dbc
+
+# ==============================================================================
+# 0) تنظیمات
+# ==============================================================================
+BG = "#030308"
+CARD = "#0a0a18"
+CARD2 = "#101025"
+LINE = "#252545"
+TXT = "#e8e8ff"
+MUT = "#7a7aa8"
+GOLD = "#ffd700"
+UP = "#00ffcc"
+DN = "#ff2266"
+BLUE = "#00aaff"
+PURPLE = "#bb66ff"
+CYAN = "#00ffff"
+
+FONT_FAMILY = "Vazirmatn, Tahoma, Arial, sans-serif"
+DB_PATH = "signals_database.db"
+
+SYMBOLS = {
+    "BTCUSDT": {"name": "بیت‌کوین", "icon": "₿"},
+    "ETHUSDT": {"name": "اتریوم", "icon": "Ξ"},
+    "SOLUSDT": {"name": "سولانا", "icon": "◎"},
+    "BNBUSDT": {"name": "بایننس کوین", "icon": "🔶"},
+    "XRPUSDT": {"name": "ریپل", "icon": "✕"},
+    "ADAUSDT": {"name": "کاردانو", "icon": "₳"},
+    "DOGEUSDT": {"name": "دوج‌کوین", "icon": "Ð"},
+    "AVAXUSDT": {"name": "آوالانچ", "icon": "🔺"},
+    "DOTUSDT": {"name": "پولکادات", "icon": "●"},
+    "LINKUSDT": {"name": "چین‌لینک", "icon": "⬡"},
+    "MATICUSDT": {"name": "پالیگان", "icon": "🟣"},
+    "LTCUSDT": {"name": "لایت‌کوین", "icon": "Ł"},
+    "ATOMUSDT": {"name": "کاسماس", "icon": "⚛"},
+    "UNIUSDT": {"name": "یونی‌سواپ", "icon": "🦄"},
+    "APTUSDT": {"name": "آپتوس", "icon": "🅰"},
+    "ARBUSDT": {"name": "آربیتروم", "icon": "🔵"},
+    "OPUSDT": {"name": "آپتیمیسم", "icon": "🔴"},
+    "NEARUSDT": {"name": "نیر", "icon": "Ⓝ"},
+    "INJUSDT": {"name": "اینجکتیو", "icon": "💉"},
+    "SUIUSDT": {"name": "سویی", "icon": "💧"},
+}
+
+SYMBOL_OPTIONS = [
+    {"label": f"{v['icon']} {k.replace('USDT', '')} — {v['name']}", "value": k}
+    for k, v in SYMBOLS.items()
+]
+
+TEMPORAL_CYCLES = [
+    {"name": "روزانه", "period_hours": 24.0, "color": "#ffd700", "weight": 1.0},
+    {"name": "نیم‌روز", "period_hours": 12.0, "color": "#00ffcc", "weight": 0.8},
+    {"name": "شش‌ساعته", "period_hours": 6.0, "color": "#00aaff", "weight": 0.6},
+    {"name": "سه‌ساعته", "period_hours": 3.0, "color": "#bb66ff", "weight": 0.5},
+    {"name": "هفتگی", "period_hours": 168.0, "color": "#ff66aa", "weight": 1.2},
+    {"name": "ماهانه", "period_hours": 720.0, "color": "#ffaa00", "weight": 1.0},
+    {"name": "عطارد", "period_hours": 2111.3, "color": "#aaaaaa", "weight": 0.4},
+    {"name": "زهره", "period_hours": 1401.0, "color": "#ffcc88", "weight": 0.5},
+    {"name": "مریخ", "period_hours": 12.33, "color": "#ff6644", "weight": 0.7},
+    {"name": "مشتری", "period_hours": 4.96, "color": "#ffaa66", "weight": 0.6},
+    {"name": "زحل", "period_hours": 5.33, "color": "#ccaa66", "weight": 0.6},
+]
+
+BACKTEST_MIN_HISTORY = 200
+
+# ==============================================================================
+# 1) دیتابیس SQLite — ماندگار
+# ==============================================================================
+class SignalDatabase:
+    def __init__(self, db_path=DB_PATH):
+        self.db_path = db_path
+        self._init_db()
+
+    def _get_conn(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _init_db(self):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                direction INTEGER NOT NULL,
+                entry_price REAL NOT NULL,
+                sl_price REAL NOT NULL,
+                tp_price REAL NOT NULL,
+                dollar_amount REAL NOT NULL,
+                confidence REAL NOT NULL,
+                score REAL NOT NULL,
+                rr_ratio REAL NOT NULL,
+                status TEXT DEFAULT 'open',
+                exit_price REAL,
+                exit_time TEXT,
+                pnl REAL,
+                pnl_pct REAL,
+                exit_reason TEXT,
+                interval TEXT,
+                threshold REAL
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+    def save_signal(self, signal_data, interval, threshold):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO signals (created_at, symbol, direction, entry_price, sl_price, tp_price,
+                                dollar_amount, confidence, score, rr_ratio, status, interval, threshold)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+        """, (
+            signal_data["timestamp"],
+            signal_data["symbol"],
+            signal_data["signal"],
+            signal_data["entry_price"],
+            signal_data["sl_price"],
+            signal_data["tp_price"],
+            signal_data["dollar_amount"],
+            signal_data["confidence"],
+            signal_data["final_score"],
+            signal_data["rr_ratio"],
+            interval,
+            threshold,
+        ))
+        conn.commit()
+        conn.close()
+
+    def has_open_signal(self, symbol):
+        """بررسی آیا نماد سیگنال باز دارد."""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COUNT(*) as cnt FROM signals WHERE symbol = ? AND status = 'open'",
+            (symbol,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        return row["cnt"] > 0
+
+    def get_open_signals(self):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM signals WHERE status = 'open' ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    def get_signal_by_id(self, signal_id):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM signals WHERE id = ?", (signal_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def close_signal(self, signal_id, exit_price, exit_time, pnl, pnl_pct, reason):
+        """بستن یک سیگنال (دستی یا خودکار)."""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE signals
+            SET status = 'closed_manual', exit_price = ?, exit_time = ?,
+                pnl = ?, pnl_pct = ?, exit_reason = ?
+            WHERE id = ?
+        """, (exit_price, exit_time, pnl, pnl_pct, reason, signal_id))
+        conn.commit()
+        conn.close()
+
+    def update_signal_result(self, signal_id, exit_price, exit_time, pnl, pnl_pct, status, reason):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE signals
+            SET exit_price = ?, exit_time = ?, pnl = ?, pnl_pct = ?, status = ?, exit_reason = ?
+            WHERE id = ?
+        """, (exit_price, exit_time, pnl, pnl_pct, status, reason, signal_id))
+        conn.commit()
+        conn.close()
+
+    def get_all_signals(self, limit=200):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM signals
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, (limit,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    def get_signal_stats(self):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT COUNT(*) as total FROM signals")
+        total = cursor.fetchone()["total"]
+
+        cursor.execute("SELECT COUNT(*) as cnt FROM signals WHERE status = 'open'")
+        open_count = cursor.fetchone()["cnt"]
+
+        cursor.execute("SELECT COUNT(*) as cnt FROM signals WHERE status = 'tp_hit'")
+        tp_count = cursor.fetchone()["cnt"]
+
+        cursor.execute("SELECT COUNT(*) as cnt FROM signals WHERE status = 'sl_hit'")
+        sl_count = cursor.fetchone()["cnt"]
+
+        cursor.execute("SELECT COUNT(*) as cnt FROM signals WHERE status = 'expired'")
+        expired_count = cursor.fetchone()["cnt"]
+
+        cursor.execute("SELECT COUNT(*) as cnt FROM signals WHERE status = 'closed_manual'")
+        manual_count = cursor.fetchone()["cnt"]
+
+        cursor.execute("SELECT SUM(pnl) as total_pnl FROM signals WHERE pnl IS NOT NULL")
+        row = cursor.fetchone()
+        total_pnl = row["total_pnl"] if row["total_pnl"] else 0.0
+
+        cursor.execute("SELECT COUNT(*) as cnt FROM signals WHERE pnl > 0")
+        wins = cursor.fetchone()["cnt"]
+
+        cursor.execute("SELECT COUNT(*) as cnt FROM signals WHERE pnl <= 0 AND pnl IS NOT NULL")
+        losses = cursor.fetchone()["cnt"]
+
+        closed_with_result = wins + losses
+        win_rate = (wins / closed_with_result * 100) if closed_with_result > 0 else 0.0
+
+        cursor.execute("SELECT AVG(confidence) as avg_conf FROM signals")
+        row = cursor.fetchone()
+        avg_conf = row["avg_conf"] if row["avg_conf"] else 0.0
+
+        conn.close()
+
+        return {
+            "total": total,
+            "open": open_count,
+            "tp_count": tp_count,
+            "sl_count": sl_count,
+            "expired_count": expired_count,
+            "manual_count": manual_count,
+            "total_pnl": total_pnl,
+            "wins": wins,
+            "losses": losses,
+            "win_rate": win_rate,
+            "avg_confidence": avg_conf,
+        }
+
+
+# ==============================================================================
+# 2) ارتباط پایدار با Bybit
+# ==============================================================================
+REST_CANDIDATES = [
+    "https://api.bybit.com",
+    "https://api.bytick.com",
+    "https://api.bybit.kz",
+]
+
+SESSION = requests.Session()
+SESSION.headers.update({
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/120.0 Safari/537.36"),
+    "Accept": "application/json",
+    "Referer": "https://www.bybit.com/",
+})
+
+_ACTIVE_REST_BASE = {"url": None}
+
+
+def bybit_get(path, params, timeout=10):
+    cands = ([_ACTIVE_REST_BASE["url"]] if _ACTIVE_REST_BASE["url"] else []) + \
+            [b for b in REST_CANDIDATES if b != _ACTIVE_REST_BASE["url"]]
+    for base in cands:
+        try:
+            r = SESSION.get(f"{base}{path}", params=params, timeout=timeout)
+            if r.status_code in (403, 451):
+                continue
+            r.raise_for_status()
+            d = r.json()
+            if d.get("retCode") == 0:
+                _ACTIVE_REST_BASE["url"] = base
+                return d
+        except Exception:
+            continue
+    return None
+
+
+def get_klines(symbol, interval, limit=1000):
+    d = bybit_get("/v5/market/kline", {
+        "category": "linear",
+        "symbol": symbol,
+        "interval": interval,
+        "limit": limit,
+    })
+    if not d or "list" not in (d.get("result") or {}):
+        return pd.DataFrame()
+    lst = d["result"]["list"]
+    if not lst:
+        return pd.DataFrame()
+    df = pd.DataFrame(lst, columns=["ts", "open", "high", "low", "close", "volume", "turnover"])
+    df["ts"] = pd.to_datetime(df["ts"].astype(int), unit="ms")
+    for c in ["open", "high", "low", "close", "volume"]:
+        df[c] = df[c].astype(float)
+    return df.sort_values("ts").reset_index(drop=True)
+
+
+def get_interval_minutes(interval):
+    s = str(interval).strip().lower()
+    if s == "d": return 1440
+    if s == "w": return 10080
+    if s == "m": return 43200
+    try: return int(s)
+    except Exception: return 15
+
+
+# ==============================================================================
+# 3) موتور چرخه‌ها
+# ==============================================================================
+class CycleEngine:
+    def __init__(self, cycles=TEMPORAL_CYCLES, n_phase_bins=48, forecast_horizon_hours=4):
+        self.cycles = cycles
+        self.n_phase_bins = n_phase_bins
+        self.forecast_horizon_hours = forecast_horizon_hours
+        self.phase_maps = {}
+
+    def build_phase_return_maps(self, df, interval_min):
+        closes = df["close"].values
+        ts = df["ts"].values
+        n = len(closes)
+
+        horizon_candles = max(1, int(self.forecast_horizon_hours * 60 / interval_min))
+        future_returns = np.full(n, np.nan)
+        if n > horizon_candles:
+            future_returns[:n - horizon_candles] = (
+                closes[horizon_candles:] - closes[:n - horizon_candles]
+            ) / closes[:n - horizon_candles]
+
+        ts_hours = pd.to_datetime(ts).astype(np.int64) / 1e9 / 3600.0
+
+        for cycle in self.cycles:
+            name = cycle["name"]
+            period_h = cycle["period_hours"]
+            phases = (ts_hours % period_h) / period_h
+
+            phase_returns = np.full(self.n_phase_bins, np.nan)
+            phase_stds = np.full(self.n_phase_bins, np.nan)
+
+            for b in range(self.n_phase_bins):
+                b_start = b / self.n_phase_bins
+                b_end = (b + 1) / self.n_phase_bins
+                mask = (phases >= b_start) & (phases < b_end) & ~np.isnan(future_returns)
+                if mask.sum() >= 3:
+                    vals = future_returns[mask]
+                    phase_returns[b] = vals.mean()
+                    phase_stds[b] = vals.std() if len(vals) > 1 else np.abs(vals.mean())
+
+            valid = ~np.isnan(phase_returns)
+            if valid.sum() >= 2:
+                idxs = np.arange(self.n_phase_bins)
+                ext_ret = np.concatenate([phase_returns, phase_returns, phase_returns])
+                ext_idx = np.concatenate([idxs - self.n_phase_bins, idxs, idxs + self.n_phase_bins])
+                ext_valid = np.concatenate([valid, valid, valid])
+                filled = np.interp(idxs + self.n_phase_bins, ext_idx[ext_valid], ext_ret[ext_valid])
+                phase_returns[~valid] = filled[~valid]
+
+                ext_std = np.concatenate([phase_stds, phase_stds, phase_stds])
+                filled_std = np.interp(idxs + self.n_phase_bins, ext_idx[ext_valid], ext_std[ext_valid])
+                phase_stds[~valid] = filled_std[~valid]
+            elif valid.sum() == 1:
+                phase_returns[:] = phase_returns[valid][0]
+                phase_stds[:] = phase_stds[valid][0] if not np.isnan(phase_stds[valid][0]) else 0.001
+            else:
+                phase_returns[:] = 0.0
+                phase_stds[:] = 0.001
+
+            if valid.sum() >= 2:
+                signal_range = np.nanmax(phase_returns) - np.nanmin(phase_returns)
+                noise_level = np.nanmean(phase_stds)
+                strength = min(1.0, signal_range / (noise_level + 1e-9)) if noise_level > 0 else 0.5
+            else:
+                strength = 0.0
+
+            strength *= cycle["weight"]
+
+            self.phase_maps[name] = {
+                "phase_return": phase_returns,
+                "phase_std": phase_stds,
+                "strength": strength,
+                "period_hours": period_h,
+                "color": cycle["color"],
+            }
+
+    def get_phase(self, dt_utc, period_hours):
+        t_hours = dt_utc.timestamp() / 3600.0
+        return (t_hours % period_hours) / period_hours
+
+    def get_cycle_signal(self, dt_utc, cycle_name):
+        if cycle_name not in self.phase_maps:
+            return 0.0, 0.0, 0.0
+        m = self.phase_maps[cycle_name]
+        phase = self.get_phase(dt_utc, m["period_hours"])
+        bin_idx = int(phase * self.n_phase_bins) % self.n_phase_bins
+        exp_return = m["phase_return"][bin_idx]
+        strength = m["strength"]
+        return exp_return, strength, phase
+
+    def compute_resonance(self, dt_utc):
+        total_weight = 0.0
+        weighted_signal = 0.0
+        cycle_details = []
+
+        for cycle in self.cycles:
+            name = cycle["name"]
+            exp_ret, strength, phase = self.get_cycle_signal(dt_utc, name)
+            direction = np.sign(exp_ret)
+            magnitude = min(abs(exp_ret) / 0.005, 1.0)
+            final_weight = strength * cycle["weight"] * (0.5 + 0.5 * magnitude)
+
+            weighted_signal += final_weight * direction
+            total_weight += final_weight
+
+            cycle_details.append({
+                "name": name,
+                "exp_return": exp_ret,
+                "strength": strength,
+                "phase": phase,
+                "direction": direction,
+                "weight": final_weight,
+            })
+
+        resonance_score = weighted_signal / total_weight if total_weight > 0 else 0.0
+
+        return {
+            "score": resonance_score,
+            "total_weight": total_weight,
+            "cycles": cycle_details,
+        }
+
+
+# ==============================================================================
+# 4) موتور سیگنال‌دهی
+# ==============================================================================
+class TemporalSignalEngine:
+    def __init__(self, cycle_engine, entry_threshold=0.35, min_cycles_agree=5):
+        self.cycle_engine = cycle_engine
+        self.entry_threshold = entry_threshold
+        self.min_cycles_agree = min_cycles_agree
+
+    def generate_signal(self, dt_utc):
+        resonance = self.cycle_engine.compute_resonance(dt_utc)
+        score = resonance["score"]
+
+        positive_cycles = sum(1 for c in resonance["cycles"] if c["direction"] > 0)
+        negative_cycles = sum(1 for c in resonance["cycles"] if c["direction"] < 0)
+        dominant_count = max(positive_cycles, negative_cycles)
+        total_cycles = len(resonance["cycles"])
+
+        signal = 0
+        reason = "No Signal"
+
+        if score > self.entry_threshold and dominant_count >= self.min_cycles_agree:
+            signal = 1
+            reason = f"رزونانس صعودی ({positive_cycles} چرخه)"
+        elif score < -self.entry_threshold and dominant_count >= self.min_cycles_agree:
+            signal = -1
+            reason = f"رزونانس نزولی ({negative_cycles} چرخه)"
+
+        confidence = self._calculate_confidence(resonance, dominant_count, total_cycles)
+
+        return {
+            "signal": signal,
+            "score": score,
+            "reason": reason,
+            "resonance": resonance,
+            "dominant_count": dominant_count,
+            "total_cycles": total_cycles,
+            "confidence": confidence,
+        }
+
+    def _calculate_confidence(self, resonance, dominant_count, total_cycles):
+        score_factor = min(abs(resonance["score"]) / 0.7, 1.0) * 40
+        alignment_factor = (dominant_count / total_cycles) * 35 if total_cycles > 0 else 0
+
+        if resonance["cycles"]:
+            dominant_dir = np.sign(resonance["score"]) if resonance["score"] != 0 else 0
+            aligned = [c for c in resonance["cycles"] if c["direction"] == dominant_dir]
+            if aligned:
+                avg_strength = np.mean([c["strength"] for c in aligned])
+                strength_factor = avg_strength * 25
+            else:
+                strength_factor = 0
+        else:
+            strength_factor = 0
+
+        confidence = score_factor + alignment_factor + strength_factor
+        return min(100.0, max(0.0, confidence))
+
+
+# ==============================================================================
+# 5) موتور ریسک
+# ==============================================================================
+class RiskEngine:
+    def __init__(self, risk_per_trade=0.01, atr_period=14):
+        self.risk_per_trade = risk_per_trade
+        self.atr_period = atr_period
+
+    def calculate_atr(self, df):
+        highs = df["high"].values
+        lows = df["low"].values
+        closes = df["close"].values
+        n = len(closes)
+        tr = np.maximum(
+            highs - lows,
+            np.maximum(
+                np.abs(highs - np.roll(closes, 1)),
+                np.abs(lows - np.roll(closes, 1)),
+            ),
+        )
+        tr[0] = highs[0] - lows[0]
+        atr = pd.Series(tr).ewm(span=self.atr_period, adjust=False).mean().values
+        return atr
+
+    def calculate_tp_sl(self, entry_price, signal, atr_value, confidence):
+        confidence_factor = confidence / 100.0
+        sl_mult = max(1.0, 2.0 - confidence_factor * 0.8)
+        tp_mult = max(2.0, 3.0 + confidence_factor * 1.5)
+
+        if signal == 1:
+            sl_price = entry_price - atr_value * sl_mult
+            tp_price = entry_price + atr_value * tp_mult
+        else:
+            sl_price = entry_price + atr_value * sl_mult
+            tp_price = entry_price - atr_value * tp_mult
+
+        rr_ratio = tp_mult / sl_mult
+
+        return {
+            "sl_price": sl_price,
+            "tp_price": tp_price,
+            "rr_ratio": rr_ratio,
+            "sl_distance": atr_value * sl_mult,
+            "tp_distance": atr_value * tp_mult,
+        }
+
+    def calculate_position_dollar(self, balance, entry_price, sl_distance, confidence):
+        if sl_distance <= 0 or entry_price <= 0:
+            return 0.0
+        risk_amount = balance * self.risk_per_trade
+        confidence_multiplier = 0.5 + (confidence / 100.0) * 0.5
+        adjusted_risk = risk_amount * confidence_multiplier
+        dollar_amount = (adjusted_risk / sl_distance) * entry_price
+        max_position = balance * 0.20
+        dollar_amount = min(dollar_amount, max_position)
+        return dollar_amount
+
+
+# ==============================================================================
+# 6) اسکنر
+# ==============================================================================
+def scan_all_symbols(interval="15", balance=10000.0, risk_pct=0.01, threshold=0.35):
+    interval_min = get_interval_minutes(interval)
+    results = []
+
+    for symbol in SYMBOLS.keys():
+        try:
+            df = get_klines(symbol, interval, limit=1000)
+            if df.empty or len(df) < BACKTEST_MIN_HISTORY:
+                continue
+
+            cycle_engine = CycleEngine(forecast_horizon_hours=4)
+            cycle_engine.build_phase_return_maps(df, interval_min)
+
+            current_time = pd.to_datetime(df["ts"].iloc[-1]).to_pydatetime().replace(tzinfo=timezone.utc)
+
+            signal_engine = TemporalSignalEngine(cycle_engine, entry_threshold=threshold)
+            sig_data = signal_engine.generate_signal(current_time)
+
+            risk_engine = RiskEngine(risk_per_trade=risk_pct)
+            atr = risk_engine.calculate_atr(df)
+            current_atr = atr[-1]
+            current_price = df["close"].iloc[-1]
+
+            tp_sl = risk_engine.calculate_tp_sl(
+                current_price, sig_data["signal"], current_atr, sig_data["confidence"]
+            )
+
+            dollar_amount = risk_engine.calculate_position_dollar(
+                balance, current_price, tp_sl["sl_distance"], sig_data["confidence"]
+            )
+
+            final_score = abs(sig_data["score"]) * (sig_data["confidence"] / 100.0) * 100
+
+            results.append({
+                "symbol": symbol,
+                "name": SYMBOLS[symbol]["name"],
+                "icon": SYMBOLS[symbol]["icon"],
+                "signal": sig_data["signal"],
+                "score": sig_data["score"],
+                "confidence": sig_data["confidence"],
+                "final_score": final_score,
+                "dominant_count": sig_data["dominant_count"],
+                "total_cycles": sig_data["total_cycles"],
+                "current_price": current_price,
+                "entry_price": current_price,
+                "atr": current_atr,
+                "dollar_amount": dollar_amount,
+                "reason": sig_data["reason"],
+                "timestamp": current_time.strftime("%Y-%m-%d %H:%M:%S"),
+                "sl_price": tp_sl["sl_price"],
+                "tp_price": tp_sl["tp_price"],
+                "rr_ratio": tp_sl["rr_ratio"],
+                "sl_distance": tp_sl["sl_distance"],
+                "tp_distance": tp_sl["tp_distance"],
+            })
+
+            time.sleep(0.05)
+
+        except Exception:
+            continue
+
+    results.sort(key=lambda x: x["final_score"], reverse=True)
+    return results
+
+
+# ==============================================================================
+# 7) آپدیت نتایج سیگنال‌های باز
+# ==============================================================================
+def update_open_signals_results(db):
+    open_signals = db.get_open_signals()
+    if not open_signals:
+        return 0
+
+    updated_count = 0
+
+    for sig in open_signals:
+        try:
+            symbol = sig["symbol"]
+            direction = sig["direction"]
+            entry_price = sig["entry_price"]
+            sl_price = sig["sl_price"]
+            tp_price = sig["tp_price"]
+            dollar_amount = sig["dollar_amount"]
+
+            df = get_klines(symbol, "1", limit=1)
+            if df.empty:
+                continue
+
+            current_price = df["close"].iloc[-1]
+            current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+            sl_distance = abs(entry_price - sl_price)
+            size = dollar_amount / entry_price if entry_price > 0 else 0
+
+            status = None
+            exit_price = None
+            reason = None
+
+            if direction == 1:
+                if current_price <= sl_price:
+                    status = "sl_hit"
+                    exit_price = sl_price
+                    reason = "SL"
+                elif current_price >= tp_price:
+                    status = "tp_hit"
+                    exit_price = tp_price
+                    reason = "TP"
+            else:
+                if current_price >= sl_price:
+                    status = "sl_hit"
+                    exit_price = sl_price
+                    reason = "SL"
+                elif current_price <= tp_price:
+                    status = "tp_hit"
+                    exit_price = tp_price
+                    reason = "TP"
+
+            if status is None:
+                try:
+                    created_dt = datetime.strptime(sig["created_at"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                    hours_passed = (datetime.now(timezone.utc) - created_dt).total_seconds() / 3600
+                    if hours_passed > 24:
+                        status = "expired"
+                        exit_price = current_price
+                        reason = "Expired (24h)"
+                except Exception:
+                    pass
+
+            if status:
+                if direction == 1:
+                    pnl = (exit_price - entry_price) * size
+                else:
+                    pnl = (entry_price - exit_price) * size
+
+                pnl_pct = (pnl / dollar_amount * 100) if dollar_amount > 0 else 0
+
+                db.update_signal_result(
+                    sig["id"], exit_price, current_time, pnl, pnl_pct, status, reason
+                )
+                updated_count += 1
+
+        except Exception:
+            continue
+
+    return updated_count
+
+
+# ==============================================================================
+# 8) توابع UI
+# ==============================================================================
+def empty_fig(msg):
+    fig = go.Figure()
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor=BG, plot_bgcolor=CARD,
+        xaxis=dict(visible=False), yaxis=dict(visible=False),
+        font=dict(family=FONT_FAMILY),
+    )
+    fig.add_annotation(
+        x=0.5, y=0.5, xref="paper", yref="paper", text=msg,
+        showarrow=False, font=dict(size=16, color=DN, family=FONT_FAMILY),
+    )
+    return fig
+
+
+def build_signals_table(signals_data, live_prices=None):
+    if not signals_data:
+        return html.Div("سیگنالی یافت نشد.", style={"color": MUT, "textAlign": "center", "padding": "20px"})
+
+    header = html.Tr([
+        html.Th("#", style={"width": "3%"}),
+        html.Th("نماد", style={"width": "8%"}),
+        html.Th("سیگنال", style={"width": "7%"}),
+        html.Th("امتیاز", style={"width": "6%"}),
+        html.Th("اطمینان", style={"width": "8%"}),
+        html.Th("حجم ($)", style={"width": "7%"}),
+        html.Th("ورود", style={"width": "8%"}),
+        html.Th("🛑 حد ضرر", style={"width": "8%"}),
+        html.Th("🎯 حد سود", style={"width": "8%"}),
+        html.Th("R:R", style={"width": "5%"}),
+        html.Th("قیمت فعلی", style={"width": "8%"}),
+        html.Th("PnL زنده", style={"width": "8%"}),
+        html.Th("زمان", style={"width": "6%"}),
+    ], style={"color": MUT, "fontSize": 10, "textAlign": "center"})
+
+    rows = []
+    for rank, s in enumerate(signals_data, 1):
+        if s["signal"] == 1:
+            dir_text = "🟢 LONG"
+            dir_color = UP
+            row_bg = "rgba(0,255,204,0.04)"
+        elif s["signal"] == -1:
+            dir_text = "🔴 SHORT"
+            dir_color = DN
+            row_bg = "rgba(255,34,102,0.04)"
+        else:
+            dir_text = "⏸ خنثی"
+            dir_color = MUT
+            row_bg = "transparent"
+
+        current_price = live_prices.get(s["symbol"], s["current_price"]) if live_prices else s["current_price"]
+        entry_price = s["entry_price"]
+
+        if s["signal"] == 1:
+            pnl_pct = ((current_price - entry_price) / entry_price) * 100 if entry_price > 0 else 0
+        elif s["signal"] == -1:
+            pnl_pct = ((entry_price - current_price) / entry_price) * 100 if entry_price > 0 else 0
+        else:
+            pnl_pct = 0
+
+        pnl_color = UP if pnl_pct > 0 else (DN if pnl_pct < 0 else MUT)
+        pnl_text = f"{pnl_pct:+.2f}%"
+
+        conf = s["confidence"]
+        conf_color = UP if conf >= 70 else (GOLD if conf >= 50 else DN)
+        score_color = UP if s["final_score"] > 50 else (GOLD if s["final_score"] > 25 else MUT)
+
+        if s["signal"] != 0:
+            sl_text = f"${s['sl_price']:,.4g}"
+            tp_text = f"${s['tp_price']:,.4g}"
+            rr_text = f"1:{s['rr_ratio']:.1f}"
+        else:
+            sl_text = "—"
+            tp_text = "—"
+            rr_text = "—"
+
+        rows.append(html.Tr([
+            html.Td(f"#{rank}", style={"color": GOLD, "fontWeight": "bold", "fontSize": "11px"}),
+            html.Td([
+                html.Span(s["icon"], style={"marginRight": "4px"}),
+                html.Span(s["symbol"].replace("USDT", ""), style={"fontWeight": "bold", "fontSize": "11px"}),
+            ], style={"color": TXT}),
+            html.Td(dir_text, style={"color": dir_color, "fontWeight": "bold", "fontSize": "11px"}),
+            html.Td(f"{s['final_score']:.1f}", style={"color": score_color, "fontWeight": "bold"}),
+            html.Td([
+                html.Div(style={
+                    "width": "100%", "height": "5px", "background": LINE,
+                    "borderRadius": "3px", "overflow": "hidden", "marginBottom": "2px",
+                }, children=[
+                    html.Div(style={
+                        "width": f"{conf}%", "height": "100%",
+                        "background": conf_color, "borderRadius": "3px",
+                    })
+                ]),
+                html.Span(f"{conf:.0f}%", style={"color": conf_color, "fontSize": "10px"}),
+            ], style={"textAlign": "center"}),
+            html.Td(f"${s['dollar_amount']:,.0f}", style={"color": BLUE, "fontWeight": "bold", "fontSize": "11px"}),
+            html.Td(f"${entry_price:,.4g}", style={"color": TXT, "fontSize": "11px"}),
+            html.Td(sl_text, style={"color": DN, "fontWeight": "bold", "fontSize": "11px"}),
+            html.Td(tp_text, style={"color": UP, "fontWeight": "bold", "fontSize": "11px"}),
+            html.Td(rr_text, style={"color": GOLD, "fontWeight": "bold", "fontSize": "11px"}),
+            html.Td(f"${current_price:,.4g}", style={"color": TXT, "fontSize": "11px"}),
+            html.Td(pnl_text, style={"color": pnl_color, "fontWeight": "bold", "fontSize": "11px"}),
+            html.Td(s["timestamp"][-8:], style={"color": MUT, "fontSize": "9px"}),
+        ], style={"textAlign": "center", "background": row_bg}))
+
+    return dbc.Table(
+        [html.Thead(header), html.Tbody(rows)],
+        bordered=False, hover=True, responsive=True, size="sm",
+        style={"color": TXT},
+    )
+
+
+def build_history_table(signals_from_db):
+    """جدول تاریخچه با دکمه بستن برای معاملات باز."""
+    if not signals_from_db:
+        return html.Div("هنوز سیگنالی در دیتابیس ثبت نشده است.", style={"color": MUT, "textAlign": "center", "padding": "20px"})
+
+    header = html.Tr([
+        html.Th("ID", style={"width": "3%"}),
+        html.Th("زمان", style={"width": "9%"}),
+        html.Th("نماد", style={"width": "7%"}),
+        html.Th("جهت", style={"width": "6%"}),
+        html.Th("ورود", style={"width": "7%"}),
+        html.Th("🛑 SL", style={"width": "7%"}),
+        html.Th("🎯 TP", style={"width": "7%"}),
+        html.Th("حجم ($)", style={"width": "7%"}),
+        html.Th("اطمینان", style={"width": "5%"}),
+        html.Th("وضعیت", style={"width": "8%"}),
+        html.Th("خروج", style={"width": "7%"}),
+        html.Th("PnL ($)", style={"width": "7%"}),
+        html.Th("PnL (٪)", style={"width": "6%"}),
+        html.Th("عملیات", style={"width": "7%"}),
+    ], style={"color": MUT, "fontSize": 10, "textAlign": "center"})
+
+    rows = []
+    for s in signals_from_db:
+        if s["direction"] == 1:
+            dir_text = "🟢 LONG"
+            dir_color = UP
+        elif s["direction"] == -1:
+            dir_text = "🔴 SHORT"
+            dir_color = DN
+        else:
+            dir_text = "⏸"
+            dir_color = MUT
+
+        status = s["status"]
+        if status == "tp_hit":
+            status_text = "🎯 TP"
+            status_color = UP
+            row_bg = "rgba(0,255,204,0.06)"
+        elif status == "sl_hit":
+            status_text = "🛑 SL"
+            status_color = DN
+            row_bg = "rgba(255,34,102,0.06)"
+        elif status == "expired":
+            status_text = "⏰ منقضی"
+            status_color = MUT
+            row_bg = "rgba(122,122,168,0.06)"
+        elif status == "closed_manual":
+            status_text = "✋ بسته شد"
+            status_color = GOLD
+            row_bg = "rgba(255,215,0,0.06)"
+        else:
+            status_text = "🔵 باز"
+            status_color = BLUE
+            row_bg = "rgba(0,170,255,0.04)"
+
+        pnl = s["pnl"]
+        pnl_pct = s["pnl_pct"]
+
+        if pnl is not None:
+            pnl_color = UP if pnl > 0 else DN
+            pnl_text = f"{pnl:+,.2f}"
+            pnl_pct_text = f"{pnl_pct:+.2f}%"
+        else:
+            pnl_color = MUT
+            pnl_text = "—"
+            pnl_pct_text = "—"
+
+        exit_price = s["exit_price"]
+        exit_text = f"${exit_price:,.4g}" if exit_price else "—"
+
+        conf = s["confidence"]
+        conf_color = UP if conf >= 70 else (GOLD if conf >= 50 else DN)
+
+        symbol_info = SYMBOLS.get(s["symbol"], {"icon": "•", "name": s["symbol"]})
+
+        # دکمه بستن فقط برای معاملات باز
+        if status == "open":
+            action_cell = html.Td(
+                dbc.Button(
+                    "❌ بستن",
+                    id={"type": "close-btn", "index": s["id"]},
+                    color="danger",
+                    size="sm",
+                    style={"fontSize": "10px", "padding": "2px 8px"},
+                ),
+                style={"textAlign": "center"}
+            )
+        else:
+            action_cell = html.Td(
+                html.Span(s["exit_reason"] or "—", style={"color": MUT, "fontSize": "10px"}),
+                style={"textAlign": "center"}
+            )
+
+        rows.append(html.Tr([
+            html.Td(f"#{s['id']}", style={"color": MUT, "fontSize": "10px"}),
+            html.Td(s["created_at"][-14:], style={"color": MUT, "fontSize": "10px"}),
+            html.Td([
+                html.Span(symbol_info["icon"], style={"marginRight": "3px"}),
+                html.Span(s["symbol"].replace("USDT", ""), style={"fontWeight": "bold", "fontSize": "11px"}),
+            ], style={"color": TXT}),
+            html.Td(dir_text, style={"color": dir_color, "fontWeight": "bold", "fontSize": "11px"}),
+            html.Td(f"${s['entry_price']:,.4g}", style={"color": TXT, "fontSize": "11px"}),
+            html.Td(f"${s['sl_price']:,.4g}", style={"color": DN, "fontSize": "11px"}),
+            html.Td(f"${s['tp_price']:,.4g}", style={"color": UP, "fontSize": "11px"}),
+            html.Td(f"${s['dollar_amount']:,.0f}", style={"color": BLUE, "fontSize": "11px"}),
+            html.Td(f"{conf:.0f}%", style={"color": conf_color, "fontSize": "11px"}),
+            html.Td(status_text, style={"color": status_color, "fontWeight": "bold", "fontSize": "11px"}),
+            html.Td(exit_text, style={"color": TXT, "fontSize": "11px"}),
+            html.Td(pnl_text, style={"color": pnl_color, "fontWeight": "bold", "fontSize": "11px"}),
+            html.Td(pnl_pct_text, style={"color": pnl_color, "fontSize": "11px"}),
+            action_cell,
+        ], style={"textAlign": "center", "background": row_bg}))
+
+    return dbc.Table(
+        [html.Thead(header), html.Tbody(rows)],
+        bordered=False, hover=True, responsive=True, size="sm",
+        style={"color": TXT},
+    )
+
+
+def build_history_stats(stats):
+    return dbc.Row([
+        dbc.Col(html.Div([
+            html.Div("کل سیگنال‌ها", className="stat-label"),
+            html.Div(f"{stats['total']}", className="stat-value", style={"color": TXT}),
+        ], className="glass-card", style={"padding": "12px", "textAlign": "center"}), md=2),
+        dbc.Col(html.Div([
+            html.Div("سیگنال باز", className="stat-label"),
+            html.Div(f"{stats['open']} 🔵", className="stat-value", style={"color": BLUE}),
+        ], className="glass-card", style={"padding": "12px", "textAlign": "center"}), md=2),
+        dbc.Col(html.Div([
+            html.Div("TP زده", className="stat-label"),
+            html.Div(f"{stats['tp_count']} 🎯", className="stat-value", style={"color": UP}),
+        ], className="glass-card", style={"padding": "12px", "textAlign": "center"}), md=2),
+        dbc.Col(html.Div([
+            html.Div("SL زده", className="stat-label"),
+            html.Div(f"{stats['sl_count']} 🛑", className="stat-value", style={"color": DN}),
+        ], className="glass-card", style={"padding": "12px", "textAlign": "center"}), md=2),
+        dbc.Col(html.Div([
+            html.Div("Win Rate", className="stat-label"),
+            html.Div(f"{stats['win_rate']:.1f}%", className="stat-value", style={"color": GOLD}),
+        ], className="glass-card", style={"padding": "12px", "textAlign": "center"}), md=2),
+        dbc.Col(html.Div([
+            html.Div("مجموع PnL", className="stat-label"),
+            html.Div(f"${stats['total_pnl']:+,.2f}", className="stat-value",
+                     style={"color": UP if stats['total_pnl'] >= 0 else DN}),
+        ], className="glass-card", style={"padding": "12px", "textAlign": "center"}), md=2),
+    ])
+
+
+def build_signals_summary(signals_data):
+    total = len(signals_data)
+    longs = sum(1 for s in signals_data if s["signal"] == 1)
+    shorts = sum(1 for s in signals_data if s["signal"] == -1)
+    neutrals = total - longs - shorts
+    high_conf = sum(1 for s in signals_data if s["confidence"] >= 70)
+    total_dollar = sum(s["dollar_amount"] for s in signals_data if s["signal"] != 0)
+
+    return dbc.Row([
+        dbc.Col(html.Div([
+            html.Div("کل نمادها", className="stat-label"),
+            html.Div(f"{total}", className="stat-value", style={"color": TXT}),
+        ], className="glass-card", style={"padding": "12px", "textAlign": "center"}), md=2),
+        dbc.Col(html.Div([
+            html.Div("سیگنال خرید", className="stat-label"),
+            html.Div(f"{longs} 🟢", className="stat-value", style={"color": UP}),
+        ], className="glass-card", style={"padding": "12px", "textAlign": "center"}), md=2),
+        dbc.Col(html.Div([
+            html.Div("سیگنال فروش", className="stat-label"),
+            html.Div(f"{shorts} 🔴", className="stat-value", style={"color": DN}),
+        ], className="glass-card", style={"padding": "12px", "textAlign": "center"}), md=2),
+        dbc.Col(html.Div([
+            html.Div("خنثی", className="stat-label"),
+            html.Div(f"{neutrals} ⏸", className="stat-value", style={"color": MUT}),
+        ], className="glass-card", style={"padding": "12px", "textAlign": "center"}), md=2),
+        dbc.Col(html.Div([
+            html.Div("اطمینان بالا", className="stat-label"),
+            html.Div(f"{high_conf} ⭐", className="stat-value", style={"color": GOLD}),
+        ], className="glass-card", style={"padding": "12px", "textAlign": "center"}), md=2),
+        dbc.Col(html.Div([
+            html.Div("حجم کل", className="stat-label"),
+            html.Div(f"${total_dollar:,.0f}", className="stat-value", style={"color": BLUE}),
+        ], className="glass-card", style={"padding": "12px", "textAlign": "center"}), md=2),
+    ])
+
+
+def build_resonance_gauge(resonance_data, symbol):
+    score = resonance_data["score"]
+    gauge_value = (score + 1) * 50
+
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=gauge_value,
+        number={"font": {"color": GOLD, "size": 40, "family": FONT_FAMILY}},
+        title={"text": f"رزونانس {symbol}", "font": {"color": TXT, "size": 14, "family": FONT_FAMILY}},
+        gauge={
+            "axis": {"range": [0, 100], "tickcolor": MUT, "tickfont": {"color": MUT, "size": 9}},
+            "bar": {"color": UP if score > 0 else DN},
+            "bgcolor": CARD2,
+            "borderwidth": 0,
+            "steps": [
+                {"range": [0, 35], "color": "rgba(255,34,102,0.3)"},
+                {"range": [35, 65], "color": "rgba(255,215,0,0.2)"},
+                {"range": [65, 100], "color": "rgba(0,255,204,0.3)"},
+            ],
+            "threshold": {"line": {"color": GOLD, "width": 4}, "thickness": 0.75, "value": 50},
+        },
+    ))
+
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family=FONT_FAMILY, color=TXT),
+        margin=dict(l=30, r=30, t=60, b=30), height=250,
+    )
+    return fig
+
+
+def build_cycle_alignment_figure(resonance_data, symbol):
+    cycles = resonance_data["cycles"]
+    fig = go.Figure()
+
+    n_cycles = len(cycles)
+    angles = np.linspace(0, 2 * np.pi, n_cycles, endpoint=False)
+
+    for i, c in enumerate(cycles):
+        angle = angles[i]
+        direction = c["direction"]
+        strength = c["strength"]
+
+        x = np.cos(angle)
+        y = np.sin(angle)
+        color = UP if direction > 0 else (DN if direction < 0 else MUT)
+        size = 10 + strength * 20
+
+        fig.add_trace(go.Scatter(
+            x=[x], y=[y], mode="markers+text",
+            marker=dict(size=size, color=color, symbol="circle", opacity=0.8,
+                        line=dict(width=2, color=BG)),
+            text=[c["name"]], textposition="top center",
+            textfont=dict(size=9, color=TXT, family=FONT_FAMILY),
+            showlegend=False,
+        ))
+
+    theta = np.linspace(0, 2 * np.pi, 100)
+    fig.add_trace(go.Scatter(
+        x=np.cos(theta), y=np.sin(theta), mode="lines",
+        line=dict(color=LINE, width=2), showlegend=False, hoverinfo="skip",
+    ))
+
+    score = resonance_data["score"]
+    resonance_angle = np.pi / 2 if score > 0 else -np.pi / 2
+    arrow_length = abs(score)
+
+    fig.add_trace(go.Scatter(
+        x=[0, arrow_length * np.cos(resonance_angle)],
+        y=[0, arrow_length * np.sin(resonance_angle)],
+        mode="lines", line=dict(color=GOLD, width=6),
+        showlegend=False, hoverinfo="skip",
+    ))
+
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor=BG, plot_bgcolor=BG,
+        title=dict(text=f"🌀 هم‌راستایی چرخه‌ها — {symbol}", x=0.5,
+                   font=dict(color=CYAN, size=15, family=FONT_FAMILY)),
+        xaxis=dict(visible=False, range=[-1.5, 1.5]),
+        yaxis=dict(visible=False, range=[-1.5, 1.5], scaleanchor="x", scaleratio=1),
+        margin=dict(l=20, r=20, t=60, b=20), height=400,
+        font=dict(family=FONT_FAMILY, color=TXT),
+    )
+    return fig
+
+
+def build_price_figure(df, symbol):
+    if df.empty:
+        return empty_fig("داده‌ای نیست.")
+
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(
+        x=df["ts"], open=df["open"], high=df["high"],
+        low=df["low"], close=df["close"],
+        name=f"{symbol}",
+        increasing_line_color=UP, decreasing_line_color=DN,
+    ))
+
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor=BG, plot_bgcolor=CARD,
+        margin=dict(l=50, r=20, t=50, b=40),
+        xaxis=dict(color=MUT, gridcolor=LINE, rangeslider=dict(visible=False)),
+        yaxis=dict(color=MUT, gridcolor=LINE, title="قیمت ($)"),
+        font=dict(family=FONT_FAMILY, color=TXT),
+        title=dict(text=f"📊 {symbol} — داده واقعی Bybit ({len(df)} کندل)",
+                   x=0.5, font=dict(color=GOLD, size=14, family=FONT_FAMILY)),
+        showlegend=False, height=400,
+    )
+    return fig
+
+
+def build_signal_panel(signal_data, symbol):
+    if signal_data["signal"] == 0:
+        return html.Div([
+            html.Div(f"⏸ در انتظار رزونانس برای {symbol}...", style={
+                "textAlign": "center", "color": MUT, "padding": "20px", "fontSize": 14,
+            }),
+            html.Div(f"امتیاز رزونانس فعلی: {signal_data['score']:+.3f}", style={
+                "textAlign": "center", "color": MUT, "fontSize": 12,
+            }),
+        ], className="glass-card", style={"padding": "15px"})
+
+    dir_color = UP if signal_data["signal"] == 1 else DN
+    dir_icon = "🟢 LONG" if signal_data["signal"] == 1 else "🔴 SHORT"
+
+    aligned_cycles = [
+        c for c in signal_data["resonance"]["cycles"]
+        if c["direction"] == signal_data["signal"]
+    ]
+    aligned_cycles.sort(key=lambda x: x["weight"], reverse=True)
+
+    cycle_chips = []
+    for c in aligned_cycles[:5]:
+        cycle_chips.append(html.Span(
+            f"{c['name']} ({c['exp_return']*100:+.2f}%)",
+            style={
+                "display": "inline-block", "margin": "3px", "padding": "4px 8px",
+                "background": "rgba(0,255,204,0.1)" if signal_data["signal"] == 1 else "rgba(255,34,102,0.1)",
+                "border": f"1px solid {dir_color}", "borderRadius": "12px",
+                "fontSize": "11px", "color": dir_color,
+            },
+        ))
+
+    conf = signal_data["confidence"]
+    conf_color = UP if conf >= 70 else (GOLD if conf >= 50 else DN)
+
+    return html.Div([
+        html.H4(f"سیگنال فعال {symbol}: {dir_icon}", style={
+            "color": dir_color, "textAlign": "center", "fontWeight": 800,
+            "textShadow": f"0 0 15px {dir_color}", "marginBottom": "15px",
+        }),
+        html.Div(f"امتیاز رزونانس: {signal_data['score']:+.3f}", style={
+            "textAlign": "center", "color": GOLD, "fontSize": "18px", "fontWeight": "bold",
+        }),
+        html.Div(f"دلیل: {signal_data['reason']}", style={
+            "textAlign": "center", "color": TXT, "fontSize": "13px", "marginTop": "10px",
+        }),
+        html.Div([
+            html.Div(f"درجه اطمینان: {conf:.0f}%", style={
+                "textAlign": "center", "color": conf_color, "fontSize": "14px",
+                "fontWeight": "bold", "marginTop": "15px",
+            }),
+            html.Div(style={
+                "width": "80%", "height": "10px", "background": LINE,
+                "borderRadius": "5px", "overflow": "hidden", "margin": "10px auto",
+            }, children=[
+                html.Div(style={
+                    "width": f"{conf}%", "height": "100%",
+                    "background": conf_color, "borderRadius": "5px",
+                })
+            ]),
+        ]),
+        html.Div([
+            html.Div("چرخه‌های هم‌راستا:", style={"color": MUT, "fontSize": "12px", "marginBottom": "5px"}),
+            html.Div(cycle_chips, style={"textAlign": "center"}),
+        ], style={"marginTop": "15px"}),
+    ], className="glass-card", style={"padding": "20px", "border": f"1px solid {dir_color}"})
+
+
+# ==============================================================================
+# 9) اپ Dash
+# ==============================================================================
+FONT_URL = "https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;800&display=swap"
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.CYBORG, FONT_URL])
+app.title = "Temporal Resonance Engine"
+server = app.server
+
+db = SignalDatabase(DB_PATH)
+
+app.index_string = """<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+        <style>
+            body { background: #030308; }
+            * { font-family: 'Vazirmatn', Tahoma, Arial, sans-serif !important; }
+            .glass-card {
+                background: linear-gradient(145deg, rgba(16,16,37,0.9), rgba(5,5,15,0.95));
+                border: 1px solid #252545;
+                border-radius: 16px;
+                box-shadow: 0 0 25px rgba(0,255,255,0.08);
+                backdrop-filter: blur(10px);
+            }
+            .stat-value { font-weight: 800; font-size: 22px; text-shadow: 0 0 10px currentColor; }
+            .stat-label { font-size: 11px; color: #7a7aa8; text-transform: uppercase; letter-spacing: 1px; }
+            input, select, .Select-control {
+                background-color: #101025 !important;
+                border-color: #252545 !important;
+                color: #e8e8ff !important;
+            }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>"""
+
+
+def stat_card(id_prefix, label, color=TXT):
+    return dbc.Col(html.Div([
+        html.Div(label, className="stat-label"),
+        html.Div("—", id=f"{id_prefix}-value", className="stat-value", style={"color": color}),
+    ], className="glass-card", style={"padding": "15px", "textAlign": "center"}), md=3, xs=6)
+
+
+app.layout = html.Div([
+    html.Div([
+        html.H3("🌌 Temporal Resonance Engine", style={
+            "color": CYAN, "fontWeight": 800, "margin": 0,
+            "textShadow": "0 0 20px rgba(0,255,255,0.5)",
+        }),
+        html.Div("موتور معاملاتی رزونانس چرخه‌های زمانی — داده واقعی Bybit — Morindok", style={
+            "color": MUT, "fontSize": 13,
+        }),
+    ], style={"maxWidth": 1200, "margin": "15px auto 10px auto", "padding": "0 15px"}),
+
+    dbc.Card(dbc.CardBody(dbc.Row([
+        dbc.Col([
+            html.Label("🪙 نماد / ارز", style={"fontSize": 11, "color": MUT}),
+            dcc.Dropdown(id="symbol", value="BTCUSDT", clearable=False, options=SYMBOL_OPTIONS),
+        ], md=2),
+        dbc.Col([
+            html.Label("تایم‌فریم", style={"fontSize": 11, "color": MUT}),
+            dcc.Dropdown(id="interval", value="15", clearable=False, options=[
+                {"label": "5m", "value": "5"},
+                {"label": "15m", "value": "15"},
+                {"label": "30m", "value": "30"},
+                {"label": "1h", "value": "60"},
+                {"label": "4h", "value": "240"},
+            ]),
+        ], md=1),
+        dbc.Col([
+            html.Label("موجودی اولیه ($)", style={"fontSize": 11, "color": MUT}),
+            dcc.Input(id="initial-balance", type="number", value=10000, min=100, step=100,
+                      style={"width": "100%", "padding": 6, "borderRadius": 8,
+                             "background": CARD2, "color": TXT, "border": f"1px solid {LINE}"}),
+        ], md=2),
+        dbc.Col([
+            html.Label("ریسک هر معامله (٪)", style={"fontSize": 11, "color": MUT}),
+            dcc.Input(id="risk-pct", type="number", value=1.0, min=0.1, max=10.0, step=0.1,
+                      style={"width": "100%", "padding": 6, "borderRadius": 8,
+                             "background": CARD2, "color": TXT, "border": f"1px solid {LINE}"}),
+        ], md=2),
+        dbc.Col([
+            html.Label("آستانه رزونانس", style={"fontSize": 11, "color": MUT}),
+            dcc.Slider(id="threshold", min=0.2, max=0.6, step=0.05, value=0.35,
+                       marks={0.2: "0.2", 0.35: "0.35", 0.5: "0.5", 0.6: "0.6"}),
+        ], md=3),
+        dbc.Col(
+            dbc.Button("🔄", id="refresh-btn", color="primary", className="mt-4",
+                       style={"width": "100%", "fontWeight": "bold"}),
+            md=1,
+        ),
+    ])), className="glass-card", style={"maxWidth": 1200, "margin": "10px auto"}),
+
+    html.Div(dbc.Row([
+        stat_card("live-price", "قیمت فعلی", GOLD),
+        stat_card("resonance-score", "امتیاز رزونانس", CYAN),
+        stat_card("signal", "سیگنال", UP),
+        stat_card("data-status", "وضعیت داده", MUT),
+    ]), style={"maxWidth": 1200, "margin": "10px auto"}),
+
+    html.Div(id="signal-panel", style={"maxWidth": 1200, "margin": "15px auto"}),
+
+    dbc.Tabs([
+        dbc.Tab(label="🌀 رزونانس", tab_id="tab-resonance", children=[
+            dbc.Row([
+                dbc.Col(dbc.Card(dbc.CardBody([
+                    dcc.Graph(id="resonance-gauge", config={"displaylogo": False}),
+                ]), className="glass-card"), md=4),
+                dbc.Col(dbc.Card(dbc.CardBody([
+                    dcc.Graph(id="cycle-alignment-graph", config={"displaylogo": False}),
+                ]), className="glass-card"), md=8),
+            ], style={"margin": "15px 0"}),
+            dbc.Row([
+                dbc.Col(dbc.Card(dbc.CardBody([
+                    dcc.Graph(id="price-graph", config={"displaylogo": False}),
+                ]), className="glass-card"), md=12),
+            ]),
+        ]),
+        dbc.Tab(label="📡 سیگنال‌ها", tab_id="tab-signals", children=[
+            html.Div([
+                html.Div("اسکن همه ارزها — سیگنال‌های تکراری ذخیره نمی‌شوند",
+                         style={"fontSize": 12, "color": MUT, "margin": "15px 5px"}),
+                dbc.Button("🔍 اسکن همه ارزها", id="scan-btn", color="info",
+                           style={"margin": "10px 5px", "fontWeight": "bold"}),
+            ]),
+            html.Div(id="signals-summary", style={"margin": "15px 0"}),
+            dbc.Card(dbc.CardBody([
+                html.Div(id="signals-table"),
+            ]), className="glass-card"),
+        ]),
+        dbc.Tab(label="📋 تاریخچه سیگنال‌ها", tab_id="tab-history", children=[
+            html.Div([
+                html.Div("معاملات باز با ❌ بسته می‌شوند — با بستن برنامه یا اسکن مجدد، معاملات باز باقی می‌مانند",
+                         style={"fontSize": 12, "color": MUT, "margin": "15px 5px"}),
+                dbc.Button("🔄 به‌روزرسانی تاریخچه", id="history-refresh-btn", color="warning",
+                           style={"margin": "10px 5px", "fontWeight": "bold"}),
+            ]),
+            html.Div(id="history-stats", style={"margin": "15px 0"}),
+            dbc.Card(dbc.CardBody([
+                html.Div(id="history-table"),
+            ]), className="glass-card"),
+        ]),
+    ], id="main-tabs", active_tab="tab-resonance", style={"maxWidth": 1200, "margin": "0 auto"}),
+
+    html.Div(
+        "💡 معاملات باز در دیتابیس SQLite ذخیره می‌شوند و با بستن برنامه از بین نمی‌روند. "
+        "سیگنال‌های تکراری برای نمادهایی که معامله باز دارند ذخیره نمی‌شوند.",
+        style={"fontSize": 11, "color": MUT, "marginTop": 20, "direction": "rtl", "lineHeight": "1.8",
+               "textAlign": "center", "maxWidth": 1200, "margin": "20px auto", "padding": "0 15px 20px 15px"},
+    ),
+
+    dcc.Interval(id="tick", interval=60_000, n_intervals=0),
+    dcc.Interval(id="pnl-tick", interval=10_000, n_intervals=0),
+    dcc.Interval(id="db-update-tick", interval=30_000, n_intervals=0),
+    dcc.Store(id="signals-store"),
+], style={"background": BG, "minHeight": "100vh", "padding": "10px", "fontFamily": FONT_FAMILY})
+
+
+# ==============================================================================
+# 10) Callbacks
+# ==============================================================================
+@app.callback(
+    Output("live-price-value", "children"),
+    Output("resonance-score-value", "children"),
+    Output("signal-value", "children"),
+    Output("data-status-value", "children"),
+    Output("signal-panel", "children"),
+    Output("resonance-gauge", "figure"),
+    Output("cycle-alignment-graph", "figure"),
+    Output("price-graph", "figure"),
+    Input("tick", "n_intervals"),
+    Input("refresh-btn", "n_clicks"),
+    State("symbol", "value"),
+    State("interval", "value"),
+    State("threshold", "value"),
+)
+def update_main(_n, _click, symbol, interval, threshold):
+    symbol = symbol or "BTCUSDT"
+    interval = interval or "15"
+    interval_min = get_interval_minutes(interval)
+
+    df = get_klines(symbol, interval, limit=1000)
+
+    if df.empty or len(df) < BACKTEST_MIN_HISTORY:
+        return "—", "—", "—", "🔴 خطا در اتصال", html.Div(), \
+               empty_fig("داده کافی نیست."), empty_fig("داده کافی نیست."), empty_fig("داده کافی نیست.")
+
+    cycle_engine = CycleEngine(forecast_horizon_hours=4)
+    cycle_engine.build_phase_return_maps(df, interval_min)
+
+    current_time = pd.to_datetime(df["ts"].iloc[-1]).to_pydatetime().replace(tzinfo=timezone.utc)
+
+    signal_engine = TemporalSignalEngine(cycle_engine, entry_threshold=threshold)
+    signal_data = signal_engine.generate_signal(current_time)
+
+    live_price = df["close"].iloc[-1]
+    score = signal_data["score"]
+
+    if signal_data["signal"] == 1:
+        signal_text = "🟢 LONG"
+    elif signal_data["signal"] == -1:
+        signal_text = "🔴 SHORT"
+    else:
+        signal_text = "⏸ خنثی"
+
+    gauge_fig = build_resonance_gauge(signal_data["resonance"], symbol)
+    alignment_fig = build_cycle_alignment_figure(signal_data["resonance"], symbol)
+    price_fig = build_price_figure(df, symbol)
+
+    signal_panel = build_signal_panel(signal_data, symbol)
+
+    data_status = f"🟢 Bybit | {len(df)} کندل"
+
+    return (
+        f"${live_price:,.4g}",
+        f"{score:+.3f}",
+        signal_text,
+        data_status,
+        signal_panel,
+        gauge_fig,
+        alignment_fig,
+        price_fig,
+    )
+
+
+@app.callback(
+    Output("signals-store", "data"),
+    Output("signals-summary", "children"),
+    Output("signals-table", "children"),
+    Input("scan-btn", "n_clicks"),
+    State("interval", "value"),
+    State("initial-balance", "value"),
+    State("risk-pct", "value"),
+    State("threshold", "value"),
+)
+def scan_signals(_click, interval, balance, risk_pct, threshold):
+    interval = interval or "15"
+
+    try:
+        balance = float(balance or 10000.0)
+        risk_pct_val = float(risk_pct or 1.0) / 100.0
+        threshold_val = float(threshold or 0.35)
+    except Exception:
+        balance, risk_pct_val, threshold_val = 10000.0, 0.01, 0.35
+
+    signals_data = scan_all_symbols(interval, balance, risk_pct_val, threshold_val)
+
+    if not signals_data:
+        return [], html.Div("خطا در اسکن.", style={"color": DN}), html.Div()
+
+    # ذخیره سیگنال‌های فعال — فقط اگر سیگنال باز برای آن نماد وجود نداشته باشد
+    saved_count = 0
+    skipped_count = 0
+    for sig in signals_data:
+        if sig["signal"] != 0:
+            if db.has_open_signal(sig["symbol"]):
+                skipped_count += 1
+            else:
+                db.save_signal(sig, interval, threshold_val)
+                saved_count += 1
+
+    summary = build_signals_summary(signals_data)
+    table = build_signals_table(signals_data)
+
+    return signals_data, summary, table
+
+
+@app.callback(
+    Output("signals-table", "children", allow_duplicate=True),
+    Input("pnl-tick", "n_intervals"),
+    State("signals-store", "data"),
+    prevent_initial_call=True,
+)
+def update_live_pnl(_n, signals_data):
+    if not signals_data:
+        return html.Div()
+
+    live_prices = {}
+    for s in signals_data:
+        symbol = s["symbol"]
+        if symbol not in live_prices:
+            df = get_klines(symbol, "1", limit=1)
+            if not df.empty:
+                live_prices[symbol] = df["close"].iloc[-1]
+
+    table = build_signals_table(signals_data, live_prices)
+    return table
+
+
+@app.callback(
+    Output("history-stats", "children"),
+    Output("history-table", "children"),
+    Input("history-refresh-btn", "n_clicks"),
+    Input("db-update-tick", "n_intervals"),
+    Input("main-tabs", "active_tab"),
+)
+def update_history(_click, _tick, active_tab):
+    """به‌روزرسانی تاریخچه — فقط وقتی تب تاریخچه فعال است یا دکمه زده شده."""
+    # آپدیت نتایج سیگنال‌های باز
+    update_open_signals_results(db)
+
+    stats = db.get_signal_stats()
+    signals_from_db = db.get_all_signals(limit=200)
+
+    stats_ui = build_history_stats(stats)
+    table_ui = build_history_table(signals_from_db)
+
+    return stats_ui, table_ui
+
+
+@app.callback(
+    Output("history-table", "children", allow_duplicate=True),
+    Output("history-stats", "children", allow_duplicate=True),
+    Input({"type": "close-btn", "index": ALL}, "n_clicks"),
+    prevent_initial_call=True,
+)
+def close_signal_callback(n_clicks_list):
+    """بستن دستی یک معامله باز."""
+    if not any(n_clicks_list):
+        return dash.no_update, dash.no_update
+
+    # پیدا کردن ID معامله‌ای که دکمه‌اش کلیک شده
+    triggered = ctx.triggered_id
+    if not triggered or not isinstance(triggered, dict):
+        return dash.no_update, dash.no_update
+
+    signal_id = triggered.get("index")
+    if signal_id is None:
+        return dash.no_update, dash.no_update
+
+    # دریافت اطلاعات سیگنال
+    sig = db.get_signal_by_id(signal_id)
+    if not sig or sig["status"] != "open":
+        return dash.no_update, dash.no_update
+
+    # دریافت قیمت فعلی
+    df = get_klines(sig["symbol"], "1", limit=1)
+    if df.empty:
+        return dash.no_update, dash.no_update
+
+    current_price = df["close"].iloc[-1]
+    current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+    # محاسبه PnL
+    entry_price = sig["entry_price"]
+    direction = sig["direction"]
+    dollar_amount = sig["dollar_amount"]
+    size = dollar_amount / entry_price if entry_price > 0 else 0
+
+    if direction == 1:
+        pnl = (current_price - entry_price) * size
+    else:
+        pnl = (entry_price - current_price) * size
+
+    pnl_pct = (pnl / dollar_amount * 100) if dollar_amount > 0 else 0
+
+    # بستن سیگنال
+    db.close_signal(signal_id, current_price, current_time, pnl, pnl_pct, "Manual Close ✋")
+
+    # آپدیت جدول
+    stats = db.get_signal_stats()
+    signals_from_db = db.get_all_signals(limit=200)
+
+    stats_ui = build_history_stats(stats)
+    table_ui = build_history_table(signals_from_db)
+
+    return table_ui, stats_ui
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=8070, use_reloader=False)

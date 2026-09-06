@@ -1,0 +1,130 @@
+//@version=5
+indicator("HTF Sessions{Morindok} by BITMOON618", overlay=true, max_lines_count=500)
+
+// ==========================================
+// ÊäÙíãÇÊ ÇäÏí˜ÇÊæÑ
+// ==========================================
+baseTF = input.timeframe("D", title="ÊÇíãÝÑíã ÇÕáí (ÈÑÇí ÊãÇã ãÍÇÓÈÇÊ)")
+zoneLength = input.int(5, title="ÊÚÏÇÏ ˜äÏáåÇí ãÍÏæÏå ÑÍÌã", minval=1)
+mirrorMode = input.string("ÈÏæä ÊÞÇÑä", title="äæÚ ÊÞÇÑä", options=["ÈÏæä ÊÞÇÑä", "äÓÈÊ Èå ãÑ˜Ò ÈÇÒå ÌÇÑí", "äÓÈÊ Èå ãÑ˜Ò ãÍÏæÏå ÑÍÌã ÊÇ Çíä áÍÙå", "äÓÈÊ Èå ãíÇäíä ãÊÍÑ˜ ÈÇÒå"])
+showMA = input.bool(true, title="ÑÓã ãíÇäíä ãÊÍÑ˜ ÊÇíãÝÑíã ÇäÊÎÇÈí")
+showTouchLine = input.bool(true, title="ÑÓã ÎØ ãíÇäíä ÈÑÎæÑÏåÇí ÊÞÇÑä ÏÑ ÈÇÒå ÈÚÏ")
+
+// ÊÔÎíÕ ÔÑæÚ ÏæÑå ÌÏíÏ ÏÑ ÊÇíãÝÑíã ÇäÊÎÇÈí
+isNewPeriod = ta.change(time(baseTF)) != 0
+
+// ==========================================
+// 1. ÑÓã ÎØ ÚãæÏí ÏÑ ˜áæÒ ÊÇíãÝÑíã ÇäÊÎÇÈí
+// ==========================================
+if isNewPeriod
+    line.new(x1=bar_index - 1, y1=low[1], x2=bar_index - 1, y2=high[1], extend=extend.both, color=color.new(color.red, 0), width=1, style=line.style_solid)
+
+// ==========================================
+// 2. ãÍÇÓÈÇÊ ÈÇ˜Óí ÑÍÌãÊÑíä ãÍÏæÏå (åãÇåä ÈÇ ÊÇíãÝÑíã)
+// ==========================================
+sumVol = math.sum(volume, zoneLength)
+zoneHigh = ta.highest(high, zoneLength)
+zoneLow = ta.lowest(low, zoneLength)
+
+var float maxVolSum = 0.0
+var float boxTop = na
+var float boxBot = na
+var int   boxLeft = na
+var int   boxRight = na
+var box   volBox = na
+
+if isNewPeriod
+    maxVolSum := nz(sumVol)
+    boxTop := zoneHigh
+    boxBot := zoneLow
+    boxLeft := bar_index - zoneLength + 1
+    boxRight := bar_index
+    volBox := box.new(left=boxLeft, top=boxTop, right=boxRight, bottom=boxBot, border_color=color.blue, bgcolor=color.new(color.blue, 70))
+else
+    if sumVol > maxVolSum
+        maxVolSum := sumVol
+        boxTop := zoneHigh
+        boxBot := zoneLow
+        boxLeft := bar_index - zoneLength + 1
+        boxRight := bar_index
+        box.set_lefttop(volBox, boxLeft, boxTop)
+        box.set_rightbottom(volBox, boxRight, boxBot)
+
+// ==========================================
+// 3. ãÍÇÓÈå ãíÇäíä ãÊÍÑ˜ (ÑíÓÊ ÔÏä ÏÑ åÑ ÏæÑå ÌÏíÏ)
+// ==========================================
+var float sumClose = 0.0
+var int barCount = 0
+
+if isNewPeriod
+    sumClose := close
+    barCount := 1
+else
+    sumClose += close
+    barCount += 1
+
+float periodMA = sumClose / barCount
+plot(showMA ? periodMA : na, color=color.orange, linewidth=2, title="Period MA")
+
+// ==========================================
+// 4. ãÍÇÓÈå ÊÞÇÑä ˜äÏáåÇí ÏæÑå ÌÇÑí
+// ==========================================
+// ÏÑíÇÝÊ ÓÞÝ æ ˜Ý ÊÇíãÝÑíã ÇäÊÎÇÈí
+[pHigh, pLow] = request.security(syminfo.tickerid, baseTF, [high, low], lookahead=barmerge.lookahead_on)
+
+float centerPrice = na
+
+if mirrorMode == "äÓÈÊ Èå ãÑ˜Ò ÈÇÒå ÌÇÑí"
+    centerPrice := (pHigh + pLow) / 2
+else if mirrorMode == "äÓÈÊ Èå ãÑ˜Ò ãÍÏæÏå ÑÍÌã ÊÇ Çíä áÍÙå"
+    centerPrice := (boxTop + boxBot) / 2
+else if mirrorMode == "äÓÈÊ Èå ãíÇäíä ãÊÍÑ˜ ÈÇÒå"
+    centerPrice := periodMA
+
+float m_O = na
+float m_H = na
+float m_L = na
+float m_C = na
+color m_Color = na
+
+if mirrorMode != "ÈÏæä ÊÞÇÑä" and not na(centerPrice)
+    m_O := 2 * centerPrice - open
+    m_H := 2 * centerPrice - low 
+    m_L := 2 * centerPrice - high
+    m_C := 2 * centerPrice - close
+    m_Color := m_C >= m_O ? color.new(color.lime, 0) : color.new(color.maroon, 0)
+
+plotcandle(m_O, m_H, m_L, m_C, title="Mirrored Candles", color=m_Color, wickcolor=m_Color, bordercolor=m_Color)
+
+// ==========================================
+// 5. ÊÔÎíÕ ÈÑÎæÑÏåÇ æ ÑÓã ÎØ ãíÇäíä ÏÑ ÈÇÒå ÈÚÏ
+// ==========================================
+var float sumTouchPrice = 0.0
+var int touchCount = 0
+var float prevAvgTouch = na
+var line touchAvgLine = na
+
+// ÑÏÇÒÔ ÏÑ ÔÑæÚ ÏæÑå ÌÏíÏ
+if isNewPeriod
+    if touchCount > 0
+        prevAvgTouch := sumTouchPrice / touchCount
+    else
+        prevAvgTouch := na
+        
+    // ÑíÓÊ ãÊÛíÑåÇ ÈÑÇí ÏæÑå ÌÏíÏ
+    sumTouchPrice := 0.0
+    touchCount := 0
+    
+    // ÑÓã ÎØ ÈÑÇí ÏæÑå ÌÏíÏ
+    if showTouchLine and not na(prevAvgTouch)
+        touchAvgLine := line.new(bar_index, prevAvgTouch, bar_index, prevAvgTouch, color=color.fuchsia, width=2, style=line.style_solid)
+else
+    // ÇãÊÏÇÏ ÏÇÏä ÎØ ÊÇ ˜äÏá ÌÇÑí ÏÑ Øæá ÏæÑå
+    if not na(touchAvgLine)
+        line.set_x2(touchAvgLine, bar_index)
+        
+// ÈÑÑÓí ÈÑÎæÑÏ (åãæÔÇäí) ÏÑ ˜äÏá ÝÚáí
+if mirrorMode != "ÈÏæä ÊÞÇÑä" and not na(m_L) and not na(m_H)
+    if high >= m_L and low <= m_H
+        sumTouchPrice += centerPrice
+        touchCount += 1

@@ -1,0 +1,14 @@
+//@version=5
+indicator("Zero-Lag MA {Morindok} by BITMOON618", overlay=true, max_lines_count=500)
+
+length = input.int(14, title="Wave Length", minval=1)
+
+// „Õ«”»Â ›Ì· — Hull (ò„ —Ì‰  «ŒÌ— „„ò‰ »Ì‰  „«„ ›Ì· —Â«Ì «” «‰œ«—œ)
+// ›—„Ê·: WMA(2*WMA(n/2) - WMA(n), sqrt(n))
+wma_half = ta.wma(close, math.floor(length / 2))
+wma_full = ta.wma(close, length)
+wma_diff = 2 * wma_half - wma_full
+smooth_wave = ta.wma(wma_diff, math.floor(math.sqrt(length)))
+
+// —”„ „ÊÃ
+plot(smooth_wave, color=color.new(color.fuchsia, 0), linewidth=3, title="Zero-Lag Wave")

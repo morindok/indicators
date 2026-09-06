@@ -1,0 +1,218 @@
+//@version=5
+indicator("Mirror & Angle + Inverse + Point-to-Point Slope", overlay=true)
+
+// --- ÇäÊÎÇÈ äŞÇØ ÊÚÇãáí ---
+t1 = input.time(0, title="äŞØå Çæá (ÒãÇä)", confirm=true, inline="p1")
+p1 = input.price(0, title="äŞØå Çæá (ŞíãÊ)", confirm=true, inline="p1")
+t2 = input.time(0, title="äŞØå Ïæã (ÒãÇä)", confirm=true, inline="p2")
+p2 = input.price(0, title="äŞØå Ïæã (ŞíãÊ)", confirm=true, inline="p2")
+
+if barstate.islast
+    line.new(t1, p1, t2, p2, xloc.bar_time, extend.none, color.blue, line.style_solid, 2)
+
+// --- ÊäÙíãÇÊ ÇÕáí ---
+autoMaLength = input.bool(true, "Øæá ãæíä ÈÑ ÇÓÇÓ Øæá ÈÇÒå (íÔİÑÖ)")
+dynamicSlope = input.bool(false, "ÊÛííÑ ÏÇíäÇãí˜ ÔíÈ äæÓÇä ÏÑ Øæá ãæÌ (İŞØ ÏÑ ÈÑÎæÑÏåÇ)") 
+useAtr = input.bool(true, "ÇÓÊİÇÏå ÇÒ ATR ÈÑÇí Çã ÍÑ˜Ê")
+
+showCandles = input.bool(false, "äãÇíÔ ˜äÏá åÇ") 
+useCrossMode = input.bool(false, "ÍÇáÊ äæÓÇä ÖÑÈÏÑí ãæíäåÇ")
+
+speed = input.float(0.1, "ÓÑÚÊ / ÖÑíÈ ÓÑÚÊ", minval=0.01, maxval=10, step=0.01)
+autoSpeed = input.bool(false, "ÓÑÚÊ ÎæÏ˜ÇÑ æíÇ (ÇÓÊİÇÏå ÏÑ ÕæÑÊ ÎÇãæÔ ÈæÏä ÔíÈ ÏÇíäÇãí˜)")
+
+mirrorToLevel1 = input.bool(false, "ãÊŞÇÑä äÓÈÊ Èå ÓØÍ Çæá")
+mirrorToLevel2 = input.bool(false, "ãÊŞÇÑä äÓÈÊ Èå ÓØÍ Ïæã")
+
+useMaLevels = input.bool(false, "ãæíä Ñæí ÓØæÍ")
+showInvMa = input.bool(false, "äãÇíÔ ÎØ ãÚ˜æÓ / ãæíä ãÚ˜æÓ")
+maType = input.string("EMA", "äæÚ ãæíä", options=["EMA", "SMA", "WMA", "HMA"])
+maLenTop = input.int(14, "Øæá ãæíä ÏÓÊí ÓØÍ ÈÇáÇ", minval=1)
+maLenBot = input.int(14, "Øæá ãæíä ÏÓÊí ÓØÍ Çííä", minval=1)
+maLenPrice = input.int(14, "Øæá ãæíä ÏÓÊí ŞíãÊ", minval=1)
+
+// --- ãÍÇÓÈÇÊ Çæáíå äŞÇØ ---
+userTime = math.min(t1, t2)
+userPrice = t1 <= t2 ? p1 : p2
+secondPrice = t1 <= t2 ? p2 : p1
+
+upperBound = math.max(p1, p2)
+lowerBound = math.min(p1, p2)
+midLevel = (upperBound + lowerBound) / 2
+
+// --- ãÍÇÓÈå Øæá æíÇ ÈÑ ÇÓÇÓ ÈÇÒå ÇäÊÎÇÈí ---
+estimatedBars = math.max(1, math.round(math.abs(t2 - t1) / (timeframe.in_seconds(timeframe.period) * 1000)))
+finalLenTop = autoMaLength ? int(estimatedBars) : maLenTop
+finalLenBot = autoMaLength ? int(estimatedBars) : maLenBot
+finalLenPrice = autoMaLength ? int(estimatedBars) : maLenPrice
+
+// --- ÊÇÈÚ ÓİÇÑÔí EMA ---
+f_ema(src, len) =>
+    alpha = 2.0 / (math.max(1, len) + 1.0)
+    float sum = na
+    sum := na(sum[1]) ? src : (src - sum[1]) * alpha + sum[1]
+    sum
+
+// --- ãÍÇÓÈÇÊ ãæíäåÇ ---
+symClose = 2 * midLevel - close
+symTopClose = 2 * upperBound - symClose
+symBotClose = 2 * lowerBound - symClose
+
+maEma_top = f_ema(symTopClose, finalLenTop)
+maTop = maType == "EMA" ? maEma_top : maType == "SMA" ? ta.sma(symTopClose, finalLenTop) : maType == "WMA" ? ta.wma(symTopClose, finalLenTop) : ta.wma(2 * ta.wma(symTopClose, math.max(1, finalLenTop / 2)) - ta.wma(symTopClose, finalLenTop), math.max(1, math.floor(math.sqrt(finalLenTop))))
+
+maEma_bot = f_ema(symBotClose, finalLenBot)
+maBot = maType == "EMA" ? maEma_bot : maType == "SMA" ? ta.sma(symBotClose, finalLenBot) : maType == "WMA" ? ta.wma(symBotClose, finalLenBot) : ta.wma(2 * ta.wma(symBotClose, math.max(1, finalLenBot / 2)) - ta.wma(symBotClose, finalLenBot), math.max(1, math.floor(math.sqrt(finalLenBot))))
+
+maMid = (maTop + maBot) / 2
+
+maEma_price = f_ema(close, finalLenPrice)
+maPrice = maType == "EMA" ? maEma_price : maType == "SMA" ? ta.sma(close, finalLenPrice) : maType == "WMA" ? ta.wma(close, finalLenPrice) : ta.wma(2 * ta.wma(close, math.max(1, finalLenPrice / 2)) - ta.wma(close, finalLenPrice), math.max(1, math.floor(math.sqrt(finalLenPrice))))
+
+maInvTop = 2 * upperBound - maPrice
+maInvBot = 2 * lowerBound - maPrice
+
+// ÊÚííä ÓØæÍ äæÓÇä ÈÑÇí ÎØ ÇÕáí
+activeBandTop = useCrossMode ? maTop : (useMaLevels ? maTop : upperBound)
+activeBandBot = useCrossMode ? maInvBot : (useMaLevels ? maBot : lowerBound)
+
+// --- ãÊÛíÑåÇí ˜äÊÑá äæÓÇä ---
+var float currentLevel = na
+var float invLevel = na 
+var int direction = 1
+var float prevLevel = na
+var float cumulativeSlope = 0.0
+var bool started = false
+
+var int barsSinceBounce = 0
+var float currentStepY = na
+var float prevBouncePrice = na 
+
+priceRange = math.abs(p2 - p1)
+atrValue = ta.atr(14)
+// ÇÚãÇá ATR ÏÑ ÕæÑÊ İÚÇá ÈæÏä ÊäÙíãÇÊ
+baseDeltaY = useAtr ? (atrValue * speed) : (priceRange * speed * 0.01)
+
+// --- ãÍÇÓÈå ÔíÈ Çæáíå ÈÑ ÇÓÇÓ ÈÇÒå ÇäÊÎÇÈí ---
+initialP2PSlope = estimatedBars > 0 ? priceRange / estimatedBars : 0
+initialStepY = dynamicSlope ? (initialP2PSlope * (speed * 10)) : baseDeltaY
+
+if time >= userTime and not started
+    currentLevel := useCrossMode ? (maTop + maInvBot) / 2 : (useMaLevels ? maMid : userPrice)
+    direction := 1
+    prevLevel := currentLevel
+    cumulativeSlope := 0.0
+    started := true
+    barsSinceBounce := 0
+    prevBouncePrice := close
+    currentStepY := initialStepY 
+
+// ÊÇÈÚ ãÍÇÓÈå ÔíÈ ÇÒ ÈÑÎæÑÏ ŞÈáí ÊÇ ÇáÇä
+getPointToPointDeltaY(currentClose, lastPrice, barsPassed, baseSpd) =>
+    float p2pSlope = barsPassed > 0 ? math.abs(currentClose - lastPrice) / barsPassed : 0
+    autoDelta = p2pSlope * (speed * 10)
+    autoDelta 
+
+if started
+    prevLevel := currentLevel
+    newLevel = currentLevel + direction * currentStepY
+
+    if newLevel >= activeBandTop
+        currentLevel := activeBandTop
+        direction := -1
+        cumulativeSlope := cumulativeSlope + (currentLevel - prevLevel)
+        
+        if dynamicSlope
+            currentStepY := getPointToPointDeltaY(close, prevBouncePrice, barsSinceBounce, baseDeltaY)
+        
+        prevBouncePrice := close
+        barsSinceBounce := 0
+        
+    else if newLevel <= activeBandBot
+        currentLevel := activeBandBot
+        direction := 1
+        cumulativeSlope := cumulativeSlope + (currentLevel - prevLevel)
+        
+        if dynamicSlope
+            currentStepY := getPointToPointDeltaY(close, prevBouncePrice, barsSinceBounce, baseDeltaY)
+        
+        prevBouncePrice := close
+        barsSinceBounce := 0
+    else
+        currentLevel := newLevel
+        cumulativeSlope := cumulativeSlope + (currentLevel - prevLevel)
+        barsSinceBounce += 1
+
+    invLevel := (activeBandTop + activeBandBot) - currentLevel
+
+// --- ÊÑÓíãÇÊ æ ˜äÏáåÇ ---
+isAfterTime = time >= userTime
+
+mirrorOpen = started ? 2 * currentLevel - open : na
+mirrorHigh = started ? 2 * currentLevel - high : na
+mirrorLow = started ? 2 * currentLevel - low : na
+mirrorClose = started ? 2 * currentLevel - close : na
+
+cumulativeAngle = started ? userPrice + cumulativeSlope : na
+angleOpen = cumulativeAngle
+angleHigh = cumulativeAngle
+angleLow = cumulativeAngle
+angleClose = cumulativeAngle
+
+inverseMirrorOpen = started ? 2 * cumulativeAngle - mirrorOpen : na
+inverseMirrorHigh = started ? 2 * cumulativeAngle - mirrorHigh : na
+inverseMirrorLow = started ? 2 * cumulativeAngle - mirrorLow : na
+inverseMirrorClose = started ? 2 * cumulativeAngle - mirrorClose : na
+
+refLevel1 = useMaLevels ? maTop : userPrice
+refLevel2 = useMaLevels ? maBot : secondPrice
+
+level1MirrorOpen = started and mirrorToLevel1 ? 2 * refLevel1 - open : na
+level1MirrorHigh = started and mirrorToLevel1 ? 2 * refLevel1 - high : na
+level1MirrorLow = started and mirrorToLevel1 ? 2 * refLevel1 - low : na
+level1MirrorClose = started and mirrorToLevel1 ? 2 * refLevel1 - close : na
+
+level2MirrorOpen = started and mirrorToLevel2 ? 2 * refLevel2 - open : na
+level2MirrorHigh = started and mirrorToLevel2 ? 2 * refLevel2 - high : na
+level2MirrorLow = started and mirrorToLevel2 ? 2 * refLevel2 - low : na
+level2MirrorClose = started and mirrorToLevel2 ? 2 * refLevel2 - close : na
+
+mirrorColor = mirrorClose >= mirrorOpen ? color.new(color.green, 0) : color.new(color.red, 0)
+angleColor = color.new(color.orange, 0)
+inverseMirrorColor = inverseMirrorClose >= inverseMirrorOpen ? color.new(color.aqua, 0) : color.new(color.purple, 0)
+level1Color = level1MirrorClose >= level1MirrorOpen ? color.new(color.blue, 0) : color.new(color.navy, 0)
+level2Color = level2MirrorClose >= level2MirrorOpen ? color.new(color.yellow, 0) : color.new(color.maroon, 0)
+
+plotcandle(showCandles ? mirrorOpen : na, showCandles ? mirrorHigh : na, showCandles ? mirrorLow : na, showCandles ? mirrorClose : na, "˜äÏá ãÊŞÇÑä", color=mirrorColor, wickcolor=mirrorColor, bordercolor=mirrorColor)
+plotcandle(showCandles ? angleOpen : na, showCandles ? angleHigh : na, showCandles ? angleLow : na, showCandles ? angleClose : na, "˜äÏá ÒÇæíå", color=angleColor, wickcolor=angleColor, bordercolor=angleColor)
+plotcandle(showCandles ? inverseMirrorOpen : na, showCandles ? inverseMirrorHigh : na, showCandles ? inverseMirrorLow : na, showCandles ? inverseMirrorClose : na, "˜äÏá ãÚ˜æÓ", color=inverseMirrorColor, wickcolor=inverseMirrorColor, bordercolor=inverseMirrorColor)
+plotcandle(showCandles ? level1MirrorOpen : na, showCandles ? level1MirrorHigh : na, showCandles ? level1MirrorLow : na, showCandles ? level1MirrorClose : na, "ãÊŞÇÑä ÓØÍ Çæá", color=level1Color, wickcolor=level1Color, bordercolor=level1Color)
+plotcandle(showCandles ? level2MirrorOpen : na, showCandles ? level2MirrorHigh : na, showCandles ? level2MirrorLow : na, showCandles ? level2MirrorClose : na, "ãÊŞÇÑä ÓØÍ Ïæã", color=level2Color, wickcolor=level2Color, bordercolor=level2Color)
+
+plot(isAfterTime ? p1 : na, "ÓØÍ Çæá", color.white, 2)
+plot(isAfterTime ? p2 : na, "ÓØÍ Ïæã", color.red, 2)
+
+// ÇÚãÇá OFFSET Èå ÇäÏÇÒå ÈÇÒå ÒãÇäí (estimatedBars) ÌåÊ ÑæÌ˜Ôä Èå ÂíäÏå
+intOffset = int(estimatedBars)
+plot(isAfterTime ? currentLevel : na, "ÓØÍ ãÊÍÑ˜ ÇÕáí", color.yellow, 1, plot.style_circles, offset=intOffset)
+plot(isAfterTime and showInvMa ? invLevel : na, "ÓØÍ ãÊÍÑ˜ ãÚ˜æÓ", color.aqua, 1, plot.style_circles, offset=intOffset)
+plot(useMaLevels and isAfterTime ? maTop : na, "ãæíä ÓØÍ ÈÇáÇ", color.new(color.teal, 0), 2)
+plot(useMaLevels and isAfterTime ? maBot : na, "ãæíä ÓØÍ Çííä", color.new(color.fuchsia, 0), 2)
+plot(useMaLevels and isAfterTime ? maMid : na, "ãæíä ãíÇäí", color.new(color.yellow, 40), 1)
+
+// =====================================================================
+// ÓíÓÊã åÔÏÇÑ (Alerts) æ ÚáÇÆã Ñæí ÇÑÊ
+// =====================================================================
+// ãŞÇíÓå ÈÇ ãŞÏÇÑ ĞÔÊå ÎØ ˜å ÏŞíŞÇğ ÏÑ äŞØå İÚáí ÇÑÊ ÏÑ ÍÇá äãÇíÔ ÇÓÊ
+pastLevelForCross = currentLevel[intOffset]
+
+crossUp = ta.crossover(close, pastLevelForCross)
+crossDown = ta.crossunder(close, pastLevelForCross)
+
+if crossUp
+    alert("ÈÑÎæÑÏ Ñæ Èå ÈÇáÇ: ŞíãÊ ÎØ íÔÈíäí ÑÇ ŞØÚ ˜ÑÏ!", alert.freq_once_per_bar_close)
+if crossDown
+    alert("ÈÑÎæÑÏ Ñæ Èå Çííä: ŞíãÊ ÎØ íÔÈíäí ÑÇ ŞØÚ ˜ÑÏ!", alert.freq_once_per_bar_close)
+
+plotshape(crossUp, title="Cross Up Alert", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small)
+plotshape(crossDown, title="Cross Down Alert", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small)

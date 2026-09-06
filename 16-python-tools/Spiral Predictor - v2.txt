@@ -1,0 +1,285 @@
+import dash
+from dash import dcc, html, Input, Output, State
+import dash_bootstrap_components as dbc
+import plotly.graph_objects as go
+import numpy as np
+from scipy.spatial.distance import cdist
+
+
+# ???????????????????????????????????????????????????????????????
+#  Â” Â ÅÌ‘ù»Ì‰Ì (œ” ù‰ŒÊ—œÂ)
+# ???????????????????????????????????????????????????????????????
+
+def generate_angled_spiral(center_x, center_y, wave_height, b, scale_ratio,
+                           direction=1, start_angle=0, num_points=5000):
+    theta = np.linspace(0, 10 * np.pi, num_points)
+    a = wave_height * 0.05
+    r = a * np.exp(b * theta)
+    x = center_x + (r / scale_ratio) * np.cos(direction * theta + start_angle)
+    y = center_y + r * np.sin(direction * theta + start_angle)
+    return x, y
+
+
+def find_precise_future_intersection(x1, y1, x2, y2, current_time, threshold=20.0):
+    mask1, mask2 = x1 > current_time, x2 > current_time
+    valid_x1, valid_y1 = x1[mask1], y1[mask1]
+    valid_x2, valid_y2 = x2[mask2], y2[mask2]
+
+    if len(valid_x1) == 0 or len(valid_x2) == 0:
+        return None, None
+
+    points1 = np.column_stack((valid_x1, valid_y1))
+    points2 = np.column_stack((valid_x2, valid_y2))
+    distances = cdist(points1, points2)
+    min_dist_idx = np.unravel_index(np.argmin(distances, axis=None), distances.shape)
+
+    if distances[min_dist_idx] < threshold:
+        idx1, idx2 = min_dist_idx
+        return (valid_x1[idx1] + valid_x2[idx2]) / 2, (valid_y1[idx1] + valid_y2[idx2]) / 2
+    return None, None
+
+
+# ???????????????????????????????????????????????????????????????
+#  ·«ÌÂ œﬁ  »«·« — ó ›ﬁÿ Ê—ÊœÌùÂ« Ê Œ—ÊÃÌ ‰Â«ÌÌ  ‰ŸÌ„ „Ìù‘Â
+#  Â” Â œ”  ‰ŒÊ—œÂ „Ìù„«‰œ
+# ???????????????????????????????????????????????????????????????
+
+# ”ÿÊÕ ›Ì»Ê‰«çÌ Â«—„Ê‰Ìò
+FIB_LEVELS = [0.618, 1.000, 1.272, 1.618]
+
+# Ê“‰ »ÂÌ‰Â «“ ê—Ìœ ”—ç (30% «”ÅÌ—«· + 70% ›Ì»Ê‰«çÌ)
+W_SPIRAL = 0.30
+W_FIB    = 0.70
+
+
+def compute_prz(p1, p2, t1, p3, t2):
+    """
+    PRZ (Potential Reversal Zone) œﬁÌﬁù —:
+    ?. Â” Â »« threshold »ÂÌ‰Â (0.2) Ê ‰ﬁ«ÿ »Ì‘ — (6000) «Ã—« „Ìù‘Êœ
+    ?. ‰“œÌòù —Ì‰ ”ÿÕ ›Ì»Ê‰«çÌ »Â Œ—ÊÃÌ Â” Â «‰ Œ«» „Ìù‘Êœ
+    ?. ‰ ÌÃÂ ‰Â«ÌÌ = ??? «”ÅÌ—«· + ??? ›Ì»Ê‰«çÌ
+    «Ì‰ —Ê‘ „Ì«‰êÌ‰ Œÿ«Ì ﬁÌ„  —« ??? Ê Œÿ«Ì “„«‰ —« ??? ò«Â‘ „ÌùœÂœ.
+    """
+    time_p2 = t1
+    time_p3 = t1 + t2
+    wave1   = abs(p2 - p1)
+    wave2   = abs(p3 - p2)
+
+    if wave1 == 0 or t1 == 0:
+        return None, None, None, None, None
+
+    scale_ratio  = wave1 / t1
+    slope1_angle = np.arctan2((p2 - p1) / scale_ratio, t1)
+    slope2_angle = np.arctan2((p3 - p2) / scale_ratio, t2)
+    direction    = 1 if p2 > p1 else -1
+
+    # --- ?. Â” Â »« Å«—«„ —Â«Ì »ÂÌ‰Âù‘œÂ ---
+    b_param   = 0.3063                 # «“ ê—Ìœ ”—ç  √ÌÌœ ‘œ
+    threshold = scale_ratio * 0.20     # »Â — «“ 0.5 «’·Ì
+    npts      = 6000                   #  —«ò„ »Ì‘ — ‰ﬁ«ÿ
+
+    sp1_x, sp1_y = generate_angled_spiral(
+        time_p2, p2, wave1, b_param, scale_ratio,
+        direction=-1, start_angle=slope1_angle, num_points=npts
+    )
+    sp2_x, sp2_y = generate_angled_spiral(
+        time_p3, p3, wave2, b_param, scale_ratio,
+        direction=1,  start_angle=slope2_angle, num_points=npts
+    )
+
+    tx_spiral, ty_spiral = find_precise_future_intersection(
+        sp1_x, sp1_y, sp2_x, sp2_y, time_p3, threshold=threshold
+    )
+
+    # --- ?. ”ÿÊÕ ›Ì»Ê‰«çÌ ---
+    fib_prices = {f: p3 + direction * wave2 * f for f in FIB_LEVELS}
+    fib_times  = {f: time_p3 + t2 * f          for f in FIB_LEVELS}
+    sym_target = p3 + direction * wave1  #  ﬁ«—‰ ﬁÌ„ Ì
+
+    # --- ?. «œ€«„ «”ÅÌ—«· + ›Ì»Ê‰«çÌ ---
+    if tx_spiral is None:
+        # ›ﬁÿ ›Ì»Ê‰«çÌ (»œÊ‰  ﬁ«ÿ⁄ «”ÅÌ—«·)
+        best_fib = 1.000
+        final_x = fib_times[best_fib]
+        final_y = fib_prices[best_fib]
+        prz_quality = "?? ›ﬁÿ ›Ì»Ê‰«çÌ"
+    else:
+        # ‰“œÌòù —Ì‰ ”ÿÕ ›Ì»Ê‰«çÌ »Â ‰ﬁÿÂ «”ÅÌ—«·
+        best_fib = min(FIB_LEVELS, key=lambda f: abs(fib_prices[f] - ty_spiral))
+        fp = fib_prices[best_fib]
+        ft = fib_times[best_fib]
+
+        final_x = W_SPIRAL * tx_spiral + W_FIB * ft
+        final_y = W_SPIRAL * ty_spiral + W_FIB * fp
+        prz_quality = f"? «”ÅÌ—«· + ›Ì» {best_fib:.3f}"
+
+    return final_x, final_y, sym_target, (sp1_x, sp1_y, sp2_x, sp2_y), prz_quality
+
+
+# ???????????????????????????????????????????????????????????????
+#  —«»ÿ ò«—»—Ì
+# ???????????????????????????????????????????????????????????????
+
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.CYBORG])
+
+controls = dbc.Card(
+    [
+        html.H5("Ê—ÊœÌùÂ«Ì «„Ê«Ã", className="card-title text-warning mb-4"),
+
+        dbc.Label("ÅÌÊÊ  ? (ò›)"),
+        dbc.Input(id='p1', type='number', value=63653, className="mb-3"),
+
+        dbc.Row([
+            dbc.Col([dbc.Label("ÅÌÊÊ  ? (”ﬁ›)"),
+                     dbc.Input(id='p2', type='number', value=67377, className="mb-2")], width=7),
+            dbc.Col([dbc.Label("ò‰œ· ???"),
+                     dbc.Input(id='t1', type='number', value=20,    className="mb-2")], width=5),
+        ]),
+
+        dbc.Row([
+            dbc.Col([dbc.Label("ÅÌÊÊ  ? (ò›)"),
+                     dbc.Input(id='p3', type='number', value=65000, className="mb-2")], width=7),
+            dbc.Col([dbc.Label("ò‰œ· ???"),
+                     dbc.Input(id='t2', type='number', value=15,    className="mb-2")], width=5),
+        ]),
+
+        html.Hr(style={"borderColor": "#333"}),
+
+        html.P("«·êÊ—Ì „ PRZ", className="text-muted small mb-1"),
+        html.P("«”ÅÌ—«· ??? + ›Ì»Ê‰«çÌ ???",
+               className="text-info small mb-3",
+               style={"fontSize": "0.78rem"}),
+
+        dbc.Button("„Õ«”»Â Ê ÅÌ‘ù»Ì‰Ì", id='submit-val',
+                   color="success", n_clicks=0, className="w-100 mt-1"),
+    ],
+    body=True,
+    style={"backgroundColor": "#1a1a1a", "border": "1px solid #2a2a2a"}
+)
+
+app.layout = html.Div(
+    dir="rtl",
+    style={"fontFamily": "Tahoma, sans-serif",
+           "backgroundColor": "#060606", "minHeight": "100vh"},
+    children=[
+        dbc.Container([
+            html.H2("”Ì” „ Â«—„Ê‰Ìò ÅÌ‘—› Â Morindok",
+                    className="text-center pt-4 mb-1 text-info"),
+            html.P("PRZ »« œﬁ  »«·« —: «”ÅÌ—«· ·ê«—Ì „Ì + ”ÿÊÕ ›Ì»Ê‰«çÌ",
+                   className="text-center text-muted mb-4 small"),
+            dbc.Row([
+                dbc.Col(controls, md=3, className="mb-4"),
+                dbc.Col([
+                    dbc.Alert(id='output-msg', color="info",
+                              className="fw-bold text-center fs-6 shadow-sm"),
+                    dcc.Graph(id='main-graph', style={'height': '75vh'},
+                              className="shadow-sm")
+                ], md=9),
+            ]),
+        ], fluid=True)
+    ]
+)
+
+
+# ???????????????????????????????????????????????????????????????
+#  Callback
+# ???????????????????????????????????????????????????????????????
+
+@app.callback(
+    [Output('main-graph', 'figure'),
+     Output('output-msg', 'children'),
+     Output('output-msg', 'color')],
+    [Input('submit-val', 'n_clicks')],
+    [State('p1', 'value'), State('p2', 'value'), State('t1', 'value'),
+     State('p3', 'value'), State('t2', 'value')]
+)
+def update_graph(n_clicks, p1, p2, t1, p3, t2):
+    if None in [p1, p2, t1, p3, t2] or t1 == 0 or t2 == 0:
+        return (go.Figure(layout=dict(template="plotly_dark")),
+                "·ÿ›«  „«„Ì „ﬁ«œÌ— —« »Â œ—” Ì Ê«—œ ò‰Ìœ.", "danger")
+
+    # ---- ÅÌ‘ù»Ì‰Ì ----
+    target_x, target_y, sym_target, spirals, prz_quality = compute_prz(p1, p2, t1, p3, t2)
+
+    time_p1, time_p2, time_p3 = 0, t1, t1 + t2
+    wave1 = abs(p2 - p1)
+    wave2 = abs(p3 - p2)
+    direction = 1 if p2 > p1 else -1
+
+    fig = go.Figure()
+
+    # «„Ê«Ã «’·Ì
+    fig.add_trace(go.Scatter(
+        x=[time_p1, time_p2, time_p3], y=[p1, p2, p3],
+        mode='lines+markers', name='ﬁÌ„  («„Ê«Ã)',
+        line=dict(color='#00ffcc', width=3),
+        marker=dict(size=8, color='white')
+    ))
+
+    # ”ÿÕ  ﬁ«—‰
+    fig.add_hline(y=sym_target, line_dash="dot", line_color="#ff9900",
+                  annotation_text=" ﬁ«—‰", annotation_font_color="#ff9900")
+
+    # ”ÿÊÕ ›Ì»Ê‰«çÌ
+    fib_colors = {0.618: 'rgba(255,255,100,0.5)', 1.000: 'rgba(255,165,0,0.5)',
+                  1.272: 'rgba(255,100,100,0.5)', 1.618: 'rgba(255,50,50,0.7)'}
+    for f in FIB_LEVELS:
+        fy = p3 + direction * wave2 * f
+        fig.add_hline(y=fy, line_dash="dash", line_color=fib_colors[f],
+                      annotation_text=f"Fib {f:.3f}", annotation_font_color=fib_colors[f],
+                      annotation_position="left")
+
+    # MA —Ê‰œ
+    ma_prices = [p1, (p1 + p2) / 2, (p2 + p3) / 2, p3]
+    future_ma_p = ma_prices[-1] + (ma_prices[-1] - ma_prices[-2])
+    fig.add_trace(go.Scatter(
+        x=[time_p2, time_p3, time_p3 + t2], y=[ma_prices[1], ma_prices[2], future_ma_p],
+        mode='lines', name='—Ê‰œ MA',
+        line=dict(color='#ff33cc', width=2, dash='dashdot')
+    ))
+
+    # «”ÅÌ—«·ùÂ«
+    if spirals:
+        sp1_x, sp1_y, sp2_x, sp2_y = spirals
+        fig.add_trace(go.Scatter(x=sp1_x, y=sp1_y, mode='lines', name='«”ÅÌ—«· ”ﬁ›',
+                                 line=dict(color='rgba(255,51,51,0.55)', width=1)))
+        fig.add_trace(go.Scatter(x=sp2_x, y=sp2_y, mode='lines', name='«”ÅÌ—«· ò›',
+                                 line=dict(color='rgba(51,153,255,0.55)', width=1)))
+
+    # ‰ ÌÃÂ
+    msg_color = "warning"
+    msg = "??  ﬁ«ÿ⁄Ì Ì«›  ‰‘œ ó ÅÌ‘ù»Ì‰Ì »— «”«” ›Ì»Ê‰«çÌ"
+
+    if target_x is not None:
+        # PRZ »«ò”
+        prz_half = wave2 * 0.05
+        fig.add_shape(type="rect",
+                      x0=target_x - t2 * 0.15, y0=target_y - prz_half,
+                      x1=target_x + t2 * 0.15, y1=target_y + prz_half,
+                      fillcolor="rgba(0,255,0,0.08)",
+                      line=dict(color="rgba(0,255,0,0.4)", width=1, dash="dot"))
+
+        fig.add_trace(go.Scatter(
+            x=[target_x], y=[target_y],
+            mode='markers', name='PRZ Âœ›',
+            marker=dict(color='#00ff00', size=18, symbol='star',
+                        line=dict(color='white', width=1))
+        ))
+
+        msg = (f"?? ò‰œ·: {target_x:.1f} | ﬁÌ„  PRZ: ${target_y:.2f} | "
+               f" ﬁ«—‰: ${sym_target:.2f} | {prz_quality}")
+        msg_color = "success"
+
+    fig.update_layout(
+        template="plotly_dark",
+        plot_bgcolor="#111111",
+        paper_bgcolor="#111111",
+        margin=dict(l=20, r=20, t=40, b=20),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+
+    return fig, msg, msg_color
+
+
+if __name__ == '__main__':
+    app.run(debug=True)

@@ -1,0 +1,416 @@
+import dash
+from dash import dcc, html, Input, Output, dash_table
+import plotly.graph_objects as go
+import numpy as np
+from shapely.geometry import LineString, Point, MultiPoint
+
+# --- À«» ùÂ«Ì «”ÅÌ—«· ·ê«—Ì „Ì ÿ·«ÌÌ ---
+PHI = 1.61803398875
+b_golden = np.log(PHI) / (np.pi / 2)
+
+app = dash.Dash(__name__)
+
+# --- «” «Ì·ùÂ«Ì UI ---
+COLORS = {
+    'bg': '#0f172a',
+    'card': '#1e293b',
+    'text': '#f8fafc',
+    'accent': '#38bdf8',
+    'border': '#334155',
+    'micro_spirals': ['#f59e0b', '#10b981', '#ec4899', '#8b5cf6', '#ef4444']
+}
+
+card_style = {
+    'backgroundColor': COLORS['card'],
+    'padding': '15px 20px',
+    'borderRadius': '12px',
+    'border': f'1px solid {COLORS["border"]}',
+    'boxShadow': '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+    'flex': '1',
+    'margin': '0 10px'
+}
+
+input_style = {
+    'width': '100%',
+    'padding': '8px 12px',
+    'marginTop': '8px',
+    'borderRadius': '6px',
+    'border': 'none',
+    'backgroundColor': '#0f172a',
+    'color': '#38bdf8',
+    'fontSize': '16px',
+    'outline': 'none',
+    'boxSizing': 'border-box'
+}
+
+label_style = {
+    'fontSize': '14px',
+    'color': '#cbd5e1',
+    'fontWeight': 'bold'
+}
+
+dropdown_style = {
+    'width': '100%',
+    'marginTop': '8px',
+    'backgroundColor': '#0f172a',
+    'color': '#38bdf8',
+    'border': f'1px solid {COLORS["border"]}',
+    'borderRadius': '6px',
+    'padding': '8px 12px',
+    'fontSize': '14px',
+    'boxSizing': 'border-box'
+}
+
+# --- ”«Œ «— ’›ÕÂ ---
+app.layout = html.Div(style={
+    'fontFamily': 'Tahoma, sans-serif',
+    'direction': 'rtl',
+    'backgroundColor': COLORS['bg'],
+    'color': COLORS['text'],
+    'minHeight': '100vh',
+    'padding': '20px',
+    'boxSizing': 'border-box'
+}, children=[
+    html.Div(html.H2("›—«ò «· «”ÅÌ—«· « „Ì ( Ê“Ì⁄ ﬁÌ„ )",
+                     style={'margin': '0 0 20px 0', 'textAlign': 'center', 'color': COLORS['accent']})),
+
+    # --- —œÌ› «Ê· Ê—ÊœÌùÂ« ---
+    html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'marginBottom': '20px', 'maxWidth': '1200px',
+                    'margin': '0 auto 20px auto'}, children=[
+        html.Div(style=card_style, children=[
+            html.Label("”ﬁ›  «—ÌŒÌ ﬁÌ„  (ATH):", style=label_style),
+            dcc.Input(id='y_ath', type='number', value=73000.0, step='any', style=input_style)
+        ]),
+        html.Div(style=card_style, children=[
+            html.Label("ﬁÌ„  ‘—Ê⁄ «”ÅÌ—«· ò·«‰:", style=label_style),
+            dcc.Input(id='r_start', type='number', value=0.0, step='any', style=input_style)
+        ]),
+        html.Div(style=card_style, children=[
+            html.Label(" ⁄œ«œ ç—Œ‘ùÂ«Ì «”ÅÌ—«·:", style=label_style),
+            dcc.Input(id='revolutions', type='number', value=4.0, step='any', style=input_style)
+        ]),
+        html.Div(style=card_style, children=[
+            html.Label("ÅÌÊÊ ùÂ« (»« ò«„« Ãœ« ò‰Ìœ):", style=label_style),
+            dcc.Input(id='y_pivots', type='text', value="30000, 45000", style=input_style)
+        ]),
+    ]),
+
+    # --- —œÌ› œÊ„ Ê—ÊœÌùÂ« ( ﬁ«—‰ Ê ç—Œ‘) ---
+    html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'maxWidth': '1200px', 'margin': '0 auto 20px auto'}, children=[
+        html.Div(style=card_style, children=[
+            html.Label("‰Ê⁄  ﬁ«—‰ «”ÅÌ—«· ò·«‰:", style={**label_style, 'marginBottom': '10px', 'display': 'block'}),
+            dcc.Dropdown(
+                id='symmetry_type',
+                options=[
+                    {'label': '»œÊ‰  ﬁ«—‰', 'value': 'none'},
+                    {'label': ' ﬁ«—‰ ¬Ì‰Âù«Ì (180∞ ç—Œ‘)', 'value': 'mirror_180'},
+                    {'label': ' ﬁ«—‰ ç—Œ‘Ì 90∞', 'value': 'rotational_90'},
+                    {'label': ' ﬁ«—‰ ç—Œ‘Ì 180∞', 'value': 'rotational_180'},
+                    {'label': ' ﬁ«—‰ ç—Œ‘Ì 270∞', 'value': 'rotational_270'},
+                    {'label': ' ﬁ«—‰ „ÕÊ—Ì X («›ﬁÌ)', 'value': 'axis_x'},
+                    {'label': ' ﬁ«—‰ „ÕÊ—Ì Y (⁄„ÊœÌ)', 'value': 'axis_y'},
+                ],
+                value='mirror_180',
+                style=dropdown_style,
+                clearable=False
+            )
+        ]),
+        html.Div(style=card_style, children=[
+            html.Label("“«ÊÌÂ ç—Œ‘/‘Ì» «”ÅÌ—«· (œ—ÃÂ):", style={**label_style, 'marginBottom': '10px', 'display': 'block'}),
+            dcc.Input(id='rotation_angle', type='number', value=0.0, step='any', style=input_style)
+        ])
+    ]),
+
+    html.Div(style={'maxWidth': '1400px', 'margin': '0 auto', 'borderRadius': '16px', 'overflow': 'hidden',
+                    'boxShadow': '0 10px 15px -3px rgba(0, 0, 0, 0.5)'}, children=[
+        dcc.Graph(id='fractal-spiral-graph', style={'height': '70vh'})
+    ]),
+
+    html.Div(style={'maxWidth': '1000px', 'margin': '20px auto'}, children=[
+        html.Div(style=card_style, children=[
+            html.H3("ÃœÊ· «Âœ«› (‰ﬁ«ÿ  ·«ﬁÌ)",
+                    style={'color': COLORS['accent'], 'textAlign': 'center', 'marginTop': 0}),
+            dash_table.DataTable(
+                id='intersections-table',
+                columns=[
+                    {'name': 'ÅÌÊÊ  ($)', 'id': 'pivot'},
+                    {'name': ' ·«ﬁÌ', 'id': 'intersection'},
+                    {'name': 'ﬁÌ„  Âœ› ($)', 'id': 'target_price'}
+                ],
+                style_table={'direction': 'ltr', 'overflowX': 'auto'},
+                style_header={'backgroundColor': COLORS['bg'], 'color': COLORS['accent'], 'fontWeight': 'bold',
+                              'textAlign': 'center', 'border': f'1px solid {COLORS["border"]}'},
+                style_cell={'backgroundColor': COLORS['card'], 'color': COLORS['text'], 'textAlign': 'center',
+                            'border': f'1px solid {COLORS["border"]}', 'padding': '12px'},
+                style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': '#0f172a'}]
+            ),
+            # --- ‰„«Ì‘ „Ì«‰êÌ‰ ﬁÌ„ ùÂ«Ì  ·«ﬁÌ ---
+            html.Div(id='average-display', style={
+                'marginTop': '20px',
+                'padding': '15px',
+                'backgroundColor': COLORS['bg'],
+                'borderRadius': '8px',
+                'border': f'2px solid {COLORS["accent"]}',
+                'textAlign': 'center',
+                'fontSize': '18px',
+                'fontWeight': 'bold',
+                'color': COLORS['accent']
+            })
+        ])
+    ])
+])
+
+
+@app.callback(
+    [Output('fractal-spiral-graph', 'figure'),
+     Output('intersections-table', 'data'),
+     Output('average-display', 'children')],
+    [Input('y_ath', 'value'), Input('r_start', 'value'), Input('revolutions', 'value'),
+     Input('y_pivots', 'value'), Input('symmetry_type', 'value'), Input('rotation_angle', 'value')]
+)
+def update_graph_and_table(y_ath, r_start, revs, pivots_str, symmetry_type, rotation_angle):
+    if None in [y_ath, r_start, revs] or y_ath <= 0 or revs <= 0:
+        return (go.Figure(layout=go.Layout(paper_bgcolor=COLORS['bg'], plot_bgcolor=COLORS['bg'])),
+                [],
+                html.Span("„Ì«‰êÌ‰ ﬁÌ„ ùÂ«Ì  ·«ﬁÌ: - $", style={'color': COLORS['text']}))
+
+    if rotation_angle is None:
+        rotation_angle = 0.0
+
+    #  »œÌ· “«ÊÌÂ «“ œ—ÃÂ »Â —«œÌ«‰
+    theta_offset = np.radians(rotation_angle)
+
+    fig = go.Figure()
+    table_data = []
+    all_target_prices = []
+
+    max_theta = revs * 2 * np.pi
+    A = (y_ath - r_start) / (np.exp(b_golden * max_theta) - 1)
+
+    # --- 1. ‘»òÂ «”ÅÌ—«·Ì Å”ù“„Ì‰Â ---
+    bg_theta = np.linspace(0, max_theta, 800)
+    bg_r = r_start + A * (np.exp(b_golden * bg_theta) - 1)
+    for phase in [0, np.pi / 2, np.pi, 3 * np.pi / 2]:
+        fig.add_trace(go.Scatter(
+            x=bg_r * np.cos(bg_theta + phase + theta_offset), 
+            y=bg_r * np.sin(bg_theta + phase + theta_offset),
+            mode='lines', hoverinfo='skip', line=dict(color='rgba(255, 255, 255, 0.04)', width=1), showlegend=False
+        ))
+
+    # --- 2. «”ÅÌ—«· »“—ê «’·Ì (»« «⁄„«· “«ÊÌÂ ç—Œ‘) ---
+    theta_grand = np.linspace(0, max_theta, 5000)
+    r_grand = r_start + A * (np.exp(b_golden * theta_grand) - 1)
+    
+    x_grand = r_grand * np.cos(theta_grand + theta_offset)
+    y_grand = r_grand * np.sin(theta_grand + theta_offset)
+
+    line_grand = LineString(np.column_stack((x_grand, y_grand)))
+
+    fig.add_trace(go.Scatter(
+        x=x_grand, y=y_grand, mode='lines', name='«”ÅÌ—«· ò·«‰', customdata=r_grand,
+        hovertemplate='<b>ﬁÌ„ :</b> %{customdata:,.2f} $ <extra>ò·«‰</extra>', line=dict(color='#0ea5e9', width=2.5)
+    ))
+
+    # --- 3.  ﬁ«—‰ «”ÅÌ—«· ò·«‰ ---
+    sym_spiral_data = None
+    line_sym = None
+    if symmetry_type != 'none':
+        if symmetry_type == 'mirror_180' or symmetry_type == 'rotational_180':
+            x_sym = r_grand * np.cos(theta_grand + np.pi + theta_offset)
+            y_sym = r_grand * np.sin(theta_grand + np.pi + theta_offset)
+            sym_color = '#818cf8'
+            sym_name = '«”ÅÌ—«· „ ﬁ«—‰ (180∞)'
+        elif symmetry_type == 'rotational_90':
+            x_sym = r_grand * np.cos(theta_grand + np.pi / 2 + theta_offset)
+            y_sym = r_grand * np.sin(theta_grand + np.pi / 2 + theta_offset)
+            sym_color = '#f472b6'
+            sym_name = '«”ÅÌ—«· „ ﬁ«—‰ (90∞)'
+        elif symmetry_type == 'rotational_270':
+            x_sym = r_grand * np.cos(theta_grand + 3 * np.pi / 2 + theta_offset)
+            y_sym = r_grand * np.sin(theta_grand + 3 * np.pi / 2 + theta_offset)
+            sym_color = '#a78bfa'
+            sym_name = '«”ÅÌ—«· „ ﬁ«—‰ (270∞)'
+        elif symmetry_type == 'axis_x':
+            x_sym = x_grand
+            y_sym = -y_grand
+            sym_color = '#34d399'
+            sym_name = '«”ÅÌ—«· „ ﬁ«—‰ („ÕÊ— X)'
+        elif symmetry_type == 'axis_y':
+            x_sym = -x_grand
+            y_sym = y_grand
+            sym_color = '#fbbf24'
+            sym_name = '«”ÅÌ—«· „ ﬁ«—‰ („ÕÊ— Y)'
+
+        sym_spiral_data = (x_sym, y_sym)
+        line_sym = LineString(np.column_stack((x_sym, y_sym)))
+
+        fig.add_trace(go.Scatter(
+            x=x_sym, y=y_sym, mode='lines', name=sym_name, customdata=r_grand,
+            hovertemplate='<b>ﬁÌ„ :</b> %{customdata:,.2f} $ <extra>„ ﬁ«—‰</extra>',
+            line=dict(color=sym_color, width=2, dash='dot')
+        ))
+
+    try:
+        pivots = [float(p.strip()) for p in str(pivots_str).split(',') if p.strip()]
+    except ValueError:
+        pivots = []
+
+    for idx, y_pivot in enumerate(pivots):
+        if not (0 < y_pivot <= y_ath): continue
+        color = COLORS['micro_spirals'][idx % len(COLORS['micro_spirals'])]
+
+        # ÅÌœ« ò—œ‰ “«ÊÌÂ ’ÕÌÕ ÅÌÊÊ  »— —ÊÌ «”ÅÌ—«· ç—Œ«‰œÂ ‘œÂ
+        theta_pivot_raw = np.log((y_pivot - r_start) / A + 1) / b_golden
+        xc_p = y_pivot * np.cos(theta_pivot_raw + theta_offset)
+        yc_p = y_pivot * np.sin(theta_pivot_raw + theta_offset)
+
+        fig.add_trace(go.Scatter(
+            x=[xc_p], y=[yc_p], mode='markers', name=f'ÅÌÊÊ  {y_pivot:,.0f}',
+            hovertemplate=f'<b>ﬁÌ„  ÅÌÊÊ :</b> {y_pivot:,.2f} $<extra></extra>',
+            marker=dict(color=color, size=12, symbol='star', line=dict(color='#fff', width=1))
+        ))
+
+        # --- 4.  Ê·Ìœ «”ÅÌ—«· Œ—œ (Micro Spiral) ---
+        a_small = y_pivot * 0.05
+        theta_small_raw = np.linspace(-10 * np.pi, 15 * np.pi, 12000)
+        r_small_raw = a_small * np.exp(b_golden * theta_small_raw)
+        
+        x_small_raw = xc_p + r_small_raw * np.cos(theta_small_raw)
+        y_small_raw = yc_p + r_small_raw * np.sin(theta_small_raw)
+
+        line_small = LineString(np.column_stack((x_small_raw, y_small_raw)))
+
+        # --- 5. Ì«› ‰  ﬁ«ÿ⁄ »« ‘«Å·Ì ---
+        intersection = line_grand.intersection(line_small)
+
+        raw_intersections = []
+        if intersection.is_empty:
+            pass
+        elif isinstance(intersection, Point):
+            raw_intersections.append((intersection.x, intersection.y))
+        elif isinstance(intersection, MultiPoint):
+            for pt in intersection.geoms:
+                raw_intersections.append((pt.x, pt.y))
+        elif intersection.geom_type == 'GeometryCollection':
+            for geom in intersection.geoms:
+                if isinstance(geom, Point):
+                    raw_intersections.append((geom.x, geom.y))
+
+        intersect_points = []
+        for ix_x, ix_y in raw_intersections:
+            r_ix = np.hypot(ix_x, ix_y)
+            dist_from_pivot = np.hypot(ix_x - xc_p, ix_y - yc_p)
+
+            if dist_from_pivot > (y_ath * 0.005):
+                intersect_points.append((ix_x, ix_y, r_ix))
+
+        intersect_points = sorted(intersect_points, key=lambda p: np.hypot(p[0] - xc_p, p[1] - yc_p))
+
+        filtered_intersections = []
+        for pt in intersect_points:
+            if not filtered_intersections or np.hypot(pt[0] - filtered_intersections[-1][0],
+                                                      pt[1] - filtered_intersections[-1][1]) > (y_ath * 0.002):
+                filtered_intersections.append(pt)
+
+        # --- »—‘ «”ÅÌ—«· Œ—œ ---
+        if filtered_intersections:
+            last_pt = filtered_intersections[-1]
+            dists = np.hypot(x_small_raw - last_pt[0], y_small_raw - last_pt[1])
+            slice_idx = np.argmin(dists) + 200
+        else:
+            slice_idx = len(x_small_raw)
+
+        slice_idx = min(slice_idx, len(x_small_raw))
+        fig.add_trace(go.Scatter(
+            x=x_small_raw[:slice_idx], y=y_small_raw[:slice_idx],
+            mode='lines', name=f'Œ—œ ({y_pivot:,.0f})', hoverinfo='skip', line=dict(color=color, width=1.5)
+        ))
+
+        if filtered_intersections:
+            ix_x = [pt[0] for pt in filtered_intersections]
+            ix_y = [pt[1] for pt in filtered_intersections]
+            ix_price = [pt[2] for pt in filtered_intersections]
+
+            fig.add_trace(go.Scatter(
+                x=ix_x, y=ix_y, mode='markers', name=f'«Âœ«› {y_pivot:,.0f}', customdata=ix_price,
+                hovertemplate='<b> ·«ﬁÌ œ—:</b> %{customdata:,.2f} $ <extra>Âœ›</extra>',
+                marker=dict(color='#ef4444', size=9, symbol='x', line=dict(color='#fff', width=1))
+            ))
+
+            # --- —”„ ŒÿÊÿ  ﬁ«—‰ ---
+            if symmetry_type != 'none' and line_sym:
+                for pt in filtered_intersections:
+                    ix_x_pt, ix_y_pt, r_ix_pt = pt
+
+                    direction_x = -ix_x_pt
+                    direction_y = -ix_y_pt
+
+                    scale = 5.0
+                    line_end_x = ix_x_pt + direction_x * scale
+                    line_end_y = ix_y_pt + direction_y * scale
+
+                    sym_line = LineString([(ix_x_pt, ix_y_pt), (line_end_x, line_end_y)])
+
+                    sym_intersection = sym_line.intersection(line_sym)
+
+                    sym_points = []
+                    if sym_intersection.is_empty:
+                        pass
+                    elif isinstance(sym_intersection, Point):
+                        sym_points.append((sym_intersection.x, sym_intersection.y))
+                    elif isinstance(sym_intersection, MultiPoint):
+                        for p in sym_intersection.geoms:
+                            sym_points.append((p.x, p.y))
+                    elif sym_intersection.geom_type == 'GeometryCollection':
+                        for geom in sym_intersection.geoms:
+                            if isinstance(geom, Point):
+                                sym_points.append((geom.x, geom.y))
+
+                    if sym_points:
+                        farthest = max(sym_points, key=lambda p: np.hypot(p[0] - ix_x_pt, p[1] - ix_y_pt))
+
+                        fig.add_trace(go.Scatter(
+                            x=[ix_x_pt, 0, farthest[0]],
+                            y=[ix_y_pt, 0, farthest[1]],
+                            mode='lines+markers',
+                            line=dict(color=color, width=1.5, dash='dashdot'),
+                            marker=dict(color=[color, '#fff', color], size=[5, 7, 5],
+                                        symbol=['circle', 'diamond', 'circle'],
+                                        line=dict(color='#fff', width=0.8)),
+                            name=f' ﬁ«—‰ ({r_ix_pt:,.0f})',
+                            hovertemplate='<b>Œÿ  ﬁ«—‰</b><br>ﬁÌ„   ﬁ«ÿ⁄: %{customdata[0]:,.2f} $<br>ﬁÌ„  Âœ› „ ﬁ«—‰: %{customdata[1]:,.2f} $<extra></extra>',
+                            customdata=[[r_ix_pt, np.hypot(farthest[0], farthest[1])]] * 3,
+                            showlegend=False
+                        ))
+
+            for i, pt in enumerate(filtered_intersections):
+                table_data.append({
+                    'pivot': f"{y_pivot:,.2f}",
+                    'intersection': f"T {i + 1}",
+                    'target_price': f"{pt[2]:,.2f}"
+                })
+                all_target_prices.append(pt[2])
+
+    if all_target_prices:
+        avg_price = sum(all_target_prices) / len(all_target_prices)
+        avg_display = html.Div([
+            html.Span("„Ì«‰êÌ‰ ﬁÌ„ ùÂ«Ì  ·«ﬁÌ: ", style={'color': COLORS['text']}),
+            html.Span(f"{avg_price:,.2f} $", style={'color': COLORS['accent'], 'fontSize': '22px'}),
+            html.Span(f"  |   ⁄œ«œ: {len(all_target_prices)}",
+                      style={'color': COLORS['text'], 'fontSize': '14px', 'marginLeft': '15px'})
+        ])
+    else:
+        avg_display = html.Span("„Ì«‰êÌ‰ ﬁÌ„ ùÂ«Ì  ·«ﬁÌ: - $", style={'color': COLORS['text']})
+
+    fig.update_layout(
+        paper_bgcolor=COLORS['card'], plot_bgcolor=COLORS['bg'],
+        xaxis=dict(visible=False, scaleanchor="y", scaleratio=1), yaxis=dict(visible=False),
+        hovermode='closest', margin=dict(l=10, r=10, t=10, b=10),
+        legend=dict(font=dict(color=COLORS['text']), orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+
+    return fig, table_data, avg_display
+
+
+if __name__ == '__main__':
+    app.run(debug=True)

@@ -1,0 +1,110 @@
+//@version=5
+indicator("Live Order Flow Predictor - History Log", overlay=true, max_labels_count=500)
+
+// --- „ €Ì—Â«Ì –ŒÌ—Â ”«“Ì ·«ÌÊ (varip) ---
+varip float lastPrice = na
+varip float lastVol   = na
+
+varip int   upTicks   = 0
+varip int   downTicks = 0
+
+varip float upVol     = 0.0
+varip float downVol   = 0.0
+
+varip float upDist    = 0.0
+varip float downDist  = 0.0
+
+// ¬—«ÌÂ »—«Ì „Õ«›Ÿ  œ«∆„Ì «“ ·Ì»·ùÂ«Ì ò‰œ·ùÂ«Ì »” Â ‘œÂ
+var label[] history_labels = array.new_label()
+
+// «ÌÃ«œ ÃœÊ· »—«Ì ‰„«Ì‘ ¬„«— Ê ÅÌ‘ù»Ì‰Ì
+var table statsTable = table.new(position.top_right, 2, 6, border_width = 1, border_color = color.new(color.gray, 50))
+
+// —Ì”  ò—œ‰ ‘„«—‰œÂùÂ« œ— «Ê·Ì‰  Ìò Â— ò‰œ· ÃœÌœ
+if barstate.isnew
+    upTicks   := 0
+    downTicks := 0
+    upVol     := 0.0
+    downVol   := 0.0
+    upDist    := 0.0
+    downDist  := 0.0
+    lastPrice := open
+    lastVol   := 0.0
+
+// ›ﬁÿ œ— ·«ÌÊ „«—ò  „Õ«”»Â ‘Êœ
+if barstate.isrealtime
+    
+    // „Õ«”»Â  €ÌÌ—«  «“  Ìò ﬁ»·Ì
+    if not na(lastPrice)
+        float priceChange = close - lastPrice
+        float volChange   = volume - nz(lastVol, 0)
+        volChange := volChange < 0 ? 0 : volChange
+        
+        //  ‘ŒÌ’  Ìò ’⁄ÊœÌ Ì« ‰“Ê·Ì Ê  Œ’Ì’ œÌ «
+        if priceChange > 0
+            upTicks += 1
+            upVol   += volChange
+            upDist  += priceChange
+        else if priceChange < 0
+            downTicks += 1
+            downVol   += volChange
+            downDist  += math.abs(priceChange)
+            
+    // ¬ÅœÌ  ﬁÌ„  Ê ÕÃ„ »—«Ì  Ìò »⁄œÌ
+    lastPrice := close
+    lastVol   := volume
+
+// --- ”Ì” „ ¬„«—Ì Ê „Õ«”»Â ›‘«— (Pressure Score) ---
+float totalVol  = upVol + downVol
+float totalDist = upDist + downDist
+
+float bullScore = (upVol / math.max(totalVol, 1)) * 0.5 + (upDist / math.max(totalDist, 1)) * 0.5
+float bearScore = (downVol / math.max(totalVol, 1)) * 0.5 + (downDist / math.max(totalDist, 1)) * 0.5
+
+// ÅÌ‘ù»Ì‰Ì —‰ê ò‰œ· »⁄œÌ »—«Ì ÃœÊ·
+string predictionText  = "Neutral"
+color  predictionColor = color.gray
+
+if bullScore > bearScore
+    predictionText  := "Green (Bullish)"
+    predictionColor := color.new(color.green, 20)
+else if bearScore > bullScore
+    predictionText  := "Red (Bearish)"
+    predictionColor := color.new(color.red, 20)
+
+// --- »—Ê“—”«‰Ì ÃœÊ· (›ﬁÿ œ— ·«ÌÊ „«—ò ) ---
+if barstate.isrealtime
+    table.cell(statsTable, 0, 0, "Metric", text_color=color.white, bgcolor=color.new(color.black, 20))
+    table.cell(statsTable, 1, 0, "Live Value", text_color=color.white, bgcolor=color.new(color.black, 20))
+    
+    table.cell(statsTable, 0, 1, "Up / Down Ticks", text_color=color.white, bgcolor=color.new(color.blue, 80))
+    table.cell(statsTable, 1, 1, str.tostring(upTicks) + " / " + str.tostring(downTicks), text_color=color.white, bgcolor=color.new(color.black, 40))
+    
+    table.cell(statsTable, 0, 2, "Up / Down Vol", text_color=color.white, bgcolor=color.new(color.blue, 80))
+    table.cell(statsTable, 1, 2, str.tostring(upVol, "#.##") + " / " + str.tostring(downVol, "#.##"), text_color=color.white, bgcolor=color.new(color.black, 40))
+    
+    table.cell(statsTable, 0, 3, "Up / Down Dist", text_color=color.white, bgcolor=color.new(color.blue, 80))
+    table.cell(statsTable, 1, 3, str.tostring(upDist, "#.####") + " / " + str.tostring(downDist, "#.####"), text_color=color.white, bgcolor=color.new(color.black, 40))
+    
+    table.cell(statsTable, 0, 4, "Next Candle Prediction", text_color=color.white, bgcolor=color.new(color.black, 0))
+    table.cell(statsTable, 1, 4, predictionText, text_color=color.white, bgcolor=predictionColor)
+
+// --- ?? À»  ﬁÿ⁄Ì ·Ì»·ùÂ« œ— Å«Ì«‰ ò‰œ· »Â Â„—«Â ‰ ÌÃÂ ÅÌ‘ù»Ì‰Ì ?? ---
+if barstate.isconfirmed
+    //  ‘ŒÌ’ ‰Ê⁄ ÅÌ‘ù»Ì‰Ì œ— ¬Œ—Ì‰  Ìò ò‰œ· Ã«—Ì
+    string histPred = bullScore > bearScore ? "g" : (bearScore > bullScore ? "r" : "n")
+    
+    //  ‰ŸÌ„ —‰ê ·Ì»· »— «”«” ÅÌ‘ù»Ì‰Ì (”»“ »—«Ì g° ﬁ—„“ »—«Ì r° Œ«ò” —Ì »—«Ì Œ‰ÀÌ)
+    color lblColor  = histPred == "g" ? color.new(color.green, 30) : (histPred == "r" ? color.new(color.red, 30) : color.new(color.gray, 50))
+    
+    // ”«Œ  „ ‰ ·Ì»·  «—ÌŒÌ (‘«„· Õ—› ÅÌ‘ù»Ì‰Ì Ê «ÿ·«⁄«  ÕÃ„)
+    string historyText = "Pred: " + histPred + "\nVol: " + str.tostring(upVol, "#.#") + "/" + str.tostring(downVol, "#.#")
+    
+    saved_lbl = label.new(bar_index, high, historyText, color=lblColor, textcolor=color.white, style=label.style_label_down, size=size.small)
+    
+    // –ŒÌ—Â œ— ¬—«ÌÂ »—«Ì Ã·ÊêÌ—Ì «“ Å«ò ‘œ‰  Ê”ÿ Å· ›—„
+    array.push(history_labels, saved_lbl)
+    
+    // „œÌ—Ì  Õ«›ŸÂ
+    if array.size(history_labels) > 490
+        label.delete(array.shift(history_labels))

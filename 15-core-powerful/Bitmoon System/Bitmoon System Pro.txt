@@ -1,0 +1,162 @@
+//@version=5
+indicator("Bitmoon System{Morindok}", shorttitle="Sym Dyn Fractals Ext", format=format.price, precision=0, overlay=true, max_bars_back=4000)
+
+// --- Inputs ---
+target_time = input.time(0, "«‰ Œ«» “„«‰", confirm=true)
+level1 = input.price(0, "«‰ Œ«» ”ÿÕ «Ê·", confirm=true)
+level2 = input.price(0, "«‰ Œ«» ”ÿÕ œÊ„", confirm=true)
+n = input.int(title="Periods (Fractal)", defval=100, minval=2)
+
+// --- Fractals Logic (Williams Fractals) ---
+// UpFractal
+bool upflagDownFrontier = true
+bool upflagUpFrontier0 = true
+bool upflagUpFrontier1 = true
+bool upflagUpFrontier2 = true
+bool upflagUpFrontier3 = true
+bool upflagUpFrontier4 = true
+
+for i = 1 to n
+    upflagDownFrontier := upflagDownFrontier and (high[n-i] < high[n])
+    upflagUpFrontier0 := upflagUpFrontier0 and (high[n+i] < high[n])
+    upflagUpFrontier1 := upflagUpFrontier1 and (high[n+1] <= high[n] and high[n+i + 1] < high[n])
+    upflagUpFrontier2 := upflagUpFrontier2 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i + 2] < high[n])
+    upflagUpFrontier3 := upflagUpFrontier3 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i + 3] < high[n])
+    upflagUpFrontier4 := upflagUpFrontier4 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i + 4] < high[n])
+flagUpFrontier = upflagUpFrontier0 or upflagUpFrontier1 or upflagUpFrontier2 or upflagUpFrontier3 or upflagUpFrontier4
+upFractal = (upflagDownFrontier and flagUpFrontier)
+
+// downFractal
+bool downflagDownFrontier = true
+bool downflagUpFrontier0 = true
+bool downflagUpFrontier1 = true
+bool downflagUpFrontier2 = true
+bool downflagUpFrontier3 = true
+bool downflagUpFrontier4 = true
+
+for i = 1 to n
+    downflagDownFrontier := downflagDownFrontier and (low[n-i] > low[n])
+    downflagUpFrontier0 := downflagUpFrontier0 and (low[n+i] > low[n])
+    downflagUpFrontier1 := downflagUpFrontier1 and (low[n+1] >= low[n] and low[n+i + 1] > low[n])
+    downflagUpFrontier2 := downflagUpFrontier2 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i + 2] > low[n])
+    downflagUpFrontier3 := downflagUpFrontier3 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i + 3] > low[n])
+    downflagUpFrontier4 := downflagUpFrontier4 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i + 4] > low[n])
+flagDownFrontier = downflagUpFrontier0 or downflagUpFrontier1 or downflagUpFrontier2 or downflagUpFrontier3 or downflagUpFrontier4
+downFractal = (downflagDownFrontier and flagDownFrontier)
+
+// --- Time Symmetry Variables ---
+show = time >= target_time
+var int target_bar_index = na
+if show and not show[1]
+    target_bar_index := bar_index
+
+// ›«’·Â ò‰œ· Ã«—Ì «“ “„«‰ «‰ Œ«» ‘œÂ
+dist = show ? (bar_index - target_bar_index) : 0
+
+// --- Dynamic MA Length Calculation (Base & Symmetric) ---
+var int lastUpBar = na
+var int lastDownBar = na
+
+if upFractal
+    lastUpBar := bar_index - n
+if downFractal
+    lastDownBar := bar_index - n
+
+// „Õ«”»Â ÿÊ· œ«Ì‰«„Ìò Å«ÌÂ (›«’·Â œﬁÌﬁ »Ì‰ ¬Œ—Ì‰ ”ﬁ› Ê ò›)
+int base_dyn_length = 14 
+if not na(lastUpBar) and not na(lastDownBar)
+    base_dyn_length := math.max(1, math.abs(lastUpBar - lastDownBar))
+
+// ¬›”  ŒÊ«‰œ‰ „ﬁ«œÌ— »œÊ‰  «ŒÌ— (œÌ·Ì n ò‰œ· Õ–› „Ìù‘Êœ)
+int offset_past_exact = show ? (2 * dist) - n : 0
+int offset_sym = show ? (2 * dist) : 0
+
+int sym_dyn_length = base_dyn_length
+
+// ŒÊ«‰œ‰ ÿÊ· „ ﬁ«—‰ «“ ê–‘ Â œﬁÌﬁ« «“ —ÊÌ ò‰œ·  «ÌÌœ ›—«ò «· »—«Ì Õ–›  «ŒÌ—
+if show and offset_past_exact >= 0 and offset_past_exact < 3900
+    sym_dyn_length := base_dyn_length[offset_past_exact]
+else if show and offset_sym >= 0 and offset_sym < 3900
+    sym_dyn_length := base_dyn_length[offset_sym]
+
+// «⁄„«· nz »—«Ì Ã·ÊêÌ—Ì «“ Œÿ«Ì na œ— ’Ê—  œ— œ” —” ‰»Êœ‰ œÌ «Ì ê–‘ Â
+sym_dyn_length := nz(sym_dyn_length, 14)
+sym_dyn_length := math.max(1, sym_dyn_length)
+
+// --- Base Calculations ---
+ma = ta.sma(close, sym_dyn_length)
+
+// --- Symmetries (Level 1 & Level 2) ---
+ma_sym1 = 2 * level1 - ma
+ma_sym2 = 2 * level2 - ma
+
+plot(show ? ma_sym1 : na, color=color.new(color.blue, 0), title="MA Sym 1")
+plot(show ? ma_sym2 : na, color=color.new(color.orange, 0), title="MA Sym 2")
+
+sym1_o = 2 * ma_sym1 - open
+sym1_h = 2 * ma_sym1 - low
+sym1_l = 2 * ma_sym1 - high
+sym1_c = 2 * ma_sym1 - close
+
+sym2_o = 2 * ma_sym2 - open
+sym2_h = 2 * ma_sym2 - low
+sym2_l = 2 * ma_sym2 - high
+sym2_c = 2 * ma_sym2 - close
+
+col1 = sym1_c >= sym1_o ? color.new(color.teal, 0) : color.new(color.red, 0)
+col2 = sym2_c >= sym2_o ? color.new(color.purple, 0) : color.new(color.maroon, 0)
+
+plotcandle(show ? sym1_o : na, show ? sym1_h : na, show ? sym1_l : na, show ? sym1_c : na, title="Sym Candle 1", color=col1, wickcolor=col1, bordercolor=col1)
+plotcandle(show ? sym2_o : na, show ? sym2_h : na, show ? sym2_l : na, show ? sym2_c : na, title="Sym Candle 2", color=col2, wickcolor=col2, bordercolor=col2)
+
+// --- Middle Symmetries ---
+// „Õ«”»Â ”ÿÕ Ê”ÿ »Ì‰ œÊ ”ÿÕ «‰ Œ«»Ì
+level_mid = (level1 + level2) / 2
+
+//  ﬁ«—‰ „ÊÊÌ‰ê ‰”»  »Â ”ÿÕ Ê”ÿ
+ma_sym_mid = 2 * level_mid - ma
+
+//  ﬁ«—‰ „ÊÊÌ‰ê Ê”ÿ ‰”»  »Â œÊ ”ÿÕ »«·« Ê Å«ÌÌ‰
+ma_sym_mid_1 = 2 * level1 - ma_sym_mid
+ma_sym_mid_2 = 2 * level2 - ma_sym_mid
+
+plot(show ? ma_sym_mid_1 : na, color=color.new(color.fuchsia, 0), title="MA Sym Mid 1")
+plot(show ? ma_sym_mid_2 : na, color=color.new(color.lime, 0), title="MA Sym Mid 2")
+
+// ò‰œ·ùÂ«Ì „ ﬁ«—‰ ‰”»  »Â „ÊÊÌ‰êùÂ«Ì Ê”ÿˆ ﬁ—Ì‰Âù‘œÂ
+sym_mid1_o = 2 * ma_sym_mid_1 - open
+sym_mid1_h = 2 * ma_sym_mid_1 - low
+sym_mid1_l = 2 * ma_sym_mid_1 - high
+sym_mid1_c = 2 * ma_sym_mid_1 - close
+
+sym_mid2_o = 2 * ma_sym_mid_2 - open
+sym_mid2_h = 2 * ma_sym_mid_2 - low
+sym_mid2_l = 2 * ma_sym_mid_2 - high
+sym_mid2_c = 2 * ma_sym_mid_2 - close
+
+col_mid1 = sym_mid1_c >= sym_mid1_o ? color.new(color.fuchsia, 0) : color.new(color.navy, 0)
+col_mid2 = sym_mid2_c >= sym_mid2_o ? color.new(color.lime, 0) : color.new(color.olive, 0)
+
+plotcandle(show ? sym_mid1_o : na, show ? sym_mid1_h : na, show ? sym_mid1_l : na, show ? sym_mid1_c : na, title="Sym Mid Candle 1", color=col_mid1, wickcolor=col_mid1, bordercolor=col_mid1)
+plotcandle(show ? sym_mid2_o : na, show ? sym_mid2_h : na, show ? sym_mid2_l : na, show ? sym_mid2_c : na, title="Sym Mid Candle 2", color=col_mid2, wickcolor=col_mid2, bordercolor=col_mid2)
+
+// --- Time Symmetry Logic for Fractals ---
+mirrored_up = false
+mirrored_down = false
+
+//  ﬁ«—‰ ”Ìê‰«·ùÂ«Ì ›—«ò «· »œÊ‰ œÌ·Ì
+if show and dist > 0 and offset_past_exact >= 0 and offset_past_exact < 3900
+    mirrored_up := upFractal[offset_past_exact]
+    mirrored_down := downFractal[offset_past_exact]
+
+// —”„ ›—«ò «· Â« »—«Ì ”ÿÊÕ 1 Ê 2 «’·Ì
+plotshape(mirrored_up ? sym1_h : na, style=shape.triangleup, location=location.absolute, color=color.new(#009688, 0), size=size.small, offset=0, title="Sym1 UpFractal")
+plotshape(mirrored_down ? sym1_l : na, style=shape.triangledown, location=location.absolute, color=color.new(#F44336, 0), size=size.small, offset=0, title="Sym1 DownFractal")
+plotshape(mirrored_up ? sym2_h : na, style=shape.triangleup, location=location.absolute, color=color.new(#009688, 0), size=size.small, offset=0, title="Sym2 UpFractal")
+plotshape(mirrored_down ? sym2_l : na, style=shape.triangledown, location=location.absolute, color=color.new(#F44336, 0), size=size.small, offset=0, title="Sym2 DownFractal")
+
+// —”„ ›—«ò «· Â« »—«Ì ”ÿÊÕ Ê”ÿ
+plotshape(mirrored_up ? sym_mid1_h : na, style=shape.triangleup, location=location.absolute, color=color.new(color.fuchsia, 0), size=size.small, offset=0, title="SymMid1 UpFractal")
+plotshape(mirrored_down ? sym_mid1_l : na, style=shape.triangledown, location=location.absolute, color=color.new(color.navy, 0), size=size.small, offset=0, title="SymMid1 DownFractal")
+plotshape(mirrored_up ? sym_mid2_h : na, style=shape.triangleup, location=location.absolute, color=color.new(color.lime, 0), size=size.small, offset=0, title="SymMid2 UpFractal")
+plotshape(mirrored_down ? sym_mid2_l : na, style=shape.triangledown, location=location.absolute, color=color.new(color.olive, 0), size=size.small, offset=0, title="SymMid2 DownFractal")

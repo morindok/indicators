@@ -1,0 +1,185 @@
+//@version=5
+indicator("AI Harmonic Resonance & Dynamic Probability", overlay=true, max_lines_count=100)
+
+// --- تنظیمات پایه هندسی ---
+i_step_mult = input.float(1.0, "ضریب رزونانس فرکتال", step=0.1)
+
+// --- ثابت‌های ریاضی کیهانی و هندسی ---
+var float PHI = 1.618033988749895 // نسبت طلایی
+var float PI  = 3.141592653589793 // عدد پی
+var float E   = 2.718281828459045 // عدد اویلر
+
+// فرمول هندسی پیشرفته برای درک ایجنت‌ها: توزیع لگاریتمی طبیعی بر پایه Phi و Pi
+var float resonance_factor = (PHI / (PI * 1000.0)) * i_step_mult
+
+// --- حافظه‌های یادگیری ماشین (نقشه‌برداری دقت ایجنت‌ها) ---
+var touch_map = map.new<int, int>()
+
+// انباشتگرهای دقت (Accuracy Accumulators) برای ۳ ایجنت
+// ایجنت 1: Order Flow (جریان سفارشات)
+var a1_bull_acc = map.new<int, float>()
+var a1_bear_acc = map.new<int, float>()
+
+// ایجنت 2: Kinetic Momentum (انرژی جنبشی)
+var a2_bull_acc = map.new<int, float>()
+var a2_bear_acc = map.new<int, float>()
+
+// ایجنت 3: Fractal Absorption (جذب نقدینگی و هندسه سایه‌ها)
+var a3_bull_acc = map.new<int, float>()
+var a3_bear_acc = map.new<int, float>()
+
+// --- متغیرهای کندل ---
+float bar_range = high - low
+float current_vol = na(volume) ? 1.0 : volume
+float atr14 = ta.atr(14)
+
+// --- موتور تحلیل تاریخچه و بهینه‌سازی خودکار (Self-Optimization) ---
+bool update_history = barstate.ishistory or barstate.isconfirmed
+
+if update_history and bar_range > 0 and atr14 > 0
+    // جای‌گذاری قیمت در فضای هندسی مبتنی بر لگاریتم طبیعی
+    int min_N = int(math.ceil(math.log(low) / resonance_factor))
+    int max_N = int(math.floor(math.log(high) / resonance_factor))
+    
+    if min_N <= max_N
+        // محاسبات احتمالات خام ایجنت‌ها در لحظه برخورد
+        // ایجنت 1: نسبت خریداران به فروشندگان درون کندل
+        float p1_bull_prob = ((close - low) / bar_range)
+        float p1_bear_prob = ((high - close) / bar_range)
+        
+        // ایجنت 2: قدرت جنبشی (VAKE) تعدیل شده با ATR
+        float p2_bull_prob = math.max(0, (close - open) / atr14)
+        float p2_bear_prob = math.max(0, (open - close) / atr14)
+        // نرمال‌سازی ایجنت 2
+        float p2_sum = p2_bull_prob + p2_bear_prob
+        p2_bull_prob := p2_sum > 0 ? p2_bull_prob / p2_sum : 0.5
+        p2_bear_prob := p2_sum > 0 ? p2_bear_prob / p2_sum : 0.5
+
+        for i = min_N to max_N
+            float lvl = math.exp(i * resonance_factor)
+            
+            // ایجنت 3: جذب نقدینگی (نزدیکی کلوز به خط نسبت به سایه‌ها)
+            float p3_bull_prob = 0.5
+            float p3_bear_prob = 0.5
+            if low < lvl and close > lvl
+                p3_bull_prob := (lvl - low) / bar_range // قدرت تله خرسی
+                p3_bear_prob := 1.0 - p3_bull_prob
+            else if high > lvl and close < lvl
+                p3_bear_prob := (high - lvl) / bar_range // قدرت تله گاوی
+                p3_bull_prob := 1.0 - p3_bear_prob
+
+            // ثبت تعداد کل برخوردها
+            int tc = touch_map.get(i)
+            touch_map.put(i, na(tc) ? 1 : tc + 1)
+            
+            // نتیجه قطعی کندل
+            bool act_bull = close > lvl
+            bool act_bear = close < lvl
+
+            // سیستم پاداش‌دهی: اگر نتیجه صعودی بود، ایجنت‌هایی که درصد صعودی بالاتری دادند امتیاز دقت (Accuracy) می‌گیرند
+            if act_bull
+                float c1 = na(a1_bull_acc.get(i)) ? 0.0 : a1_bull_acc.get(i)
+                a1_bull_acc.put(i, c1 + p1_bull_prob)
+                
+                float c2 = na(a2_bull_acc.get(i)) ? 0.0 : a2_bull_acc.get(i)
+                a2_bull_acc.put(i, c2 + p2_bull_prob)
+                
+                float c3 = na(a3_bull_acc.get(i)) ? 0.0 : a3_bull_acc.get(i)
+                a3_bull_acc.put(i, c3 + p3_bull_prob)
+                
+            else if act_bear
+                float c1 = na(a1_bear_acc.get(i)) ? 0.0 : a1_bear_acc.get(i)
+                a1_bear_acc.put(i, c1 + p1_bear_prob)
+                
+                float c2 = na(a2_bear_acc.get(i)) ? 0.0 : a2_bear_acc.get(i)
+                a2_bear_acc.put(i, c2 + p2_bear_prob)
+                
+                float c3 = na(a3_bear_acc.get(i)) ? 0.0 : a3_bear_acc.get(i)
+                a3_bear_acc.put(i, c3 + p3_bear_prob)
+
+// --- پردازش خروجی و تولید احتمالات لایو ---
+if barstate.islast
+    int below_idx = int(math.floor(math.log(close) / resonance_factor))
+    int above_idx = int(math.ceil(math.log(close) / resonance_factor))
+    if below_idx == above_idx
+        above_idx += 1
+
+    int center_N = int(math.round(math.log(close) / resonance_factor))
+    
+    // رسم شبکه رزونانس
+    for i = center_N - 50 to center_N + 49
+        float lvl = math.exp(i * resonance_factor)
+        color line_col = color.new(#d4af37, 85)
+        int line_wid = 1
+        
+        if i == above_idx
+            line_col := color.new(color.red, 20)
+            line_wid := 2
+        else if i == below_idx
+            line_col := color.new(color.green, 20)
+            line_wid := 2
+            
+        line.new(bar_index, lvl, bar_index + 10, lvl, color=line_col, width=line_wid, extend=extend.right)
+        
+    // جدول UI ماتریکس ایجنت‌ها
+    var table prob_table = table.new(position.top_right, 6, 12, border_width=1, border_color=color.rgb(30, 30, 30))
+    
+    color bg_h = color.rgb(10, 10, 12)
+    color txt_h = color.rgb(220, 180, 60)
+    
+    table.cell(prob_table, 0, 0, "مدار هندسی", bgcolor=bg_h, text_color=txt_h)
+    table.cell(prob_table, 1, 0, "وضعیت", bgcolor=bg_h, text_color=txt_h)
+    table.cell(prob_table, 2, 0, "ایجنت 1 (جریان)", bgcolor=bg_h, text_color=txt_h)
+    table.cell(prob_table, 3, 0, "ایجنت 2 (مومنتوم)", bgcolor=bg_h, text_color=txt_h)
+    table.cell(prob_table, 4, 0, "ایجنت 3 (تله نقدینگی)", bgcolor=bg_h, text_color=txt_h)
+    table.cell(prob_table, 5, 0, "احتمال نهایی قطعی", bgcolor=color.rgb(30, 20, 5), text_color=color.white)
+
+    int row = 1
+    for i = center_N + 5 to center_N - 5
+        float lvl = math.exp(i * resonance_factor)
+        int tc = na(touch_map.get(i)) ? 0 : touch_map.get(i)
+        
+        // استخراج دقت هر ایجنت
+        float a1_bull = na(a1_bull_acc.get(i)) ? 0.0 : a1_bull_acc.get(i)
+        float a1_bear = na(a1_bear_acc.get(i)) ? 0.0 : a1_bear_acc.get(i)
+        
+        float a2_bull = na(a2_bull_acc.get(i)) ? 0.0 : a2_bull_acc.get(i)
+        float a2_bear = na(a2_bear_acc.get(i)) ? 0.0 : a2_bear_acc.get(i)
+        
+        float a3_bull = na(a3_bull_acc.get(i)) ? 0.0 : a3_bull_acc.get(i)
+        float a3_bear = na(a3_bear_acc.get(i)) ? 0.0 : a3_bear_acc.get(i)
+        
+        // محاسبه Win Rate (احتمال برد) کاملاً اختصاصی برای هر ایجنت در این مدار
+        float p1_final_bull = tc > 0 ? (a1_bull / tc) * 100.0 : 0.0
+        float p2_final_bull = tc > 0 ? (a2_bull / tc) * 100.0 : 0.0
+        float p3_final_bull = tc > 0 ? (a3_bull / tc) * 100.0 : 0.0
+        
+        // وزن‌دهی خودکار: وزن هر ایجنت برابر با دقت تاریخی آن در این سطح است!
+        float weight1 = (a1_bull + a1_bear)
+        float weight2 = (a2_bull + a2_bear)
+        float weight3 = (a3_bull + a3_bear)
+        float total_weight = weight1 + weight2 + weight3
+        
+        // احتمال نهایی: ادغام هوشمندانه احتمالات ایجنت‌ها بر اساس اوزان بهینه‌شده‌ی خودشان
+        float optimal_bull_prob = total_weight > 0 ? ((p1_final_bull * weight1) + (p2_final_bull * weight2) + (p3_final_bull * weight3)) / total_weight : 0.0
+        float optimal_bear_prob = total_weight > 0 ? 100.0 - optimal_bull_prob : 0.0
+
+        // وضعیت لایو
+        bool is_touched = (high >= lvl) and (low <= lvl)
+        string status = is_touched ? "💥 قطعی شد" : (i == above_idx ? "مقاومت هدف" : (i == below_idx ? "حمایت هدف" : "آماده"))
+        color bg_c = is_touched ? color.rgb(160, 110, 10) : (i == above_idx ? color.new(color.red, 80) : (i == below_idx ? color.new(color.green, 85) : color.rgb(20, 20, 22)))
+        color txt_c = is_touched ? color.white : color.rgb(190, 190, 190)
+        
+        // رنگ‌های نهایی
+        color final_bg = optimal_bull_prob > 50 ? color.new(color.green, 70) : color.new(color.red, 70)
+        string final_txt = str.tostring(math.round(math.max(optimal_bull_prob, optimal_bear_prob), 1)) + "% " + (optimal_bull_prob > 50 ? "صعود" : "نزول")
+        
+        // چاپ در جدول ماتریس
+        table.cell(prob_table, 0, row, str.tostring(math.round(lvl, 5)), bgcolor=bg_c, text_color=txt_c)
+        table.cell(prob_table, 1, row, status, bgcolor=bg_c, text_color=txt_c)
+        table.cell(prob_table, 2, row, str.tostring(math.round(p1_final_bull, 1))+"%", bgcolor=color.rgb(15, 20, 25), text_color=color.rgb(150, 200, 255))
+        table.cell(prob_table, 3, row, str.tostring(math.round(p2_final_bull, 1))+"%", bgcolor=color.rgb(25, 20, 15), text_color=color.rgb(255, 200, 150))
+        table.cell(prob_table, 4, row, str.tostring(math.round(p3_final_bull, 1))+"%", bgcolor=color.rgb(20, 15, 25), text_color=color.rgb(200, 150, 255))
+        table.cell(prob_table, 5, row, final_txt, bgcolor=final_bg, text_color=color.white)
+        
+        row += 1

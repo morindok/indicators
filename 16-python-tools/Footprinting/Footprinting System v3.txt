@@ -1,0 +1,421 @@
+# -*- coding: utf-8 -*-
+"""
+Bybit BTC Footprint Chart (Ask/Bid) - Dash App
+--------------------------------------------------
+pip install dash plotly pandas numpy requests
+python gateio_footprint_dash.py
+
+- ç«—  ›Ê ùÅ—Ì‰  (ÕÃ„ »— «”«” ﬁÌ„  Ê “„«‰°  ›òÌò ask/bid) «“ œÌ «Ì  —ÌœÂ«Ì Bybit
+- Å‰· ”›«—‘«  ·ÕŸÂù«Ì (Order Book) œ— ”„  —«” 
+- —›—‘ ŒÊœò«—° ﬁ«»·  ‰ŸÌ„ »Êœ‰ Tick Size Ê Time Interval (ÅÌ‘ù›—÷ ? œﬁÌﬁÂ)
+
+‰ò Â „Â„: «‰œÅÊÌ‰  Å«»·Ìò »«Ì»Ì  (v5 market/recent-trade) ›ﬁÿ ¬Œ—Ì‰ ç‰œ ’œ/Â“«—
+ —Ìœ —Ê »—„Ìùê—œÊ‰Â Ê pagination »Â ”„  ê–‘ Â ‰œ«—Â. »Â Â„Ì‰ œ·Ì·  «—ÌŒçÂùÌ
+›Ê ùÅ—Ì‰  »Âù„—Ê— “„«‰ Ê »« «Ã—«Ì „” „— »—‰«„Â (poll Â— ç‰œ À«‰ÌÂ) œ— Õ«›ŸÂ
+Ã„⁄ „Ìù‘Â° ‰Â »« Ìò »òù›Ì· ⁄„Ìﬁ «Ê·ÌÂ.
+"""
+
+import threading
+import time
+from datetime import datetime, timezone
+
+import numpy as np
+import pandas as pd
+import requests
+from dash import Dash, dcc, html, Input, Output, State
+import plotly.graph_objects as go
+
+# ----------------------------------------------------------------------------
+# CONFIG
+# ----------------------------------------------------------------------------
+BYBIT_BASE = "https://api.bybit.com/v5"
+DEFAULT_PAIR = "BTCUSDT"
+DEFAULT_TICK_SIZE = 10.0          # ›«’·Â ﬁÌ„ Ì Â— —œÌ› (USD)
+DEFAULT_INTERVAL_SEC = 60         # ÿÊ· Â— ” Ê‰ “„«‰Ì (? œﬁÌﬁÂ)
+MAX_COLUMNS = 18                  #  ⁄œ«œ ” Ê‰ùÂ«Ì “„«‰Ì ‰„«Ì‘ œ«œÂ ‘œÂ
+HISTORY_TRIM_HOURS = 3            # Õœ«òÀ— ⁄„ﬁ  «—ÌŒçÂ ‰êÂùœ«—Ìù‘œÂ œ— Õ«›ŸÂ
+TRADES_PER_POLL = 1000            # Õœ«òÀ—  ⁄œ«œ  —Ìœ œ— Â— ›—«ŒÊ«‰Ì (”ﬁ› »«Ì»Ì  1000)
+ORDER_BOOK_DEPTH = 15
+
+BG_COLOR = "#12141a"
+GRID_LINE_COLOR = "#2a2d35"
+BID_TEXT_COLOR = "#5aa7ff"
+ASK_TEXT_COLOR = "#ff9a3c"
+POC_BORDER_COLOR = "#00e5ff"
+IMBALANCE_BORDER_COLOR = "#ff3b3b"
+
+TRADE_COLS = ["id", "ts", "price", "amount", "side"]
+
+# ----------------------------------------------------------------------------
+# SHARED STATE
+# ----------------------------------------------------------------------------
+_lock = threading.Lock()
+TRADE_HISTORY = pd.DataFrame(columns=TRADE_COLS)
+LAST_SEEN_ID = None
+
+
+# ----------------------------------------------------------------------------
+# BYBIT DATA ACCESS (v5 public API)
+# ----------------------------------------------------------------------------
+def fetch_trades(pair, limit=TRADES_PER_POLL, category="spot"):
+    """
+    GET /v5/market/recent-trade
+    ›Ì·œ side »«Ì»Ì : "Buy" Ì⁄‰Ì taker Œ—ÌœÂ (“œÂ »Â ask) -> ÕÃ„ Ask
+                      "Sell" Ì⁄‰Ì taker ›—ÊŒ Â (“œÂ »Â bid) -> ÕÃ„ Bid
+    «Ì‰ «‰œÅÊÌ‰  pagination »Â ê–‘ Â ‰œ«—œ∫ ›ﬁÿ ¬Œ—Ì‰ `limit`  —Ìœ —« „ÌùœÂœ.
+    """
+    params = {"category": category, "symbol": pair, "limit": min(int(limit), 1000)}
+    r = requests.get(f"{BYBIT_BASE}/market/recent-trade", params=params, timeout=10)
+    r.raise_for_status()
+    payload = r.json()
+    data = (payload.get("result") or {}).get("list") or []
+    if not data:
+        return pd.DataFrame(columns=TRADE_COLS)
+    df = pd.DataFrame(data)
+    df["ts"] = pd.to_datetime(df["time"].astype(np.int64), unit="ms", utc=True)
+    df["price"] = df["price"].astype(float)
+    df["amount"] = df["size"].astype(float)
+    df["id"] = df["execId"].astype(str)
+    df["side"] = df["side"].map({"Buy": "buy", "Sell": "sell"})
+    return df[TRADE_COLS]
+
+
+def fetch_order_book(pair, depth=ORDER_BOOK_DEPTH, category="spot"):
+    """GET /v5/market/orderbook -> {b: [[price,size],...] bids, a: [[price,size],...] asks}"""
+    params = {"category": category, "symbol": pair, "limit": depth}
+    r = requests.get(f"{BYBIT_BASE}/market/orderbook", params=params, timeout=10)
+    r.raise_for_status()
+    result = r.json().get("result") or {}
+    asks = pd.DataFrame(result.get("a", []), columns=["price", "amount"]).astype(float)
+    bids = pd.DataFrame(result.get("b", []), columns=["price", "amount"]).astype(float)
+    return asks, bids
+
+
+def backfill_history(pair, pages=1):
+    """Å— ò—œ‰ «Ê·ÌÂùÌ  «—ÌŒçÂ »« ¬Œ—Ì‰ œ” ÂùÌ  —Ìœ „ÊÃÊœ (»«Ì»Ì  pagination ‰œ«—œ)."""
+    global TRADE_HISTORY, LAST_SEEN_ID
+    try:
+        batch = fetch_trades(pair, limit=TRADES_PER_POLL)
+    except Exception:
+        return
+    if batch.empty:
+        return
+    with _lock:
+        TRADE_HISTORY = batch.drop_duplicates(subset="id").sort_values("ts")
+        LAST_SEEN_ID = TRADE_HISTORY["id"].iloc[-1]
+
+
+def poll_new_trades(pair):
+    global TRADE_HISTORY, LAST_SEEN_ID
+    try:
+        latest = fetch_trades(pair, limit=TRADES_PER_POLL)
+    except Exception:
+        return
+    if latest.empty:
+        return
+    with _lock:
+        merged = pd.concat([TRADE_HISTORY, latest]).drop_duplicates(subset="id")
+        cutoff = pd.Timestamp.now(tz=timezone.utc) - pd.Timedelta(hours=HISTORY_TRIM_HOURS)
+        merged = merged[merged["ts"] >= cutoff].sort_values("ts")
+        TRADE_HISTORY = merged
+        LAST_SEEN_ID = merged["id"].iloc[-1] if not merged.empty else LAST_SEEN_ID
+
+
+# ----------------------------------------------------------------------------
+# FOOTPRINT AGGREGATION
+# ----------------------------------------------------------------------------
+def build_footprint(df, tick_size, interval_sec, max_cols):
+    if df.empty:
+        return None
+
+    work = df.copy()
+    work["price_bucket"] = np.floor(work["price"] / tick_size) * tick_size
+    work["time_bucket"] = work["ts"].dt.floor(f"{interval_sec}s")
+
+    ask = (work[work["side"] == "buy"]
+           .groupby(["price_bucket", "time_bucket"])["amount"].sum())
+    bid = (work[work["side"] == "sell"]
+           .groupby(["price_bucket", "time_bucket"])["amount"].sum())
+
+    cols = sorted(work["time_bucket"].unique())[-max_cols:]
+    rows = sorted(work.loc[work["time_bucket"].isin(cols), "price_bucket"].unique(),
+                  reverse=True)
+    if not cols or not rows:
+        return None
+
+    ask_grid = pd.DataFrame(0.0, index=rows, columns=cols)
+    bid_grid = pd.DataFrame(0.0, index=rows, columns=cols)
+    for (p, t), v in ask.items():
+        if p in ask_grid.index and t in ask_grid.columns:
+            ask_grid.loc[p, t] = v
+    for (p, t), v in bid.items():
+        if p in bid_grid.index and t in bid_grid.columns:
+            bid_grid.loc[p, t] = v
+
+    total_grid = ask_grid + bid_grid
+    delta_grid = ask_grid - bid_grid
+
+    return {
+        "rows": rows,
+        "cols": cols,
+        "ask": ask_grid,
+        "bid": bid_grid,
+        "total": total_grid,
+        "delta": delta_grid,
+    }
+
+
+# ----------------------------------------------------------------------------
+# COLOR HELPERS
+# ----------------------------------------------------------------------------
+def volume_color(value, max_value):
+    if max_value <= 0 or value <= 0:
+        return "#1b1e24"
+    ratio = min(value / max_value, 1.0)
+    if ratio < 0.5:
+        t = ratio / 0.5
+        r, g, b = 255, int(235 - t * 70), int(190 - t * 190)
+    else:
+        t = (ratio - 0.5) / 0.5
+        r, g, b = int(255 - t * 55), int(165 - t * 130), 25
+    return f"rgb({r},{g},{b})"
+
+
+def fmt(v):
+    if v >= 1:
+        return f"{v:,.2f}".rstrip("0").rstrip(".")
+    return f"{v:.3f}".rstrip("0").rstrip(".") if v else "0"
+
+
+# ----------------------------------------------------------------------------
+# FIGURE BUILDERS
+# ----------------------------------------------------------------------------
+def render_footprint_figure(fp, pair):
+    rows, cols = fp["rows"], fp["cols"]
+    n_rows, n_cols = len(rows), len(cols)
+    max_total = fp["total"].values.max() if fp["total"].size else 0
+
+    poc_per_col = {c: fp["total"][c].idxmax() for c in cols if fp["total"][c].max() > 0}
+
+    shapes, annotations = [], []
+    row_pad_right = 2.4  # ” Ê‰ùÂ«Ì Œ·«’Â ”„  —«”  (delta / total)
+
+    for ci, c in enumerate(cols):
+        for ri, p in enumerate(rows):
+            x0, x1 = ci, ci + 1
+            y0, y1 = n_rows - ri - 1, n_rows - ri
+            total_v = fp["total"].loc[p, c]
+            bid_v, ask_v = fp["bid"].loc[p, c], fp["ask"].loc[p, c]
+            delta_v = fp["delta"].loc[p, c]
+
+            bg = volume_color(total_v, max_total)
+            border_color, border_w = GRID_LINE_COLOR, 0.5
+            if total_v > 0 and abs(delta_v) / total_v > 0.65:
+                border_color, border_w = IMBALANCE_BORDER_COLOR, 1.6
+            if poc_per_col.get(c) == p:
+                border_color, border_w = POC_BORDER_COLOR, 2
+
+            shapes.append(dict(type="rect", x0=x0, x1=x1, y0=y0, y1=y1,
+                                line=dict(color=border_color, width=border_w),
+                                fillcolor=bg, layer="below"))
+            # divider Œÿ Ê”ÿ ”·Ê·
+            shapes.append(dict(type="line", x0=(x0 + x1) / 2, x1=(x0 + x1) / 2,
+                                y0=y0, y1=y1, line=dict(color="rgba(0,0,0,0.33)", width=1)))
+
+            if total_v > 0:
+                annotations.append(dict(x=x0 + 0.25, y=(y0 + y1) / 2,
+                                         text=fmt(bid_v), showarrow=False,
+                                         font=dict(color=BID_TEXT_COLOR, size=9),
+                                         xanchor="center", yanchor="middle"))
+                annotations.append(dict(x=x0 + 0.75, y=(y0 + y1) / 2,
+                                         text=fmt(ask_v), showarrow=False,
+                                         font=dict(color=ASK_TEXT_COLOR, size=9),
+                                         xanchor="center", yanchor="middle"))
+
+        # Âœ— »«·«Ì Â— ” Ê‰: ÕÃ„ ò· Ê œ· «Ì ” Ê‰
+        col_vol = fp["total"][c].sum()
+        col_delta = fp["delta"][c].sum()
+        delta_color = "#3ddc84" if col_delta >= 0 else "#ff4d4d"
+        annotations.append(dict(x=ci + 0.5, y=n_rows + 0.6,
+                                 text=f"{fmt(col_vol)}", showarrow=False,
+                                 font=dict(color="#dddddd", size=9), xanchor="center"))
+        annotations.append(dict(x=ci + 0.5, y=n_rows + 1.3,
+                                 text=f"{'+' if col_delta >= 0 else ''}{fmt(col_delta)}",
+                                 showarrow=False, font=dict(color=delta_color, size=9),
+                                 xanchor="center"))
+        # ·Ì»· “„«‰ Å«ÌÌ‰
+        annotations.append(dict(x=ci + 0.5, y=-0.6,
+                                 text=pd.Timestamp(c).strftime("%H:%M"),
+                                 showarrow=False, font=dict(color="#9aa0aa", size=9),
+                                 xanchor="center"))
+
+    # ” Ê‰ùÂ«Ì Œ·«’Â ”„  —«” : ÕÃ„ —œÌ› + œ· «Ì —œÌ›
+    row_totals = fp["total"].sum(axis=1)
+    row_deltas = fp["delta"].sum(axis=1)
+    max_row_total = row_totals.max() if len(row_totals) else 0
+    for ri, p in enumerate(rows):
+        y0, y1 = n_rows - ri - 1, n_rows - ri
+        rt, rd = row_totals[p], row_deltas[p]
+        bar_len = (rt / max_row_total * row_pad_right) if max_row_total else 0
+        bar_color = "#3ddc84" if rd >= 0 else "#ff4d4d"
+        shapes.append(dict(type="rect", x0=n_cols, x1=n_cols + bar_len, y0=y0 + 0.15,
+                            y1=y1 - 0.15, fillcolor=bar_color, line=dict(width=0)))
+        annotations.append(dict(x=n_cols + row_pad_right + 0.1, y=(y0 + y1) / 2,
+                                 text=fmt(rt), showarrow=False,
+                                 font=dict(color="#dddddd", size=9), xanchor="left"))
+        # ·Ì»· ﬁÌ„  ”„  çÅ
+        annotations.append(dict(x=-0.15, y=(y0 + y1) / 2, text=f"{p:,.0f}",
+                                 showarrow=False, font=dict(color="#c8ccd4", size=9),
+                                 xanchor="right"))
+
+    fig = go.Figure()
+    fig.update_layout(
+        shapes=shapes, annotations=annotations,
+        xaxis=dict(range=[-2.6, n_cols + row_pad_right + 1.4], visible=False),
+        yaxis=dict(range=[-1.2, n_rows + 2], visible=False),
+        plot_bgcolor=BG_COLOR, paper_bgcolor=BG_COLOR,
+        margin=dict(l=10, r=10, t=30, b=10),
+        title=dict(text=f"{pair} ó Footprint (Bid ◊ Ask)", font=dict(color="#eee", size=13)),
+        height=680,
+    )
+    return fig
+
+
+def render_orderbook_figure(asks, bids, pair):
+    fig = go.Figure()
+    if asks.empty and bids.empty:
+        fig.update_layout(plot_bgcolor=BG_COLOR, paper_bgcolor=BG_COLOR)
+        return fig
+
+    asks_sorted = asks.sort_values("price", ascending=True).head(ORDER_BOOK_DEPTH)
+    bids_sorted = bids.sort_values("price", ascending=False).head(ORDER_BOOK_DEPTH)
+    max_size = max(asks_sorted["amount"].max() if not asks_sorted.empty else 0,
+                    bids_sorted["amount"].max() if not bids_sorted.empty else 0, 1)
+
+    n_ask = len(asks_sorted)
+    n_bid = len(bids_sorted)
+    total_rows = n_ask + n_bid
+    shapes, annotations = [], []
+
+    # asks «“ »«·« »Â Å«ÌÌ‰ ‰“Ê·Ì ‰“œÌò »Â Ê”ÿ
+    ask_rows = asks_sorted.sort_values("price", ascending=False)
+    for i, (_, row) in enumerate(ask_rows.iterrows()):
+        y0, y1 = total_rows - i - 1, total_rows - i
+        bar = row["amount"] / max_size
+        shapes.append(dict(type="rect", x0=0, x1=1, y0=y0, y1=y1,
+                            fillcolor="#241417", line=dict(color=GRID_LINE_COLOR, width=0.5)))
+        shapes.append(dict(type="rect", x0=0, x1=bar, y0=y0 + 0.1, y1=y1 - 0.1,
+                            fillcolor="#7a2020", line=dict(width=0)))
+        annotations.append(dict(x=0.02, y=(y0 + y1) / 2, text=fmt(row["amount"]),
+                                 showarrow=False, xanchor="left",
+                                 font=dict(color="#ff8080", size=9)))
+        annotations.append(dict(x=0.98, y=(y0 + y1) / 2, text=f"{row['price']:,.1f}",
+                                 showarrow=False, xanchor="right",
+                                 font=dict(color="#ff8080", size=9)))
+
+    for i, (_, row) in enumerate(bids_sorted.iterrows()):
+        y0, y1 = n_bid - i - 1, n_bid - i
+        bar = row["amount"] / max_size
+        shapes.append(dict(type="rect", x0=0, x1=1, y0=y0, y1=y1,
+                            fillcolor="#132419", line=dict(color=GRID_LINE_COLOR, width=0.5)))
+        shapes.append(dict(type="rect", x0=0, x1=bar, y0=y0 + 0.1, y1=y1 - 0.1,
+                            fillcolor="#1f7a45", line=dict(width=0)))
+        annotations.append(dict(x=0.02, y=(y0 + y1) / 2, text=fmt(row["amount"]),
+                                 showarrow=False, xanchor="left",
+                                 font=dict(color="#5be08c", size=9)))
+        annotations.append(dict(x=0.98, y=(y0 + y1) / 2, text=f"{row['price']:,.1f}",
+                                 showarrow=False, xanchor="right",
+                                 font=dict(color="#5be08c", size=9)))
+
+    fig.update_layout(
+        shapes=shapes, annotations=annotations,
+        xaxis=dict(range=[0, 1], visible=False),
+        yaxis=dict(range=[-0.5, max(total_rows, n_bid) + 0.5], visible=False),
+        plot_bgcolor=BG_COLOR, paper_bgcolor=BG_COLOR,
+        margin=dict(l=5, r=5, t=30, b=5),
+        title=dict(text=f"{pair} ó Order Book", font=dict(color="#eee", size=13)),
+        height=680,
+    )
+    return fig
+
+
+# ----------------------------------------------------------------------------
+# DASH APP
+# ----------------------------------------------------------------------------
+app = Dash(__name__)
+app.title = "Gate.io BTC Footprint"
+
+app.layout = html.Div(style={"backgroundColor": BG_COLOR, "padding": "10px",
+                              "fontFamily": "Tahoma, Arial"}, children=[
+    html.Div([
+        html.Label("Symbol (Bybit)", style={"color": "#ccc", "marginLeft": "10px"}),
+        dcc.Input(id="pair-input", type="text", value=DEFAULT_PAIR,
+                   style={"width": "110px", "marginLeft": "6px"}),
+        html.Label("Tick Size (USD)", style={"color": "#ccc", "marginLeft": "20px"}),
+        dcc.Input(id="tick-input", type="number", value=DEFAULT_TICK_SIZE, min=0.5, step=0.5,
+                   style={"width": "90px", "marginLeft": "6px"}),
+        html.Label("Interval (min)", style={"color": "#ccc", "marginLeft": "20px"}),
+        dcc.Dropdown(id="interval-dropdown",
+                     options=[{"label": f"{m} Min", "value": m * 60}
+                              for m in [1, 5, 15, 30, 60]],
+                     value=DEFAULT_INTERVAL_SEC, clearable=False,
+                     style={"width": "130px", "display": "inline-block",
+                            "marginLeft": "6px", "verticalAlign": "middle"}),
+        html.Label("Refresh (sec)", style={"color": "#ccc", "marginLeft": "20px"}),
+        dcc.Input(id="refresh-input", type="number", value=5, min=2, step=1,
+                   style={"width": "70px", "marginLeft": "6px"}),
+    ], style={"marginBottom": "10px"}),
+
+    dcc.Interval(id="tick", interval=5000, n_intervals=0),
+
+    html.Div([
+        html.Div(dcc.Graph(id="footprint-graph", config={"displayModeBar": False}),
+                  style={"width": "80%", "display": "inline-block"}),
+        html.Div(dcc.Graph(id="orderbook-graph", config={"displayModeBar": False}),
+                  style={"width": "19%", "display": "inline-block", "verticalAlign": "top"}),
+    ]),
+])
+
+
+@app.callback(Output("tick", "interval"), Input("refresh-input", "value"))
+def set_refresh(sec):
+    return max(int(sec or 5), 2) * 1000
+
+
+@app.callback(
+    Output("footprint-graph", "figure"),
+    Output("orderbook-graph", "figure"),
+    Input("tick", "n_intervals"),
+    State("pair-input", "value"),
+    State("tick-input", "value"),
+    State("interval-dropdown", "value"),
+)
+def update_charts(_, pair, tick_size, interval_sec):
+    pair = (pair or DEFAULT_PAIR).upper().replace("_", "").replace("/", "")
+    tick_size = float(tick_size or DEFAULT_TICK_SIZE)
+    interval_sec = int(interval_sec or DEFAULT_INTERVAL_SEC)
+
+    poll_new_trades(pair)
+    with _lock:
+        df = TRADE_HISTORY.copy()
+
+    fp = build_footprint(df, tick_size, interval_sec, MAX_COLUMNS)
+    fp_fig = render_footprint_figure(fp, pair) if fp else go.Figure(
+        layout=dict(plot_bgcolor=BG_COLOR, paper_bgcolor=BG_COLOR,
+                    annotations=[dict(text="œ— Õ«· œ—Ì«›  œÌ «...", x=0.5, y=0.5,
+                                       showarrow=False, font=dict(color="#888"))]))
+
+    try:
+        asks, bids = fetch_order_book(pair)
+    except Exception:
+        asks, bids = pd.DataFrame(columns=["price", "amount"]), pd.DataFrame(columns=["price", "amount"])
+    ob_fig = render_orderbook_figure(asks, bids, pair)
+
+    return fp_fig, ob_fig
+
+
+if __name__ == "__main__":
+    print("œ— Õ«· œ—Ì«›  œÌ «Ì «Ê·ÌÂ «“ Bybit ...")
+    backfill_history(DEFAULT_PAIR)
+    print(f" ⁄œ«œ  —ÌœÂ«Ì »«—ê–«—Ìù‘œÂ: {len(TRADE_HISTORY)}")
+    app.run(debug=True, host="0.0.0.0", port=8050)

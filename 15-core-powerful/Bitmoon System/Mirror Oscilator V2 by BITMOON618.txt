@@ -1,0 +1,97 @@
+//@version=5
+indicator("Mirror Oscilator{Morindok}", shorttitle="Sym Collision Osc", overlay=false, max_bars_back=4000)
+
+// --- Inputs ---
+n = input.int(title="Periods (Fractal)", defval=2, minval=2)
+sig_len = input.int(9, title="Signal Line Length")
+
+// --- Williams Fractals Logic (⁄Ì‰« ÿ»ﬁ òœ «’·Ì) ---
+bool upDnFront = true, bool upUp0 = true, bool upUp1 = true, bool upUp2 = true, bool upUp3 = true, bool upUp4 = true
+for i = 1 to n
+    upDnFront := upDnFront and (high[n-i] < high[n])
+    upUp0 := upUp0 and (high[n+i] < high[n])
+    upUp1 := upUp1 and (high[n+1] <= high[n] and high[n+i + 1] < high[n])
+    upUp2 := upUp2 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i + 2] < high[n])
+    upUp3 := upUp3 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i + 3] < high[n])
+    upUp4 := upUp4 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i + 4] < high[n])
+flagUpFrontier = upUp0 or upUp1 or upUp2 or upUp3 or upUp4
+upFractal = (upDnFront and flagUpFrontier)
+
+bool dnDnFront = true, bool dnUp0 = true, bool dnUp1 = true, bool dnUp2 = true, bool dnUp3 = true, bool dnUp4 = true
+for i = 1 to n
+    dnDnFront := dnDnFront and (low[n-i] > low[n])
+    dnUp0 := dnUp0 and (low[n+i] > low[n])
+    dnUp1 := dnUp1 and (low[n+1] >= low[n] and low[n+i + 1] > low[n])
+    dnUp2 := dnUp2 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i + 2] > low[n])
+    dnUp3 := dnUp3 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i + 3] > low[n])
+    dnUp4 := dnUp4 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i + 4] > low[n])
+flagDownFrontier = dnUp0 or dnUp1 or dnUp2 or dnUp3 or dnUp4
+downFractal = (dnDnFront and flagDownFrontier)
+
+// --- Automatic Time & Levels Logic ---
+var int target_bar_index = 0
+var float level1 = na
+var float level2 = na
+var float last_fractal_val = 0.0
+
+if upFractal or downFractal
+    target_bar_index := bar_index - n
+    float current_val = upFractal ? high[n] : low[n]
+    
+    //  ⁄ÌÌ‰ ”ÿÕ 1 Ê 2 »— «”«” ‘Ì» („ﬁ«Ì”Â »« ›—«ò «· ﬁ»·Ì)
+    if current_val > last_fractal_val // ‘Ì» ’⁄ÊœÌ
+        level1 := low[n]
+        level2 := high[n]
+    else // ‘Ì» ‰“Ê·Ì
+        level1 := high[n]
+        level2 := low[n]
+    last_fractal_val := current_val
+
+// ›«’·Â «“ ‰ﬁÿÂ „—Ã⁄ ›—«ò «·
+dist = bar_index - target_bar_index
+
+// --- Dynamic Length (⁄Ì‰« ÿ»ﬁ òœ «’·Ì) ---
+var int lastUpBar = na
+var int lastDownBar = na
+if upFractal
+    lastUpBar := bar_index - n
+if downFractal
+    lastDownBar := bar_index - n
+
+int base_dyn_length = 14 
+if not na(lastUpBar) and not na(lastDownBar)
+    base_dyn_length := math.max(1, math.abs(lastUpBar - lastDownBar))
+
+int offset_past_exact = (2 * dist) - n
+int sym_dyn_length = nz(base_dyn_length[math.max(0, offset_past_exact)], 14)
+sym_dyn_length := math.max(1, sym_dyn_length)
+
+// --- Full Symmetry Logic (ÿ»ﬁ òœ «’·Ì ‘„«) ---
+ma = ta.sma(close, sym_dyn_length)
+level_mid = (nz(level1, high) + nz(level2, low)) / 2
+
+// Å·ÂùÂ«Ì  ﬁ«—‰
+ma_sym_mid = 2 * level_mid - ma
+ma_sym_mid_2 = 2 * nz(level2, low) - ma_sym_mid
+
+// „Õ«”»Â ﬁÌ„  „ ﬁ«—‰ (ò‰œ· „ ﬁ«—‰ ”»“ ‰Â«ÌÌ œ— òœ ﬁ»·Ì)
+sym_mid2_c = 2 * ma_sym_mid_2 - close
+
+// --- Oscillator Construction ---
+// »—ŒÊ—œ ﬁÌ„  «’·Ì »« ò‰œ· „ ﬁ«—‰ = —”Ìœ‰ «”Ì·« Ê— »Â ’›—
+osc = close - sym_mid2_c
+osc_signal = ta.ema(osc, sig_len)
+
+// --- Visualization ---
+osc_color = osc > 0 ? color.new(color.lime, 0) : color.new(color.red, 0)
+
+plot_osc = plot(osc, title="Symmetric Oscillator", color=osc_color, linewidth=2)
+plot_sig = plot(osc_signal, title="Signal Line", color=color.new(color.orange, 0))
+plot_zero = plot(0, title="Collision Level (Zero)", color=color.new(color.gray, 50))
+
+// ‰„«Ì‘ ‰Ê«ÕÌ »—ŒÊ—œ/«‘»«⁄
+fill(plot_osc, plot_zero, color=osc > 0 ? color.new(color.lime, 80) : color.new(color.red, 80))
+
+// ⁄·«„ ùê–«—Ì œﬁÌﬁ »—ŒÊ—œÂ« (Collision)
+collision = ta.cross(osc, 0)
+plotshape(collision ? 0 : na, style=shape.circle, location=location.absolute, color=color.white, size=size.tiny, title="Collision Point")

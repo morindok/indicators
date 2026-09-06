@@ -1,0 +1,71 @@
+//@version=5
+indicator("Morindok Dynamic Gann Spiral Ratio", overlay=true)
+
+// --- Inputs (ÊäÙíãÇÊ ˜ÇÑÈÑ) ---
+src = input.source(close, title="Price Source")
+time_param = input.int(5, title="Time Cycle (Minutes)", minval=1, tooltip="åÑ äÏ ÏŞíŞå ãÚÇÏá í˜ ÑÎå ˜Çãá ÈÇÔÏ¿")
+
+use_auto_n = input.bool(true, title="Auto-calculate N (Volatility Based)", tooltip="ãÍÇÓÈå ÎæÏ˜ÇÑ N ÈÑ ÇÓÇÓ ãíÇäíä ÇÑÊİÇÚ ˜äÏáåÇí ? ÏŞíŞåÇí")
+manual_n = input.float(50.0, title="Manual N Value", minval=0.1, tooltip="ãŞÏÇÑ ÏÓÊí N ÏÑ ÕæÑÊ ÛíÑİÚÇá ÈæÏä ÍÇáÊ ÎæÏ˜ÇÑ")
+
+// Òíäå ÌÏíÏ ÈÑÇí ÓæÆí Èíä ÏÇíÑå æ ãÇÑí áÇÑíÊãí ØáÇíí
+use_spiral = input.bool(false, title="Use Golden Logarithmic Spiral", tooltip="İÚÇá ˜ÑÏä ãÇÑí áÇÑíÊãí ØáÇíí Èå ÌÇí ÏÇíÑå ãÚãæáí")
+
+ratio_mode = input.string("Time / Price", title="Ratio Mode", options=["Time / Price", "Price / Time"], tooltip="ÇäÊÎÇÈ äæÚ äÓÈÊ")
+ratio_target = input.float(0.618, title="Target Ratio", step=0.01, tooltip="äÓÈÊ åäÏÓí åÏİ")
+tolerance = input.float(0.01, title="Ratio Tolerance", minval=0.001, step=0.001, tooltip="ãíÒÇä ÇäÍÑÇİ ãÌÇÒ")
+
+// --- 1. Dynamic N Calculation ---
+m1_height = request.security(syminfo.tickerid, "1", high - low, barmerge.gaps_off, barmerge.lookahead_off)
+auto_n = ta.sma(m1_height, time_param)
+n = use_auto_n ? auto_n : manual_n
+safe_n = n == 0 ? 1.0 : n
+
+// --- Constants for Golden Spiral ---
+phi = 1.61803398875
+phi4 = math.pow(phi, 4) // ãíÒÇä ÑÔÏ ÔÚÇÚ ÏÑ í˜ ÏæÑ ˜Çãá ??? ÏÑÌå
+
+// --- 2. Gann Angles Calculation ---
+// ãÍÇÓÈå íÔÑİÊ ÎØí ÒãÇä æ ŞíãÊ ÏÑ ÈÇÒå ÌÇÑí (ÚÏÏí Èíä 0 ÊÇ 1)
+time_ms = time
+cycle_ms = time_param * 60 * 1000
+time_progress = (time_ms % cycle_ms) / cycle_ms
+price_progress = (src % safe_n) / safe_n
+
+float time_angle = na
+float price_angle = na
+
+if use_spiral
+    // ãÍÇÓÈå ÒÇæíå ÈÑ ÇÓÇÓ ÇãåÇí áÇÑíÊãí ãÇÑí ØáÇíí
+    r_time = 1.0 + time_progress * (phi4 - 1.0)
+    time_angle := (math.log(r_time) / math.log(phi)) * 90
+
+    r_price = 1.0 + price_progress * (phi4 - 1.0)
+    price_angle := (math.log(r_price) / math.log(phi)) * 90
+else
+    // ÍÇáÊ ÏÇíÑå ãÚãæáí (ÑÔÏ ÎØí ÒÇæíå)
+    time_angle := time_progress * 360
+    price_angle := price_progress * 360
+
+// --- 3. Custom Ratio Selection ---
+float ratio = na
+if ratio_mode == "Time / Price"
+    ratio := price_angle != 0 ? time_angle / price_angle : 0.0
+else
+    ratio := time_angle != 0 ? price_angle / time_angle : 0.0
+
+// --- 4. Instant Signal Logic ---
+is_target_ratio = math.abs(ratio - ratio_target) <= tolerance
+
+bullish_hit = is_target_ratio and close >= open
+bearish_hit = is_target_ratio and close < open
+
+// --- Plotting Pure Signals ---
+plotshape(bullish_hit, title="Gann Buy", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.normal, text="Buy Hit")
+plotshape(bearish_hit, title="Gann Sell", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.normal, text="Sell Hit")
+
+// --- Data Window ---
+plot(time_angle, title="Time Angle", display=display.data_window)
+plot(price_angle, title="Price Angle", display=display.data_window)
+plot(ratio, title="Current Ratio", display=display.data_window)
+plot(n, title="Calculated N (Scale)", display=display.data_window)

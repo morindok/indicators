@@ -1,0 +1,856 @@
+# ============================================================
+# 🪐 BITCOIN PLANETARY PREDICTION SYSTEM - FULL DASH APP (FINAL FIX)
+# ============================================================
+# pip install dash plotly yfinance numpy pandas scipy
+# ============================================================
+
+import dash
+from dash import dcc, html, Input, Output, State, callback
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import yfinance as yf
+import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
+import warnings
+
+warnings.filterwarnings('ignore')
+
+# ============================================================
+# 🎨 تم رنگي
+# ============================================================
+BG_COLOR = "#0a0a1a"
+CARD_BG = "#12122a"
+TEXT_COLOR = "#e0e0ff"
+GOLD = "#FFD700"
+ACCENT = "#00d4ff"
+GREEN = "#00ff88"
+RED = "#ff4444"
+PURPLE = "#a855f7"
+ORANGE = "#ff9500"
+
+
+# ============================================================
+# 📥 دريافت و پاکسازي داده‌ها
+# ============================================================
+def get_comprehensive_data():
+    try:
+        btc = yf.download("BTC-USD", period="3mo", interval="1h")
+        if btc.empty:
+            raise ValueError("داده‌اي دريافت نشد")
+        if isinstance(btc.columns, pd.MultiIndex):
+            btc.columns = btc.columns.get_level_values(0)
+        btc = btc.dropna(subset=['Close'])
+        btc.index = pd.to_datetime(btc.index)
+        if btc.index.tz is not None:
+            btc.index = btc.index.tz_localize(None)
+        return btc
+    except Exception as e:
+        print(f"❌ خطا: {e}")
+        dates = pd.date_range(end=datetime.now(), periods=500, freq='1h')
+        np.random.seed(42)
+        prices = 65000 + np.cumsum(np.random.randn(500) * 200)
+        return pd.DataFrame({
+            'Open': prices, 'High': prices + np.random.rand(500) * 300,
+            'Low': prices - np.random.rand(500) * 300,
+            'Close': prices, 'Volume': np.random.randint(100, 5000, 500)
+        }, index=dates)
+
+
+def calculate_all_indicators(df):
+    close = df['Close']
+    high = df['High']
+    low = df['Low']
+
+    delta = close.diff()
+    gain = delta.where(delta > 0, 0).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    df['MACD'] = ema12 - ema26
+    df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+    df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
+
+    df['BB_Middle'] = close.rolling(20).mean()
+    bb_std = close.rolling(20).std()
+    df['BB_Upper'] = df['BB_Middle'] + (bb_std * 2)
+    df['BB_Lower'] = df['BB_Middle'] - (bb_std * 2)
+
+    df['MA20'] = close.rolling(20).mean()
+    df['MA50'] = close.rolling(50).mean()
+    df['MA100'] = close.rolling(100).mean()
+    df['MA200'] = close.rolling(200).mean()
+
+    low_14 = low.rolling(14).min()
+    high_14 = high.rolling(14).max()
+    df['Stoch_K'] = 100 * (close - low_14) / (high_14 - low_14)
+    df['Stoch_D'] = df['Stoch_K'].rolling(3).mean()
+
+    tr1 = high - low
+    tr2 = abs(high - close.shift())
+    tr3 = abs(low - close.shift())
+    df['TR'] = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    df['ATR'] = df['TR'].rolling(14).mean()
+
+    df['Volume_MA'] = df['Volume'].rolling(20).mean()
+    df['ROC'] = ((close - close.shift(10)) / close.shift(10)) * 100
+
+    return df
+
+
+# ============================================================
+# 🪐 تحليل سياره‌اي
+# ============================================================
+def planetary_analysis(df):
+    latest = df.iloc[-1]
+    return {
+        "عطارد (RSI)": {
+            "position": latest['RSI'],
+            "signal": "اشباع خريد" if latest['RSI'] > 70 else "اشباع فروش" if latest['RSI'] < 30 else "خنثي",
+            "strength": abs(latest['RSI'] - 50) / 50,
+            "color": "#b5b5b5",
+            "bullish": latest['RSI'] < 30
+        },
+        "زهره (MACD)": {
+            "position": latest['MACD_Hist'],
+            "signal": "صعودي" if latest['MACD_Hist'] > 0 else "نزولي",
+            "strength": min(abs(latest['MACD_Hist']) / latest['Close'] * 1000, 1),
+            "color": "#e8cda0",
+            "bullish": latest['MACD_Hist'] > 0
+        },
+        "زمين (MA20)": {
+            "position": (latest['Close'] - latest['MA20']) / latest['MA20'] * 100,
+            "signal": "بالاي MA" if latest['Close'] > latest['MA20'] else "زير MA",
+            "strength": abs(latest['Close'] - latest['MA20']) / latest['MA20'],
+            "color": "#4b9cd3",
+            "bullish": latest['Close'] > latest['MA20']
+        },
+        "مريخ (MA50)": {
+            "position": (latest['Close'] - latest['MA50']) / latest['MA50'] * 100,
+            "signal": "بالاي MA" if latest['Close'] > latest['MA50'] else "زير MA",
+            "strength": abs(latest['Close'] - latest['MA50']) / latest['MA50'],
+            "color": "#c1440e",
+            "bullish": latest['Close'] > latest['MA50']
+        },
+        "مشتري (MA200)": {
+            "position": (latest['Close'] - latest['MA200']) / latest['MA200'] * 100 if pd.notna(latest['MA200']) else 0,
+            "signal": "صعودي بلندمدت" if pd.notna(latest['MA200']) and latest['Close'] > latest['MA200'] else "نزولي",
+            "strength": abs(latest['Close'] - latest['MA200']) / latest['MA200'] if pd.notna(latest['MA200']) else 0,
+            "color": "#c88b3a",
+            "bullish": pd.notna(latest['MA200']) and latest['Close'] > latest['MA200']
+        },
+        "زحل (Bollinger)": {
+            "position": (latest['Close'] - latest['BB_Lower']) / (latest['BB_Upper'] - latest['BB_Lower']) * 100,
+            "signal": "نزديک بالا" if latest['Close'] > latest['BB_Middle'] else "نزديک پايين",
+            "strength": abs(latest['Close'] - latest['BB_Middle']) / (latest['BB_Upper'] - latest['BB_Lower']),
+            "color": "#ead6b8",
+            "bullish": latest['Close'] < latest['BB_Middle']
+        },
+        "اورانوس (Stoch)": {
+            "position": latest['Stoch_K'],
+            "signal": "اشباع خريد" if latest['Stoch_K'] > 80 else "اشباع فروش" if latest['Stoch_K'] < 20 else "خنثي",
+            "strength": abs(latest['Stoch_K'] - 50) / 50,
+            "color": "#7de8e8",
+            "bullish": latest['Stoch_K'] < 20
+        },
+        "نپتون (Momentum)": {
+            "position": latest['ROC'],
+            "signal": "شتاب مثبت" if latest['ROC'] > 0 else "شتاب منفي",
+            "strength": min(abs(latest['ROC']) / 10, 1),
+            "color": "#3f54ba",
+            "bullish": latest['ROC'] > 0
+        }
+    }
+
+
+# ============================================================
+# 🔮 سيستم پيش‌بيني
+# ============================================================
+def predict_price(df, planets):
+    latest = df.iloc[-1]
+    current_price = latest['Close']
+
+    weights = {
+        "عطارد (RSI)": 0.15, "زهره (MACD)": 0.20,
+        "زمين (MA20)": 0.10, "مريخ (MA50)": 0.15,
+        "مشتري (MA200)": 0.20, "زحل (Bollinger)": 0.10,
+        "اورانوس (Stoch)": 0.05, "نپتون (Momentum)": 0.05
+    }
+
+    total_score = 0
+    bullish = 0
+    bearish = 0
+
+    for planet, data in planets.items():
+        weight = weights[planet]
+        pos = data['position']
+
+        if "RSI" in planet or "Stoch" in planet:
+            if pos > 70:
+                score = -weight * (pos - 70) / 30
+                bearish += 1
+            elif pos < 30:
+                score = weight * (30 - pos) / 30
+                bullish += 1
+            else:
+                score = 0
+        else:
+            if data['bullish']:
+                score = weight * min(abs(pos) / 5, 1)
+                bullish += 1
+            else:
+                score = -weight * min(abs(pos) / 5, 1)
+                bearish += 1
+
+        total_score += score
+
+    if total_score > 0.2:
+        trend = "صعودي قوي"
+    elif total_score > 0:
+        trend = "صعودي ضعيف"
+    elif total_score > -0.2:
+        trend = "نزولي ضعيف"
+    else:
+        trend = "نزولي قوي"
+
+    volatility = latest['ATR'] / current_price
+
+    predictions = {}
+    for tf, mult, conf in [("1 ساعته", 0.5, 85), ("24 ساعته", 2, 75),
+                           ("7 روزه", 5, 65), ("30 روزه", 15, 50)]:
+        predictions[tf] = {
+            "price": current_price * (1 + total_score * volatility * mult),
+            "confidence": conf,
+            "range_low": current_price * (1 - volatility * mult),
+            "range_high": current_price * (1 + volatility * mult)
+        }
+
+    return {
+        "current_price": current_price,
+        "trend": trend,
+        "total_score": total_score,
+        "bullish": bullish,
+        "bearish": bearish,
+        "predictions": predictions,
+        "volatility": volatility * 100
+    }
+
+
+# ============================================================
+# 🧪 BACKTESTING
+# ============================================================
+def run_backtest(df, step_size=24, forecast_hours=24):
+    predictions_list = []
+    start_idx = 200
+
+    for i in range(start_idx, len(df) - forecast_hours, step_size):
+        historical_df = df.iloc[:i + 1].copy()
+        historical_df = calculate_all_indicators(historical_df)
+
+        planets = planetary_analysis(historical_df)
+        prediction = predict_price(historical_df, planets)
+
+        actual_price = df['Close'].iloc[i + forecast_hours]
+        predicted_price = prediction['predictions']['24 ساعته']['price']
+
+        error = ((actual_price - predicted_price) / predicted_price) * 100
+        mae = abs(error)
+
+        predictions_list.append({
+            'timestamp': df.index[i],
+            'actual_price': actual_price,
+            'predicted_price': predicted_price,
+            'error_pct': error,
+            'mae': mae,
+            'trend': prediction['trend'],
+            'score': prediction['total_score'],
+            'volatility': prediction['volatility']
+        })
+
+    return pd.DataFrame(predictions_list)
+
+
+def calculate_backtest_metrics(backtest_df):
+    return {
+        'total_predictions': len(backtest_df),
+        'avg_error': backtest_df['error_pct'].mean(),
+        'std_error': backtest_df['error_pct'].std(),
+        'mae': backtest_df['mae'].mean(),
+        'rmse': np.sqrt((backtest_df['error_pct'] ** 2).mean()),
+        'accuracy': 100 - backtest_df['mae'].mean(),
+        'positive_predictions': (backtest_df['error_pct'] > 0).sum(),
+        'negative_predictions': (backtest_df['error_pct'] < 0).sum(),
+        'max_profit': backtest_df['error_pct'].max(),
+        'max_loss': backtest_df['error_pct'].min(),
+        'win_rate': ((backtest_df['error_pct'] > -2) & (backtest_df['error_pct'] < 2)).sum() / len(backtest_df) * 100
+    }
+
+
+# ============================================================
+# 📊 ساخت نمودارها
+# ============================================================
+def build_main_chart(df, prediction):
+    fig = make_subplots(
+        rows=4, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.03,
+        row_heights=[0.4, 0.2, 0.2, 0.2],
+        subplot_titles=['📈 قيمت و باند بولينگر', '📉 RSI', '📊 MACD', '📉 Stochastic']
+    )
+
+    fig.add_trace(go.Candlestick(
+        x=df.index, open=df['Open'], high=df['High'],
+        low=df['Low'], close=df['Close'],
+        increasing_line_color=GREEN, decreasing_line_color=RED,
+        name='قيمت'
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['BB_Upper'], mode='lines',
+        line=dict(color='rgba(255,100,100,0.5)', width=1), name='BB بالا'
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['BB_Lower'], mode='lines',
+        line=dict(color='rgba(100,255,100,0.5)', width=1),
+        fill='tonexty', fillcolor='rgba(100,255,100,0.05)', name='BB پايين'
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['RSI'], mode='lines',
+        line=dict(color=PURPLE, width=2), name='RSI'
+    ), row=2, col=1)
+    fig.add_hline(y=70, line_dash="dash", line_color=RED, opacity=0.5, row=2, col=1)
+    fig.add_hline(y=30, line_dash="dash", line_color=GREEN, opacity=0.5, row=2, col=1)
+
+    colors = [GREEN if v >= 0 else RED for v in df['MACD_Hist']]
+    fig.add_trace(go.Bar(
+        x=df.index, y=df['MACD_Hist'], marker_color=colors, name='MACD Hist'
+    ), row=3, col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['MACD'], mode='lines',
+        line=dict(color=ACCENT, width=1.5), name='MACD'
+    ), row=3, col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['MACD_Signal'], mode='lines',
+        line=dict(color=RED, width=1.5), name='Signal'
+    ), row=3, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['Stoch_K'], mode='lines',
+        line=dict(color=ACCENT, width=1.5), name='%K'
+    ), row=4, col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['Stoch_D'], mode='lines',
+        line=dict(color=GOLD, width=1.5), name='%D'
+    ), row=4, col=1)
+    fig.add_hline(y=80, line_dash="dash", line_color=RED, opacity=0.5, row=4, col=1)
+    fig.add_hline(y=20, line_dash="dash", line_color=GREEN, opacity=0.5, row=4, col=1)
+
+    fig.update_layout(
+        height=700,
+        template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color=TEXT_COLOR, family='Tahoma'),
+        margin=dict(l=50, r=20, t=50, b=20),
+        xaxis_rangeslider_visible=False,
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+        showlegend=True
+    )
+
+    fig.update_xaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)', row=4, col=1)
+    for i in range(1, 5):
+        fig.update_yaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)', row=i, col=1)
+
+    return fig
+
+
+def build_prediction_tab(df, prediction, planets):
+    """تب پيش‌بيني آينده"""
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=[
+            f'🔮 پيش‌بيني قيمت (جاري: ${prediction["current_price"]:,.0f})',
+            '🌌 امتياز کلي منظومه',
+            '🪐 موقعيت سيارات',
+            '📡 خلاصه سيگنال‌ها'
+        ],
+        specs=[[{"type": "scatter"}, {"type": "indicator"}],
+               [{"type": "bar"}, {"type": "pie"}]]
+    )
+
+    # 1. نمودار قيمت با پيش‌بيني‌ها
+    fig.add_trace(go.Scatter(
+        x=df.index[-100:], y=df['Close'].iloc[-100:],
+        mode='lines', name='قيمت واقعي (100 کندل آخر)',
+        line=dict(color=GREEN, width=2)
+    ), row=1, col=1)
+
+    last_date = df.index[-1]
+    colors_pred = [GOLD, ACCENT, PURPLE, ORANGE]
+    for idx, (tf, data) in enumerate(prediction['predictions'].items()):
+        if 'ساعت' in tf:
+            delta = pd.Timedelta(hours=1)
+        elif '24' in tf:
+            delta = pd.Timedelta(days=1)
+        elif '7' in tf:
+            delta = pd.Timedelta(days=7)
+        else:
+            delta = pd.Timedelta(days=30)
+
+        future_date = last_date + delta
+
+        fig.add_trace(go.Scatter(
+            x=[last_date, future_date],
+            y=[prediction['current_price'], data['price']],
+            mode='lines+markers',
+            name=f'پيش‌بيني {tf}',
+            line=dict(color=colors_pred[idx % len(colors_pred)], width=2, dash='dot'),
+            marker=dict(size=8, color=colors_pred[idx % len(colors_pred)])
+        ), row=1, col=1)
+
+    # 2. گيج امتياز
+    score = prediction['total_score']
+    normalized = max(-1, min(1, score)) * 100
+
+    fig.add_trace(go.Indicator(
+        mode="gauge+number",
+        value=normalized,
+        number={'font': {'color': TEXT_COLOR, 'size': 24}},
+        title={'text': "امتياز", 'font': {'size': 14}},
+        gauge={
+            'axis': {'range': [-100, 100]},
+            'bar': {'color': GOLD if abs(normalized) > 20 else ACCENT},
+            'steps': [
+                {'range': [-100, -50], 'color': 'rgba(255,0,0,0.3)'},
+                {'range': [-50, 0], 'color': 'rgba(255,100,0,0.2)'},
+                {'range': [0, 50], 'color': 'rgba(0,200,100,0.2)'},
+                {'range': [50, 100], 'color': 'rgba(0,255,0,0.3)'}
+            ],
+            'threshold': {'line': {'color': RED, 'width': 3}, 'thickness': 0.75, 'value': 0}
+        }
+    ), row=1, col=2)
+
+    # 3. نمودار سيارات
+    names = list(planets.keys())
+    positions = [p['position'] for p in planets.values()]
+    colors_planet = [GREEN if p['bullish'] else RED for p in planets.values()]
+
+    fig.add_trace(go.Bar(
+        x=names, y=positions,
+        marker_color=colors_planet,
+        text=[f"{p:.1f}" for p in positions],
+        textposition='outside',
+        textfont=dict(color=TEXT_COLOR, size=9),
+        name='سيارات'
+    ), row=2, col=1)
+
+    # ✅ FIX نهايي: حذف zerolineopacity و استفاده از rgba در zerolinecolor
+    fig.update_yaxes(
+        zeroline=True,
+        zerolinecolor='rgba(255, 255, 255, 0.3)',
+        zerolinewidth=1,
+        row=2, col=1
+    )
+
+    # 4. نمودار دايره‌اي سيگنال‌ها
+    fig.add_trace(go.Pie(
+        labels=['صعودي', 'نزولي'],
+        values=[prediction['bullish'], prediction['bearish']],
+        marker_colors=[GREEN, RED],
+        textinfo='label+value+percent',
+        textfont=dict(color=TEXT_COLOR, size=12),
+        hole=0.4,
+        name='سيگنال‌ها'
+    ), row=2, col=2)
+
+    fig.update_layout(
+        height=700,
+        template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color=TEXT_COLOR, family='Tahoma'),
+        margin=dict(l=50, r=20, t=60, b=20),
+        showlegend=True,
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1)
+    )
+
+    fig.update_xaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)', row=2, col=1)
+    fig.update_yaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)', row=1, col=1)
+    fig.update_yaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)', row=2, col=1)
+
+    return fig
+
+
+def build_backtest_chart(df, backtest_df, metrics):
+    fig = make_subplots(
+        rows=3, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.05,
+        row_heights=[0.5, 0.25, 0.25],
+        subplot_titles=[
+            f'🛤️ مسير پيش‌بيني در گذشته (MAE: {metrics["mae"]:.2f}%)',
+            '⚖️ خطاي پيش‌بيني (%)',
+            '🌌 امتياز منظومه'
+        ]
+    )
+
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['Close'],
+        mode='lines', name='قيمت واقعي',
+        line=dict(color=GREEN, width=2), opacity=0.6
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=backtest_df['timestamp'],
+        y=backtest_df['predicted_price'],
+        mode='lines+markers', name='پيش‌بيني شده',
+        line=dict(color=GOLD, width=2, dash='dot'),
+        marker=dict(size=6, color=GOLD, symbol='diamond'), opacity=0.8
+    ), row=1, col=1)
+
+    for idx, row in backtest_df.iterrows():
+        fig.add_trace(go.Scatter(
+            x=[row['timestamp'], row['timestamp'] + pd.Timedelta(hours=24)],
+            y=[row['predicted_price'], row['actual_price']],
+            mode='lines',
+            line=dict(color=RED if row['error_pct'] < -2 else GREEN if row['error_pct'] > 2 else ACCENT,
+                      width=1, dash='dash'),
+            showlegend=False, opacity=0.3
+        ), row=1, col=1)
+
+    colors = [GREEN if e > 0 else RED for e in backtest_df['error_pct']]
+    fig.add_trace(go.Bar(
+        x=backtest_df['timestamp'], y=backtest_df['error_pct'],
+        marker_color=colors, name='خطا (%)', opacity=0.7
+    ), row=2, col=1)
+
+    fig.add_hline(y=0, line_color='white', line_dash='dash', opacity=0.5, row=2, col=1)
+    fig.add_hline(y=2, line_color=GREEN, line_dash='dash', opacity=0.3, row=2, col=1)
+    fig.add_hline(y=-2, line_color=RED, line_dash='dash', opacity=0.3, row=2, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=backtest_df['timestamp'], y=backtest_df['score'],
+        mode='lines', name='امتياز',
+        line=dict(color=PURPLE, width=2),
+        fill='tozeroy', fillcolor='rgba(168,85,247,0.2)'
+    ), row=3, col=1)
+    fig.add_hline(y=0, line_color='white', line_dash='dash', opacity=0.5, row=3, col=1)
+
+    fig.update_layout(
+        height=700, template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color=TEXT_COLOR, family='Tahoma'),
+        margin=dict(l=50, r=20, t=60, b=20), showlegend=True,
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1)
+    )
+
+    for i in range(1, 4):
+        fig.update_yaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)', row=i, col=1)
+    fig.update_xaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)', row=3, col=1)
+
+    return fig
+
+
+def build_accuracy_chart(backtest_df):
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=['توزيع خطاها', 'دقت بر اساس روند', 'خطاي تجمعي', 'بازه خطا'],
+        specs=[[{"type": "histogram"}, {"type": "bar"}],
+               [{"type": "scatter"}, {"type": "box"}]]
+    )
+
+    fig.add_trace(go.Histogram(
+        x=backtest_df['error_pct'], nbinsx=30,
+        name='توزيع', marker_color=ACCENT, opacity=0.7
+    ), row=1, col=1)
+
+    trend_accuracy = backtest_df.groupby('trend')['mae'].mean()
+    fig.add_trace(go.Bar(
+        x=trend_accuracy.index, y=trend_accuracy.values,
+        name='MAE',
+        marker_color=[GREEN, GOLD, RED, PURPLE][:len(trend_accuracy)],
+        opacity=0.8
+    ), row=1, col=2)
+
+    cumulative_error = backtest_df['mae'].cumsum() / np.arange(1, len(backtest_df) + 1)
+    fig.add_trace(go.Scatter(
+        x=np.arange(len(backtest_df)), y=cumulative_error,
+        mode='lines', name='MAE تجمعي',
+        line=dict(color=GOLD, width=2)
+    ), row=2, col=1)
+
+    fig.add_trace(go.Box(
+        y=backtest_df['error_pct'], name='خطا',
+        marker_color=ORANGE, boxpoints='outliers'
+    ), row=2, col=2)
+
+    fig.update_layout(
+        height=600, template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color=TEXT_COLOR, family='Tahoma', size=10),
+        margin=dict(l=50, r=20, t=50, b=20), showlegend=False
+    )
+
+    return fig
+
+
+# ============================================================
+# 🚀 اپليکيشن Dash
+# ============================================================
+app = dash.Dash(__name__, suppress_callback_exceptions=True)
+app.title = "🪐 منظومه پيش‌بيني بيت‌کوين"
+
+app.layout = html.Div([
+    html.Div([
+        html.H1("🪐 سيستم پيش‌بيني منظومه بيت‌کوين",
+                style={"color": GOLD, "textAlign": "center",
+                       "fontSize": "24px", "margin": "15px 0 5px",
+                       "fontFamily": "Tahoma"}),
+        html.P("تحليل تکنيکال + پيش‌بيني آينده + بک‌تست تاريخي",
+               style={"color": ACCENT, "textAlign": "center",
+                      "fontSize": "13px", "margin": "0 0 15px"}),
+    ], style={"background": f"linear-gradient(180deg, {CARD_BG}, {BG_COLOR})"}),
+
+    html.Div(id='stats-cards', style={
+        "display": "flex", "flexWrap": "wrap", "justifyContent": "center",
+        "gap": "12px", "padding": "10px 20px",
+    }),
+
+    html.Div([
+        dcc.Tabs(id='tabs', value='prediction', children=[
+            dcc.Tab(label='🔮 پيش‌بيني آينده', value='prediction',
+                    style={"background": CARD_BG, "color": TEXT_COLOR},
+                    selected_style={"background": GOLD, "color": "#000"}),
+            dcc.Tab(label='🛤️ مسير پيش‌بيني در گذشته', value='backtest-path',
+                    style={"background": CARD_BG, "color": TEXT_COLOR},
+                    selected_style={"background": GOLD, "color": "#000"}),
+            dcc.Tab(label='🎯 تحليل دقت', value='accuracy',
+                    style={"background": CARD_BG, "color": TEXT_COLOR},
+                    selected_style={"background": GOLD, "color": "#000"}),
+            dcc.Tab(label='📈 نمودار اصلي', value='main-chart',
+                    style={"background": CARD_BG, "color": TEXT_COLOR},
+                    selected_style={"background": GOLD, "color": "#000"}),
+        ], style={"marginBottom": "10px"}),
+
+        html.Div(id='tabs-content')
+    ], style={"padding": "0 10px"}),
+
+    html.Div([
+        html.Button("🔄 بروزرساني تحليل", id='btn-refresh', n_clicks=0,
+                    style={"background": GOLD, "color": "#000",
+                           "border": "none", "borderRadius": "8px",
+                           "padding": "10px 25px", "fontSize": "14px",
+                           "cursor": "pointer", "fontWeight": "bold",
+                           "margin": "10px"}),
+        html.Span(id='status-text',
+                  style={"color": TEXT_COLOR, "fontSize": "12px", "marginRight": "15px"}),
+    ], style={"textAlign": "center", "padding": "10px"}),
+
+    dcc.Store(id='store-data'),
+    dcc.Store(id='store-backtest'),
+
+    html.Div([
+        html.P("📡 داده‌ها از Yahoo Finance | تحليل تکنيکال + مدل سياره‌اي | بک‌تست تاريخي",
+               style={"color": "rgba(255,255,255,0.4)", "textAlign": "center",
+                      "fontSize": "11px", "margin": "15px"}),
+    ]),
+], style={
+    "background": BG_COLOR,
+    "minHeight": "100vh",
+    "fontFamily": "Tahoma, Arial",
+    "direction": "rtl",
+})
+
+
+# ============================================================
+# 🔄 Callbacks
+# ============================================================
+@callback(
+    [Output('stats-cards', 'children'),
+     Output('store-data', 'data'),
+     Output('store-backtest', 'data'),
+     Output('status-text', 'children')],
+    [Input('btn-refresh', 'n_clicks')],
+)
+def run_analysis(n_clicks):
+    print("🔄 در حال بروزرساني...")
+
+    df = get_comprehensive_data()
+    df = calculate_all_indicators(df)
+
+    backtest_df = run_backtest(df, step_size=24, forecast_hours=24)
+    metrics = calculate_backtest_metrics(backtest_df)
+
+    planets = planetary_analysis(df)
+    prediction = predict_price(df, planets)
+
+    current = prediction['current_price']
+    trend = prediction['trend']
+    trend_color = GREEN if "صعودي" in trend else RED if "نزولي" in trend else ACCENT
+
+    cards = [
+        html.Div([
+            html.Div("💰 قيمت فعلي", style={"color": "rgba(255,255,255,0.5)", "fontSize": "11px"}),
+            html.Div(f"${current:,.0f}", style={"color": GOLD, "fontSize": "22px", "fontWeight": "bold"}),
+        ], style=card_style(GOLD)),
+
+        html.Div([
+            html.Div("📈 روند کلي", style={"color": "rgba(255,255,255,0.5)", "fontSize": "11px"}),
+            html.Div(trend, style={"color": trend_color, "fontSize": "20px", "fontWeight": "bold"}),
+        ], style=card_style(trend_color)),
+
+        html.Div([
+            html.Div("🌌 امتياز منظومه", style={"color": "rgba(255,255,255,0.5)", "fontSize": "11px"}),
+            html.Div(f"{prediction['total_score']:.3f}",
+                     style={"color": PURPLE, "fontSize": "20px", "fontWeight": "bold"}),
+        ], style=card_style(PURPLE)),
+
+        html.Div([
+            html.Div("📉 MAE بک‌تست", style={"color": "rgba(255,255,255,0.5)", "fontSize": "11px"}),
+            html.Div(f"{metrics['mae']:.2f}%", style={"color": ORANGE, "fontSize": "20px", "fontWeight": "bold"}),
+        ], style=card_style(ORANGE)),
+
+        html.Div([
+            html.Div("🎯 دقت مدل", style={"color": "rgba(255,255,255,0.5)", "fontSize": "11px"}),
+            html.Div(f"{metrics['accuracy']:.1f}%", style={"color": GREEN, "fontSize": "20px", "fontWeight": "bold"}),
+        ], style=card_style(GREEN)),
+
+        html.Div([
+            html.Div("🏆 Win Rate", style={"color": "rgba(255,255,255,0.5)", "fontSize": "11px"}),
+            html.Div(f"{metrics['win_rate']:.1f}%", style={"color": ACCENT, "fontSize": "20px", "fontWeight": "bold"}),
+        ], style=card_style(ACCENT)),
+    ]
+
+    status = f"✅ کامل شد | {len(df)} کندل | {metrics['total_predictions']} پيش‌بيني بک‌تست"
+
+    return (cards, df.to_json(date_format='iso'), backtest_df.to_json(date_format='iso'), status)
+
+
+def build_prediction_table(prediction):
+    """ساخت جدول پيش‌بيني - جدا شده براي خوانايي بهتر"""
+    rows = []
+    current = prediction['current_price']
+
+    for tf, data in prediction['predictions'].items():
+        change_pct = ((data['price'] - current) / current) * 100
+        change_str = f"+{change_pct:.2f}%" if change_pct > 0 else f"{change_pct:.2f}%"
+        change_color = GREEN if change_pct > 0 else RED
+        border_color = GREEN if change_pct > 0 else RED
+
+        row = html.Div([
+            html.Div([
+                html.Span(tf, style={"color": TEXT_COLOR, "fontSize": "14px", "fontWeight": "bold"}),
+                html.Span(f" ({data['confidence']}% اطمينان)",
+                          style={"color": "rgba(255,255,255,0.4)", "fontSize": "11px"}),
+            ]),
+            html.Div([
+                html.Span(f"${data['price']:,.0f}",
+                          style={"color": GOLD, "fontSize": "18px", "fontWeight": "bold"}),
+                html.Span(f" ({change_str})",
+                          style={"color": change_color, "fontSize": "13px", "marginRight": "8px"}),
+            ]),
+            html.Div([
+                html.Span(f"محدوده: ${data['range_low']:,.0f} - ${data['range_high']:,.0f}",
+                          style={"color": "rgba(255,255,255,0.5)", "fontSize": "11px"}),
+            ]),
+        ], style={
+            "background": "rgba(255,255,255,0.03)",
+            "borderRadius": "8px",
+            "padding": "12px 15px",
+            "margin": "8px 0",
+            "borderRight": f"4px solid {border_color}",
+        })
+        rows.append(row)
+
+    return html.Div(rows, style={"padding": "10px 20px"})
+
+
+@callback(
+    Output('tabs-content', 'children'),
+    [Input('tabs', 'value'),
+     Input('store-data', 'data'),
+     Input('store-backtest', 'data')]
+)
+def render_tab_content(tab, df_json, backtest_json):
+    if df_json is None or backtest_json is None:
+        return html.Div("⏳ در حال بارگذاري...",
+                        style={"color": TEXT_COLOR, "textAlign": "center", "padding": "50px"})
+
+    df = pd.read_json(df_json)
+    df.index = pd.to_datetime(df.index)
+    df = calculate_all_indicators(df)
+
+    backtest_df = pd.read_json(backtest_json)
+    backtest_df['timestamp'] = pd.to_datetime(backtest_df['timestamp'])
+    metrics = calculate_backtest_metrics(backtest_df)
+    planets = planetary_analysis(df)
+    prediction = predict_price(df, planets)
+
+    if tab == 'prediction':
+        return html.Div([
+            html.Div([
+                html.H3("🔮 پيش‌بيني قيمت در آينده",
+                        style={"color": GOLD, "fontSize": "16px", "margin": "15px"}),
+                build_prediction_table(prediction),
+            ], style={"background": CARD_BG, "borderRadius": "12px",
+                      "border": "1px solid rgba(255,215,0,0.2)", "margin": "10px"}),
+
+            html.Div([
+                dcc.Graph(
+                    figure=build_prediction_tab(df, prediction, planets),
+                    config={'displayModeBar': True}
+                ),
+            ], style={"background": CARD_BG, "borderRadius": "12px",
+                      "border": "1px solid rgba(168,85,247,0.2)", "margin": "10px"}),
+        ])
+
+    elif tab == 'backtest-path':
+        return html.Div([
+            dcc.Graph(
+                figure=build_backtest_chart(df, backtest_df, metrics),
+                config={'displayModeBar': True}
+            ),
+        ], style={"background": CARD_BG, "borderRadius": "12px", "padding": "10px", "margin": "10px"})
+
+    elif tab == 'accuracy':
+        return html.Div([
+            dcc.Graph(
+                figure=build_accuracy_chart(backtest_df),
+                config={'displayModeBar': True}
+            ),
+        ], style={"background": CARD_BG, "borderRadius": "12px", "padding": "10px", "margin": "10px"})
+
+    else:
+        return html.Div([
+            dcc.Graph(
+                figure=build_main_chart(df, prediction),
+                config={'displayModeBar': True}
+            ),
+        ], style={"background": CARD_BG, "borderRadius": "12px", "padding": "10px", "margin": "10px"})
+
+
+def card_style(border_color):
+    return {
+        "background": CARD_BG,
+        "borderRadius": "12px",
+        "border": f"1px solid {border_color}33",
+        "borderRight": f"4px solid {border_color}",
+        "padding": "12px 18px",
+        "minWidth": "150px",
+        "flex": "1",
+        "boxShadow": "0 4px 15px rgba(0,0,0,0.3)",
+    }
+
+
+# ============================================================
+# ▶️ اجرا
+# ============================================================
+if __name__ == '__main__':
+    print("🚀 راه‌اندازي سيستم پيش‌بيني منظومه بيت‌کوين...")
+    print("📡 در حال دريافت داده‌ها از Yahoo Finance...")
+    app.run(debug=True, port=8050, host='0.0.0.0')

@@ -1,0 +1,731 @@
+# -*- coding: utf-8 -*-
+"""
+Bybit Footprint Chart - Stable Connection + Order-Flow Poster Style (Enhanced Scientific Visuals)
+----------------------------------------------------------------------
+پیش‌نیازها:
+    pip install dash dash-bootstrap-components plotly pandas numpy requests websocket-client
+
+اجرا:
+    python Gannzilla.py
+
+ویژگی‌های این نسخه:
+  ۱) اتصال پایدار به بایبیت (WebSocket + REST Fallback).
+  ۲) ظاهر الهام‌گرفته از پوستر Order Flow (کرم/کاغذی + سرمه‌ای + سبز/قرمز).
+  ۳) پروفایل حجم جانبی (Horizontal Session Profile) در سمت چپ.
+  ۴) نمایش Imbalance با خطوط اتصال قطری (arrows) بدون خطای layer.
+  ۵) برچسب‌های پویای "جذب" و "انباشتگی" روی نمودار فوت‌پرینت.
+  ۶) نمودار هیستوگرام دلتای کندل‌ها در پایین (بدون خطای font).
+"""
+
+import json
+import threading
+import time
+from collections import deque
+from datetime import timezone
+
+import numpy as np
+import pandas as pd
+import requests
+import websocket  # pip install websocket-client
+import dash
+from dash import dcc, html, Input, Output, State
+import dash_bootstrap_components as dbc
+import plotly.graph_objects as go
+
+# ==============================================================================
+# 1) اتصال پایدار
+# ==============================================================================
+REST_CANDIDATES = [
+    "https://api.bybit.com",
+    "https://api.bytick.com",
+    "https://api.bybit.kz",
+]
+WS_CANDIDATES = [
+    "wss://stream.bybit.com",
+    "wss://stream.bytick.com",
+]
+
+SESSION = requests.Session()
+SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
+    "Referer": "https://www.bybit.com/",
+})
+
+_ACTIVE_REST_BASE = {"url": None}
+STALE_SEC = 25
+WATCHDOG_INTERVAL = 5
+
+
+def bybit_get(path, params, timeout=10):
+    candidates = [_ACTIVE_REST_BASE["url"]] if _ACTIVE_REST_BASE["url"] else []
+    candidates += [b for b in REST_CANDIDATES if b != _ACTIVE_REST_BASE["url"]]
+    for base in candidates:
+        try:
+            resp = SESSION.get(f"{base}{path}", params=params, timeout=timeout)
+            if resp.status_code in (403, 451):
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("retCode") == 0:
+                _ACTIVE_REST_BASE["url"] = base
+                return data
+        except Exception:
+            continue
+    return None
+
+
+# ==============================================================================
+# 2) CONFIG کلی
+# ==============================================================================
+DEFAULT_SYMBOL = "BTCUSDT"
+DEFAULT_CATEGORY = "linear"
+DEFAULT_TICK_SIZE = 10.0
+DEFAULT_INTERVAL_SEC = 60
+MAX_COLUMNS = 20
+HISTORY_TRIM_HOURS = 3
+TRADE_BUFFER_MAX = 300_000
+IMBALANCE_RATIO = 3.0
+STACK_MIN = 3
+
+TRADE_COLS = ["id", "ts", "price", "amount", "side"]
+
+# پالت رنگی پوستر Order Flow
+BG_PAPER = "#f7f1e2"
+BG_PLOT = "#fbf7ec"
+GRID_LINE = "#d9cfb8"
+NAVY = "#1b3a63"
+GREEN = "#1a7a4c"
+RED = "#c0392b"
+GOLD = "#d4a017"
+NEUTRAL_TXT = "#6b6355"
+PROFILE_BAR_COLOR = "rgba(27, 58, 99, 0.12)"
+PROFILE_POC_COLOR = "rgba(212, 160, 23, 0.3)"
+
+# متغیرهای سراسری
+STATE_LOCK = threading.RLock()
+TRADES = deque(maxlen=TRADE_BUFFER_MAX)
+CONN_STATUS = {"connected": False, "symbol": DEFAULT_SYMBOL, "category": DEFAULT_CATEGORY,
+               "ws_host": "-", "rest_host": "-"}
+LAST_MSG_TS = {"t": 0.0}
+
+
+# ==============================================================================
+# 3) Bootstrap اولیه
+# ==============================================================================
+def backfill_trades_rest(symbol, category, limit=1000):
+    data = bybit_get("/v5/market/recent-trade", {"category": category, "symbol": symbol, "limit": limit})
+    if not data:
+        return
+    items = (data.get("result") or {}).get("list") or []
+    rows = []
+    for t in items:
+        try:
+            rows.append({
+                "id": t.get("execId"),
+                "ts": pd.to_datetime(int(t["time"]), unit="ms", utc=True),
+                "price": float(t["price"]),
+                "amount": float(t["size"]),
+                "side": "buy" if t.get("side") == "Buy" else "sell",
+            })
+        except Exception:
+            continue
+    with STATE_LOCK:
+        TRADES.extend(rows)
+        CONN_STATUS["rest_host"] = _ACTIVE_REST_BASE["url"] or "-"
+
+
+# ==============================================================================
+# 4) WebSocket
+# ==============================================================================
+class BybitStream:
+    def __init__(self, symbol: str, category: str = "linear"):
+        self.symbol = symbol.upper()
+        self.category = category
+        self.ws = None
+        self.thread = None
+        self.stop_flag = threading.Event()
+        self.host_idx = 0
+        self.fail_count = 0
+
+    def _url(self) -> str:
+        host = WS_CANDIDATES[self.host_idx % len(WS_CANDIDATES)]
+        return f"{host}/v5/public/{self.category}"
+
+    def start(self):
+        self.stop_flag.clear()
+        self.thread = threading.Thread(target=self._run_forever, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self.stop_flag.set()
+        try:
+            if self.ws:
+                self.ws.close()
+        except Exception:
+            pass
+
+    def force_reconnect(self):
+        try:
+            if self.ws:
+                self.ws.close()
+        except Exception:
+            pass
+
+    def _run_forever(self):
+        while not self.stop_flag.is_set():
+            try:
+                with STATE_LOCK:
+                    CONN_STATUS["ws_host"] = self._url()
+                self.ws = websocket.WebSocketApp(
+                    self._url(),
+                    on_open=self._on_open,
+                    on_message=self._on_message,
+                    on_error=self._on_error,
+                    on_close=self._on_close,
+                )
+                self.ws.run_forever(ping_interval=20, ping_payload=json.dumps({"op": "ping"}))
+            except Exception:
+                pass
+            with STATE_LOCK:
+                CONN_STATUS["connected"] = False
+            if self.stop_flag.is_set():
+                break
+            self.fail_count += 1
+            if self.fail_count >= 2:
+                self.host_idx += 1
+                self.fail_count = 0
+            time.sleep(min(3 * (self.fail_count + 1), 12))
+
+    def _on_open(self, ws):
+        sub = {"op": "subscribe", "args": [f"publicTrade.{self.symbol}"]}
+        ws.send(json.dumps(sub))
+        with STATE_LOCK:
+            CONN_STATUS["connected"] = True
+            CONN_STATUS["symbol"] = self.symbol
+            CONN_STATUS["category"] = self.category
+        LAST_MSG_TS["t"] = time.time()
+        self.fail_count = 0
+
+    def _on_error(self, ws, error):
+        with STATE_LOCK:
+            CONN_STATUS["connected"] = False
+
+    def _on_close(self, ws, code, msg):
+        with STATE_LOCK:
+            CONN_STATUS["connected"] = False
+
+    def _on_message(self, ws, raw):
+        LAST_MSG_TS["t"] = time.time()
+        try:
+            msg = json.loads(raw)
+        except Exception:
+            return
+        topic = msg.get("topic", "")
+        if topic.startswith("publicTrade."):
+            self._handle_trades(msg.get("data") or [])
+
+    def _handle_trades(self, data):
+        if not data:
+            return
+        rows = []
+        for t in data:
+            try:
+                rows.append({
+                    "id": t.get("i"),
+                    "ts": pd.to_datetime(int(t["T"]), unit="ms", utc=True),
+                    "price": float(t["p"]),
+                    "amount": float(t["v"]),
+                    "side": "buy" if t.get("S") == "Buy" else "sell",
+                })
+            except Exception:
+                continue
+        with STATE_LOCK:
+            TRADES.extend(rows)
+
+
+CURRENT_STREAM: "BybitStream | None" = None
+
+
+def restart_stream(symbol: str, category: str):
+    global CURRENT_STREAM
+    if CURRENT_STREAM is not None:
+        CURRENT_STREAM.stop()
+
+    with STATE_LOCK:
+        TRADES.clear()
+
+    backfill_trades_rest(symbol, category)
+
+    CURRENT_STREAM = BybitStream(symbol, category)
+    CURRENT_STREAM.start()
+
+
+def watchdog_loop():
+    while True:
+        time.sleep(WATCHDOG_INTERVAL)
+        with STATE_LOCK:
+            connected = CONN_STATUS["connected"]
+        if connected and (time.time() - LAST_MSG_TS["t"] > STALE_SEC) and CURRENT_STREAM is not None:
+            CURRENT_STREAM.force_reconnect()
+
+
+threading.Thread(target=watchdog_loop, daemon=True).start()
+
+
+# ==============================================================================
+# 5) دیتا اکسسورها
+# ==============================================================================
+def get_trades_df() -> pd.DataFrame:
+    with STATE_LOCK:
+        if not TRADES:
+            return pd.DataFrame(columns=TRADE_COLS)
+        df = pd.DataFrame(list(TRADES))
+    if df.empty:
+        return df
+    cutoff = pd.Timestamp.now(tz=timezone.utc) - pd.Timedelta(hours=HISTORY_TRIM_HOURS)
+    df = df[df["ts"] >= cutoff]
+    return df.drop_duplicates(subset="id")
+
+
+# ==============================================================================
+# 6) تجمیع فوت‌پرینت
+# ==============================================================================
+def build_footprint(df: pd.DataFrame, tick_size: float, interval_sec: int, max_cols: int):
+    if df.empty:
+        return None
+    work = df.copy()
+    work["price_bucket"] = (np.floor(work["price"] / tick_size) * tick_size).round(8)
+    work["time_bucket"] = work["ts"].dt.floor(f"{interval_sec}s")
+
+    cols_all = sorted(work["time_bucket"].unique())
+    cols = cols_all[-max_cols:]
+    work = work[work["time_bucket"].isin(cols)]
+    if work.empty:
+        return None
+
+    min_p, max_p = work["price_bucket"].min(), work["price_bucket"].max()
+    n_steps = max(int(round((max_p - min_p) / tick_size)), 0)
+    rows = [round(max_p - i * tick_size, 8) for i in range(n_steps + 1)]
+
+    ask_pivot = (work[work["side"] == "buy"]
+                 .pivot_table(index="price_bucket", columns="time_bucket", values="amount",
+                              aggfunc="sum", fill_value=0.0))
+    bid_pivot = (work[work["side"] == "sell"]
+                 .pivot_table(index="price_bucket", columns="time_bucket", values="amount",
+                              aggfunc="sum", fill_value=0.0))
+
+    ask_grid = ask_pivot.reindex(index=rows, columns=cols, fill_value=0.0)
+    bid_grid = bid_pivot.reindex(index=rows, columns=cols, fill_value=0.0)
+
+    col_open = work.sort_values("ts").groupby("time_bucket")["price"].first().reindex(cols)
+    col_close = work.sort_values("ts").groupby("time_bucket")["price"].last().reindex(cols)
+
+    all_trade_buckets = np.floor(df["price"] / tick_size) * tick_size
+    all_trade_buckets = all_trade_buckets.round(8)
+    session_profile = df.groupby(all_trade_buckets, observed=True)["amount"].sum().reindex(rows, fill_value=0.0)
+
+    return {
+        "rows": rows, "cols": cols, "tick_size": tick_size,
+        "ask": ask_grid, "bid": bid_grid,
+        "total": ask_grid + bid_grid, "delta": ask_grid - bid_grid,
+        "col_open": col_open, "col_close": col_close,
+        "session_profile": session_profile
+    }
+
+
+def compute_diagonal_imbalances(fp, ratio_threshold=IMBALANCE_RATIO):
+    ask_grid, bid_grid, tick = fp["ask"], fp["bid"], fp["tick_size"]
+    imb = {}
+    for c in fp["cols"]:
+        for ri, p in enumerate(fp["rows"]):
+            p_below, p_above = round(p - tick, 8), round(p + tick, 8)
+            a_at_p, b_at_p = ask_grid.loc[p, c], bid_grid.loc[p, c]
+
+            b_diagonal_below = bid_grid.loc[p_below, c] if p_below in bid_grid.index else 0.0
+            buy_imb = a_at_p > 0 and b_diagonal_below > 0 and (a_at_p / b_diagonal_below) >= ratio_threshold
+
+            a_diagonal_above = ask_grid.loc[p_above, c] if p_above in ask_grid.index else 0.0
+            sell_imb = b_at_p > 0 and a_diagonal_above > 0 and (b_at_p / a_diagonal_above) >= ratio_threshold
+
+            imb[(p, c)] = "buy" if (buy_imb and not sell_imb) else ("sell" if sell_imb else None)
+    return imb
+
+
+def detect_stacked(imb, rows, cols, min_stack=STACK_MIN):
+    stacked = set()
+    for c in cols:
+        streak_dir, streak_start, streak_len = None, 0, 0
+        for ri, p in enumerate(rows):
+            d = imb.get((p, c))
+            if d is not None and d == streak_dir:
+                streak_len += 1
+            else:
+                if streak_dir is not None and streak_len >= min_stack:
+                    stacked.update((rows[k], c) for k in range(streak_start, streak_start + streak_len))
+                streak_dir, streak_start = d, ri
+                streak_len = 1 if d is not None else 0
+        if streak_dir is not None and streak_len >= min_stack:
+            stacked.update((rows[k], c) for k in range(streak_start, streak_start + streak_len))
+    return stacked
+
+
+def fmt(v):
+    if v >= 1000:
+        return f"{v / 1000:.1f}k"
+    if v >= 1:
+        return f"{v:,.1f}".rstrip("0").rstrip(".")
+    return f"{v:.3f}".rstrip("0").rstrip(".") if v else "0"
+
+
+# ==============================================================================
+# 7) نمودار فوت‌پرینت
+# ==============================================================================
+def render_footprint_figure(fp, pair):
+    rows, cols = fp["rows"], fp["cols"]
+    n_rows, n_cols = len(rows), len(cols)
+
+    poc_per_col = {c: fp["total"][c].idxmax() for c in cols if fp["total"][c].max() > 0}
+    session_poc = fp["session_profile"].idxmax() if not fp["session_profile"].empty and fp[
+        "session_profile"].sum() > 0 else None
+    imb = compute_diagonal_imbalances(fp)
+    stacked = detect_stacked(imb, rows, cols)
+
+    shapes, annotations = [], []
+    col_w = 1.0
+    dir_bar_w = 0.06
+
+    profile_x_start = -2.5
+    profile_w_max = 2.0
+    total_session_vol = fp["session_profile"].sum()
+
+    if total_session_vol > 0:
+        for ri, p in enumerate(rows):
+            y0, y1 = n_rows - ri - 1, n_rows - ri
+            v = fp["session_profile"].loc[p]
+            bar_w = (v / fp["session_profile"].max()) * profile_w_max
+            fill = PROFILE_POC_COLOR if p == session_poc else PROFILE_BAR_COLOR
+            shapes.append(dict(type="rect", x0=profile_x_start, x1=profile_x_start + bar_w,
+                               y0=y0, y1=y1, fillcolor=fill, line=dict(width=0.3, color=GRID_LINE), layer="below"))
+            if v > 0:
+                annotations.append(dict(x=profile_x_start + bar_w + 0.1, y=(y0 + y1) / 2, text=fmt(v), showarrow=False,
+                                        font=dict(color=NAVY, size=8), xanchor="left"))
+
+    for ci, c in enumerate(cols):
+        x0, x1 = ci * col_w, ci * col_w + col_w
+        o, cl = fp["col_open"].get(c, np.nan), fp["col_close"].get(c, np.nan)
+        bar_color = GREEN if (pd.notna(o) and pd.notna(cl) and cl >= o) else RED
+        shapes.append(dict(type="rect", x0=x0, x1=x0 + dir_bar_w, y0=0, y1=n_rows,
+                           fillcolor=bar_color, line=dict(width=0), layer="below"))
+
+        has_col_stacked_buy = False
+        has_col_stacked_sell = False
+
+        for ri, p in enumerate(rows):
+            y0, y1 = n_rows - ri - 1, n_rows - ri
+            bid_v, ask_v, tot_v, delta_v = (fp["bid"].loc[p, c], fp["ask"].loc[p, c],
+                                            fp["total"].loc[p, c], fp["delta"].loc[p, c])
+
+            cell_bg = BG_PLOT
+            border_color, border_w, border_dash = GRID_LINE, 0.4, "solid"
+
+            if (p, c) in stacked:
+                if imb.get((p, c)) == "buy": has_col_stacked_buy = True
+                if imb.get((p, c)) == "sell": has_col_stacked_sell = True
+
+            if poc_per_col.get(c) == p:
+                border_color, border_w, border_dash = GOLD, 2.0, "solid"
+                cell_bg = "#fbeec8"
+
+            shapes.append(dict(type="rect", x0=x0 + dir_bar_w, x1=x1, y0=y0, y1=y1,
+                               line=dict(color=border_color, width=border_w, dash=border_dash),
+                               fillcolor=cell_bg, layer="below"))
+
+            direction = imb.get((p, c))
+
+            # خطای layer="above" در این قسمت برطرف شده است
+            if direction == "buy" and ci > -1:
+                annotations.append(dict(x=x1, y=y1, ax=x0 + dir_bar_w, ay=y0, text="", xref="x", yref="y",
+                                        axref="x", ayref="y", showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5,
+                                        arrowcolor=GREEN))
+
+            elif direction == "sell" and ci > -1:
+                annotations.append(dict(x=x1, y=y0, ax=x0 + dir_bar_w, ay=y1, text="", xref="x", yref="y",
+                                        axref="x", ayref="y", showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5,
+                                        arrowcolor=RED))
+
+            if tot_v > 0:
+                txt_color = GREEN if delta_v > 0 else (RED if delta_v < 0 else NEUTRAL_TXT)
+                bold = "bold" if (p, c) in stacked else "normal"
+                size = 11 if (p, c) in stacked else 9
+                annotations.append(dict(
+                    x=(x0 + dir_bar_w + x1) / 2, y=(y0 + y1) / 2,
+                    text=f"{fmt(bid_v)}×{fmt(ask_v)}", showarrow=False,
+                    font=dict(color=txt_color, size=size, family="Courier New, monospace", weight=bold),
+                    xanchor="center", yanchor="middle"))
+
+        col_max_p = fp["rows"][0]
+        annotation_x = x0 + dir_bar_w + (col_w / 2)
+
+        if has_col_stacked_buy:
+            annotations.append(dict(x=annotation_x, y=n_rows + 0.5, text="خرید تهاجمی انباشته ▲", showarrow=False,
+                                    font=dict(color=GREEN, size=9, family="Arial Black"), xanchor="center",
+                                    yanchor="bottom"))
+
+        if has_col_stacked_sell:
+            annotations.append(dict(x=annotation_x, y=-0.5, text="▼ فروش تهاجمی انباشته", showarrow=False,
+                                    font=dict(color=RED, size=9, family="Arial Black"), xanchor="center",
+                                    yanchor="top"))
+
+        if pd.notna(o) and pd.notna(cl) and cl < o and fp["total"][c].idxmax() == col_max_p:
+            annotations.append(dict(x=annotation_x, y=n_rows + 1.2, text="جذب در سقف ✖", showarrow=False,
+                                    font=dict(color="#8e44ad", size=10, family="Arial Black"), xanchor="center",
+                                    yanchor="bottom"))
+
+        col_vol, col_delta = fp["total"][c].sum(), fp["delta"][c].sum()
+        d_color = GREEN if col_delta >= 0 else RED
+        annotations.append(dict(x=(x0 + x1) / 2, y=n_rows + 2.5, text=fmt(col_vol),
+                                showarrow=False, font=dict(color=NAVY, size=10), xanchor="center"))
+        annotations.append(dict(x=(x0 + x1) / 2, y=n_rows + 3.3,
+                                text=f"{'+' if col_delta >= 0 else ''}{fmt(col_delta)}",
+                                showarrow=False, font=dict(color=d_color, size=10, family="Arial Black"),
+                                xanchor="center"))
+        annotations.append(dict(x=(x0 + x1) / 2, y=-1.8, text=pd.Timestamp(c).strftime("%H:%M"),
+                                showarrow=False, font=dict(color=NEUTRAL_TXT, size=9), xanchor="center"))
+
+    for ri, p in enumerate(rows):
+        y0, y1 = n_rows - ri - 1, n_rows - ri
+        annotations.append(dict(x=profile_x_start - 0.2, y=(y0 + y1) / 2, text=f"{p:,.0f}", showarrow=False,
+                                font=dict(color=NAVY, size=9), xanchor="right"))
+
+    annotations.append(dict(x=profile_x_start, y=n_rows + 1, text="پروفایل حجم جلسه (Sessions VP)", showarrow=False,
+                            font=dict(color=NEUTRAL_TXT, size=10, family="Arial Black"), xanchor="left"))
+
+    fig = go.Figure()
+    fig.update_layout(
+        shapes=shapes, annotations=annotations,
+        xaxis=dict(range=[profile_x_start - 1, n_cols * col_w + 1], visible=False),
+        yaxis=dict(range=[-3, n_rows + 4], visible=False),
+        plot_bgcolor=BG_PLOT, paper_bgcolor=BG_PAPER,
+        margin=dict(l=10, r=10, t=50, b=10),
+        title=dict(text=f"ORDER FLOW POSTER  ·  {pair}  ·  Footprint + Diagonal Imbalance & VP",
+                   font=dict(color=NAVY, size=18, family="Arial Black"), x=0.01),
+        height=720,
+    )
+    return fig
+
+
+# ==============================================================================
+# 8) نمودار هیستوگرام دلتا
+# ==============================================================================
+def render_delta_figure(fp, pair):
+    fig = go.Figure()
+    if not fp:
+        fig.update_layout(
+            plot_bgcolor=BG_PLOT, paper_bgcolor=BG_PAPER, height=240,
+            title=dict(text="Column Delta Histogram", font=dict(color=NAVY, size=14, family="Arial Black")),
+            xaxis=dict(visible=False), yaxis=dict(visible=False)
+        )
+        return fig
+
+    cols = fp["cols"]
+    col_deltas = [fp["delta"][c].sum() for c in cols]
+    times = [pd.Timestamp(c).strftime("%H:%M") for c in cols]
+    colors = [GREEN if d >= 0 else RED for d in col_deltas]
+
+    fig.add_trace(go.Bar(
+        x=times, y=col_deltas,
+        marker_color=colors,
+        marker_line_width=1, marker_line_color=NAVY,
+        text=[fmt(d) for d in col_deltas], textposition="auto",
+        textfont=dict(size=10, family="Arial Black"),
+    ))
+
+    annotations = []
+    if len(col_deltas) >= 2:
+        last_d = col_deltas[-1]
+        prev_d = col_deltas[-2]
+        time_x = times[-1]
+        if last_d > 0 and prev_d > 0 and last_d < (prev_d * 0.2):
+            annotations.append(dict(x=time_x, y=last_d * 1.5, text="تضعیف خرید؟ (Exhaustion)", showarrow=False,
+                                    font=dict(color=GOLD, size=11, family="Arial Black"), xanchor="center"))
+
+    fig.update_layout(
+        plot_bgcolor=BG_PLOT, paper_bgcolor=BG_PAPER,
+        margin=dict(l=50, r=20, t=40, b=30),
+        title=dict(text="Column Delta Histogram (Aggression Level)",
+                   font=dict(color=NAVY, size=14, family="Arial Black")),
+        xaxis=dict(tickangle=0, tickfont=dict(color=NEUTRAL_TXT)),
+        yaxis=dict(title="Delta Vol", gridcolor=GRID_LINE, zerolinecolor=NAVY),
+        annotations=annotations,
+        height=240,
+    )
+    return fig
+
+
+# ==============================================================================
+# 9) داشبورد Dash
+# ==============================================================================
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.FLATLY,
+                                                "https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;800&display=swap"])
+app.title = "Order Flow Poster · Enhanced Bybit Footprint"
+
+app.index_string = """
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+    {%metas%}<title>{%title%}</title>{%favicon%}{%css%}
+    <style>
+        body { font-family:'Vazirmatn',sans-serif !important; background:#f7f1e2; color:#1b3a63; }
+        .paper-card {
+            background:#fffdf7 !important; border:2px solid #1b3a63 !important;
+            border-radius:14px !important; padding:18px; margin-bottom:18px;
+            box-shadow: 6px 6px 0px rgba(27,58,99,0.15);
+        }
+        .poster-title {
+            font-weight:800; font-size:2.8rem; color:#1b3a63; text-align:center;
+            letter-spacing:2px; text-shadow: 2px 2px 0px rgba(27,58,99,0.1);
+        }
+        .poster-sub { text-align:center; color:#c0392b; font-weight:600; margin-bottom:10px; font-size:1.1rem;}
+        .legend-item { margin-bottom:6px; font-size:0.95rem;}
+        .badge-conn { font-weight:700; padding:8px 16px; border-radius:20px; font-size:0.9rem;}
+    </style>
+</head>
+<body>{%app_entry%}{%config%}{%scripts%}{%renderer%}</body>
+</html>
+"""
+
+app.layout = dbc.Container([
+    html.Div([
+        html.Div("ORDER FLOW SCIENTIFIC POSTER", className="poster-title"),
+        html.Div("تفسیر نبرد واقعی خریداران و فروشندگان — عدم تعادل قطری، پروفایل حجم و جذب", className="poster-sub"),
+    ], className="mt-4 mb-3"),
+
+    dbc.Row([
+        dbc.Col(dcc.Input(id="pair-input", type="text", value=DEFAULT_SYMBOL,
+                          style={"width": "100%", "borderRadius": "15px", "border": "1.5px solid #1b3a63"},
+                          placeholder="Symbol"), width=2),
+        dbc.Col(dcc.Dropdown(id="category-dropdown",
+                             options=[{"label": "Linear (Perp)", "value": "linear"},
+                                      {"label": "Spot", "value": "spot"}],
+                             value=DEFAULT_CATEGORY, clearable=False, style={"borderRadius": "15px"}), width=2),
+        dbc.Col(dcc.Input(id="tick-input", type="number", value=DEFAULT_TICK_SIZE, min=0.1, step=0.1,
+                          style={"width": "100%", "borderRadius": "15px"}, placeholder="Tick Size"), width=2),
+        dbc.Col(dcc.Dropdown(id="interval-dropdown",
+                             options=[{"label": f"{m} دقیقه", "value": m * 60} for m in [1, 5, 15, 30, 60]],
+                             value=DEFAULT_INTERVAL_SEC, clearable=False), width=2),
+        dbc.Col(html.Button("Apply Updates / اعمال", id="apply-btn", n_clicks=0, className="btn w-100",
+                            style={"background": NAVY, "color": "#fff", "fontWeight": "700",
+                                   "borderRadius": "20px", "boxShadow": "3px 3px 0px rgba(0,0,0,0.2)"}), width=2),
+        dbc.Col(html.Div(id="conn-status", className="badge-conn"), width=2),
+    ], className="mb-4 g-2 align-items-center paper-card", style={"padding": "10px"}),
+
+    dcc.Interval(id="tick", interval=1500, n_intervals=0),
+
+    dbc.Row([
+        dbc.Col([
+            dbc.Card(dcc.Graph(id="footprint-graph", config={"displayModeBar": False}),
+                     className="paper-card"),
+            dbc.Card(dcc.Graph(id="delta-graph", config={"displayModeBar": False}),
+                     className="paper-card"),
+        ], width=9),
+
+        dbc.Col([
+            dbc.Card([
+                html.H5("چطور اردر فلو را علمی بخوانیم",
+                        style={"fontWeight": "800", "color": NAVY, "textAlign": "center"}),
+                html.Hr(style={"borderColor": NAVY}),
+                html.Div([
+                    html.Strong("۱) Imbalance قطری (خطوط قطری رنگی):", style={"color": NAVY}),
+                    html.Span(" نشان‌دهنده تهاجم است. خریداران به Ask یا فروشندگان به Bid حمله کرده‌اند."),
+                ], className="legend-item mb-2"),
+                html.Div([
+                    html.Strong("۲) انباشتگی (Stacked):", style={"color": NAVY}),
+                    html.Span(
+                        " وقتی چند لایه Imbalance روی هم قرار گیرند (متن بولد)، منطقه حمایت/مقاومت معتبر در تصویر است."),
+                ], className="legend-item mb-2"),
+                html.Div([
+                    html.Strong("۳) POC طلایی (HVN):", style={"color": GOLD}),
+                    html.Span(" بیشترین حجم کندل. قیمت اغلب به این گره‌ها واکنش نشان می‌دهد."),
+                ], className="legend-item mb-2"),
+                html.Div([
+                    html.Strong("۴) جذب (Absorption):", style={"color": "#8e44ad"}),
+                    html.Span(
+                        " وقتی حجم در سقف/کف زیاد است (POC در لبه کندل) اما قیمت برمی‌گردد (علامت ✖). نشان‌دهنده لیمیت اوردرهای بزرگ است."),
+                ], className="legend-item mb-2"),
+                html.Div([
+                    html.Strong("۵) پروفایل حجم جلسه:", style={"color": NEUTRAL_TXT}),
+                    html.Span(
+                        " هیستوگرام سمت چپ کل حجم معامله شده در جلسه را نشان می‌دهد و گره‌های پرحجم اصلی (VP POC) را شناسایی می‌کند."),
+                ], className="legend-item mb-2"),
+                html.Div([
+                    html.Strong("۶) هیستوگرام دلتا (پایین):", style={"color": NAVY}),
+                    html.Span(" قدرت کلی تهاجمی هر کندل را نشان می‌دهد. کاهش دلتا ممکن است نشانه تضعیف باشد."),
+                ], className="legend-item mb-2"),
+
+            ], className="paper-card"),
+        ], width=3),
+    ]),
+
+    dbc.Card([
+        html.H6("★ نکات کلیدی Order Flow (از روی تصاویر آموزشی)", style={"fontWeight": "800", "color": NAVY}),
+        html.Div("• تهاجم (Agression) را در کنار مکان (Location) قیمت بخوانید، نه به تنهایی."),
+        html.Div("• به گره‌های پرحجم کل جلسه (HVN) احترام بگذارید؛ قیمت اغلب به آن‌ها واکنش نشان می‌دهد."),
+        html.Div("• دلتای مثبت در سقف ممکن است نشانه 'تله خریداران' باشد اگر قیمت پیشروی نکند (Absorption)."),
+    ], className="paper-card", style={"borderColor": RED}),
+
+], fluid=True)
+
+
+@app.callback(
+    Output("conn-status", "children"), Output("conn-status", "style"),
+    Input("apply-btn", "n_clicks"),
+    State("pair-input", "value"), State("category-dropdown", "value"),
+    prevent_initial_call=False,
+)
+def apply_connection(_, pair, category):
+    symbol = (pair or DEFAULT_SYMBOL).upper().replace("_", "").replace("/", "")
+    category = category or DEFAULT_CATEGORY
+    with STATE_LOCK:
+        needs_restart = (CONN_STATUS["symbol"] != symbol or CONN_STATUS["category"] != category
+                         or CURRENT_STREAM is None)
+    if needs_restart:
+        restart_stream(symbol, category)
+    with STATE_LOCK:
+        connected, host = CONN_STATUS["connected"], CONN_STATUS["ws_host"]
+    bg = GREEN if connected else GOLD
+    text = f"● {symbol} | {'متصل' if connected else 'در حال اتصال...'}"
+    return text, {"background": bg, "color": "#fff", "fontWeight": "700",
+                  "padding": "6px 14px", "borderRadius": "20px", "textAlign": "center"}
+
+
+@app.callback(
+    Output("footprint-graph", "figure"),
+    Output("delta-graph", "figure"),
+    Input("tick", "n_intervals"),
+    State("tick-input", "value"), State("interval-dropdown", "value"),
+)
+def update_charts(_, tick_size, interval_sec):
+    tick_size = float(tick_size or DEFAULT_TICK_SIZE)
+    interval_sec = int(interval_sec or DEFAULT_INTERVAL_SEC)
+    with STATE_LOCK:
+        pair = CONN_STATUS["symbol"]
+
+    df = get_trades_df()
+    fp = build_footprint(df, tick_size, interval_sec, MAX_COLUMNS)
+
+    fp_fig = render_footprint_figure(fp, pair) if fp else go.Figure(
+        layout=dict(plot_bgcolor=BG_PLOT, paper_bgcolor=BG_PAPER,
+                    annotations=[dict(text="در حال دریافت دیتای زنده...", x=0.5, y=0.5,
+                                      showarrow=False, font=dict(color=NAVY, size=14))]))
+
+    delta_fig = render_delta_figure(fp, pair)
+
+    return fp_fig, delta_fig
+
+
+if __name__ == "__main__":
+    print("در حال اتصال پایدار به بایبیت (Enhanced Visuals)...")
+    restart_stream(DEFAULT_SYMBOL, DEFAULT_CATEGORY)
+    time.sleep(2)
+    app.run(debug=True, host="0.0.0.0", port=8050)

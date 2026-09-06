@@ -1,0 +1,97 @@
+//@version=5
+indicator("Quantum State Space & Probabilistic Agents", overlay=true, max_lines_count=500)
+
+// =====================================================================
+// 1. تنظیمات فضای حالت (State Space Settings)
+// =====================================================================
+int n_lines = input.int(100, "تعداد خطوط (n) - فضای حالت", minval=10, maxval=500, group="تنظیمات سیستم کوانت")
+float step_multiplier = input.float(1.0, "ضریب فاصله ریاضی (گام تلاطم)", step=0.1, group="تنظیمات سیستم کوانت")
+int future_bars = input.int(100, "طول بصری خطوط در آینده", minval=10, group="تنظیمات سیستم کوانت")
+
+// متغیرهای شبکه و لنگر (برای استاتیک کردن خطوط)
+var float anchor_price = na
+var float math_step = na
+var line[] managed_lines = array.new_line()
+
+// =====================================================================
+// انتقال محاسبات پایه‌ای به فضای گلوبال برای جلوگیری از خطای na
+// =====================================================================
+global_atr_14 = ta.atr(14)
+rsi_val = ta.rsi(close, 14)
+ema_50 = ta.ema(close, 50)
+atr_50 = ta.atr(50)
+sma_20 = ta.sma(close, 20)
+stdev_20 = ta.stdev(close, 20)
+
+// =====================================================================
+// 2. ایجنت‌های کوانت محور (Quant Trade Agents)
+// =====================================================================
+// استفاده از nz برای جلوگیری از هرگونه خطای ناشناخته
+agent_momentum = nz((rsi_val - 50) / 25.0, 0)
+agent_trend = atr_50 != 0 ? nz((close - ema_50) / atr_50, 0) : 0 
+agent_reversion = stdev_20 != 0 ? nz(-1.0 * ((close - sma_20) / stdev_20), 0) : 0 
+
+// =====================================================================
+// 3. ماشین احتمالاتی پیشرفته (Probabilistic Engine)
+// =====================================================================
+total_z_score = (0.5 * agent_momentum) + (0.3 * agent_trend) + (0.2 * agent_reversion)
+prob_up = 100 / (1 + math.exp(-total_z_score))
+prob_down = 100 - prob_up
+
+// =====================================================================
+// 4. موتور رسم استاتیک فضای حالت (Static Grid Generation)
+// =====================================================================
+if barstate.islast and na(anchor_price)
+    anchor_price := close // قفل کردن قیمت مرکزی
+    
+    // استفاده از ATR گلوبال همراه با جایگزین امن (nz)
+    math_step := nz(global_atr_14, syminfo.mintick * 100) * step_multiplier
+    math_step := math_step == 0 ? syminfo.mintick * 10 : math_step 
+    
+    int half = int(n_lines / 2)
+    
+    for i = -half to (n_lines - half)
+        float level_price = anchor_price + (i * math_step)
+        
+        color l_color = (i == 0) ? color.new(color.yellow, 20) : color.new(color.gray, 80)
+        int l_width = (i == 0) ? 2 : 1
+        string l_style = (i % 5 == 0) ? line.style_solid : line.style_dashed
+        
+        line new_line = line.new(x1=bar_index, y1=level_price, x2=bar_index + future_bars, y2=level_price, color=l_color, width=l_width, style=l_style, extend=extend.right)
+        array.push(managed_lines, new_line)
+
+// =====================================================================
+// 5. تشخیص سگمنت فعلی (State Space Tracking)
+// =====================================================================
+int current_segment = 0
+if not na(anchor_price) and not na(math_step) and math_step != 0
+    // محاسبه دقیق موقعیت با تبدیل امن به int
+    current_segment := int(math.round((close - anchor_price) / math_step))
+
+// =====================================================================
+// 6. جدول اطلاعات لایو ایجنت‌ها (Live Dashboard)
+// =====================================================================
+var table prob_table = table.new(position.bottom_right, 2, 5, border_width=1, border_color=color.rgb(43, 43, 43))
+
+if barstate.islast
+    color up_color = prob_up > 55 ? color.new(color.green, 30) : color.new(color.gray, 60)
+    color down_color = prob_down > 55 ? color.new(color.red, 30) : color.new(color.gray, 60)
+    
+    string consensus = prob_up > 65 ? "صعودی قوی (Strong Up)" : prob_up > 55 ? "تمایل صعودی (Bullish)" : prob_down > 65 ? "نزولی قوی (Strong Down)" : prob_down > 55 ? "تمایل نزولی (Bearish)" : "رنج / بلاتکلیف (Neutral)"
+    color consensus_color = prob_up > 65 ? color.green : prob_up > 55 ? color.new(color.green, 40) : prob_down > 65 ? color.red : prob_down > 55 ? color.new(color.red, 40) : color.gray
+
+    table.cell(prob_table, 0, 0, "پارامتر فضای حالت", text_color=color.white, bgcolor=color.black)
+    table.cell(prob_table, 1, 0, "مقدار لایو", text_color=color.white, bgcolor=color.black)
+
+    table.cell(prob_table, 0, 1, "سگمنت فعلی (Level)", text_color=color.white, bgcolor=color.rgb(27, 63, 131))
+    // نمایش دقیق عدد سگمنت که با حرکت قیمت به‌روز می‌شود
+    table.cell(prob_table, 1, 1, str.tostring(current_segment), text_color=color.white, bgcolor=color.rgb(27, 63, 131))
+
+    table.cell(prob_table, 0, 2, "احتمال صعود (Up %)", text_color=color.white, bgcolor=up_color)
+    table.cell(prob_table, 1, 2, str.tostring(prob_up, "#.##") + " %", text_color=color.white, bgcolor=up_color)
+
+    table.cell(prob_table, 0, 3, "احتمال نزول (Down %)", text_color=color.white, bgcolor=down_color)
+    table.cell(prob_table, 1, 3, str.tostring(prob_down, "#.##") + " %", text_color=color.white, bgcolor=down_color)
+
+    table.cell(prob_table, 0, 4, "تصمیم ایجنت کوانت", text_color=color.white, bgcolor=color.new(consensus_color, 40))
+    table.cell(prob_table, 1, 4, consensus, text_color=color.white, bgcolor=color.new(consensus_color, 40))

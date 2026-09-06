@@ -1,0 +1,98 @@
+//@version=5
+indicator("Symmetric Oscillation Around Base (MA/HH/LL/Mid)", overlay=true, max_labels_count=500)
+
+// Inputs
+src = input.source(close, "Source")
+baseType = input.string("MA", "Base Line Type", options=["MA", "Highest High (HH)", "Lowest Low (LL)", "Midpoint (HH+LL)/2"])
+baseLen = input.int(100, "Length", minval=1)
+maLenMultiplier = input.float(1.0, "Length Multiplier", minval=0.1, step=0.1)
+maType = input.string("EMA", "MA Type (if MA selected)", options=["SMA", "EMA", "WMA", "RMA"])
+level1 = input.price(0.0, "Level 1", confirm=true)
+level2 = input.price(0.0, "Level 2", confirm=true)
+
+startTime = input.time(timestamp("2024-01-01 09:00 +0000"), "Start Time", confirm=true)
+
+divergenceMultiplier = input.float(1.0, "Divergence Multiplier", minval=0.1, step=0.1)
+
+showLevels = input.bool(true, "Show Levels")
+showStartMarker = input.bool(true, "Show Start Marker")
+
+ma(_src, _len, _type) =>
+    switch _type
+        "SMA" => ta.sma(_src, _len)
+        "EMA" => ta.ema(_src, _len)
+        "WMA" => ta.wma(_src, _len)
+        => ta.rma(_src, _len)
+
+// Effective length after multiplier
+effLen = math.max(1, int(math.round(baseLen * maLenMultiplier)))
+
+// Base calculations
+mainMA = ma(src, effLen, maType)
+hh = ta.highest(high, effLen)
+ll = ta.lowest(low, effLen)
+mid = (hh + ll) / 2.0
+
+// Determine the central base line
+baseLine = baseType == "Highest High (HH)" ? hh : baseType == "Lowest Low (LL)" ? ll : baseType == "Midpoint (HH+LL)/2" ? mid : mainMA
+
+// Start detection
+startTriggered = time >= startTime and time[1] < startTime
+
+var bool cycleActive = false
+var float upperOffsetStart = na
+var float lowerOffsetStart = na
+var float travelAmount = 0.0
+
+// Auto movement span from distance between selected levels
+levelDistance = math.abs(level1 - level2)
+halfCycleMove = math.max(levelDistance, syminfo.mintick)
+cycleSpan = halfCycleMove * 2.0
+
+if startTriggered
+    cycleActive := true
+    travelAmount := 0.0
+
+    dist1 = math.abs(level1 - baseLine)
+    dist2 = math.abs(level2 - baseLine)
+    baseOffset = levelDistance * divergenceMultiplier
+
+    // Preserve the relative difference between the two chosen levels
+    largerDist = math.max(dist1, dist2)
+    smallerDist = math.min(dist1, dist2)
+    totalDist = math.max(largerDist + smallerDist, syminfo.mintick)
+
+    upperWeight = largerDist / totalDist
+    lowerWeight = smallerDist / totalDist
+
+    upperOffsetStart := baseOffset * upperWeight
+    lowerOffsetStart := baseOffset * lowerWeight
+
+// Accumulate total movement of baseLine after start
+if cycleActive and not na(baseLine[1])
+    travelAmount += math.abs(baseLine - baseLine[1])
+
+// Repeating triangle wave: 1 -> 0 -> 1 -> 0 ...
+phaseRaw = cycleActive ? travelAmount / cycleSpan : 0.0
+phase = phaseRaw - math.floor(phaseRaw)
+
+offsetFactor = phase <= 0.5 ? 1.0 - phase * 2.0 : (phase - 0.5) * 2.0
+offsetFactor := math.max(0.0, math.min(1.0, offsetFactor))
+
+// Symmetric lines around baseLine
+upperLine = cycleActive ? baseLine + nz(upperOffsetStart) * offsetFactor : na
+lowerLine = cycleActive ? baseLine - nz(lowerOffsetStart) * offsetFactor : na
+
+// Plotting
+baseColor = baseType == "Highest High (HH)" ? color.green : baseType == "Lowest Low (LL)" ? color.red : baseType == "Midpoint (HH+LL)/2" ? color.orange : color.yellow
+plot(baseLine, "Base Line", color=baseColor, linewidth=3)
+plot(upperLine, "Upper Oscillation", color=color.aqua, linewidth=2)
+plot(lowerLine, "Lower Oscillation", color=color.fuchsia, linewidth=2)
+
+plot(showLevels ? level1 : na, "Level 1", color=color.new(color.aqua, 70), style=plot.style_linebr)
+plot(showLevels ? level2 : na, "Level 2", color=color.new(color.fuchsia, 70), style=plot.style_linebr)
+
+plotshape(showStartMarker and startTriggered, title="Start", style=shape.labelup, location=location.belowbar, color=color.green, text="Start")
+
+touchNow = cycleActive and offsetFactor < 0.0001
+plotshape(touchNow ? baseLine : na, title="Touch Point", style=shape.circle, location=location.absolute, color=color.red, size=size.tiny)

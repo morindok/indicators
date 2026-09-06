@@ -1,0 +1,37 @@
+//@version=5
+indicator("Interactive Three Points Curve", overlay=true)
+
+// ÏÑíÇİÊ ? äŞØå ÇÒ ˜ÇÑÈÑ Ñæí ÇÑÊ
+t1 = input.time(0, title="Point 1", confirm=true, inline="p1")
+p1 = input.price(0, title="", confirm=true, inline="p1")
+t2 = input.time(0, title="Point 2 (Bottom)", confirm=true, inline="p2")
+p2 = input.price(0, title="", confirm=true, inline="p2")
+t3 = input.time(0, title="Point 3", confirm=true, inline="p3")
+p3 = input.price(0, title="", confirm=true, inline="p3")
+
+// Òíäå İÚÇáÓÇÒí ÑÓã ãäÍäí ãÚ˜æÓ
+show_inverse = input.bool(false, title="Show Inverse Curve")
+
+// ãÍÇÓÈå ÖÑÇíÈ ãäÍäí ÏÑÌå Ïæ ÈÑ ÇÓÇÓ äŞØå Ïæã Èå ÚäæÇä ãÈÏÃ
+x1 = t1 - t2
+x3 = t3 - t2
+denom = (x1 * x1 * x3) - (x3 * x3 * x1)
+
+A = denom != 0 ? (((p1 - p2) * x3) - ((p3 - p2) * x1)) / denom : 0
+B = x3 != 0 ? ((p3 - p2) - (A * x3 * x3)) / x3 : 0
+C = p2
+
+// ãÍÇÓÈå ÔíÈ ÏÑ äŞÇØ Çæá æ Óæã ÈÑÇí ÇãÊÏÇÏ (Extend)
+x = time - t2
+m1 = (2 * A * x1) + B
+m3 = (2 * A * x3) + B
+
+// ãÍÇÓÈå ãäÍäí ÇÕáí æ ÇãÊÏÇÏ ÎØí ÇÒ Ïæ ØÑİ
+curve_val = x < x1 ? p1 + (m1 * (x - x1)) : x > x3 ? p3 + (m3 * (x - x3)) : (A * x * x) + (B * x) + C
+
+// ÑÓã ãäÍäí ÇÕáí
+plot(curve_val, color=color.red, linewidth=2)
+
+// ãÍÇÓÈå æ ÑÓã ãäÍäí ãÚ˜æÓ (ŞÑíäå äÓÈÊ Èå äŞØå Ïæã) ÏÑ ÕæÑÊ İÚÇá ÈæÏä Òíäå
+inverse_val = show_inverse ? (2 * p2) - curve_val : na
+plot(inverse_val, color=color.green, linewidth=2)

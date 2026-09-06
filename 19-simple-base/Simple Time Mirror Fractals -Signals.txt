@@ -1,0 +1,144 @@
+//@version=6
+indicator("Fractals + Dual Mirror Intersection Signals", overlay=true)
+n = input.int(100, title="Periods", minval=2)
+
+//  ‰ŸÌ„ ”ÿÕ „—ò“Ì Ê  ﬁ«—‰ùÂ«
+centralMirrorLevel = input.price(0, title="Central Mirror Level", confirm=true)
+mirrorLevel1 = input.price(0, title="P1 Mirror Level", confirm=true)
+selectedTime1 = input.time(0, title="P1 Reference Time", confirm=true)
+mirrorLevel2 = input.price(0, title="P2 Mirror Level", confirm=true)
+selectedTime2 = input.time(0, title="P2 Reference Time", confirm=true)
+
+// --- „—Õ·Â «Ê·:  ﬁ«—‰ ò‰œ· «’·Ì ‰”»  »Â ”ÿÕ „—ò“Ì ---
+cOpen  = float(2.0 * centralMirrorLevel - open)
+cHigh  = float(2.0 * centralMirrorLevel - low) 
+cLow   = float(2.0 * centralMirrorLevel - high)
+cClose = float(2.0 * centralMirrorLevel - close)
+
+// --- „—Õ·Â œÊ„:  ﬁ«—‰ ò‰œ· „—ò“Ì ‰”»  »Â P1 Ê P2 ---
+mHigh1 = float(2.0 * mirrorLevel1 - cLow)
+mLow1  = float(2.0 * mirrorLevel1 - cHigh)
+mHigh2 = float(2.0 * mirrorLevel2 - cLow)
+mLow2  = float(2.0 * mirrorLevel2 - cHigh)
+
+// „Õ«”»«  Å«ÌÂ ›—«ò «·ùÂ«
+bool u_dn = true, bool u_u0 = true, bool u_u1 = true, bool u_u2 = true, bool u_u3 = true, bool u_u4 = true
+bool d_dn = true, bool d_u0 = true, bool d_u1 = true, bool d_u2 = true, bool d_u3 = true, bool d_u4 = true
+
+for i = 1 to n
+    u_dn := u_dn and (high[n-i] < high[n])
+    u_u0 := u_u0 and (high[n+i] < high[n])
+    u_u1 := u_u1 and (high[n+1] <= high[n] and high[n+i+1] < high[n])
+    u_u2 := u_u2 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i+2] < high[n])
+    u_u3 := u_u3 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i+3] < high[n])
+    u_u4 := u_u4 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i+4] < high[n])
+    
+    d_dn := d_dn and (low[n-i] > low[n])
+    d_u0 := d_u0 and (low[n+i] > low[n])
+    d_u1 := d_u1 and (low[n+1] >= low[n] and low[n+i+1] > low[n])
+    d_u2 := d_u2 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i+2] > low[n])
+    d_u3 := d_u3 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i+3] > low[n])
+    d_u4 := d_u4 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i+4] > low[n])
+
+flagUp = u_u0 or u_u1 or u_u2 or u_u3 or u_u4
+flagDn = d_u0 or d_u1 or d_u2 or d_u3 or d_u4
+
+upFractal1 = u_dn and flagUp and time[n] < selectedTime1
+downFractal1 = d_dn and flagDn and time[n] < selectedTime1
+upFractal2 = u_dn and flagUp and time[n] < selectedTime2
+downFractal2 = d_dn and flagDn and time[n] < selectedTime2
+
+var int refBarIndex1 = na
+var int refBarIndex2 = na
+if time <= selectedTime1
+    refBarIndex1 := bar_index
+if time <= selectedTime2
+    refBarIndex2 := bar_index
+
+var upFracIdx1 = array.new_int(0)
+var dnFracIdx1 = array.new_int(0)
+if upFractal1
+    array.push(upFracIdx1, int(bar_index - n))
+if downFractal1
+    array.push(dnFracIdx1, int(bar_index - n))
+
+var upFracIdx2 = array.new_int(0)
+var dnFracIdx2 = array.new_int(0)
+if upFractal2
+    array.push(upFracIdx2, int(bar_index - n))
+if downFractal2
+    array.push(dnFracIdx2, int(bar_index - n))
+
+bool p1Up = not na(refBarIndex1) and bar_index > refBarIndex1 and array.indexof(upFracIdx1, 2 * refBarIndex1 - bar_index) >= 0
+bool p1Dn = not na(refBarIndex1) and bar_index > refBarIndex1 and array.indexof(dnFracIdx1, 2 * refBarIndex1 - bar_index) >= 0
+bool p2Up = not na(refBarIndex2) and bar_index > refBarIndex2 and array.indexof(upFracIdx2, 2 * refBarIndex2 - bar_index) >= 0
+bool p2Dn = not na(refBarIndex2) and bar_index > refBarIndex2 and array.indexof(dnFracIdx2, 2 * refBarIndex2 - bar_index) >= 0
+
+// --- ¬—«ÌÂ »—«Ì –ŒÌ—Â ”ÿÊÕ »—ŒÊ—œ ---
+var float[] activeWhiteLines = array.new_float()
+
+// --- „Ê Ê— „Õ«”»Â  ﬁ«ÿ⁄ œ— Å”ù“„Ì‰Â (»œÊ‰ —”„ ŒÿÊÿ) ---
+var int yPrevX = na, var float yPrevY = na
+var int yCurrX = na, var float yCurrY = na
+var int gPrevX = na, var float gPrevY = na
+var int gCurrX = na, var float gCurrY = na
+bool triggerIntersectionCheck = false
+
+if p1Up
+    yPrevX := yCurrX, yPrevY := yCurrY, yCurrX := bar_index, yCurrY := mHigh1
+    triggerIntersectionCheck := true
+if p2Up
+    yPrevX := yCurrX, yPrevY := yCurrY, yCurrX := bar_index, yCurrY := mHigh2
+    triggerIntersectionCheck := true
+
+if p1Dn
+    gPrevX := gCurrX, gPrevY := gCurrY, gCurrX := bar_index, gCurrY := mLow1
+    triggerIntersectionCheck := true
+if p2Dn
+    gPrevX := gCurrX, gPrevY := gCurrY, gCurrX := bar_index, gCurrY := mLow2
+    triggerIntersectionCheck := true
+
+// „Õ«”»Â  ﬁ«ÿ⁄ —Ì«÷Ì Ê –ŒÌ—Â ”ÿÕ
+if triggerIntersectionCheck and not na(yPrevX) and not na(yCurrX) and not na(gPrevX) and not na(gCurrX)
+    if (yCurrX != yPrevX) and (gCurrX != gPrevX)
+        float m1 = (yCurrY - yPrevY) / (yCurrX - yPrevX)
+        float m2 = (gCurrY - gPrevY) / (gCurrX - gPrevX)
+        if m1 != m2
+            float ix = (m1 * yPrevX - m2 * gPrevX + gPrevY - yPrevY) / (m1 - m2)
+            if ix >= math.max(yPrevX, gPrevX) and ix <= math.min(yCurrX, gCurrX)
+                float iy = m1 * (ix - yPrevX) + yPrevY
+                array.push(activeWhiteLines, iy) // –ŒÌ—Â ”ÿÕ „Õ«”»Â ‘œÂ
+
+// --- ”Ì” „ »——”Ì ”Ìê‰«· ---
+bool buySignal = false
+bool sellSignal = false
+
+if array.size(activeWhiteLines) > 0
+    int idx = array.size(activeWhiteLines) - 1
+    while idx >= 0
+        float lineLevel = array.get(activeWhiteLines, idx)
+        
+        // »——”Ì ·„” ‘œ‰ ”ÿÕ œ— «Ì‰ ò‰œ·
+        if high >= lineLevel and low <= lineLevel
+            
+            // »——”Ì ÃÂ  »—ŒÊ—œ (»« «” ›«œÂ «“ ò·Ê“ ò‰œ· ﬁ»·Ì)
+            if close[1] < lineLevel or (close[1] == lineLevel and open < lineLevel)
+                // «“ Å«ÌÌ‰ »Â Œÿ —”ÌœÌ„ -> „ﬁ«Ê„  -> ”Ìê‰«· ›—Ê‘
+                sellSignal := true
+            else if close[1] > lineLevel or (close[1] == lineLevel and open > lineLevel)
+                // «“ »«·« »Â Œÿ —”ÌœÌ„ -> Õ„«Ì  -> ”Ìê‰«· Œ—Ìœ
+                buySignal := true
+            
+            // Õ–› ”ÿÕ «“ Õ«›ŸÂ »⁄œ «“ «Ê·Ì‰ »—ŒÊ—œ
+            array.remove(activeWhiteLines, idx)
+        
+        idx -= 1
+
+// —”„ ”Ìê‰«·ùÂ« —ÊÌ ç«— 
+plotshape(buySignal, title="Buy Signal", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.normal)
+plotshape(sellSignal, title="Sell Signal", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.normal)
+
+if buySignal
+    alert("”Ìê‰«· Œ—Ìœ: ﬁÌ„  «“ »«·« »« ”ÿÕ  ﬁ«ÿ⁄ »—ŒÊ—œ ò—œ", alert.freq_once_per_bar)
+if sellSignal
+    alert("”Ìê‰«· ›—Ê‘: ﬁÌ„  «“ Å«ÌÌ‰ »« ”ÿÕ  ﬁ«ÿ⁄ »—ŒÊ—œ ò—œ", alert.freq_once_per_bar)

@@ -1,0 +1,88 @@
+//@version=5
+indicator("Tagnet Circles{Morindok} by @BITMOON618", overlay=true, max_polylines_count=50)
+
+t1 = input.time(0, title="Time Point 1", confirm=true)
+t2 = input.time(0, title="Time Point 2", confirm=true)
+blue_mult = input.float(1.0, title="÷—Ì» «‰œ«“Â œ«Ì—Â ¬»Ì", step=0.1, minval=0.1)
+use_golden_ratio = input.bool(false, title="«” ›«œÂ «“ —‘œ »« ‰”»  ÿ·«ÌÌ")
+start_from_bottom = input.bool(false, title="‘—Ê⁄ —‘œ «“ Å«ÌÌ‰ (œ— ’Ê—  ›⁄«· »Êœ‰ ‰”»  ÿ·«ÌÌ)")
+
+var float max_h = na
+var float min_l = na
+
+if time >= math.min(t1, t2) and time <= math.max(t1, t2)
+    max_h := na(max_h) ? high : math.max(max_h, high)
+    min_l := na(min_l) ? low : math.min(min_l, low)
+
+if barstate.islastconfirmedhistory
+    if not na(max_h) and not na(min_l)
+        float dt = float(math.max(t1, t2) - math.min(t1, t2))
+        float dp = max_h - min_l
+        
+        float ct = float(math.min(t1, t2)) + dt / 2.0
+        float cp = min_l + dp / 2.0
+        
+        // «⁄„«· ÷—Ì» œ«Ì—Â ¬»Ì »Â ‘⁄«⁄ “„«‰ Ê ﬁÌ„ 
+        float rt = (dt / 2.0) * blue_mult
+        float rp = (dp / 2.0) * blue_mult
+        
+        int N = 100 
+        
+        // —”„ œ«Ì—Â «’·Ì (¬»Ì)
+        main_pts = array.new<chart.point>()
+        for i = 0 to N - 1
+            float angle = 2.0 * math.pi * i / N
+            array.push(main_pts, chart.point.from_time(int(ct + rt * math.cos(angle)), cp + rp * math.sin(angle)))
+        polyline.new(main_pts, closed=true, xloc=xloc.bar_time, line_color=color.blue, line_width=2)
+        
+        // —”„ ŒÿÊÿ «›ﬁÌ »«·« Ê Å«ÌÌ‰ œ«Ì—Â ¬»Ì (»« œ— ‰Ÿ— ê—› ‰ ÷—Ì»)
+        line.new(x1=int(math.min(t1, t2)), y1=cp + rp, x2=int(math.max(t1, t2)), y2=cp + rp, xloc=xloc.bar_time, color=color.blue, width=1, style=line.style_dashed, extend=extend.right)
+        line.new(x1=int(math.min(t1, t2)), y1=cp - rp, x2=int(math.max(t1, t2)), y2=cp - rp, xloc=xloc.bar_time, color=color.blue, width=1, style=line.style_dashed, extend=extend.right)
+        
+        // —”„ œ«Ì—ÂùÂ«Ì „„«” »Ì—Ê‰Ì
+        int M = 8 
+        float base_rho = math.sin(math.pi / M) / (1.0 - math.sin(math.pi / M)) 
+        float phi = 1.6180339887 
+        
+        float current_angle = 0.0
+        float prev_rho = base_rho
+        
+        for j = 0 to M - 1
+            float growth_factor = use_golden_ratio ? math.pow(phi, j / 2.0) : 1.0
+            float current_rho = base_rho * growth_factor
+            
+            // „Õ«”»Â œÌ‰«„Ìò “«ÊÌÂ Ê ‰ﬁÿÂ ‘—Ê⁄
+            if j == 0
+                if use_golden_ratio
+                    current_angle := start_from_bottom ? -(math.pi / 2.0) : (math.pi / 2.0)
+                else
+                    current_angle := 0.0
+            else
+                float num = 1.0 + prev_rho + current_rho - (current_rho * prev_rho)
+                float den = (1.0 + prev_rho) * (1.0 + current_rho)
+                float delta_theta = math.acos(math.max(-1.0, math.min(1.0, num / den))) 
+                
+                // ÃÂ  ç—Œ‘ œ«Ì—ÂùÂ« (”«⁄ ùê—œ Ì« Å«œ”«⁄ ùê—œ)
+                float direction = use_golden_ratio ? -1.0 : 1.0
+                current_angle += direction * delta_theta
+                
+            prev_rho := current_rho
+            
+            float srt = rt * current_rho
+            float srp = rp * current_rho
+            
+            float d_t = rt + srt
+            float d_p = rp + srp
+            
+            float sct = ct + d_t * math.cos(current_angle)
+            float scp = cp + d_p * math.sin(current_angle)
+            
+            small_pts = array.new<chart.point>()
+            for i = 0 to N - 1
+                float angle = 2.0 * math.pi * i / N
+                array.push(small_pts, chart.point.from_time(int(sct + srt * math.cos(angle)), scp + srp * math.sin(angle)))
+            
+            // «‰ Œ«» —‰ê „ ‰«Ê» »—«Ì œ«Ì—ÂùÂ« (ﬁ—„“ Ê ‰«—‰ÃÌ)
+            color circle_color = (j % 2 == 0) ? color.red : color.orange
+            
+            polyline.new(small_pts, closed=true, xloc=xloc.bar_time, line_color=circle_color, line_width=1)

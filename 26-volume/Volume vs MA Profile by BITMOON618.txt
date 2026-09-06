@@ -1,0 +1,101 @@
+//@version=5
+indicator("Volume vs MA Profile{Morindok} by BITMOON618", shorttitle="Vol/MA Profile", overlay=false, precision=2)
+
+// ============================================================================
+// ورودی‌ها (Inputs)
+// تنها فاکتور اصلی و ضروری برای هدایت سیستم: دوره (Period)
+// ============================================================================
+period   = input.int(20, "دوره (Period) — تنها فاکتور اصلی سیستم", minval=2, tooltip="این دوره هم برای محاسبه موینگ اوریج و هم برای پنجره جمع‌آوری حجم استفاده می‌شود.")
+maType   = input.string("SMA", "نوع میانگین متحرک", options=["SMA", "EMA", "WMA", "VWMA", "HMA"], group="تنظیمات جانبی (اختیاری)")
+srcPrice = input.source(close, "منبع قیمت", group="تنظیمات جانبی (اختیاری)")
+showMA   = input.bool(true, "نمایش خط میانگین متحرک روی نمودار جداگانه", group="نمایش")
+
+// ============================================================================
+// محاسبه میانگین متحرک بر اساس نوع انتخاب‌شده
+// ============================================================================
+f_ma(src, len, type) =>
+    float result = switch type
+        "SMA"  => ta.sma(src, len)
+        "EMA"  => ta.ema(src, len)
+        "WMA"  => ta.wma(src, len)
+        "VWMA" => ta.vwma(src, len)
+        "HMA"  => ta.hma(src, len)
+        =>        ta.sma(src, len)
+    result
+
+maValue = f_ma(srcPrice, period, maType)
+
+// ============================================================================
+// طبقه‌بندی حجم هر کندل بر اساس موقعیت قیمت نسبت به موینگ اوریج
+// اگر قیمت بسته‌شدن بالاتر از MA باشد => حجم متعلق به ناحیه بالا
+// اگر قیمت بسته‌شدن پایین‌تر از MA باشد => حجم متعلق به ناحیه پایین
+// ============================================================================
+isAbove = srcPrice > maValue
+isBelow = srcPrice < maValue
+
+volAbove = isAbove ? volume : 0.0
+volBelow = isBelow ? volume : 0.0
+
+// ============================================================================
+// جمع حجم در یک پنجره متحرک (Rolling Window) به اندازه period
+// این دقیقاً همان "پروفایل حجم نسبت به موینگ اوریج" است
+// ============================================================================
+sumVolAbove = math.sum(volAbove, period)
+sumVolBelow = math.sum(volBelow, period)
+totalVol    = sumVolAbove + sumVolBelow
+
+pctAbove = totalVol > 0 ? sumVolAbove / totalVol * 100 : 0.0
+pctBelow = totalVol > 0 ? sumVolBelow / totalVol * 100 : 0.0
+
+// نسبت علمی: هرچه این نسبت بزرگتر از 1 باشد یعنی حجم زیر MA غالب است
+ratioBelowOverAbove = sumVolAbove > 0 ? sumVolBelow / sumVolAbove : na
+
+// ============================================================================
+// منطق تفسیر روند طبق تعریف کاربر:
+// حجم بیشتر زیر MA نسبت به بالای آن => نشانه مثبت / تفسیر صعودی (انباشت)
+// حجم بیشتر بالای MA نسبت به پایین آن => نشانه منفی / تفسیر نزولی (توزیع)
+// ============================================================================
+bullishSignal = sumVolBelow > sumVolAbove
+bearishSignal = sumVolAbove > sumVolBelow
+
+biasText  = bullishSignal ? "صعودی (انباشت زیر MA)" : bearishSignal ? "نزولی (توزیع بالای MA)" : "خنثی"
+biasColor = bullishSignal ? color.green : bearishSignal ? color.red : color.gray
+
+// قدرت سیگنال (چقدر عدم تعادل حجمی وجود دارد)
+imbalanceStrength = totalVol > 0 ? math.abs(sumVolBelow - sumVolAbove) / totalVol * 100 : 0.0
+
+// ============================================================================
+// رسم هیستوگرام حجم رنگ‌شده بر اساس بالا/پایین بودن نسبت به MA
+// ============================================================================
+plot(volAbove,  title="حجم بالای MA (فشار فروش/توزیع)", style=plot.style_columns, color=color.new(color.red, 15))
+plot(-volBelow, title="حجم پایین MA (فشار خرید/انباشت)", style=plot.style_columns, color=color.new(color.green, 15))
+hline(0, "خط صفر", color=color.new(color.gray, 50), linestyle=hline.style_dashed)
+
+plot(showMA ? maValue - maValue : na, display=display.none) // placeholder جهت حفظ سازگاری با overlay=false
+
+// ============================================================================
+// جدول نمایش اطلاعات
+// ============================================================================
+var table infoTable = table.new(position.top_right, 2, 7, border_width=1, bgcolor=color.new(color.black, 60), border_color=color.new(color.gray, 30), frame_width = 1)
+
+if barstate.islast
+    table.cell(infoTable, 0, 0, "معیار", text_color=color.white, bgcolor=color.new(color.blue, 30), text_size=size.small)
+    table.cell(infoTable, 1, 0, "مقدار", text_color=color.white, bgcolor=color.new(color.blue, 30), text_size=size.small)
+
+    table.cell(infoTable, 0, 1, "دوره (Period)", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 1, str.tostring(period), text_color=color.white, text_size=size.small)
+
+    table.cell(infoTable, 0, 2, "نوع میانگین", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 2, maType, text_color=color.white, text_size=size.small)
+
+    table.cell(infoTable, 0, 3, "حجم بالای MA", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 3, str.tostring(sumVolAbove, format.volume), text_color=color.red, text_size=size.small)
+
+    table.cell(infoTable, 0, 4, "حجم پایین MA", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 4, str.tostring(sumVolBelow, format.volume), text_color=color.green, text_size=size.small)
+
+    table.cell(infoTable, 0, 5, "درصد (بالا / پایین)", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 5, str.tostring(pctAbove, "#.##") + "% / " + str.tostring(pctBelow, "#.##") + "%", text_color=color.white, text_size=size.small)
+
+    table.cell(infoTable, 0, 6, "تفسیر روند", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 6, biasText, text_color=biasColor, text_size=size.small)

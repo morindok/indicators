@@ -1,0 +1,341 @@
+﻿//@version=5
+indicator("Golden Spiral{Morindok}", overlay=false, max_polylines_count=20, max_labels_count=500)
+
+center_time = input.time(timestamp("2024-01-01"), title="1. Spiral Center Time",   confirm=true)
+label_time  = input.time(timestamp("2024-01-02"), title="2. Label Target Time",    confirm=true)
+mark_time   = input.time(timestamp("2024-01-03"), title="3. Mark Candles At Time", confirm=true)
+pl_time_1   = input.time(timestamp("2024-01-04"), title="4. Price Line Time 1",    confirm=true)
+pl_time_2   = input.time(timestamp("2024-01-05"), title="5. Price Line Time 2",    confirm=true)
+float rot_deg = input.float(0.0, "Spiral Rotation (degrees)")
+int   steps        = input.int(1000,  "Steps (resolution)", minval=200, maxval=2000)
+float turns        = input.float(3.0, "Turns")
+float x_scale      = input.float(1.0, "X-Axis Spread")
+float y_scale      = input.float(1.0, "Y-Axis Scale")
+bool  auto_rotate  = input.bool(false, "Auto Rotate by Price Line Slope")
+float rot_sens     = input.float(1.0,  "Rotation Sensitivity", minval=0.01, step=0.1)
+
+show_turning_points_only = input.bool(false, "Show Spiral Turning Points Only")
+show_cross_points        = input.bool(false, "Show Price Line Cross Points")
+
+var int   c_idx      = na
+var int   l_idx      = na
+var int   m_idx      = na
+var int   pl1_idx    = na
+var int   pl2_idx    = na
+var float min_c_dist = 1e15
+var float min_l_dist = 1e15
+var float min_m_dist = 1e15
+var float min_p1dist = 1e15
+var float min_p2dist = 1e15
+
+var float pl1_price_raw = na
+var float pl2_price_raw = na
+
+if math.abs(time - center_time) < min_c_dist
+    min_c_dist := math.abs(time - center_time)
+    c_idx      := bar_index
+
+if math.abs(time - label_time) < min_l_dist
+    min_l_dist := math.abs(time - label_time)
+    l_idx      := bar_index
+
+if math.abs(time - mark_time) < min_m_dist
+    min_m_dist := math.abs(time - mark_time)
+    m_idx      := bar_index
+
+if math.abs(time - pl_time_1) < min_p1dist
+    min_p1dist      := math.abs(time - pl_time_1)
+    pl1_idx         := bar_index
+    pl1_price_raw   := close
+
+if math.abs(time - pl_time_2) < min_p2dist
+    min_p2dist      := math.abs(time - pl_time_2)
+    pl2_idx         := bar_index
+    pl2_price_raw   := close
+
+if barstate.islast
+    int   fc         = na(c_idx) ? bar_index - steps : c_idx
+    int   max_x      = bar_index + 490
+    float phi        = (1.0 + math.sqrt(5.0)) / 2.0
+    float b          = math.log(phi) / (math.pi / 2.0)
+    float theta_max  = turns * 2.0 * math.pi
+    float max_r      = math.exp(b * theta_max)
+
+    // محاسبه زاویه چرخش از شیب خط قیمت
+    float rot_angle = rot_deg * math.pi / 180.0
+    array<chart.point> pts_m  = array.new<chart.point>()
+    array<chart.point> pts_h  = array.new<chart.point>()
+    array<chart.point> pts_l  = array.new<chart.point>()
+    array<chart.point> pts_ms = array.new<chart.point>()
+    array<chart.point> pts_hs = array.new<chart.point>()
+    array<chart.point> pts_ls = array.new<chart.point>()
+
+    array<float> arr_dy_f = array.new<float>()
+    array<float> arr_dy_b = array.new<float>()
+    array<float> arr_dx_f = array.new<float>()
+    array<float> arr_dx_b = array.new<float>()
+
+    array<int>   arr_xf   = array.new<int>()
+    array<int>   arr_xb   = array.new<int>()
+    array<int>   arr_fi   = array.new<int>()
+    array<int>   arr_bi   = array.new<int>()
+    array<float> arr_pf   = array.new<float>()
+    array<float> arr_pb   = array.new<float>()
+    array<float> arr_hf   = array.new<float>()
+    array<float> arr_hb   = array.new<float>()
+    array<bool>  arr_fok  = array.new<bool>()
+    array<bool>  arr_bok  = array.new<bool>()
+
+    int   lbl_x      = na
+    float lbl_y      = na
+    float lbl_price  = na
+
+    int   pl1_sx     = na
+    float pl1_sy     = na
+    float pl1_price  = na
+    int   pl2_sx     = na
+    float pl2_sy     = na
+    float pl2_price  = na
+    int thresh_pl = math.max(2, steps / 300)
+    for i = 0 to steps - 1
+        float t       = i / (steps - 1.0)
+        float theta   = t * theta_max
+        float theta_r = theta + rot_angle   // ← چرخش اعمال می‌شه اینجا
+        float r       = math.exp(b * theta) / max_r
+        float sin_t   = math.sin(theta_r)
+        float cos_t   = math.cos(theta_r)
+        float dx      = r * cos_t * x_scale * steps
+        float dy      = r * sin_t * y_scale
+        float dy_h    = r * 1.618 * sin_t * y_scale
+        float dy_l    = r * 0.618 * sin_t * y_scale
+
+        int xf  = math.min(math.round(fc + dx), max_x)
+        int xb  = math.min(math.round(fc - dx), max_x)
+        int fi  = fc + i
+        int bi  = fc - i
+        bool fi_ok = fi >= 0 and fi <= bar_index
+        bool bi_ok = bi >= 0 and bi <= bar_index
+        float pf = fi_ok ? close[bar_index - fi] : na
+        float pb = bi_ok ? close[bar_index - bi] : na
+        float hf = fi_ok ? high[bar_index - fi]  : na
+        float hb = bi_ok ? high[bar_index - bi]  : na
+
+        if xf >= 0
+            array.push(pts_m, chart.point.from_index(xf,  dy))
+            array.push(pts_h, chart.point.from_index(xf,  dy_h))
+            array.push(pts_l, chart.point.from_index(xf,  dy_l))
+
+        if xb >= 0
+            array.push(pts_ms, chart.point.from_index(xb, -dy))
+            array.push(pts_hs, chart.point.from_index(xb, -dy_h))
+            array.push(pts_ls, chart.point.from_index(xb, -dy_l))
+
+        array.push(arr_dy_f, dy)
+        array.push(arr_dy_b, -dy)
+        array.push(arr_dx_f, dx)
+        array.push(arr_dx_b, -dx)
+        array.push(arr_xf, xf)
+        array.push(arr_xb, xb)
+        array.push(arr_fi, fi)
+        array.push(arr_bi, bi)
+        array.push(arr_pf, pf)
+        array.push(arr_pb, pb)
+        array.push(arr_hf, hf)
+        array.push(arr_hb, hb)
+        array.push(arr_fok, fi_ok)
+        array.push(arr_bok, bi_ok)
+
+        if not na(l_idx) and not show_turning_points_only
+            if fi_ok and fi == l_idx
+                lbl_x     := xf
+                lbl_y     := dy
+                lbl_price := pf
+            if bi_ok and bi == l_idx
+                lbl_x     := xb
+                lbl_y     := -dy
+                lbl_price := pb
+
+        if not na(pl1_idx)
+            if fi_ok and math.abs(xf - pl1_idx) <= thresh_pl
+                pl1_sx    := xf
+                pl1_sy    := dy
+                pl1_price := pf
+            if bi_ok and math.abs(xb - pl1_idx) <= thresh_pl
+                pl1_sx    := xb
+                pl1_sy    := -dy
+                pl1_price := pb
+
+        if not na(pl2_idx)
+            if fi_ok and math.abs(xf - pl2_idx) <= thresh_pl
+                pl2_sx    := xf
+                pl2_sy    := dy
+                pl2_price := pf
+            if bi_ok and math.abs(xb - pl2_idx) <= thresh_pl
+                pl2_sx    := xb
+                pl2_sy    := -dy
+                pl2_price := pb
+    polyline.new(pts_m,  line_color=color.blue,                 line_width=2)
+    polyline.new(pts_h,  line_color=color.red,                  line_width=2, line_style=line.style_dashed)
+    polyline.new(pts_l,  line_color=color.green,                line_width=2, line_style=line.style_dashed)
+    polyline.new(pts_ms, line_color=color.new(color.blue,  50), line_width=2)
+    polyline.new(pts_hs, line_color=color.new(color.red,   50), line_width=2, line_style=line.style_dashed)
+    polyline.new(pts_ls, line_color=color.new(color.green, 50), line_width=2, line_style=line.style_dashed)
+
+    if not na(pl1_sx) and not na(pl2_sx)
+        line.new(x1=pl1_sx, y1=pl1_sy, x2=pl2_sx, y2=pl2_sy, xloc=xloc.bar_index, extend=extend.both, color=color.yellow, width=2)
+
+        if show_cross_points
+            float dx_line   = pl2_sx - pl1_sx
+            float dy_line   = pl2_sy - pl1_sy
+            float slope     = dx_line == 0 ? na : dy_line / dx_line
+            float intercept = na(slope) ? na : pl1_sy - slope * pl1_sx
+
+            int cross_cool = math.max(3, steps / 100)
+            int last_cf    = -cross_cool
+            int last_cb    = -cross_cool
+
+            for i = 0 to steps - 1
+                int   xf_i  = array.get(arr_xf, i)
+                float dyf_i = array.get(arr_dy_f, i)
+                int   fi_i  = array.get(arr_fi, i)
+                bool  fok_i = array.get(arr_fok, i)
+                float pf_i  = array.get(arr_pf, i)
+                float hf_i  = array.get(arr_hf, i)
+
+                float line_y_f = na(slope) ? pl1_sy : slope * xf_i + intercept
+                float diff_f   = dyf_i - line_y_f
+
+                if i > 0 and (i - last_cf) >= cross_cool
+                    float prev_dyf    = array.get(arr_dy_f, i - 1)
+                    int   prev_xf     = array.get(arr_xf, i - 1)
+                    float prev_line_y = na(slope) ? pl1_sy : slope * prev_xf + intercept
+                    float prev_diff   = prev_dyf - prev_line_y
+                    if (prev_diff < 0 and diff_f >= 0) or (prev_diff > 0 and diff_f <= 0)
+                        last_cf := i
+                        label.new(x=xf_i, y=dyf_i, text="✦ " + str.tostring(pf_i, "#.##"), xloc=xloc.bar_index, yloc=yloc.price, color=color.yellow, textcolor=color.black, style=label.style_label_down, size=size.small)
+                        if fok_i
+                            label.new(x=fi_i, y=hf_i, text="✦ " + str.tostring(pf_i, "#.##"), xloc=xloc.bar_index, yloc=yloc.price, color=color.yellow, textcolor=color.black, style=label.style_label_down, size=size.small, force_overlay=true)
+
+                int   xb_i  = array.get(arr_xb, i)
+                float dyb_i = array.get(arr_dy_b, i)
+                int   bi_i  = array.get(arr_bi, i)
+                bool  bok_i = array.get(arr_bok, i)
+                float pb_i  = array.get(arr_pb, i)
+                float hb_i  = array.get(arr_hb, i)
+
+                float line_y_b  = na(slope) ? pl1_sy : slope * xb_i + intercept
+                float diff_b    = dyb_i - line_y_b
+
+                if i > 0 and (i - last_cb) >= cross_cool
+                    float prev_dyb    = array.get(arr_dy_b, i - 1)
+                    int   prev_xb     = array.get(arr_xb, i - 1)
+                    float prev_line_yb = na(slope) ? pl1_sy : slope * prev_xb + intercept
+                    float prev_diff_b  = prev_dyb - prev_line_yb
+                    if (prev_diff_b < 0 and diff_b >= 0) or (prev_diff_b > 0 and diff_b <= 0)
+                        last_cb := i
+                        label.new(x=xb_i, y=dyb_i, text="✦ " + str.tostring(pb_i, "#.##"), xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.yellow, 30), textcolor=color.black, style=label.style_label_down, size=size.small)
+                        if bok_i
+                            label.new(x=bi_i, y=hb_i, text="✦ " + str.tostring(pb_i, "#.##"), xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.yellow, 30), textcolor=color.black, style=label.style_label_down, size=size.small, force_overlay=true)
+
+    if not show_turning_points_only and not na(lbl_x)
+        label.new(x=lbl_x, y=lbl_y, text="◎ " + str.tostring(lbl_price, "#.##"), xloc=xloc.bar_index, yloc=yloc.price, color=color.orange, textcolor=color.white, style=label.style_label_down, size=size.normal)
+
+    if show_turning_points_only
+        int cooldown_tp = math.max(8, int(steps / (turns * 10)))
+        int last_tp_f   = -cooldown_tp
+        int last_tp_b   = -cooldown_tp
+        int tp_num      = 0
+
+        for i = 1 to steps - 2
+            float dy_prev_f = array.get(arr_dy_f, i - 1)
+            float dy_curr_f = array.get(arr_dy_f, i)
+            float dy_next_f = array.get(arr_dy_f, i + 1)
+            float dx_prev_f = array.get(arr_dx_f, i - 1)
+            float dx_curr_f = array.get(arr_dx_f, i)
+            float dx_next_f = array.get(arr_dx_f, i + 1)
+            bool top_f      = dy_prev_f < dy_curr_f and dy_curr_f > dy_next_f
+            bool bottom_f   = dy_prev_f > dy_curr_f and dy_curr_f < dy_next_f
+            bool right_f    = dx_prev_f < dx_curr_f and dx_curr_f > dx_next_f
+            bool left_f     = dx_prev_f > dx_curr_f and dx_curr_f < dx_next_f
+            bool turn_f     = top_f or bottom_f or right_f or left_f
+
+            if turn_f and (i - last_tp_f) >= cooldown_tp
+                last_tp_f := i
+                tp_num    += 1
+                int   xf_t   = array.get(arr_xf, i)
+                int   fi_t   = array.get(arr_fi, i)
+                float dy_t   = array.get(arr_dy_f, i)
+                bool  fi_okt = array.get(arr_fok, i)
+                float pf_t   = array.get(arr_pf, i)
+                float hf_t   = array.get(arr_hf, i)
+                string dir_f = top_f ? "▲" : bottom_f ? "▼" : right_f ? "→" : "←"
+                string txt_f = str.tostring(tp_num) + " " + dir_f + " " + str.tostring(pf_t, "#.##")
+                color  col_f = top_f or right_f ? color.red : color.lime
+                string lbl_sf = top_f or right_f ? label.style_label_down : label.style_label_up
+                label.new(x=xf_t, y=dy_t, text=txt_f, xloc=xloc.bar_index, yloc=yloc.price, color=col_f, textcolor=color.white, style=lbl_sf, size=size.small)
+                if fi_okt
+                    label.new(x=fi_t, y=hf_t, text=txt_f, xloc=xloc.bar_index, yloc=yloc.price, color=col_f, textcolor=color.white, style=lbl_sf, size=size.small, force_overlay=true)
+
+            float dy_prev_b = array.get(arr_dy_b, i - 1)
+            float dy_curr_b = array.get(arr_dy_b, i)
+            float dy_next_b = array.get(arr_dy_b, i + 1)
+            float dx_prev_b = array.get(arr_dx_b, i - 1)
+            float dx_curr_b = array.get(arr_dx_b, i)
+            float dx_next_b = array.get(arr_dx_b, i + 1)
+            bool top_b      = dy_prev_b < dy_curr_b and dy_curr_b > dy_next_b
+            bool bottom_b   = dy_prev_b > dy_curr_b and dy_curr_b < dy_next_b
+            bool right_b    = dx_prev_b < dx_curr_b and dx_curr_b > dx_next_b
+            bool left_b     = dx_prev_b > dx_curr_b and dx_curr_b < dx_next_b
+            bool turn_b     = top_b or bottom_b or right_b or left_b
+
+            if turn_b and (i - last_tp_b) >= cooldown_tp
+                last_tp_b := i
+                tp_num    += 1
+                int   xb_t   = array.get(arr_xb, i)
+                int   bi_t   = array.get(arr_bi, i)
+                float dy_t_b = array.get(arr_dy_b, i)
+                bool  bi_okt = array.get(arr_bok, i)
+                float pb_t   = array.get(arr_pb, i)
+                float hb_t   = array.get(arr_hb, i)
+                string dir_b = top_b ? "▲" : bottom_b ? "▼" : right_b ? "→" : "←"
+                string txt_b = str.tostring(tp_num) + " " + dir_b + " " + str.tostring(pb_t, "#.##")
+                color  col_b = top_b or right_b ? color.new(color.red, 30) : color.new(color.lime, 30)
+                string lbl_sb = top_b or right_b ? label.style_label_down : label.style_label_up
+                label.new(x=xb_t, y=dy_t_b, text=txt_b, xloc=xloc.bar_index, yloc=yloc.price, color=col_b, textcolor=color.white, style=lbl_sb, size=size.small)
+                if bi_okt
+                    label.new(x=bi_t, y=hb_t, text=txt_b, xloc=xloc.bar_index, yloc=yloc.price, color=col_b, textcolor=color.white, style=lbl_sb, size=size.small, force_overlay=true)
+
+    if not show_turning_points_only and not na(m_idx)
+        int thresh   = math.max(3, steps / 200)
+        int cooldown = math.max(1, int(steps / (turns * 4)))
+        int last_f   = -cooldown
+        int last_b   = -cooldown
+        for i = 0 to steps - 1
+            float t2    = i / (steps - 1.0)
+            float th2   = t2 * theta_max
+            float th2_r = th2 + rot_angle   // ← چرخش اینجا هم اعمال می‌شه
+            float r2    = math.exp(b * th2) / max_r
+            float s2    = math.sin(th2_r)
+            float c2    = math.cos(th2_r)
+            float dx2   = r2 * c2 * x_scale * steps
+            float dy2   = r2 * s2 * y_scale
+            int   xf2   = math.min(math.round(fc + dx2), max_x)
+            int   xb2   = math.min(math.round(fc - dx2), max_x)
+            int   fi2   = fc + i
+            int   bi2   = fc - i
+            bool fi2_ok = fi2 >= 0 and fi2 <= bar_index
+            bool bi2_ok = bi2 >= 0 and bi2 <= bar_index
+
+            if math.abs(xf2 - m_idx) <= thresh and fi2_ok and (i - last_f) >= cooldown
+                last_f   := i
+                float pf2 = close[bar_index - fi2]
+                float hf2 = high[bar_index  - fi2]
+                label.new(x=xf2, y=dy2,  text="★ " + str.tostring(pf2, "#.##"), xloc=xloc.bar_index, yloc=yloc.price, color=color.purple,               textcolor=color.white, style=label.style_label_down, size=size.small)
+                label.new(x=fi2, y=hf2,  text="★ " + str.tostring(pf2, "#.##"), xloc=xloc.bar_index, yloc=yloc.price, color=color.purple,               textcolor=color.white, style=label.style_label_down, size=size.small, force_overlay=true)
+
+            if math.abs(xb2 - m_idx) <= thresh and bi2_ok and (i - last_b) >= cooldown
+                last_b   := i
+                float pb2 = close[bar_index - bi2]
+                float hb2 = high[bar_index  - bi2]
+                label.new(x=xb2, y=-dy2, text="★ " + str.tostring(pb2, "#.##"), xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.purple, 30), textcolor=color.white, style=label.style_label_down, size=size.small)
+                label.new(x=bi2, y=hb2,  text="★ " + str.tostring(pb2, "#.##"), xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.purple, 30), textcolor=color.white, style=label.style_label_down, size=size.small, force_overlay=true)

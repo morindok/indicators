@@ -1,0 +1,82 @@
+//@version=5
+indicator("Interactive Range & Price Curve Offset (9 Levels)", overlay=true)
+
+// ÏÑíÇÝÊ ÒãÇä ÔÑæÚ æ ÇíÇä
+startTime = input.time(0, "äÞØå ÔÑæÚ ÈÇÒå", confirm=true)
+endTime = input.time(0, "äÞØå ÇíÇä ÈÇÒå", confirm=true)
+
+// ÊäÙíãÇÊ ÖÑíÈ ÓÝÇÑÔí
+useRatio = input.bool(false, "ÇÓÊÝÇÏå ÇÒ ÖÑíÈ ÓÝÇÑÔí ÈÑÇí ÝÇÕáååÇ")
+ratioVal = input.float(1.618, "ãÞÏÇÑ ÖÑíÈ (ãËáÇð 1.618)", step=0.001)
+
+realStart = math.min(startTime, endTime)
+realEnd = math.max(startTime, endTime)
+
+float rangeTimeMinutes = (realEnd - realStart) / (1000 * 60)
+inRange = time >= realStart and time <= realEnd
+
+var float rangeHigh = na
+var float rangeLow = na
+
+// ãÍÇÓÈå ÈÇáÇÊÑíä æ ÇííäÊÑíä ÞíãÊ ÏÑ ÈÇÒå
+if inRange
+    rangeHigh := na(rangeHigh) ? high : math.max(rangeHigh, high)
+    rangeLow  := na(rangeLow) ? low : math.min(rangeLow, low)
+
+// ÐÎíÑå ÇÑÊÝÇÚ äåÇíí Ó ÇÒ ÚÈæÑ ÇÒ ÈÇÒå
+var float finalHeight = na
+if time == realEnd
+    finalHeight := rangeHigh - rangeLow
+
+// ãÍÇÓÈå ÖÑÇíÈ ? áÇíå (ÊÕÇÚÏí ÈÑÇí ÍÇáÊ ÓÝÇÑÔí¡ ÎØí ÈÑÇí ÍÇáÊ ÚÇÏí)
+float m1 = useRatio ? math.pow(ratioVal, 1) : 1
+float m2 = useRatio ? math.pow(ratioVal, 2) : 2
+float m3 = useRatio ? math.pow(ratioVal, 3) : 3
+float m4 = useRatio ? math.pow(ratioVal, 4) : 4
+float m5 = useRatio ? math.pow(ratioVal, 5) : 5
+float m6 = useRatio ? math.pow(ratioVal, 6) : 6
+float m7 = useRatio ? math.pow(ratioVal, 7) : 7
+float m8 = useRatio ? math.pow(ratioVal, 8) : 8
+float m9 = useRatio ? math.pow(ratioVal, 9) : 9
+
+// ÑÓã ÌÏæá ÇØáÇÚÇÊ ÏÑ ÂÎÑíä ˜äÏá
+var tbl = table.new(position.top_right, 2, 5, border_width=1, border_color=color.gray)
+if barstate.islast
+    table.cell(tbl, 0, 0, "ãÔÎÕå", bgcolor=color.blue, text_color=color.white)
+    table.cell(tbl, 1, 0, "ãÞÏÇÑ", bgcolor=color.blue, text_color=color.white)
+    if not na(rangeHigh)
+        table.cell(tbl, 0, 1, "High ÈÇÒå", bgcolor=color.new(color.gray, 80))
+        table.cell(tbl, 1, 1, str.tostring(rangeHigh, "#.####"), bgcolor=color.new(color.gray, 80))
+        
+        table.cell(tbl, 0, 2, "Low ÈÇÒå", bgcolor=color.new(color.gray, 80))
+        table.cell(tbl, 1, 2, str.tostring(rangeLow, "#.####"), bgcolor=color.new(color.gray, 80))
+        
+        table.cell(tbl, 0, 3, "ÇÑÊÝÇÚ (ÇÎÊáÇÝ)", bgcolor=color.new(color.gray, 80))
+        table.cell(tbl, 1, 3, str.tostring(finalHeight, "#.####"), bgcolor=color.new(color.gray, 80))
+        
+        table.cell(tbl, 0, 4, "ÒãÇä (ÏÞíÞå)", bgcolor=color.new(color.gray, 80))
+        table.cell(tbl, 1, 4, str.tostring(rangeTimeMinutes, "#.#"), bgcolor=color.new(color.gray, 80))
+
+bgcolor(inRange ? color.new(color.blue, 90) : na)
+
+// ÂÝÓÊ ÏÇÏä ÎæÏ ÞíãÊ ÇÕáí (Close) Èå ÓãÊ ÈÇáÇ (+) - 9 áÇíå
+plot(not na(finalHeight) ? close + (finalHeight * m1) : na, title="Up Level 1", color=color.green, style=plot.style_line)
+plot(not na(finalHeight) ? close + (finalHeight * m2) : na, title="Up Level 2", color=color.orange, style=plot.style_line)
+plot(not na(finalHeight) ? close + (finalHeight * m3) : na, title="Up Level 3", color=color.red, style=plot.style_line)
+plot(not na(finalHeight) ? close + (finalHeight * m4) : na, title="Up Level 4", color=color.purple, style=plot.style_line)
+plot(not na(finalHeight) ? close + (finalHeight * m5) : na, title="Up Level 5", color=color.fuchsia, style=plot.style_line)
+plot(not na(finalHeight) ? close + (finalHeight * m6) : na, title="Up Level 6", color=color.aqua, style=plot.style_line)
+plot(not na(finalHeight) ? close + (finalHeight * m7) : na, title="Up Level 7", color=color.yellow, style=plot.style_line)
+plot(not na(finalHeight) ? close + (finalHeight * m8) : na, title="Up Level 8", color=color.maroon, style=plot.style_line)
+plot(not na(finalHeight) ? close + (finalHeight * m9) : na, title="Up Level 9", color=color.teal, style=plot.style_line)
+
+// ÂÝÓÊ ÏÇÏä ÎæÏ ÞíãÊ ÇÕáí (Close) Èå ÓãÊ Çííä (-) - 9 áÇíå
+plot(not na(finalHeight) ? close - (finalHeight * m1) : na, title="Down Level 1", color=color.new(color.green, 40), style=plot.style_line)
+plot(not na(finalHeight) ? close - (finalHeight * m2) : na, title="Down Level 2", color=color.new(color.orange, 40), style=plot.style_line)
+plot(not na(finalHeight) ? close - (finalHeight * m3) : na, title="Down Level 3", color=color.new(color.red, 40), style=plot.style_line)
+plot(not na(finalHeight) ? close - (finalHeight * m4) : na, title="Down Level 4", color=color.new(color.purple, 40), style=plot.style_line)
+plot(not na(finalHeight) ? close - (finalHeight * m5) : na, title="Down Level 5", color=color.new(color.fuchsia, 40), style=plot.style_line)
+plot(not na(finalHeight) ? close - (finalHeight * m6) : na, title="Down Level 6", color=color.new(color.aqua, 40), style=plot.style_line)
+plot(not na(finalHeight) ? close - (finalHeight * m7) : na, title="Down Level 7", color=color.new(color.yellow, 40), style=plot.style_line)
+plot(not na(finalHeight) ? close - (finalHeight * m8) : na, title="Down Level 8", color=color.new(color.maroon, 40), style=plot.style_line)
+plot(not na(finalHeight) ? close - (finalHeight * m9) : na, title="Down Level 9", color=color.new(color.teal, 40), style=plot.style_line)

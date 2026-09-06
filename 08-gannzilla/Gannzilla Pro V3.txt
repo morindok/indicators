@@ -1,0 +1,682 @@
+import dash
+from dash import html, dcc, callback, Output, Input, State, no_update, ctx
+import plotly.graph_objects as go
+import numpy as np
+from datetime import datetime, timedelta
+from shapely.geometry import LineString, Point, MultiPoint
+import itertools
+
+
+# ===========================================================
+#  Ê«»⁄ ò„òÌ Ê „Õ«”»« 
+# ===========================================================
+
+def get_next_value(current_val, increment, data_type, is_ascending=True):
+    sign = 1 if is_ascending else -1
+    inc = increment * sign
+    if isinstance(current_val, datetime):
+        if data_type in ['time', 'pt']:
+            return current_val + timedelta(minutes=inc)
+        else:
+            return current_val + timedelta(days=inc)
+    else:
+        return current_val + inc
+
+
+def get_fractional_value(start_val, theta, increment, data_type, is_ascending, theta_step):
+    steps = theta / theta_step
+    total_increment = steps * increment
+    if not is_ascending:
+        total_increment = -total_increment
+
+    if isinstance(start_val, datetime):
+        if data_type in ['time', 'pt']:
+            return start_val + timedelta(minutes=total_increment)
+        else:
+            return start_val + timedelta(days=total_increment)
+    else:
+        return start_val + total_increment
+
+
+def format_value(val, data_type, is_hover=False):
+    if isinstance(val, datetime):
+        if data_type == 'time':
+            return val.strftime("%H:%M:%S") if is_hover else val.strftime("%H:%M")
+        elif data_type == 'date':
+            return val.strftime("%d.%m.%y %H:%M") if is_hover else val.strftime("%d.%m.%y")
+        else:
+            return val.strftime("%d.%m.%y %H:%M") if is_hover else val.strftime("%d.%m<br>%H:%M")
+    else:
+        return f"{val:.4f}" if is_hover else f"{val:g}"
+
+
+def get_spiral_data(cx, cy, max_r, start_val, increment, data_type, angle_deg=45, clockwise=True, is_ascending=True,
+                    points_count=300, return_continuous=False, rotation_offset=0):
+    phi = (1 + np.sqrt(5)) / 2
+    b = np.log(phi) / (np.pi / 2)
+    a = 0.5
+    theta_step = np.radians(angle_deg) if angle_deg else np.pi / 4
+    max_theta = np.log(max_r / a) / b if max_r > a else 0
+
+    theta_continuous = np.linspace(0, max_theta, 2000)
+    r_continuous = a * np.exp(b * theta_continuous)
+
+    rot_rad = np.radians(rotation_offset)
+
+    if clockwise:
+        x_lines = cx + r_continuous * np.cos(-theta_continuous + rot_rad)
+        y_lines = cy + r_continuous * np.sin(-theta_continuous + rot_rad)
+    else:
+        x_lines = cx + r_continuous * np.cos(theta_continuous + rot_rad)
+        y_lines = cy + r_continuous * np.sin(theta_continuous + rot_rad)
+
+    if return_continuous:
+        return x_lines, y_lines, theta_continuous, theta_step
+
+    hover_lines = []
+    for th in theta_continuous:
+        val = get_fractional_value(start_val, th, increment, data_type, is_ascending, theta_step)
+        hover_lines.append(format_value(val, data_type, is_hover=True))
+
+    x_texts, y_texts, texts = [], [], []
+    current_val = start_val
+    for i in range(points_count):
+        theta = i * theta_step
+        if theta > max_theta: break
+        r = a * np.exp(b * theta)
+
+        if clockwise:
+            tx = cx + r * np.cos(-theta + rot_rad)
+            ty = cy + r * np.sin(-theta + rot_rad)
+        else:
+            tx = cx + r * np.cos(theta + rot_rad)
+            ty = cy + r * np.sin(theta + rot_rad)
+
+        x_texts.append(tx)
+        y_texts.append(ty)
+        texts.append(format_value(current_val, data_type))
+        current_val = get_next_value(current_val, increment, data_type, is_ascending)
+
+    return x_lines, y_lines, hover_lines, x_texts, y_texts, texts
+
+
+def find_intersections_and_values(centers, start_val, increments, dirs, ascends, data_type, angle_deg, search_radius,
+                                  rotations):
+    results = []
+    for i, j in itertools.combinations(range(len(centers)), 2):
+        try:
+            x1, y1, t1, ts1 = get_spiral_data(centers[i][0], centers[i][1], search_radius, start_val, increments[i],
+                                              data_type, angle_deg, dirs[i], ascends[i], return_continuous=True,
+                                              rotation_offset=rotations[i])
+            x2, y2, t2, ts2 = get_spiral_data(centers[j][0], centers[j][1], search_radius, start_val, increments[j],
+                                              data_type, angle_deg, dirs[j], ascends[j], return_continuous=True,
+                                              rotation_offset=rotations[j])
+
+            line1 = LineString(np.column_stack((x1, y1)))
+            line2 = LineString(np.column_stack((x2, y2)))
+
+            intersection = line1.intersection(line2)
+            points = []
+
+            if isinstance(intersection, Point):
+                points = [intersection]
+            elif isinstance(intersection, MultiPoint):
+                points = list(intersection.geoms)
+            elif hasattr(intersection, 'geoms'):
+                points = [geom for geom in intersection.geoms if isinstance(geom, Point)]
+
+            for p in points:
+                dist1 = (x1 - p.x) ** 2 + (y1 - p.y) ** 2
+                dist2 = (x2 - p.x) ** 2 + (y2 - p.y) ** 2
+
+                theta1 = t1[np.argmin(dist1)]
+                theta2 = t2[np.argmin(dist2)]
+
+                val1 = get_fractional_value(start_val, theta1, increments[i], data_type, ascends[i], ts1)
+                val2 = get_fractional_value(start_val, theta2, increments[j], data_type, ascends[j], ts2)
+
+                results.append({
+                    'pair': f"S{i + 1} & S{j + 1}",
+                    'x': p.x, 'y': p.y,
+                    'val1_str': format_value(val1, data_type, True),
+                    'val2_str': format_value(val2, data_type, True),
+                    'val1_raw': val1,
+                    'val2_raw': val2
+                })
+        except Exception as e:
+            continue
+    return results
+
+
+# ===========================================================
+#  «»⁄ —”„ ‰„Êœ«— «’·Ì
+# ===========================================================
+
+def build_overlay_figure(spiral_centers, increments, dirs, ascends, colors, size, data_type, start_val, angle_deg, w_sy,
+                         w_candles, w_ey, draw_spiral_angles, rotations):
+    fig = go.Figure()
+    max_r = size / 2
+    R = max_r * 0.98
+
+    w_sy_val = float(w_sy) if w_sy is not None else 0
+    w_ey_val = float(w_ey) if w_ey is not None else 5
+    w_c_val = float(w_candles) if w_candles is not None else 5
+
+    dy = w_ey_val - w_sy_val
+
+    if w_c_val == 0:
+        wave_angle_rad = np.pi / 2 if dy >= 0 else -np.pi / 2
+    else:
+        wave_angle_rad = np.arctan2(dy, w_c_val)
+
+    wave_angle_deg = np.degrees(wave_angle_rad) % 360
+    back_angle_deg = (wave_angle_deg + 180) % 360
+    back_angle_rad = np.radians(back_angle_deg)
+
+    if draw_spiral_angles:
+        theta_spiral = np.linspace(0, 2 * np.pi, 300)
+        r_spiral = (theta_spiral / (2 * np.pi)) * R
+        x_spiral = r_spiral * np.cos(theta_spiral)
+        y_spiral = r_spiral * np.sin(theta_spiral)
+        fig.add_trace(
+            go.Scatter(x=x_spiral, y=y_spiral, mode='lines', line=dict(color='#ccc', width=1), hoverinfo='skip'))
+
+        for ang in range(0, 360, 15):
+            rad = np.radians(ang)
+            r_ang = (ang / 360.0) * R
+            fig.add_trace(go.Scatter(x=[r_ang * np.cos(rad), (r_ang + 0.2) * np.cos(rad)],
+                                     y=[r_ang * np.sin(rad), (r_ang + 0.2) * np.sin(rad)], mode='lines',
+                                     line=dict(color='#aaa', width=1), hoverinfo='skip'))
+            fig.add_trace(go.Scatter(x=[(r_ang + 0.6) * np.cos(rad)], y=[(r_ang + 0.6) * np.sin(rad)], mode='text',
+                                     text=[f"{ang}∞"], textfont=dict(size=8, color='#888'), hoverinfo='skip'))
+
+        r_fwd = (wave_angle_deg / 360.0) * R
+        r_bwd = (back_angle_deg / 360.0) * R
+    else:
+        fig.add_shape(type="circle", x0=-R, y0=-R, x1=R, y1=R, line=dict(color='#ccc', width=1), layer="below")
+        for ang in range(0, 360, 15):
+            rad = np.radians(ang)
+            fig.add_trace(
+                go.Scatter(x=[(R - 0.2) * np.cos(rad), R * np.cos(rad)], y=[(R - 0.2) * np.sin(rad), R * np.sin(rad)],
+                           mode='lines', line=dict(color='#aaa', width=1), hoverinfo='skip'))
+            fig.add_trace(
+                go.Scatter(x=[(R + 0.6) * np.cos(rad)], y=[(R + 0.6) * np.sin(rad)], mode='text', text=[f"{ang}∞"],
+                           textfont=dict(size=8, color='#888'), hoverinfo='skip'))
+
+        r_fwd = R
+        r_bwd = R
+
+    ix_fwd, iy_fwd = r_fwd * np.cos(wave_angle_rad), r_fwd * np.sin(wave_angle_rad)
+    ix_bwd, iy_bwd = r_bwd * np.cos(back_angle_rad), r_bwd * np.sin(back_angle_rad)
+
+    fig.add_trace(go.Scatter(x=[ix_bwd, ix_fwd], y=[iy_bwd, iy_fwd], mode='lines', line=dict(color='#FFD700', width=2),
+                             name="Wave", hovertext=f"Start: {w_sy_val}<br>End: {w_ey_val}<br>Candles: {w_c_val}",
+                             hoverinfo="text"))
+    fig.add_trace(go.Scatter(x=[ix_fwd, ix_bwd], y=[iy_fwd, iy_bwd], mode='markers',
+                             marker=dict(color='#FFD700', size=8, symbol='x'), hoverinfo='skip'))
+
+    text_r_fwd = r_fwd + 1.2
+    text_r_bwd = r_bwd + 1.2
+    fig.add_trace(go.Scatter(x=[text_r_fwd * np.cos(wave_angle_rad), text_r_bwd * np.cos(back_angle_rad)],
+                             y=[text_r_fwd * np.sin(wave_angle_rad), text_r_bwd * np.sin(back_angle_rad)], mode='text',
+                             text=[f"{wave_angle_deg:.1f}∞", f"{back_angle_deg:.1f}∞"],
+                             textfont=dict(color='#FFD700', size=11, weight='bold'), hoverinfo='skip'))
+    fig.add_trace(go.Scatter(x=[0], y=[0], mode='text', text=[f"?Y: {dy:g}"],
+                             textfont=dict(color='#FFD700', size=12, weight='bold'), textposition="bottom right",
+                             hoverinfo='skip'))
+
+    extended_max_r = size * 3
+    for i in range(len(spiral_centers)):
+        cx, cy = spiral_centers[i]
+        xl, yl, hl, xt, yt, texts = get_spiral_data(cx, cy, extended_max_r, start_val, increments[i], data_type,
+                                                    angle_deg, dirs[i], ascends[i], rotation_offset=rotations[i])
+
+        fig.add_trace(
+            go.Scatter(x=xl, y=yl, mode='lines', line=dict(color=colors[i], width=2, dash='dot'), hovertext=hl,
+                       hoverinfo='text'))
+        fig.add_trace(go.Scatter(x=xt, y=yt, mode='markers+text', marker=dict(color=colors[i], size=4), text=texts,
+                                 textposition="top center", textfont=dict(size=9, color='#FFFFFF'), hoverinfo='text'))
+        fig.add_shape(type="circle", x0=cx - 0.3, y0=cy - 0.3, x1=cx + 0.3, y1=cy + 0.3, fillcolor=colors[i],
+                      line=dict(color='white', width=1.5), layer="above", editable=True, name=f"handle_{i}")
+
+    axis_lim = (size / 2) + 1.5
+
+    fig.update_layout(
+        uirevision='constant',
+        xaxis=dict(range=[-axis_lim, axis_lim], showgrid=True, gridcolor='#333', gridwidth=1, dtick=1, zeroline=True,
+                   zerolinecolor='#FFD700', zerolinewidth=2, fixedrange=True, tickfont=dict(size=9, color='#888')),
+        yaxis=dict(range=[-axis_lim, axis_lim], showgrid=True, gridcolor='#333', gridwidth=1, dtick=1, zeroline=True,
+                   zerolinecolor='#FFD700', zerolinewidth=2, fixedrange=True, tickfont=dict(size=9, color='#888')),
+        margin=dict(l=45, r=25, t=25, b=45),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='#0a0a0a',  # Å” “„Ì‰Â òÌÂ«‰Ì  Ì—Â
+        showlegend=False,
+        dragmode=False
+    )
+
+    return fig
+
+
+# ===========================================================
+# UI Ê  ‰ŸÌ„« 
+# ===========================================================
+
+DEFAULT_CENTERS = [[0, 0] for _ in range(4)]
+COLORS = ['#00FFFF', '#FF00FF', '#39FF14', '#FF3131']  # —‰ê Â«Ì ‰∆Ê‰Ì »—«Ì «»⁄«œ »«·«
+DIRS = [True, False, True, False]
+ASCENDS = [True, False, True, False]
+
+app = dash.Dash(__name__, suppress_callback_exceptions=True)
+
+app.layout = html.Div([
+    html.Div([html.Span("?? "), html.Span("Gannzilla Pro - E8 God Mode", style={'font-weight': 'bold'})],
+             style={'display': 'flex', 'justify-content': 'space-between', 'background': '#000000', 'color': '#FFD700',
+                    'padding': '12px 15px', 'boxShadow': '0 2px 10px rgba(255, 215, 0, 0.2)', 'zIndex': '10',
+                    'borderBottom': '1px solid #FFD700'}),
+
+    html.Div([
+        html.Div([
+            dcc.Store(id='spiral-centers-store', data=DEFAULT_CENTERS),
+            html.Div(id='render-container', style={'width': '720px', 'height': '720px', 'margin': '20px auto',
+                                                   'boxShadow': '0 0 20px rgba(0, 255, 255, 0.1)',
+                                                   'borderRadius': '8px', 'overflow': 'hidden', 'background': '#000'},
+                     children=[
+                         dcc.Graph(id='plotly-overlay-layer',
+                                   config={'displayModeBar': False, 'edits': {'shapePosition': True}},
+                                   style={'width': '100%', 'height': '100%'})
+                     ]),
+            html.Div(id='intersections-table-container', style={'margin': '20px auto', 'width': '720px'})
+        ], style={'flex': '1', 'overflow': 'auto', 'padding': '10px', 'background': '#111'}),
+
+        html.Div([
+            html.Details([
+                html.Summary(html.B("Layout Settings", style={'color': '#00FFFF'}),
+                             style={'cursor': 'pointer', 'margin-bottom': '10px'}),
+                html.Div([html.Label("Grid Size", style={'width': '80px', 'display': 'inline-block', 'color': '#ccc'}),
+                          dcc.Input(id='inp-layout-size', value=15, type='number',
+                                    style={'width': '60px', 'borderRadius': '4px', 'background': '#222',
+                                           'color': '#fff', 'border': '1px solid #444'})],
+                         style={'margin': '5px 0'}),
+                html.Div([html.Label("Data type", style={'width': '80px', 'display': 'inline-block', 'color': '#ccc'}),
+                          dcc.Dropdown(id='dd-data-type', options=[{'label': 'Price', 'value': 'price'},
+                                                                   {'label': 'Date', 'value': 'date'},
+                                                                   {'label': 'Time', 'value': 'time'}], value='price',
+                                       style={'width': '140px', 'display': 'inline-block', 'color': '#000'})],
+                         style={'margin': '5px 0'}),
+                html.Div([dcc.Checklist(id='chk-spiral-angles',
+                                        options=[{'label': ' Draw Angle Spiral instead of Circle', 'value': 'yes'}],
+                                        value=[], style={'margin-top': '10px', 'font-size': '12px', 'color': '#aaa'})])
+            ], open=True, style={'font-size': '13px', 'padding': '10px', 'background': '#1A1A1A', 'borderRadius': '6px',
+                                 'border': '1px solid #333', 'marginBottom': '10px'}),
+
+            html.Details([
+                html.Summary(html.B("God-Tier Math Parameters", style={'color': '#FF00FF'}),
+                             style={'cursor': 'pointer', 'margin': '5px 0 10px'}),
+                html.Div(
+                    [html.Label("Start Value", style={'width': '80px', 'display': 'inline-block', 'color': '#ccc'}),
+                     dcc.Input(id='inp-price-value', value='100',
+                               style={'width': '120px', 'borderRadius': '4px', 'background': '#222', 'color': '#fff',
+                                      'border': '1px solid #444'})],
+                    style={'margin': '5px 0', 'font-size': '12px'}),
+
+                html.Div([html.Label("Step Mode", style={'width': '80px', 'display': 'inline-block', 'color': '#ccc'}),
+                          dcc.Dropdown(id='dd-step-mode', options=[
+                              {'label': 'Manual', 'value': 'manual'},
+                              {'label': 'Quantum Fine-Structure', 'value': 'quantum_fine_structure'},
+                              {'label': 'Metatron 4D Hyper-Sphere', 'value': 'metatron_4d'},
+                              # ===============================================
+                              # „œ· Â«Ì  òÌ‰êÌ «»⁄«œ »«·« (God Mode)
+                              # ===============================================
+                              {'label': '?? E8 Lattice 8D Hologram', 'value': 'e8_lattice'},
+                              {'label': '?? Calabi-Yau String Vibration', 'value': 'calabi_yau'},
+                              {'label': '?? Time-Dilation Singularity', 'value': 'time_dilation'},
+                              # ===============================================
+                              # „œ· Â«Ì òÌÂ«‰Ì ÃœÌœ «÷«›Â ‘œÂ (Omniscient Mode)
+                              # ===============================================
+                              {'label': '?? M-Theory 11D Brane', 'value': 'm_theory_11d'},
+                              {'label': '?? AdS/CFT Boundary', 'value': 'ads_cft'},
+                              {'label': '?? Mandelbrot Fractal', 'value': 'mandelbrot'}
+                          ], value='e8_lattice',
+                                       style={'width': '170px', 'display': 'inline-block', 'fontWeight': 'bold',
+                                              'color': '#000'})],
+                         style={'margin': '5px 0', 'font-size': '12px'}),
+
+                html.Div(
+                    [html.Label("Step Angle (∞)", style={'width': '80px', 'display': 'inline-block', 'color': '#ccc'}),
+                     dcc.Input(id='inp-angle-step', value=45, type='number',
+                               style={'width': '60px', 'borderRadius': '4px', 'background': '#222', 'color': '#00FFFF',
+                                      'border': '1px solid #444', 'fontWeight': 'bold'})],
+                    style={'margin': '5px 0', 'font-size': '12px'}),
+
+                html.Div([
+                    html.Label("Spirals Count",
+                               style={'width': '80px', 'display': 'inline-block', 'fontWeight': 'bold',
+                                      'color': '#ccc'}),
+                    dcc.Dropdown(id='dd-num-spirals', options=[{'label': str(i), 'value': i} for i in range(1, 5)],
+                                 value=2, style={'width': '60px', 'display': 'inline-block', 'color': '#000'})
+                ], style={'margin': '15px 0 10px', 'font-size': '12px'}),
+
+                html.Div(id='spirals-inputs-container')
+
+            ], open=True, style={'font-size': '13px', 'padding': '10px', 'background': '#1A1A1A', 'borderRadius': '6px',
+                                 'border': '1px solid #333', 'marginBottom': '10px'}),
+
+            html.Details([
+                html.Summary(html.B("Vector/Wave Settings", style={'color': '#39FF14'}),
+                             style={'cursor': 'pointer', 'margin': '5px 0 10px'}),
+                html.Div(
+                    [html.Label("Start Price", style={'width': '80px', 'display': 'inline-block', 'color': '#ccc'}),
+                     dcc.Input(id='inp-w-sy', value=0, type='number',
+                               style={'width': '60px', 'borderRadius': '4px', 'background': '#222', 'color': '#fff',
+                                      'border': '1px solid #444'})],
+                    style={'margin': '5px 0', 'font-size': '12px'}),
+                html.Div([html.Label("Candles", style={'width': '80px', 'display': 'inline-block', 'color': '#ccc'}),
+                          dcc.Input(id='inp-w-c', value=5, type='number',
+                                    style={'width': '60px', 'borderRadius': '4px', 'background': '#222',
+                                           'color': '#fff', 'border': '1px solid #444'})],
+                         style={'margin': '5px 0', 'font-size': '12px'}),
+                html.Div([html.Label("End Price", style={'width': '80px', 'display': 'inline-block', 'color': '#ccc'}),
+                          dcc.Input(id='inp-w-ey', value=5, type='number',
+                                    style={'width': '60px', 'borderRadius': '4px', 'background': '#222',
+                                           'color': '#fff', 'border': '1px solid #444'})],
+                         style={'margin': '5px 0', 'font-size': '12px'}),
+            ], open=True, style={'font-size': '13px', 'padding': '10px', 'background': '#1A1A1A', 'borderRadius': '6px',
+                                 'border': '1px solid #333', 'marginBottom': '10px'}),
+
+            html.Button("? INIT SINGULARITY", id='btn-apply',
+                        style={'margin-top': '15px', 'padding': '12px',
+                               'background': 'linear-gradient(90deg, #FF00FF, #00FFFF)', 'color': 'black',
+                               'fontWeight': 'bold',
+                               'border': 'none', 'borderRadius': '6px', 'width': '100%', 'cursor': 'pointer',
+                               'boxShadow': '0 0 10px rgba(255, 0, 255, 0.5)'})
+
+        ], style={'width': '310px', 'padding': '15px', 'background': '#050505', 'border-left': '1px solid #333',
+                  'min-height': '100vh', 'boxSizing': 'border-box'}),
+
+    ], style={'display': 'flex', 'flex-direction': 'row'}),
+], style={'font-family': 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif', 'margin': '-8px', 'background': '#000'})
+
+
+@callback(
+    Output('spirals-inputs-container', 'children'),
+    Input('dd-num-spirals', 'value')
+)
+def update_spiral_inputs(num):
+    children = []
+    for i in range(num):
+        children.append(html.Div([
+            html.Div([
+                html.Div(
+                    [html.Label(f"Inc {i + 1}", style={'width': '40px', 'display': 'inline-block', 'color': COLORS[i]}),
+                     dcc.Input(id={'type': 'inp-inc', 'index': i}, value=1, type='number',
+                               style={'width': '50px', 'borderRadius': '3px', 'border': '1px solid #444',
+                                      'background': '#222', 'color': '#fff'})],
+                    style={'display': 'inline-block', 'margin-right': '5px'}),
+                html.Div(
+                    [html.Label(f"Ang {i + 1}", style={'width': '40px', 'display': 'inline-block', 'color': COLORS[i]}),
+                     dcc.Input(id={'type': 'inp-ang', 'index': i}, type='number', placeholder='0',
+                               style={'width': '50px', 'borderRadius': '3px', 'border': '1px solid #444',
+                                      'background': '#222', 'color': '#fff'})], style={'display': 'inline-block'})
+            ]),
+            html.Div([
+                dcc.Slider(
+                    id={'type': 'slider-rot', 'index': i}, min=0, max=360, step=1, value=0,
+                    tooltip={"placement": "bottom", "always_visible": False}
+                )
+            ], style={'margin-top': '8px'})
+        ], style={'margin': '8px 0', 'padding': '8px', 'borderLeft': f'4px solid {COLORS[i]}', 'border-radius': '4px',
+                  'background': '#111', 'boxShadow': '0 1px 2px rgba(0,0,0,0.5)'}))
+    return children
+
+
+@callback(
+    Output('inp-angle-step', 'value'),
+    Input('dd-step-mode', 'value'),
+    Input('inp-w-sy', 'value'),
+    Input('inp-w-ey', 'value'),
+    Input('inp-w-c', 'value'),
+    Input('inp-price-value', 'value'),
+    State('inp-angle-step', 'value')
+)
+def auto_calculate_step_angle(mode, sy, ey, c, start_val_str, current_angle):
+    if mode == 'manual' or sy is None or ey is None or c is None: return no_update
+
+    try:
+        sy, ey, c = float(sy), float(ey), float(c)
+
+        try:
+            start_val = float(start_val_str)
+        except:
+            start_val = sy if sy != 0 else 1.0
+
+        vector_mag = np.sqrt((ey - sy) ** 2 + c ** 2)
+        dy = abs(ey - sy)
+
+        # ========================================================
+        # God-Tier 1 Billion Years Models
+        # ========================================================
+        if mode == 'e8_lattice':
+            if c == 0 and dy == 0: return current_angle
+            # À«»  ›«Ì‰»«„ (Feigenbaum) ÷—»œ— Êò Ê— Å—«Ãò  ‘œÂ —ÊÌ 240 »⁄œ E8
+            feigenbaum_delta = 4.6692016
+            e8_roots = 240
+            phi_cube = 1.618033988 ** 3
+            val = (vector_mag * feigenbaum_delta * (e8_roots / phi_cube)) % 360
+            return round(val, 6)
+
+        elif mode == 'calabi_yau':
+            if c == 0: return current_angle
+            # ›—ò«‰” «— ⁄«‘ »« «” ›«œÂ «“ «Ê·Ì‰ ’›—  «»⁄ “ «Ì —Ì„«‰
+            zeta_zero_rho = 14.134725
+            golden_angle = 137.5077
+            val = (np.power(vector_mag, 1.618033988) * zeta_zero_rho * (golden_angle / (c + 1))) % 360
+            return round(val, 6)
+
+        elif mode == 'time_dilation':
+            if dy == 0: return current_angle
+            # Œ‰ÀÌ ”«“Ì «À— Ã«–»Â ﬁÌ„  »— “„«‰
+            alpha = 137.035999
+            val = (abs(np.log(dy + 0.000001)) * c * alpha * 1.618033988) % 360
+            return round(val, 6)
+
+        elif mode == 'quantum_fine_structure':
+            if c == 0: return current_angle
+            alpha_inv = 137.035999084
+            val = (vector_mag * (np.e ** 1.618033988) * (np.pi / c) * alpha_inv) % 360
+            return round(val, 4)
+
+        elif mode == 'metatron_4d':
+            if c == 0: return current_angle
+            val = ((vector_mag * 72) / np.sqrt(c * 13)) % 360
+            return round(val, 4)
+
+        # ========================================================
+        # „œ· Â«Ì ÃœÌœ òÌÂ«‰Ì «÷«›Â ‘œÂ
+        # ========================================================
+        elif mode == 'm_theory_11d':
+            if c == 0: return current_angle
+            dimension = 11
+            val = (np.power(vector_mag, 1 / dimension) * np.pi * 1.618033988 * 72) % 360
+            return round(val, 6)
+
+        elif mode == 'ads_cft':
+            if dy == 0: return current_angle
+            bekenstein_bound_ui = 137.036
+            val = (vector_mag * np.log(c + 1.618033988) * bekenstein_bound_ui / (dy + 0.000001)) % 360
+            return round(val, 6)
+
+        elif mode == 'mandelbrot':
+            if c == 0: return current_angle
+            f1, f2 = 4.6692016, 2.5029078
+            val = (vector_mag * f1 * f2 * (dy / c if c != 0 else 1)) % 360
+            return round(val, 6)
+
+    except Exception as e:
+        pass
+
+    return current_angle
+
+
+@callback(
+    Output('spiral-centers-store', 'data'),
+    Input('btn-apply', 'n_clicks'),
+    Input('chk-spiral-angles', 'value'),
+    Input('plotly-overlay-layer', 'relayoutData'),
+    State({'type': 'inp-ang', 'index': dash.ALL}, 'value'),
+    State('spiral-centers-store', 'data'),
+    State('plotly-overlay-layer', 'figure'),
+    State('inp-layout-size', 'value'),
+    State('dd-num-spirals', 'value')
+)
+def sync_centers(n_clicks, chk_spiral, relayout_data, angles, current_centers, figure, grid_size, num_spirals):
+    trigger = ctx.triggered_id
+    draw_spiral_angles = True if (chk_spiral and 'yes' in chk_spiral) else False
+    size = int(grid_size) if grid_size else 15
+    R = (size / 2) * 0.98
+
+    if figure is None:
+        figure = {}
+
+    if current_centers is None:
+        current_centers = [[0, 0] for _ in range(4)]
+    elif len(current_centers) < 4:
+        current_centers.extend([[0, 0]] * (4 - len(current_centers)))
+
+    new_centers = [list(c) for c in current_centers]
+
+    if trigger in ['btn-apply', 'chk-spiral-angles'] or trigger == 'dd-num-spirals':
+        for i in range(4):
+            if i < num_spirals and i < len(angles) and angles[i] is not None:
+                effective_angle = angles[i] % 360
+                r = (effective_angle / 360.0) * R if draw_spiral_angles else R
+                new_centers[i] = [r * np.cos(np.radians(effective_angle)), r * np.sin(np.radians(effective_angle))]
+            else:
+                new_centers[i] = current_centers[i] if i < len(current_centers) else [0, 0]
+        return new_centers
+
+    elif trigger == 'plotly-overlay-layer' and relayout_data:
+        updated = False
+        shapes = figure.get('layout', {}).get('shapes', [])
+        for key in relayout_data:
+            if key.startswith('shapes[') and key.endswith('.x0'):
+                idx = int(key.split('[')[1].split(']')[0])
+                if idx < len(shapes) and shapes[idx].get('name', '').startswith('handle_'):
+                    h_idx = int(shapes[idx]['name'].split('_')[1])
+                    x0, x1 = relayout_data.get(f'shapes[{idx}].x0'), relayout_data.get(f'shapes[{idx}].x1')
+                    y0, y1 = relayout_data.get(f'shapes[{idx}].y0'), relayout_data.get(f'shapes[{idx}].y1')
+                    if None not in (x0, x1, y0, y1):
+                        new_centers[h_idx] = [(x0 + x1) / 2, (y0 + y1) / 2]
+                        updated = True
+        return new_centers if updated else no_update
+
+    return current_centers
+
+
+@callback(
+    Output('plotly-overlay-layer', 'figure'),
+    Output('intersections-table-container', 'children'),
+    Input('spiral-centers-store', 'data'),
+    Input('inp-w-sy', 'value'), Input('inp-w-c', 'value'),
+    Input('inp-w-ey', 'value'), Input('chk-spiral-angles', 'value'),
+    Input({'type': 'slider-rot', 'index': dash.ALL}, 'value'),
+    State({'type': 'inp-inc', 'index': dash.ALL}, 'value'),
+    State('dd-data-type', 'value'), State('inp-price-value', 'value'), State('inp-angle-step', 'value'),
+    State('inp-layout-size', 'value'), State('dd-num-spirals', 'value')
+)
+def render_visuals(centers, w_sy, w_c, w_ey, chk_spiral, rot_values, increments, data_type, start_val_str, angle_deg,
+                   grid_size, num_spirals):
+    size = int(grid_size) if grid_size else 15
+    ang = float(angle_deg) if angle_deg else 45
+    draw_spiral_angles = True if (chk_spiral and 'yes' in chk_spiral) else False
+
+    active_centers = centers[:num_spirals]
+    active_increments = [float(inc) if inc is not None else 1 for inc in increments][:num_spirals]
+    active_rotations = [int(r) if r is not None else 0 for r in rot_values][:num_spirals] if rot_values else [
+                                                                                                                 0] * num_spirals
+
+    if len(active_rotations) < num_spirals:
+        active_rotations.extend([0] * (num_spirals - len(active_rotations)))
+
+    active_colors = COLORS[:num_spirals]
+    active_dirs = DIRS[:num_spirals]
+    active_ascends = ASCENDS[:num_spirals]
+
+    try:
+        if data_type in ['date', 'time', 'pd', 'pt']:
+            start_val = datetime.strptime(start_val_str, "%d.%m.%Y %H:%M")
+        else:
+            start_val = float(start_val_str)
+    except:
+        start_val = 0.0 if data_type == 'price' else datetime.now()
+
+    overlay_fig = build_overlay_figure(active_centers, active_increments, active_dirs, active_ascends, active_colors,
+                                       size, data_type, start_val, ang, w_sy, w_c, w_ey, draw_spiral_angles,
+                                       active_rotations)
+
+    intersections = []
+    if num_spirals > 1:
+        search_radius = size * 30
+        intersections = find_intersections_and_values(active_centers, start_val, active_increments, active_dirs,
+                                                      active_ascends, data_type, ang, search_radius, active_rotations)
+
+    table_rows = [html.Tr([
+        html.Th("Dimensional Pair",
+                style={'padding': '12px', 'background': '#111', 'color': '#00FFFF', 'borderRadius': '6px 0 0 0'}),
+        html.Th("Time Warp (X)", style={'padding': '12px', 'background': '#222', 'color': 'white'}),
+        html.Th("Price Warp (Y)", style={'padding': '12px', 'background': '#222', 'color': 'white'}),
+        html.Th("Singularity 1", style={'padding': '12px', 'background': '#222', 'color': 'white'}),
+        html.Th("Singularity 2", style={'padding': '12px', 'background': '#222', 'color': 'white'}),
+        html.Th("?? Absolute Nexus",
+                style={'padding': '12px', 'background': '#FF00FF', 'color': '#000', 'borderRadius': '0 6px 0 0',
+                       'fontWeight': 'bold'})
+    ], style={'textAlign': 'center'})]
+
+    for idx, point in enumerate(intersections):
+        raw1 = point['val1_raw']
+        raw2 = point['val2_raw']
+
+        if isinstance(raw1, datetime) and isinstance(raw2, datetime):
+            mid_val = raw1 + (raw2 - raw1) / 2 if raw2 > raw1 else raw2 + (raw1 - raw2) / 2
+        else:
+            mid_val = (raw1 + raw2) / 2
+
+        avg_formatted = format_value(mid_val, data_type, True)
+        bg_color = '#1A1A1A' if idx % 2 == 0 else '#222222'
+
+        table_rows.append(html.Tr([
+            html.Td(point['pair'], style={'textAlign': 'center', 'padding': '10px', 'borderBottom': '1px solid #333',
+                                          'fontWeight': 'bold', 'color': '#ccc'}),
+            html.Td(f"{point['x']:.2f}",
+                    style={'textAlign': 'center', 'padding': '10px', 'borderBottom': '1px solid #333',
+                           'color': '#aaa'}),
+            html.Td(f"{point['y']:.2f}",
+                    style={'textAlign': 'center', 'padding': '10px', 'borderBottom': '1px solid #333',
+                           'color': '#aaa'}),
+            html.Td(point['val1_str'],
+                    style={'textAlign': 'center', 'padding': '10px', 'borderBottom': '1px solid #333',
+                           'color': '#ddd'}),
+            html.Td(point['val2_str'],
+                    style={'textAlign': 'center', 'padding': '10px', 'borderBottom': '1px solid #333',
+                           'color': '#ddd'}),
+            html.Td(avg_formatted, style={'textAlign': 'center', 'padding': '10px', 'borderBottom': '2px solid #FF00FF',
+                                          'color': '#00FFFF', 'backgroundColor': '#111', 'fontWeight': 'bold',
+                                          'fontSize': '15px'})
+        ], style={'backgroundColor': bg_color}))
+
+    intersections_html = html.Div([
+        html.H3("?? Absolute Nexus Points (God Mode Output)",
+                style={'color': '#FFD700', 'borderBottom': '2px solid #00FFFF', 'paddingBottom': '8px',
+                       'display': 'inline-block'}),
+        html.Table(table_rows, style={'width': '100%', 'borderCollapse': 'separate', 'borderSpacing': '0',
+                                      'boxShadow': '0 0 15px rgba(255, 0, 255, 0.2)', 'borderRadius': '6px',
+                                      'marginTop': '15px'}) if intersections else html.P(
+            "?? Awaiting dimensional overlap... Ignite the Singularity by activating multiple vectors.",
+            style={'color': '#FF3131', 'fontWeight': 'bold', 'padding': '15px', 'background': '#220000',
+                   'borderRadius': '6px', 'border': '1px solid #FF3131'})
+    ])
+
+    return overlay_fig, intersections_html
+
+
+if __name__ == '__main__':
+    app.run(debug=True, port=8050)

@@ -1,0 +1,153 @@
+//@version=5
+indicator("Global Symmetry Plots with Start/End Lines", overlay=true)
+
+// ?. Ê—ÊœÌùÂ«Ì »«“Â “„«‰Ì Ê ﬁÌ„  «‰ Œ«»Ì (Interactive)
+startTime       = input.time(timestamp("2026-06-01 00:00:00"), "Start Time", confirm=true)
+endTime         = input.time(timestamp("2026-06-15 00:00:00"), "End Time", confirm=true)
+
+// Ê—ÊœÌùÂ«Ì «‰ Œ«» ”ÿÕ ? Œÿ
+startPriceLevel = input.price(0.0, "Start Line Center Price", confirm=true)
+endPriceLevel   = input.price(0.0, "End Line Center Price", confirm=true)
+
+useNoMASymmetry = input.bool(false, "Symmetry without MA (Direct Symmetry)")
+
+// „ €Ì—Â«Ì –ŒÌ—Âù”«“Ì Å«—«„ —Â«Ì À«» 
+var int   fixed_N             = 0
+var float fixed_L_green       = na
+var float fixed_L_red         = na
+var float fixed_midLevel      = na
+var float fixed_L_green_start = na
+var float fixed_L_red_start   = na
+var bool  calcComplete        = false
+
+//  ‘ŒÌ’ „ÕœÊœÂ «‰ Œ«»Ì
+inRange = time >= startTime and time <= endTime
+var int startBarIdx = na
+var int endBarIdx   = na
+
+if inRange
+    if na(startBarIdx)
+        startBarIdx := bar_index
+    endBarIdx := bar_index
+
+// «‰Ã«„ „Õ«”»«  ”‰êÌ‰ ›ﬁÿ Ìò»«— œ— «‰ Â«Ì »«“Â
+if not calcComplete and not na(endBarIdx) and ((inRange[1] and not inRange) or (barstate.islast and inRange))
+    fixed_N := endBarIdx - startBarIdx + 1
+    
+    float sumGreenDist = 0.0
+    float sumRedDist   = 0.0
+    int   greenCount   = 0
+    int   redCount     = 0
+    float maxH         = -999999.0
+    float minL         = 999999.0
+
+    // ·ÊÅ »—«Ì «” Œ—«Ã „ﬁ«œÌ— À«»  «“ »«“Â
+    for i = 0 to fixed_N - 1
+        int idx = bar_index - endBarIdx + i
+        float sumMA = 0.0
+        for j = 0 to fixed_N - 1
+            sumMA += close[idx + j]
+        float valMA = sumMA / fixed_N
+        
+        float dist = math.abs(close[idx] - valMA)
+        if close[idx] > open[idx]
+            sumGreenDist += dist
+            greenCount   += 1
+        else if close[idx] < open[idx]
+            sumRedDist   += dist
+            redCount     += 1
+        
+        if high[idx] > maxH
+            maxH := high[idx]
+        if low[idx] < minL
+            minL := low[idx]
+
+    // --- «⁄„«·  €ÌÌ—«  œ—ŒÊ«” Ì ---
+    //  ﬁ”Ì„ «— ›«⁄ Â— Œÿ »—  ⁄œ«œ ò‰œ·ùÂ«Ì „—»Êÿ »Â ŒÊœ‘ (’⁄ÊœÌ »—«Ì Œÿ ”»“° ‰“Ê·Ì »—«Ì Œÿ ﬁ—„“)
+    // ‰ò Â: «ê— „ÌùŒÊ«ÂÌœ «— ›«⁄ »— ò· ò‰œ·ùÂ«Ì »«“Â  ﬁ”Ì„ ‘Êœ° »Ã«Ì greenCount Ê redCount «“ fixed_N «” ›«œÂ ò‰Ìœ.
+    float finalGreenDist = greenCount > 0 ? (sumGreenDist / greenCount) : 0.0
+    float finalRedDist   = redCount > 0   ? (sumRedDist / redCount) : 0.0
+
+    // ÿÊ· ò· Œÿ („Ã„Ê⁄ ”»“ Ê ﬁ—„“ ÃœÌœ Å” «“  ﬁ”Ì„)
+    float totalDist = finalGreenDist + finalRedDist
+    
+    // ‰ﬁÿÂ Å«ÌÂ Œÿˆ «» œ«Ì »«“Â: Œÿ «“ $Price - (Total/2)$ ‘—Ê⁄ „Ìù‘Êœ  « ”ÿÕ «‰ Œ«»Ì œﬁÌﬁ« Ê”ÿ »Ì› œ
+    float startLineBase = startPriceLevel - (totalDist / 2)
+    fixed_L_green_start := startLineBase + finalGreenDist
+    fixed_L_red_start   := fixed_L_green_start + finalRedDist
+
+    // ‰ﬁÿÂ Å«ÌÂ Œÿˆ «‰ Â«Ì »«“Â
+    float endLineBase = endPriceLevel - (totalDist / 2)
+    fixed_L_green  := endLineBase + finalGreenDist
+    fixed_L_red    := fixed_L_green + finalRedDist
+    
+    fixed_midLevel := (maxH + minL) / 2
+    calcComplete   := true
+
+    // —”„ ŒÿÊÿ ÷ŒÌ„ ⁄„ÊœÌ »« Å«ÌÂùÂ« Ê «— ›«⁄ùÂ«Ì ÃœÌœ
+    line.new(startBarIdx, startLineBase, startBarIdx, fixed_L_green_start, color=color.green, width=4)
+    line.new(startBarIdx, fixed_L_green_start, startBarIdx, fixed_L_red_start, color=color.red, width=4)
+
+    line.new(endBarIdx, endLineBase, endBarIdx, fixed_L_green, color=color.green, width=4)
+    line.new(endBarIdx, fixed_L_green, endBarIdx, fixed_L_red, color=color.red, width=4)
+
+
+// ------------------------------------------------------------------
+// «⁄„«· ”—«”—Ì ›—„Ê·ùÂ« (œ— Â— ò‰œ· ç«— )
+// ------------------------------------------------------------------
+
+currentMA = ta.sma(close, fixed_N > 0 ? fixed_N : 1)
+
+//  ⁄—Ì› „ €Ì—Â«Ì Œ—ÊÃÌ »—«Ì —”„
+var float path1_G = na, var float path1_R = na
+var float path2_G = na, var float path2_R = na
+var float path1_G_start = na, var float path1_R_start = na
+var float path2_G_start = na, var float path2_R_start = na
+
+if calcComplete
+    if useNoMASymmetry
+        // ---  ﬁ«—‰ »œÊ‰ „ÊÊÌ‰ê („” ﬁÌ„ »« ﬁÌ„ ) ---
+        float P_mirrored_mid = (2 * fixed_midLevel) - close
+        
+        //  ﬁ«—‰ùÂ« ‰”»  »Â Œÿ «‰ Â«Ì »«“Â (End Line)
+        path1_G := (2 * fixed_L_green) - close
+        path1_R := (2 * fixed_L_red) - close
+        path2_G := (2 * fixed_L_green) - P_mirrored_mid
+        path2_R := (2 * fixed_L_red) - P_mirrored_mid
+        
+        //  ﬁ«—‰ùÂ« ‰”»  »Â Œÿ «» œ«Ì »«“Â (Start Line)
+        path1_G_start := (2 * fixed_L_green_start) - close
+        path1_R_start := (2 * fixed_L_red_start) - close
+        path2_G_start := (2 * fixed_L_green_start) - P_mirrored_mid
+        path2_R_start := (2 * fixed_L_red_start) - P_mirrored_mid
+
+    else
+        // ---  ﬁ«—‰ »« «” ›«œÂ «“ „ÊÊÌ‰ê (—Ê‘ ﬁ»·Ì) ---
+        if not na(currentMA)
+            float P_ref1 = (2 * currentMA) - close
+            float M_ref = (2 * fixed_midLevel) - currentMA
+            float P_ref2 = (2 * M_ref) - close
+
+            //  ﬁ«—‰ùÂ« ‰”»  »Â Œÿ «‰ Â«Ì »«“Â (End Line)
+            path1_G := (2 * fixed_L_green) - P_ref1
+            path1_R := (2 * fixed_L_red) - P_ref1
+            path2_G := (2 * fixed_L_green) - P_ref2
+            path2_R := (2 * fixed_L_red) - P_ref2
+
+            //  ﬁ«—‰ùÂ« ‰”»  »Â Œÿ «» œ«Ì »«“Â (Start Line)
+            path1_G_start := (2 * fixed_L_green_start) - P_ref1
+            path1_R_start := (2 * fixed_L_red_start) - P_ref1
+            path2_G_start := (2 * fixed_L_green_start) - P_ref2
+            path2_R_start := (2 * fixed_L_red_start) - P_ref2
+
+// —”„ „”Ì—Â«Ì „—»Êÿ »Â Œÿ "«‰ Â«" (End Line)
+plot(path1_G, "Path1 Green (End)", color=color.new(color.green, 20), linewidth=1)
+plot(path1_R, "Path1 Red (End)", color=color.new(color.red, 20), linewidth=1)
+plot(path2_G, "Path2 Green (End)", color=color.new(color.lime, 40), style=plot.style_linebr)
+plot(path2_R, "Path2 Red (End)", color=color.new(color.maroon, 40), style=plot.style_linebr)
+
+// —”„ „”Ì—Â«Ì „—»Êÿ »Â Œÿ "«» œ«" (Start Line)
+plot(path1_G_start, "Path1 Green (Start)", color=color.new(color.green, 20), linewidth=1)
+plot(path1_R_start, "Path1 Red (Start)", color=color.new(color.red, 20), linewidth=1)
+plot(path2_G_start, "Path2 Green (Start)", color=color.new(color.lime, 40))
+plot(path2_R_start, "Path2 Red (Start)", color=color.new(color.maroon, 40))

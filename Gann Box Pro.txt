@@ -1,0 +1,224 @@
+//@version=5
+indicator("Fibonacci Box Mirrored Candles", overlay=true, max_lines_count=500, max_boxes_count=500)
+
+price1 = input.price(defval=0, title="ﬁÌ„  «Ê·", confirm=true)
+price2 = input.price(defval=0, title="ﬁÌ„  œÊ„", confirm=true)
+time1 = input.time(defval=0, title="“„«‰ «Ê·", confirm=true)
+time2 = input.time(defval=0, title="“„«‰ œÊ„", confirm=true)
+enableAngle = input.bool(false, " ‰ŸÌ„ ‘Ì» ”ÿÕ Ê”ÿ »« ‘Ì» ò·Ì ﬁÌ„ ")
+
+useCandleHeight = input.bool(false, "«” ›«œÂ «“ „Ã„Ê⁄ «— ›«⁄ ò‰œ·ùÂ«")
+candleMode = input.string("Â„Â", "‰Ê⁄ ò‰œ·", options=["”»“", "ﬁ—„“", "Â„Â", " ›«÷·"])
+centerCandlePosition = input.float(0.5, "„Êﬁ⁄Ì  ò‰œ· „—Ã⁄", minval=0.0, maxval=1.0, step=0.01)
+anchorHorizontal = input.float(0.5, " ﬁ«ÿ⁄ «›ﬁÌ", minval=0.0, maxval=1.0, step=0.01)
+anchorVertical = input.float(0.5, " ﬁ«ÿ⁄ ⁄„ÊœÌ", minval=0.0, maxval=1.0, step=0.01)
+
+symmetrizePrice = input.bool(false, "„ ﬁ«—‰ù”«“Ì ﬁÌ„  ‰”»  »Â ”ÿÊÕ ›Ì»Ê‰«çÌ")
+
+boxColor = input.color(color.blue, "—‰ê »«ò”")
+boxWidth = input.int(2, "÷Œ«„  »«ò”", minval=1, maxval=5)
+fibWidth = input.int(1, "÷Œ«„  ŒÿÊÿ ›Ì»Ê‰«çÌ", minval=1, maxval=3)
+manualAngleDegrees = input.float(0, "“«ÊÌÂ œ” Ì (œ—ÃÂ)", minval=-180, maxval=180, step=0.1)
+
+var line[] allLines = array.new_line()
+
+rotatePoint(t, p, ct, cp, angle, tScale, pScale) =>
+    tn = (t - ct) * tScale
+    pn = (p - cp) / pScale
+    tnr = tn * math.cos(angle) - pn * math.sin(angle)
+    pnr = tn * math.sin(angle) + pn * math.cos(angle)
+    [ct + tnr / tScale, cp + pnr * pScale]
+
+var float totalHeight = 0.0
+var float greenHeight = 0.0
+var float redHeight = 0.0
+var int[] candleTimes = array.new_int()
+var float[] candleHighs = array.new_float()
+var float[] candleLows = array.new_float()
+
+if time >= time1 and time <= time2
+    float candleHeight = math.abs(high - low)
+    totalHeight += candleHeight
+    if close >= open
+        greenHeight += candleHeight
+    else
+        redHeight += candleHeight
+    array.push(candleTimes, time)
+    array.push(candleHighs, high)
+    array.push(candleLows, low)
+
+// „ €Ì—Â«Ì ”—«”—Ì »—«Ì »«ò”
+float adjustedPriceRange = 0.0
+int boxTime1 = 0
+int boxTime2 = 0
+float boxPrice1 = 0.0
+float boxPrice2 = 0.0
+int centerTime = 0
+float centerPrice = 0.0
+float timeScale = 1.0
+float priceScale = 1.0
+float angleRad = 0.0
+
+if time1 > 0 and time2 > 0
+    if useCandleHeight
+        if candleMode == "”»“"
+            adjustedPriceRange := greenHeight
+        else if candleMode == "ﬁ—„“"
+            adjustedPriceRange := redHeight
+        else if candleMode == "Â„Â"
+            adjustedPriceRange := totalHeight
+        else if candleMode == " ›«÷·"
+            adjustedPriceRange := greenHeight - redHeight
+    else
+        adjustedPriceRange := price2 - price1
+
+    int anchorTime = 0
+    float anchorPrice = 0.0
+    int timeRange = time2 - time1
+    
+    if useCandleHeight
+        if array.size(candleTimes) > 0
+            int arraySize = array.size(candleTimes)
+            int selectedIndex = math.round((arraySize - 1) * centerCandlePosition)
+            selectedIndex := math.max(0, math.min(selectedIndex, arraySize - 1))
+            int candleTime = array.get(candleTimes, selectedIndex)
+            float candleHigh = array.get(candleHighs, selectedIndex)
+            float candleLow = array.get(candleLows, selectedIndex)
+            int candleDuration = arraySize > 1 ? math.abs(array.get(candleTimes, 0) - array.get(candleTimes, 1)) : int(timeframe.in_seconds() * 1000)
+            anchorTime := candleTime + int(candleDuration / 2)
+            anchorPrice := (candleHigh + candleLow) / 2
+        else
+            anchorTime := int((time1 + time2) / 2)
+            anchorPrice := (price1 + price2) / 2
+    else
+        anchorTime := int((time1 + time2) / 2)
+        anchorPrice := (price1 + price2) / 2
+
+    if useCandleHeight
+        boxPrice1 := anchorPrice - adjustedPriceRange * anchorHorizontal
+        boxPrice2 := boxPrice1 + adjustedPriceRange
+        boxTime1 := anchorTime - int(timeRange * anchorVertical)
+        boxTime2 := boxTime1 + timeRange
+    else
+        boxPrice1 := price1
+        boxPrice2 := price2
+        boxTime1 := time1
+        boxTime2 := time2
+
+    centerPrice := (boxPrice1 + boxPrice2) / 2
+    centerTime := int((boxTime1 + boxTime2) / 2)
+
+    priceScale := adjustedPriceRange != 0 and (boxTime2 - boxTime1) != 0 ? math.abs(adjustedPriceRange / (boxTime2 - boxTime1)) : 1.0
+
+    float priceRangeNormalized = adjustedPriceRange / priceScale
+    float timeRangeNormalized = (boxTime2 - boxTime1) * timeScale
+    float requiredAngleDegrees = timeRangeNormalized != 0 ? math.atan(priceRangeNormalized / timeRangeNormalized) * 180 / math.pi : 0
+
+    float angleDegrees = enableAngle ? requiredAngleDegrees : manualAngleDegrees
+    angleRad := angleDegrees * math.pi / 180
+
+//  «»⁄ „Õ«”»Â ò‰œ·ùÂ«Ì „ ﬁ«—‰
+getMirroredCandle(lvl) =>
+    float mOpen = na, float mHigh = na, float mLow = na, float mClose = na
+    if time1 > 0 and time2 > 0 and symmetrizePrice
+        float p = boxPrice1 + adjustedPriceRange * lvl
+        float t1r = boxTime1
+        float p1r = p
+        float t2r = boxTime2
+        float p2r = p
+        
+        if (enableAngle or manualAngleDegrees != 0)
+            [rt1, rp1] = rotatePoint(boxTime1, p, centerTime, centerPrice, angleRad, timeScale, priceScale)
+            [rt2, rp2] = rotatePoint(boxTime2, p, centerTime, centerPrice, angleRad, timeScale, priceScale)
+            t1r := rt1
+            p1r := rp1
+            t2r := rt2
+            p2r := rp2
+
+        float axisSlope = 0.0
+        if t2r != t1r
+            axisSlope := (p2r - p1r) / (t2r - t1r)
+        
+        float axisPriceAtCurrentTime = p1r + axisSlope * (time - t1r)
+        
+        mClose := axisPriceAtCurrentTime - (close - axisPriceAtCurrentTime)
+        mOpen := axisPriceAtCurrentTime - (open - axisPriceAtCurrentTime)
+        mHigh := axisPriceAtCurrentTime - (high - axisPriceAtCurrentTime)
+        mLow := axisPriceAtCurrentTime - (low - axisPriceAtCurrentTime)
+    
+    [mOpen, mHigh, mLow, mClose]
+
+// ê—› ‰ œÌ «Ì „ ﬁ«—‰
+[o1, h1, l1, c1] = getMirroredCandle(0.0)
+[o2, h2, l2, c2] = getMirroredCandle(0.236)
+[o3, h3, l3, c3] = getMirroredCandle(0.382)
+[o4, h4, l4, c4] = getMirroredCandle(0.5)
+[o5, h5, l5, c5] = getMirroredCandle(0.618)
+[o6, h6, l6, c6] = getMirroredCandle(0.786)
+[o7, h7, l7, c7] = getMirroredCandle(1.0)
+
+// —”„ ò‰œ·ùÂ«
+plotcandle(o1, h1, l1, c1, title="Lvl 0.0", color=c1 >= o1 ? color.new(color.green, 60) : color.new(color.red, 60), wickcolor=color.new(color.gray, 60), bordercolor=color.new(color.gray, 60))
+plotcandle(o2, h2, l2, c2, title="Lvl 0.236", color=c2 >= o2 ? color.new(color.green, 60) : color.new(color.red, 60), wickcolor=color.new(color.gray, 60), bordercolor=color.new(color.gray, 60))
+plotcandle(o3, h3, l3, c3, title="Lvl 0.382", color=c3 >= o3 ? color.new(color.green, 60) : color.new(color.red, 60), wickcolor=color.new(color.gray, 60), bordercolor=color.new(color.gray, 60))
+plotcandle(o4, h4, l4, c4, title="Lvl 0.5", color=c4 >= o4 ? color.new(color.green, 60) : color.new(color.red, 60), wickcolor=color.new(color.gray, 60), bordercolor=color.new(color.gray, 60))
+plotcandle(o5, h5, l5, c5, title="Lvl 0.618", color=c5 >= o5 ? color.new(color.green, 60) : color.new(color.red, 60), wickcolor=color.new(color.gray, 60), bordercolor=color.new(color.gray, 60))
+plotcandle(o6, h6, l6, c6, title="Lvl 0.786", color=c6 >= o6 ? color.new(color.green, 60) : color.new(color.red, 60), wickcolor=color.new(color.gray, 60), bordercolor=color.new(color.gray, 60))
+plotcandle(o7, h7, l7, c7, title="Lvl 1.0", color=c7 >= o7 ? color.new(color.green, 60) : color.new(color.red, 60), wickcolor=color.new(color.gray, 60), bordercolor=color.new(color.gray, 60))
+
+// —”„ ŒÿÊÿ œ— ò‰œ· ¬Œ—
+if barstate.islast
+    for l in allLines
+        line.delete(l)
+    array.clear(allLines)
+    
+    corners = array.new<float>(8)
+    array.set(corners, 0, boxTime1)
+    array.set(corners, 1, boxPrice1)
+    array.set(corners, 2, boxTime2)
+    array.set(corners, 3, boxPrice1)
+    array.set(corners, 4, boxTime2)
+    array.set(corners, 5, boxPrice2)
+    array.set(corners, 6, boxTime1)
+    array.set(corners, 7, boxPrice2)
+
+    if (enableAngle or manualAngleDegrees != 0)
+        for i = 0 to 3
+            [rt, rp] = rotatePoint(array.get(corners, i*2), array.get(corners, i*2+1), centerTime, centerPrice, angleRad, timeScale, priceScale)
+            array.set(corners, i*2, rt)
+            array.set(corners, i*2+1, rp)
+
+    // —”„ „—“Â«Ì »«ò”
+    array.push(allLines, line.new(x1=math.round(array.get(corners, 0)), y1=array.get(corners, 1), x2=math.round(array.get(corners, 2)), y2=array.get(corners, 3), xloc=xloc.bar_time, color=boxColor, width=boxWidth))
+    array.push(allLines, line.new(x1=math.round(array.get(corners, 2)), y1=array.get(corners, 3), x2=math.round(array.get(corners, 4)), y2=array.get(corners, 5), xloc=xloc.bar_time, color=boxColor, width=boxWidth))
+    array.push(allLines, line.new(x1=math.round(array.get(corners, 4)), y1=array.get(corners, 5), x2=math.round(array.get(corners, 6)), y2=array.get(corners, 7), xloc=xloc.bar_time, color=boxColor, width=boxWidth))
+    array.push(allLines, line.new(x1=math.round(array.get(corners, 6)), y1=array.get(corners, 7), x2=math.round(array.get(corners, 0)), y2=array.get(corners, 1), xloc=xloc.bar_time, color=boxColor, width=boxWidth))
+
+    levels = array.from(0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0)
+    levelColors = array.from(color.red, color.orange, color.yellow, color.green, color.aqua, color.blue, color.purple)
+
+    // —”„ ŒÿÊÿ «›ﬁÌ (ﬁÌ„ ) Ê ⁄„ÊœÌ (“„«‰) ê‰ »«ò”
+    for i = 0 to array.size(levels) - 1
+        lvl = array.get(levels, i)
+        levelColor = array.get(levelColors, i)
+        
+        // „Õ«”»«  ŒÿÊÿ «›ﬁÌ
+        lvl_p = boxPrice1 + adjustedPriceRange * lvl
+        
+        // „Õ«”»«  ŒÿÊÿ ⁄„ÊœÌ
+        lvl_t = boxTime1 + (boxTime2 - boxTime1) * lvl
+
+        if (enableAngle or manualAngleDegrees != 0)
+            // —”„ «›ﬁÌùÂ«Ì ç—ŒÌœÂ
+            [hlt1, hlp1] = rotatePoint(boxTime1, lvl_p, centerTime, centerPrice, angleRad, timeScale, priceScale)
+            [hlt2, hlp2] = rotatePoint(boxTime2, lvl_p, centerTime, centerPrice, angleRad, timeScale, priceScale)
+            array.push(allLines, line.new(x1=math.round(hlt1), y1=hlp1, x2=math.round(hlt2), y2=hlp2, xloc=xloc.bar_time, color=levelColor, width=fibWidth))
+            
+            // —”„ ⁄„ÊœÌùÂ«Ì ç—ŒÌœÂ
+            [vlt1, vlp1] = rotatePoint(lvl_t, boxPrice1, centerTime, centerPrice, angleRad, timeScale, priceScale)
+            [vlt2, vlp2] = rotatePoint(lvl_t, boxPrice2, centerTime, centerPrice, angleRad, timeScale, priceScale)
+            array.push(allLines, line.new(x1=math.round(vlt1), y1=vlp1, x2=math.round(vlt2), y2=vlp2, xloc=xloc.bar_time, color=levelColor, width=fibWidth))
+        else
+            // —”„ «›ﬁÌ Ê ⁄„ÊœÌ »œÊ‰ ç—Œ‘
+            array.push(allLines, line.new(x1=boxTime1, y1=lvl_p, x2=boxTime2, y2=lvl_p, xloc=xloc.bar_time, color=levelColor, width=fibWidth))
+            array.push(allLines, line.new(x1=math.round(lvl_t), y1=boxPrice1, x2=math.round(lvl_t), y2=boxPrice2, xloc=xloc.bar_time, color=levelColor, width=fibWidth))

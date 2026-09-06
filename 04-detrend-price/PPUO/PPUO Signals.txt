@@ -1,0 +1,79 @@
+//@version=5
+indicator("PPUO Forecast Signals", shorttitle="PPUO Signals", overlay=true, precision=2)
+
+// Inputs
+src           = input.source(close, "Source")
+baseLen       = input.int(144, "Main MA Length", minval=1)
+maType        = input.string("EMA", "MA Type", options=["SMA", "EMA", "WMA", "RMA"])
+angleLen      = input.int(8, "Angle Smoothing Length", minval=1)
+normLen       = input.int(144, "Normalization Length", minval=10)
+signalLen     = input.int(34, "Oscillator MA Length", minval=1)
+powerFast     = input.float(0.618, "Fast Universe Weight", step=0.001)
+powerSlow     = input.float(1.618, "Slow Universe Weight", step=0.001)
+strengthLimit = input.float(0.20, "Signal Strength Threshold", step=0.01, minval=0.0, maxval=1.0)
+
+// MA selector
+f_ma(_src, _len, _type) =>
+    _type == "SMA" ? ta.sma(_src, _len) :
+     _type == "EMA" ? ta.ema(_src, _len) :
+     _type == "WMA" ? ta.wma(_src, _len) :
+     ta.rma(_src, _len)
+
+// Derived lengths
+lenSlow = math.max(1, math.round(baseLen * 1.618))
+lenFast = math.max(1, math.round(baseLen * 0.618))
+
+// Detrended price
+maSlow = f_ma(src, lenSlow, maType)
+maFast = f_ma(src, lenFast, maType)
+
+detSlow = src - maSlow
+detFast = src - maFast
+
+// Angle extraction
+slopeSlow = ta.ema(detSlow - detSlow[1], angleLen)
+slopeFast = ta.ema(detFast - detFast[1], angleLen)
+
+angleSlow = math.atan(slopeSlow) * (180.0 / math.pi)
+angleFast = math.atan(slopeFast) * (180.0 / math.pi)
+
+// Parallel universe aggregation
+rawUniverse    = angleSlow * powerSlow + angleFast * powerFast
+universeSmooth = ta.ema(rawUniverse, angleLen)
+
+// Normalize original oscillator to 0..100
+origLo   = ta.lowest(universeSmooth, normLen)
+origHi   = ta.highest(universeSmooth, normLen)
+origSpan = origHi - origLo
+ppuRaw   = origSpan != 0 ? 100.0 * (universeSmooth - origLo) / origSpan : 50.0
+
+// Symmetry around oscillator MA
+ppuMa  = f_ma(ppuRaw, signalLen, maType)
+dev    = ppuRaw - ppuMa
+absMax = ta.highest(math.abs(dev), normLen)
+
+ppuSym = absMax != 0 ? 50.0 + 50.0 * (dev / absMax) : 50.0
+ppu    = math.max(0.0, math.min(100.0, ppuSym))
+
+// Directional bias
+bias     = (ppu - 50.0) / 50.0
+strength = math.abs(bias)
+
+// Signals
+buySignal  = ta.crossover(ppu, 50.0) and bias > 0 and strength >= strengthLimit
+sellSignal = ta.crossunder(ppu, 50.0) and bias < 0 and strength >= strengthLimit
+
+// Plots
+plotshape(buySignal, title="Buy Signal", style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.small, text="BUY")
+plotshape(sellSignal, title="Sell Signal", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small, text="SELL")
+
+barcolor(bias > strengthLimit ? color.new(color.lime, 0) : bias < -strengthLimit ? color.new(color.red, 0) : na)
+
+// Alerts
+alertcondition(buySignal, title="PPUO Buy", message="PPUO Buy Signal")
+alertcondition(sellSignal, title="PPUO Sell", message="PPUO Sell Signal")
+
+// Hidden debug values for Data Window
+plot(ppu, title="PPU Oscillator", color=color.new(color.aqua, 100), display=display.data_window)
+plot(ppuMa, title="PPU MA", color=color.new(color.gray, 100), display=display.data_window)
+plot(bias, title="Directional Bias", color=color.new(color.orange, 100), display=display.data_window)

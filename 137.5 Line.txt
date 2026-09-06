@@ -1,0 +1,43 @@
+//@version=5
+indicator("Reflection Line", overlay=true)
+
+level1 = input.price(0, "Level 1", confirm=true)
+level2 = input.price(0, "Level 2", confirm=true)
+period = input.timeframe("D", "Period", confirm=true)
+angle = input.float(137.5, "Angle (degrees)", minval=0, maxval=180, confirm=true)
+startTime = input.time(timestamp("2024-01-01 00:00"), "Start Time", confirm=true)
+
+var float currentY = level1
+var int direction = 1
+var bool started = false
+
+angleRad = angle * math.pi / 180
+slope = math.tan(angleRad)
+
+// ãÍÇÓÈå ÊÛííÑ ÚãæÏí ÈÑ ÇÓÇÓ í˜ æÇÍÏ ÇÝÞí
+deltaY = math.abs(slope)
+
+if time >= startTime and not started
+    currentY := level1
+    direction := 1
+    started := true
+
+periodChanged = ta.change(time(period))
+
+if started and periodChanged
+    // ÍÑ˜Ê ÎØ ÈÇ ÒÇæíå ãÔÎÕ
+    currentY := currentY + direction * deltaY
+    
+    // ÈÑÑÓí ÈÇÒÊÇÈ
+    if currentY >= level2
+        excess = currentY - level2
+        currentY := level2 - excess
+        direction := -1
+    else if currentY <= level1
+        excess = level1 - currentY
+        currentY := level1 + excess
+        direction := 1
+
+plot(started ? currentY : na, color=color.blue, linewidth=2, title="Reflection Line")
+hline(level1, color=color.gray, linestyle=hline.style_dashed)
+hline(level2, color=color.gray, linestyle=hline.style_dashed)

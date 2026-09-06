@@ -1,0 +1,180 @@
+//@version=6
+indicator("Bitmoon System{Morindok}", overlay=true)
+n = input.int(100, title="Periods", minval=2)
+
+// ??? Bitmoon Inputs ???
+centralMirrorLevel = input.price(0, title="Central Mirror Level", confirm=true)
+mirrorLevel1 = input.price(0, title="P1 Mirror Level", confirm=true)
+selectedTime1 = input.time(0, title="P1 Reference Time", confirm=true)
+mirrorLevel2 = input.price(0, title="P2 Mirror Level", confirm=true)
+selectedTime2 = input.time(0, title="P2 Reference Time", confirm=true)
+
+// ??? Symmetric Candles Inputs ???
+sc_show  = input.bool(true,  "Show Symmetric Candles", group="Symmetric Candles")
+sc_p1    = input.price(0,    "Sym Level 1", confirm=true, group="Symmetric Candles")
+sc_p2    = input.price(0,    "Sym Level 2", confirm=true, group="Symmetric Candles")
+show_mid = input.bool(true,  "Show Sym-Mid",  group="Symmetric Candles")
+show_sp1 = input.bool(true,  "Show Sym-P1",   group="Symmetric Candles")
+show_sp2 = input.bool(true,  "Show Sym-P2",   group="Symmetric Candles")
+show_sp3 = input.bool(true,  "Show Sym-P3",   group="Symmetric Candles")
+show_sp4 = input.bool(true,  "Show Sym-P4",   group="Symmetric Candles")
+
+// ??? Dynamic Level Mode ???
+dynHi_mode = input.bool(true, "Dyn-Hi Dynamic", group="Dynamic Levels")
+dynLo_mode = input.bool(true, "Dyn-Lo Dynamic", group="Dynamic Levels")
+
+// ??? Helper ???
+reflect(src, pivot) => 2 * pivot - src
+
+// ??? Static bounds ???
+sc_pHi = math.max(sc_p1, sc_p2)
+sc_pLo = math.min(sc_p1, sc_p2)
+
+// ??? Bitmoon Core ???
+cOpen  = float(2.0 * centralMirrorLevel - open)
+cHigh  = float(2.0 * centralMirrorLevel - low)
+cLow   = float(2.0 * centralMirrorLevel - high)
+cClose = float(2.0 * centralMirrorLevel - close)
+
+mHigh1 = float(2.0 * mirrorLevel1 - cLow)
+mLow1  = float(2.0 * mirrorLevel1 - cHigh)
+mHigh2 = float(2.0 * mirrorLevel2 - cLow)
+mLow2  = float(2.0 * mirrorLevel2 - cHigh)
+
+bool u_dn = true, bool u_u0 = true, bool u_u1 = true, bool u_u2 = true, bool u_u3 = true, bool u_u4 = true
+bool d_dn = true, bool d_u0 = true, bool d_u1 = true, bool d_u2 = true, bool d_u3 = true, bool d_u4 = true
+
+for i = 1 to n
+    u_dn := u_dn and (high[n-i] < high[n])
+    u_u0 := u_u0 and (high[n+i] < high[n])
+    u_u1 := u_u1 and (high[n+1] <= high[n] and high[n+i+1] < high[n])
+    u_u2 := u_u2 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i+2] < high[n])
+    u_u3 := u_u3 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i+3] < high[n])
+    u_u4 := u_u4 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i+4] < high[n])
+    d_dn := d_dn and (low[n-i] > low[n])
+    d_u0 := d_u0 and (low[n+i] > low[n])
+    d_u1 := d_u1 and (low[n+1] >= low[n] and low[n+i+1] > low[n])
+    d_u2 := d_u2 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i+2] > low[n])
+    d_u3 := d_u3 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i+3] > low[n])
+    d_u4 := d_u4 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i+4] > low[n])
+
+flagUp = u_u0 or u_u1 or u_u2 or u_u3 or u_u4
+flagDn = d_u0 or d_u1 or d_u2 or d_u3 or d_u4
+
+upFractal1   = u_dn and flagUp and time[n] < selectedTime1
+downFractal1 = d_dn and flagDn and time[n] < selectedTime1
+upFractal2   = u_dn and flagUp and time[n] < selectedTime2
+downFractal2 = d_dn and flagDn and time[n] < selectedTime2
+
+var int refBarIndex1 = na
+var int refBarIndex2 = na
+if time <= selectedTime1
+    refBarIndex1 := bar_index
+if time <= selectedTime2
+    refBarIndex2 := bar_index
+
+var upFracIdx1 = array.new_int(0)
+var dnFracIdx1 = array.new_int(0)
+if upFractal1
+    array.push(upFracIdx1, int(bar_index - n))
+if downFractal1
+    array.push(dnFracIdx1, int(bar_index - n))
+
+var upFracIdx2 = array.new_int(0)
+var dnFracIdx2 = array.new_int(0)
+if upFractal2
+    array.push(upFracIdx2, int(bar_index - n))
+if downFractal2
+    array.push(dnFracIdx2, int(bar_index - n))
+
+bool p1Up = not na(refBarIndex1) and bar_index > refBarIndex1 and array.indexof(upFracIdx1, 2 * refBarIndex1 - bar_index) >= 0
+bool p1Dn = not na(refBarIndex1) and bar_index > refBarIndex1 and array.indexof(dnFracIdx1, 2 * refBarIndex1 - bar_index) >= 0
+bool p2Up = not na(refBarIndex2) and bar_index > refBarIndex2 and array.indexof(upFracIdx2, 2 * refBarIndex2 - bar_index) >= 0
+bool p2Dn = not na(refBarIndex2) and bar_index > refBarIndex2 and array.indexof(dnFracIdx2, 2 * refBarIndex2 - bar_index) >= 0
+
+var float[] activeWhiteLines = array.new_float()
+
+var int yPrevX = na, var float yPrevY = na
+var int yCurrX = na, var float yCurrY = na
+var int gPrevX = na, var float gPrevY = na
+var int gCurrX = na, var float gCurrY = na
+bool triggerIntersectionCheck = false
+
+if p1Up
+    yPrevX := yCurrX, yPrevY := yCurrY, yCurrX := bar_index, yCurrY := mHigh1
+    triggerIntersectionCheck := true
+if p2Up
+    yPrevX := yCurrX, yPrevY := yCurrY, yCurrX := bar_index, yCurrY := mHigh2
+    triggerIntersectionCheck := true
+if p1Dn
+    gPrevX := gCurrX, gPrevY := gCurrY, gCurrX := bar_index, gCurrY := mLow1
+    triggerIntersectionCheck := true
+if p2Dn
+    gPrevX := gCurrX, gPrevY := gCurrY, gCurrX := bar_index, gCurrY := mLow2
+    triggerIntersectionCheck := true
+
+if triggerIntersectionCheck and not na(yPrevX) and not na(yCurrX) and not na(gPrevX) and not na(gCurrX)
+    if (yCurrX != yPrevX) and (gCurrX != gPrevX)
+        float m1 = (yCurrY - yPrevY) / (yCurrX - yPrevX)
+        float m2 = (gCurrY - gPrevY) / (gCurrX - gPrevX)
+        if m1 != m2
+            float ix = (m1 * yPrevX - m2 * gPrevX + gPrevY - yPrevY) / (m1 - m2)
+            if ix >= math.max(yPrevX, gPrevX) and ix <= math.min(yCurrX, gCurrX)
+                float iy = m1 * (ix - yPrevX) + yPrevY
+                array.push(activeWhiteLines, iy)
+
+bool buySignal  = false
+bool sellSignal = false
+
+if array.size(activeWhiteLines) > 0
+    int idx = array.size(activeWhiteLines) - 1
+    while idx >= 0
+        float lineLevel = array.get(activeWhiteLines, idx)
+        if high >= lineLevel and low <= lineLevel
+            if close[1] < lineLevel or (close[1] == lineLevel and open < lineLevel)
+                sellSignal := true
+            else if close[1] > lineLevel or (close[1] == lineLevel and open > lineLevel)
+                buySignal := true
+            array.remove(activeWhiteLines, idx)
+        idx -= 1
+
+bool anySignal = buySignal or sellSignal
+
+// ??? Dynamic Symmetric Levels ???
+var float dynHi = sc_pHi
+var float dynLo = sc_pLo
+
+if anySignal
+    dynHi := dynHi_mode ? math.max(high, sc_pLo) : sc_pHi
+    dynLo := dynLo_mode ? math.min(low,  sc_pHi) : sc_pLo
+
+// ??? Dynamic Symmetric Calculations ???
+float dyn_mid = (dynLo + dynHi) / 2
+float dyn_p3  = dynHi + 2 * (dynHi - dyn_mid)
+float dyn_p4  = dynLo - 2 * (dyn_mid - dynLo)
+
+float sO = reflect(open,  dyn_mid)
+float sH = reflect(low,   dyn_mid)
+float sL = reflect(high,  dyn_mid)
+float sC = reflect(close, dyn_mid)
+
+plotcandle(sc_show and show_mid ? sO : na, sH, sL, sC, "Sym-Mid", color=color.new(#FF6D00,60), wickcolor=color.new(#FF6D00,30), bordercolor=color.new(#FF6D00,30))
+plotcandle(sc_show and show_sp1 ? reflect(sO, dynHi) : na, reflect(sL, dynHi), reflect(sH, dynHi), reflect(sC, dynHi),
+     "Sym-P1", color=color.new(#2196F3,55), wickcolor=color.new(#2196F3,20), bordercolor=color.new(#2196F3,20))
+plotcandle(sc_show and show_sp2 ? reflect(sO, dynLo) : na, reflect(sL, dynLo), reflect(sH, dynLo), reflect(sC, dynLo),
+     "Sym-P2", color=color.new(#00E676,55), wickcolor=color.new(#00E676,20), bordercolor=color.new(#00E676,20))
+plotcandle(sc_show and show_sp3 ? reflect(sO, dyn_p3) : na, reflect(sL, dyn_p3), reflect(sH, dyn_p3), reflect(sC, dyn_p3),
+     "Sym-P3", color=color.new(#E040FB,55), wickcolor=color.new(#E040FB,20), bordercolor=color.new(#E040FB,20))
+plotcandle(sc_show and show_sp4 ? reflect(sO, dyn_p4) : na, reflect(sL, dyn_p4), reflect(sH, dyn_p4), reflect(sC, dyn_p4),
+     "Sym-P4", color=color.new(#FF4081,55), wickcolor=color.new(#FF4081,20), bordercolor=color.new(#FF4081,20))
+
+plot(sc_show ? dynLo : na, "Dyn-Lo", color=color.new(color.yellow, 0), linewidth=2, style=plot.style_stepline)
+plot(sc_show ? dynHi : na, "Dyn-Hi", color=color.new(color.aqua,   0), linewidth=2, style=plot.style_stepline)
+
+plotshape(buySignal,  title="Buy Signal",  style=shape.triangleup,   location=location.belowbar, color=color.green, size=size.normal)
+plotshape(sellSignal, title="Sell Signal", style=shape.triangledown,  location=location.abovebar, color=color.red,   size=size.normal)
+
+if buySignal
+    alert("”Ìê‰«· Œ—Ìœ: ﬁÌ„  «“ »«·« »« ”ÿÕ  ﬁ«ÿ⁄ »—ŒÊ—œ ò—œ", alert.freq_once_per_bar)
+if sellSignal
+    alert("”Ìê‰«· ›—Ê‘: ﬁÌ„  «“ Å«ÌÌ‰ »« ”ÿÕ  ﬁ«ÿ⁄ »—ŒÊ—œ ò—œ", alert.freq_once_per_bar)

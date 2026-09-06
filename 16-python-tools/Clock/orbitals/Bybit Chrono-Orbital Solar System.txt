@@ -1,0 +1,512 @@
+# -*- coding: utf-8 -*-
+"""
+🌌 Bybit Chrono-Orbital Solar System — مدل منظومه‌ی شمسیِ چندتایم‌فریمی
+------------------------------------------------------------------------------
+ایده:
+  • هر تایم‌فریم معاملاتی = یک سیاره در منظومه‌ی شمسی (فاصله‌ی مداری بر اساس
+    قانون سوم کپلر از روی دوره‌ی تناوب واقعیِ آن تایم‌فریم محاسبه می‌شود:
+    T² ∝ r³  =>  r ∝ T^(2/3)، سپس برای نمایش روی صفحه در مقیاس لگاریتمی
+    نرمال می‌شود).
+  • خورشید = میانگین متحرک بلندمدت (MA200) روی تایم‌فریمِ انتخابیِ «زمین»؛
+    مرکز جرمیِ منظومه که «زمین» (قیمت) دور آن می‌چرخد.
+  • زمین = قیمت لحظه‌ای. زاویه‌ی مداریِ زمین از فاز واقعیِ زمان (کندل جاری)
+    می‌آید، اما شعاع مداری آن با انحراف واقعی قیمت از خورشید (MA200) کش
+    می‌آید و می‌آید و می‌رود؛ یعنی «نوسان قیمت» = ارتعاش زمین حول مدار کپلری‌اش.
+  • تایم‌فریم سالانه (Y) = سیاه‌چاله‌ی مرکزیِ کهکشان راه‌شیری. کل منظومه‌ی
+    شمسی (خورشید + سیاره‌ها + زمین) بر اساس پیشرفتِ واقعیِ سال تقویمی به‌سمت
+    این سیاه‌چاله رانده می‌شود (drift)، و شدت/شتاب این رانش از جهتِ روند
+    کندل سالانه (صعودی/نزولی) گرفته می‌شود.
+  • جرم هر سیاره = میانگین حجم معاملاتِ واقعیِ همان تایم‌فریم (نه عدد دلخواه)؛
+    یعنی هرچه یک تایم‌فریم پرحجم‌تر باشد، «جاذبه»‌ی بیشتری روی زمین (قیمت)
+    اعمال می‌کند.
+  • پیش‌بینیِ حرکتِ زمین: با جمع‌بردارِ نیروی گرانشیِ نیوتنی از خورشید +
+    سیاه‌چاله + همه‌ی سیاره‌های دیگر روی زمین، شتاب خالص محاسبه و با
+    انتگرال‌گیریِ اویلر چند گام به جلو برده می‌شود؛ شعاعِ پیش‌بینی‌شده با
+    تابعِ معکوسِ نگاشتِ «شعاع↔قیمت» به قیمتِ پیش‌بینی‌شده تبدیل می‌شود.
+
+⚠️ نکته‌ی صادقانه (هم‌راستا با روش همیشگی Morindok):
+  این یک چارچوبِ نمایشی/اکتشافی است که داده‌های واقعی (حجم، فاز زمانی،
+  انحراف از MA) را در قالبِ استعاره‌ی گرانش/مدار بسته‌بندی می‌کند. مثل
+  ابزارهای قبلیِ Gann/اسپیرال، این روش پیش از اتکا برای معامله‌ی واقعی باید
+  با پرموتیشن‌تست و واک‌فوروارد روی دیتای تاریخی محک بخورد؛ در حالت فعلی
+  فرضی برای «شهودِ چندتایم‌فریمی» است، نه سیگنالِ اثبات‌شده.
+
+نصب:
+    pip install dash dash-bootstrap-components plotly pandas numpy requests
+"""
+
+import math
+import time
+from collections import OrderedDict
+
+import numpy as np
+import pandas as pd
+import requests
+import dash
+from dash import dcc, html, Input, Output, State, ctx
+import dash_bootstrap_components as dbc
+import plotly.graph_objects as go
+
+# ==============================================================================
+# 0) پالت رنگی (هماهنگ با اسکریپت‌های قبلیِ BITMOON / Morindok)
+# ==============================================================================
+BG, CARD, LINE, TXT, MUT = "#0b1220", "#121c30", "#23314d", "#e8ecf4", "#8fa3c0"
+GOLD, UP, DN = "#f0b90b", "#16a085", "#e74c3c"
+SUN_COLOR = "#ffd23f"
+EARTH_COLOR = "#3fa7ff"
+BLACKHOLE_COLOR = "#050608"
+ACCRETION_COLOR = "#7c3aed"
+
+DEFAULT_SYMBOL = "BTCUSDT"
+DEFAULT_CATEGORY = "linear"
+DEFAULT_EARTH_TF = "15"   # تایم‌فریمی که نقش «زمین» را بازی می‌کند
+
+# ==============================================================================
+# 1) اتصال REST پایدار به بایبیت — همان روشِ اسکریپتِ اصلی
+#    (چند دامنه‌ی جایگزین + کشِ دامنه‌ی فعال + هدر مرورگر برای عبور از فیلتر)
+# ==============================================================================
+REST_CANDIDATES = ["https://api.bybit.com", "https://api.bytick.com", "https://api.bybit.kz"]
+SESSION = requests.Session()
+SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
+    "Referer": "https://www.bybit.com/",
+})
+_ACTIVE_REST_BASE = {"url": None}
+
+
+def bybit_get(path, params, timeout=10):
+    cands = ([_ACTIVE_REST_BASE["url"]] if _ACTIVE_REST_BASE["url"] else []) + \
+            [b for b in REST_CANDIDATES if b != _ACTIVE_REST_BASE["url"]]
+    for base in cands:
+        try:
+            r = SESSION.get(f"{base}{path}", params=params, timeout=timeout)
+            if r.status_code in (403, 451):
+                continue
+            r.raise_for_status()
+            d = r.json()
+            if d.get("retCode") == 0:
+                _ACTIVE_REST_BASE["url"] = base
+                return d
+        except Exception:
+            continue
+    return None
+
+
+def get_klines(symbol, interval, category="linear", limit=300):
+    d = bybit_get("/v5/market/kline", {
+        "category": category, "symbol": symbol, "interval": interval, "limit": limit
+    })
+    if not d or "list" not in (d.get("result") or {}):
+        return pd.DataFrame()
+    lst = d["result"]["list"]
+    if not lst:
+        return pd.DataFrame()
+    df = pd.DataFrame(lst, columns=["ts", "open", "high", "low", "close", "volume", "turnover"])
+    df["ts"] = pd.to_datetime(df["ts"].astype(int), unit="ms")
+    for c in ["open", "high", "low", "close", "volume"]:
+        df[c] = df[c].astype(float)
+    return df.sort_values("ts").reset_index(drop=True)
+
+
+def build_yearly_proxy(monthly_df):
+    """بایبیت اینتروال سالانه ندارد؛ سالِ جاری را از ۱۲ کندلِ ماهانه‌ی آخر می‌سازیم."""
+    if monthly_df.empty:
+        return None
+    tail = monthly_df.tail(12)
+    if tail.empty:
+        return None
+    return {
+        "open": float(tail["open"].iloc[0]),
+        "close": float(tail["close"].iloc[-1]),
+        "high": float(tail["high"].max()),
+        "low": float(tail["low"].min()),
+        "volume": float(tail["volume"].sum()),
+    }
+
+
+# ==============================================================================
+# 2) تعریفِ سیاره‌ها (تایم‌فریم‌ها) — ترتیب کپلری از مرکوری تا نپتون
+# ==============================================================================
+PLANETS = OrderedDict([
+    ("1",   {"label": "1m",  "planet": "Mercury ☿", "minutes": 1}),
+    ("5",   {"label": "5m",  "planet": "Venus ♀",   "minutes": 5}),
+    ("15",  {"label": "15m", "planet": "Earth ♁",   "minutes": 15}),
+    ("60",  {"label": "1h",  "planet": "Mars ♂",    "minutes": 60}),
+    ("240", {"label": "4h",  "planet": "Jupiter ♃", "minutes": 240}),
+    ("D",   {"label": "1D",  "planet": "Saturn ♄",  "minutes": 1440}),
+    ("W",   {"label": "1W",  "planet": "Uranus ⛢",  "minutes": 1440 * 7},),
+    ("M",   {"label": "1M",  "planet": "Neptune ♆", "minutes": 1440 * 30}),
+])
+EARTH_TF_OPTS = [{"label": v["label"], "value": k} for k, v in PLANETS.items()]
+
+G_CONST = 1.0                 # ثابت گرانش (واحدِ نمایشی، نه SI)
+SUN_MASS = 12.0                # جرمِ نمایشیِ خورشید (MA200)
+BLACKHOLE_MASS = 80.0           # جرمِ نمایشیِ سیاه‌چاله (سالانه)
+R_MIN, R_MAX = 55, 260          # بازه‌ی شعاعِ مداریِ سیاره‌ها روی صفحه (px نمایشی)
+BLACKHOLE_BASE_DIST = 620       # فاصله‌ی اولیه‌ی سیاه‌چاله در ابتدای سال
+BLACKHOLE_DIR_DEG = 222         # جهتِ ثابتِ سیاه‌چاله نسبت به مرکز منظومه (پایین‌چپ)
+EARTH_WOBBLE = 70                # دامنه‌ی حداکثرِ ارتعاشِ شعاعِ زمین حول مدار کپلری‌اش (px)
+FORECAST_STEPS = 6               # تعداد گام‌های پیش‌بینیِ آینده‌ی زمین
+
+
+def kepler_radius(period_minutes, all_periods):
+    """نگاشتِ لگاریتمیِ T^(2/3) به بازه‌ی [R_MIN, R_MAX] با حفظِ ترتیبِ کپلری."""
+    raw = {k: p ** (2.0 / 3.0) for k, p in all_periods.items()}
+    lo, hi = min(raw.values()), max(raw.values())
+    if hi == lo:
+        return (R_MIN + R_MAX) / 2
+    frac = (math.log(raw[period_minutes_key(period_minutes, all_periods)]) - math.log(lo)) / \
+           (math.log(hi) - math.log(lo))
+    return R_MIN + frac * (R_MAX - R_MIN)
+
+
+def period_minutes_key(period_minutes, all_periods):
+    for k, v in all_periods.items():
+        if v == period_minutes:
+            return k
+    return list(all_periods.keys())[0]
+
+
+def phase_angle(period_minutes, now_ms=None):
+    """زاویه‌ی مداری از فازِ واقعیِ زمان: چقدر از کندلِ جاریِ همین تایم‌فریم گذشته."""
+    if now_ms is None:
+        now_ms = int(time.time() * 1000)
+    period_ms = period_minutes * 60_000
+    frac = (now_ms % period_ms) / period_ms
+    return frac * 2 * math.pi
+
+
+def polar_to_xy(r, theta, origin=(0.0, 0.0)):
+    return origin[0] + r * math.cos(theta), origin[1] + r * math.sin(theta)
+
+
+def map_price_to_radius(price, sun_value, price_scale, base_radius):
+    """نگاشتِ انحرافِ قیمت از خورشید (MA) به ارتعاشِ شعاعِ زمین حولِ مدارِ کپلری‌اش."""
+    if price_scale <= 0:
+        dev = 0.0
+    else:
+        dev = (price - sun_value) / price_scale
+    dev = max(-1.0, min(1.0, dev))
+    return base_radius + dev * EARTH_WOBBLE, dev
+
+
+def map_radius_to_price(radius, sun_value, price_scale, base_radius):
+    dev = (radius - base_radius) / EARTH_WOBBLE
+    dev = max(-1.0, min(1.0, dev))
+    return sun_value + dev * price_scale
+
+
+# ==============================================================================
+# 3) موتورِ گرانشی: محاسبه‌ی وضعیتِ کاملِ منظومه در لحظه + پیش‌بینیِ زمین
+# ==============================================================================
+def compute_solar_system(symbol, category, earth_tf):
+    all_periods = {k: v["minutes"] for k, v in PLANETS.items()}
+    now_ms = int(time.time() * 1000)
+
+    # --- دریافتِ دیتا برای همه‌ی تایم‌فریم‌ها ---
+    frames = {}
+    for tf in PLANETS.keys():
+        frames[tf] = get_klines(symbol, tf, category, limit=250)
+    monthly_for_year = frames.get("M", pd.DataFrame())
+    yearly = build_yearly_proxy(monthly_for_year)
+
+    earth_df = frames.get(earth_tf, pd.DataFrame())
+    if earth_df.empty or yearly is None:
+        return None
+
+    # --- خورشید: MA200 روی تایم‌فریمِ زمین (اگر کندل کافی نبود، از میانگینِ موجود) ---
+    closes = earth_df["close"].to_numpy()
+    ma_len = min(200, len(closes))
+    sun_value = float(np.mean(closes[-ma_len:]))
+    price_scale = float(np.std(closes[-ma_len:])) * 2.5 or (closes[-1] * 0.01)
+    last_price = float(closes[-1])
+
+    # --- شعاعِ پایه‌ی هر سیاره (کپلر) + جرم (میانگین حجم واقعی) ---
+    bodies = {}
+    masses = {}
+    for tf, meta in PLANETS.items():
+        r_base = kepler_radius(meta["minutes"], all_periods)
+        theta = phase_angle(meta["minutes"], now_ms)
+        df_tf = frames.get(tf, pd.DataFrame())
+        vol_mass = float(df_tf["volume"].tail(30).mean()) if not df_tf.empty else 1.0
+        masses[tf] = vol_mass
+        bodies[tf] = {"r_base": r_base, "theta": theta, "label": meta["label"], "planet": meta["planet"]}
+
+    max_mass = max(masses.values()) or 1.0
+    for tf in masses:
+        masses[tf] = 1.5 + 8.5 * (masses[tf] / max_mass)   # نرمال‌سازیِ جرمِ نمایشی در بازه‌ی [1.5, 10]
+
+    # --- زمین: زاویه از فازِ واقعیِ زمان، شعاع از انحرافِ واقعیِ قیمت از خورشید ---
+    earth_theta = bodies[earth_tf]["theta"]
+    earth_r_base = bodies[earth_tf]["r_base"]
+    earth_r, earth_dev = map_price_to_radius(last_price, sun_value, price_scale, earth_r_base)
+    bodies[earth_tf]["r"] = earth_r
+    for tf in bodies:
+        if tf != earth_tf:
+            bodies[tf]["r"] = bodies[tf]["r_base"]
+
+    # --- درصدِ پیشرفتِ سالِ تقویمی + جهتِ روندِ سالانه => رانشِ منظومه به‌سمتِ سیاه‌چاله ---
+    now = pd.Timestamp.utcnow()
+    year_start = pd.Timestamp(year=now.year, month=1, day=1, tz="UTC")
+    year_end = pd.Timestamp(year=now.year + 1, month=1, day=1, tz="UTC")
+    year_progress = (now - year_start) / (year_end - year_start)
+    yearly_bullish = yearly["close"] >= yearly["open"]
+    eased_progress = year_progress ** (0.7 if yearly_bullish else 1.3)
+    blackhole_dist = BLACKHOLE_BASE_DIST * (1 - eased_progress) + 90 * eased_progress
+    bh_theta = math.radians(BLACKHOLE_DIR_DEG)
+    bh_x, bh_y = polar_to_xy(blackhole_dist, bh_theta)
+
+    # --- محاسبه‌ی نیروی گرانشیِ خالص روی زمین (خورشید + سیاه‌چاله + سایرِ سیاره‌ها) ---
+    ex, ey = polar_to_xy(earth_r, earth_theta)
+    m_earth = 1.0
+
+    def force_from(mass, tx, ty):
+        dx, dy = tx - ex, ty - ey
+        d = math.hypot(dx, dy) or 1e-6
+        f = G_CONST * mass * m_earth / (d ** 2)
+        return f * dx / d, f * dy / d, f
+
+    fx = fy = 0.0
+    contributions = []
+
+    sx, sy = 0.0, 0.0
+    _fx, _fy, _f = force_from(SUN_MASS, sx, sy)
+    fx += _fx; fy += _fy
+    contributions.append({"name": "خورشید (MA200)", "force": _f, "role": "بازگشت به میانگین"})
+
+    _fx, _fy, _f = force_from(BLACKHOLE_MASS, bh_x, bh_y)
+    fx += _fx; fy += _fy
+    contributions.append({"name": "سیاه‌چاله (روند سالانه)", "force": _f, "role": "پیروی از روند کلان"})
+
+    for tf, b in bodies.items():
+        if tf == earth_tf:
+            continue
+        px, py = polar_to_xy(b["r"], b["theta"])
+        _fx, _fy, _f = force_from(masses[tf], px, py)
+        fx += _fx; fy += _fy
+        contributions.append({"name": f"{b['planet']} ({b['label']})", "force": _f, "role": "همگرایی چندتایم‌فریمی"})
+
+    contributions.sort(key=lambda c: -c["force"])
+    total_mag = sum(c["force"] for c in contributions) or 1e-9
+    align_x = fx / total_mag if total_mag else 0.0
+    align_y = fy / total_mag if total_mag else 0.0
+    confluence_score = min(1.0, math.hypot(align_x, align_y))
+
+    # --- پیش‌بینیِ مسیرِ زمین: انتگرالِ اویلرِ چندگام با سرعتِ اولیه‌ی مماسیِ کپلری ---
+    period_min = PLANETS[earth_tf]["minutes"]
+    omega = 2 * math.pi / period_min
+    v_tangent = omega * earth_r
+    vx = -math.sin(earth_theta) * v_tangent
+    vy = math.cos(earth_theta) * v_tangent
+
+    px, py = ex, ey
+    ax, ay = fx / m_earth, fy / m_earth
+    dt = period_min / 6.0
+    path_xy = [(px, py)]
+    predicted_prices = [last_price]
+    for _ in range(FORECAST_STEPS):
+        vx += ax * dt * 0.02
+        vy += ay * dt * 0.02
+        px += vx * dt * 0.02
+        py += vy * dt * 0.02
+        path_xy.append((px, py))
+        r_pred = math.hypot(px, py)
+        predicted_prices.append(map_radius_to_price(r_pred, sun_value, price_scale, earth_r_base))
+
+    return {
+        "bodies": bodies, "masses": masses, "earth_tf": earth_tf,
+        "sun_value": sun_value, "price_scale": price_scale, "last_price": last_price,
+        "earth_r_base": earth_r_base, "earth_r": earth_r, "earth_theta": earth_theta,
+        "earth_xy": (ex, ey), "blackhole_xy": (bh_x, bh_y), "blackhole_dist": blackhole_dist,
+        "year_progress": year_progress, "yearly_bullish": yearly_bullish,
+        "contributions": contributions, "confluence_score": confluence_score,
+        "align_xy": (align_x, align_y), "path_xy": path_xy, "predicted_prices": predicted_prices,
+        "earth_df": earth_df,
+    }
+
+
+# ==============================================================================
+# 4) رسمِ نمودارِ قطبیِ منظومه
+# ==============================================================================
+def build_orbit_figure(state):
+    fig = go.Figure()
+
+    # --- دیسکِ برافزایشی و سیاه‌چاله ---
+    bh_x, bh_y = state["blackhole_xy"]
+    for i, rr in enumerate([46, 34, 24]):
+        fig.add_shape(type="circle", xref="x", yref="y",
+                      x0=bh_x - rr, x1=bh_x + rr, y0=bh_y - rr, y1=bh_y + rr,
+                      line=dict(color=ACCRETION_COLOR, width=1),
+                      fillcolor=f"rgba(124,58,237,{0.08 + i * 0.05})")
+    fig.add_trace(go.Scatter(x=[bh_x], y=[bh_y], mode="markers+text",
+                              marker=dict(size=22, color=BLACKHOLE_COLOR, line=dict(color=ACCRETION_COLOR, width=2)),
+                              text=["⚫ سیاه‌چاله (سالانه)"], textposition="bottom center",
+                              textfont=dict(color=ACCRETION_COLOR, size=11), name="سیاه‌چاله"))
+    # خطِ رانشِ منظومه به‌سمتِ سیاه‌چاله
+    fig.add_trace(go.Scatter(x=[0, bh_x], y=[0, bh_y], mode="lines",
+                              line=dict(color=ACCRETION_COLOR, width=1, dash="dot"),
+                              hoverinfo="skip", showlegend=False))
+
+    # --- خورشید ---
+    fig.add_trace(go.Scatter(x=[0], y=[0], mode="markers+text",
+                              marker=dict(size=26, color=SUN_COLOR, line=dict(color="#fff3c4", width=2)),
+                              text=["☀ خورشید (MA200)"], textposition="top center",
+                              textfont=dict(color=SUN_COLOR, size=11), name="خورشید"))
+
+    theta_ring = np.linspace(0, 2 * math.pi, 100)
+    for tf, b in state["bodies"].items():
+        r_ring = b["r_base"]
+        ring_x = r_ring * np.cos(theta_ring)
+        ring_y = r_ring * np.sin(theta_ring)
+        fig.add_trace(go.Scatter(x=ring_x, y=ring_y, mode="lines",
+                                  line=dict(color=LINE, width=1), hoverinfo="skip", showlegend=False))
+
+        is_earth = (tf == state["earth_tf"])
+        px, py = polar_to_xy(b["r"], b["theta"])
+        color = EARTH_COLOR if is_earth else GOLD
+        size = 16 + state["masses"][tf] * 1.6
+        label = f"🌍 {b['planet']} — قیمت" if is_earth else b["planet"]
+        fig.add_trace(go.Scatter(x=[px], y=[py], mode="markers+text",
+                                  marker=dict(size=size, color=color,
+                                              line=dict(color="#ffffff", width=1 if is_earth else 0)),
+                                  text=[f"{label}<br>{b['label']}"], textposition="middle right",
+                                  textfont=dict(color=TXT if not is_earth else EARTH_COLOR, size=10),
+                                  name=b["label"]))
+
+    # --- مسیرِ پیش‌بینی‌شده‌ی زمین ---
+    path = state["path_xy"]
+    fig.add_trace(go.Scatter(x=[p[0] for p in path], y=[p[1] for p in path], mode="lines+markers",
+                              line=dict(color=EARTH_COLOR, width=2, dash="dash"),
+                              marker=dict(size=5, color=EARTH_COLOR),
+                              name="مسیرِ پیش‌بینی‌شده‌ی زمین"))
+
+    lim = state["blackhole_dist"] + 60 if state["blackhole_dist"] > R_MAX else R_MAX + 80
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor=BG, plot_bgcolor=BG,
+        font=dict(color=TXT),
+        xaxis=dict(visible=False, range=[-lim, lim], scaleanchor="y", scaleratio=1),
+        yaxis=dict(visible=False, range=[-lim, lim]),
+        margin=dict(l=10, r=10, t=30, b=10), showlegend=False,
+        title=dict(text="🌌 منظومه‌ی شمسیِ چندتایم‌فریمی — زمین = قیمت", x=0.5,
+                   font=dict(color=GOLD, size=14)),
+    )
+    return fig
+
+
+def build_side_panel(state, symbol, earth_tf):
+    dev_pct = (state["last_price"] - state["sun_value"]) / state["sun_value"] * 100
+    conf = state["confluence_score"]
+    conf_color = UP if conf > 0.5 else (GOLD if conf > 0.25 else MUT)
+    pred_dir = "صعودی 🟢" if state["predicted_prices"][-1] > state["last_price"] else "نزولی 🔴"
+    pred_change_pct = (state["predicted_prices"][-1] / state["last_price"] - 1) * 100
+
+    rows = []
+    for c in state["contributions"][:6]:
+        rows.append(html.Tr([
+            html.Td(c["name"], style={"color": TXT, "fontSize": 12}),
+            html.Td(c["role"], style={"color": MUT, "fontSize": 11}),
+            html.Td(f"{c['force']:.3f}", style={"color": GOLD, "fontSize": 12, "textAlign": "right"}),
+        ]))
+
+    return html.Div([
+        dbc.Card(dbc.CardBody([
+            html.Div(f"🌍 زمین = قیمتِ {symbol} روی تایم‌فریم {PLANETS[earth_tf]['label']}",
+                      style={"color": EARTH_COLOR, "fontWeight": "bold", "marginBottom": 6}),
+            html.Div(f"قیمتِ لحظه‌ای: {state['last_price']:.2f}", style={"color": TXT, "fontSize": 13}),
+            html.Div(f"خورشید (MA200): {state['sun_value']:.2f}", style={"color": SUN_COLOR, "fontSize": 13}),
+            html.Div(f"انحراف از خورشید: {dev_pct:+.2f}%",
+                      style={"color": UP if dev_pct > 0 else DN, "fontSize": 13}),
+            html.Hr(style={"borderColor": LINE, "margin": "8px 0"}),
+            html.Div(f"پیشرفتِ سالِ جاری: {state['year_progress']*100:.1f}%  "
+                     f"({'صعودی' if state['yearly_bullish'] else 'نزولی'})",
+                      style={"color": MUT, "fontSize": 12}),
+            html.Div(f"فاصله تا سیاه‌چاله: {state['blackhole_dist']:.0f}px", style={"color": MUT, "fontSize": 12}),
+        ]), style={"background": CARD, "border": f"1px solid {LINE}", "marginBottom": 10}),
+
+        dbc.Card(dbc.CardBody([
+            html.Div("⚡ همگراییِ گرانشیِ چندتایم‌فریمی", style={"color": GOLD, "fontWeight": "bold", "marginBottom": 6}),
+            dbc.Progress(value=conf * 100, color="success" if conf > 0.5 else ("warning" if conf > 0.25 else "secondary"),
+                         style={"height": 10, "marginBottom": 6}),
+            html.Div(f"امتیازِ همگرایی: {conf:.2f}", style={"color": conf_color, "fontSize": 13, "fontWeight": "bold"}),
+            html.Hr(style={"borderColor": LINE, "margin": "8px 0"}),
+            html.Table([html.Tbody(rows)], style={"width": "100%"}),
+        ]), style={"background": CARD, "border": f"1px solid {LINE}", "marginBottom": 10}),
+
+        dbc.Card(dbc.CardBody([
+            html.Div("🔭 پیش‌بینیِ حرکتِ زمین (گام‌های آینده)", style={"color": GOLD, "fontWeight": "bold", "marginBottom": 6}),
+            html.Div(f"جهتِ پیش‌بینی‌شده: {pred_dir}", style={"color": TXT, "fontSize": 13}),
+            html.Div(f"تغییرِ موردِ انتظار: {pred_change_pct:+.2f}%",
+                      style={"color": UP if pred_change_pct > 0 else DN, "fontSize": 13, "fontWeight": "bold"}),
+            html.Div(f"قیمتِ هدفِ تقریبی: {state['predicted_prices'][-1]:.2f}",
+                      style={"color": EARTH_COLOR, "fontSize": 13, "marginTop": 4}),
+            html.Div("⚠️ این مسیر بر پایه‌ی برهم‌نهیِ استعاره‌ای نیرو محاسبه شده و باید قبل از "
+                     "استفاده‌ی واقعی با واک‌فوروارد/پرموتیشن‌تست اعتبارسنجی شود.",
+                      style={"color": MUT, "fontSize": 10, "marginTop": 8}),
+        ]), style={"background": CARD, "border": f"1px solid {LINE}"}),
+    ])
+
+
+# ==============================================================================
+# 5) اپِ Dash
+# ==============================================================================
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.CYBORG])
+app.title = "Chrono-Orbital Solar System"
+server = app.server
+
+CATEGORY_OPTS = [{"label": v, "value": v} for v in ["linear", "spot", "inverse"]]
+
+app.layout = html.Div([
+    dbc.Card(dbc.CardBody(dbc.Row([
+        dbc.Col([html.Label("نماد:", style={"fontSize": 12, "color": MUT}),
+                 dcc.Input(id="symbol-input", value=DEFAULT_SYMBOL, type="text",
+                           style={"width": "100%", "padding": 6, "borderRadius": 6})], md=2),
+        dbc.Col([html.Label("بازار:", style={"fontSize": 12, "color": MUT}),
+                 dcc.Dropdown(id="category-dropdown", value=DEFAULT_CATEGORY, clearable=False, options=CATEGORY_OPTS)], md=2),
+        dbc.Col([html.Label("تایم‌فریمِ «زمین»:", style={"fontSize": 12, "color": MUT}),
+                 dcc.Dropdown(id="earth-tf-dropdown", value=DEFAULT_EARTH_TF, clearable=False, options=EARTH_TF_OPTS)], md=2),
+        dbc.Col(dbc.Button("🔄 بروزرسانی", id="refresh-btn", color="warning", className="mt-3",
+                           style={"fontWeight": "bold", "color": "#0b1220", "width": "100%"}), md=2),
+        dbc.Col(html.Div(id="conn-status", style={"color": MUT, "fontSize": 11, "marginTop": 22, "textAlign": "center"}), md=4),
+    ])), style={"maxWidth": 1300, "margin": "10px auto"}),
+
+    dbc.Row([
+        dbc.Col(dcc.Graph(id="orbit-chart", style={"height": "78vh"}, config={"displaylogo": False}), width=8),
+        dbc.Col(html.Div(id="side-panel"), width=4),
+    ], style={"maxWidth": 1300, "margin": "0 auto"}),
+
+    dcc.Interval(id="refresh-interval", interval=20_000, n_intervals=0),
+], style={"background": BG, "minHeight": "100vh", "padding": "10px"})
+
+
+@app.callback(
+    Output("orbit-chart", "figure"),
+    Output("side-panel", "children"),
+    Output("conn-status", "children"),
+    Input("refresh-interval", "n_intervals"),
+    Input("refresh-btn", "n_clicks"),
+    State("symbol-input", "value"),
+    State("category-dropdown", "value"),
+    State("earth-tf-dropdown", "value"),
+)
+def update_system(n_int, n_refresh, symbol, category, earth_tf):
+    symbol = (symbol or DEFAULT_SYMBOL).upper()
+    category = category or DEFAULT_CATEGORY
+    earth_tf = earth_tf or DEFAULT_EARTH_TF
+
+    state = compute_solar_system(symbol, category, earth_tf)
+    if state is None:
+        empty_fig = go.Figure(layout=dict(
+            paper_bgcolor=BG, plot_bgcolor=BG,
+            annotations=[dict(text="❌ دریافت دیتا از بایبیت ناموفق بود.", x=0.5, y=0.5, showarrow=False,
+                               font=dict(color=DN, size=14))]))
+        return empty_fig, dash.no_update, "🔴 قطع"
+
+    fig = build_orbit_figure(state)
+    panel = build_side_panel(state, symbol, earth_tf)
+    status = f"🟢 متصل | {pd.Timestamp.now().strftime('%H:%M:%S')}"
+    return fig, panel, status
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=8061, use_reloader=False)

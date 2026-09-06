@@ -1,0 +1,99 @@
+//@version=5
+indicator("Super Mirror {Morindok} - Signals Only", overlay=true)
+
+// ==========================================
+//  ‰ŸÌ„«  «‰ Œ«» ‰ﬁ«ÿ (Level 1 & 2)
+// ==========================================
+time1 = input.time(0, title="Start Time (Level 1)", confirm=true, group="Anchors")
+price1 = input.price(0, title="Start Price (Level 1)", confirm=true, group="Anchors")
+
+time2 = input.time(0, title="End Time (Level 2)", confirm=true, group="Anchors")
+price2 = input.price(0, title="End Price (Level 2)", confirm=true, group="Anchors")
+
+// ==========================================
+//  ‰ŸÌ„«  “«ÊÌÂ Ê „ﬁÌ«”
+// ==========================================
+angleInput = input.float(0.0, "Angle (Degrees)", minval=-89.9, maxval=89.9, step=1.0, group="Dynamic Slope Settings")
+priceScale = input.float(1.0, "Price per Bar Scale", step=0.1, group="Dynamic Slope Settings")
+
+// ==========================================
+// „Õ«”»Â MA «’·Ì
+// ==========================================
+var int start_bar = na
+start_bar := na(start_bar) and time >= time1 ? bar_index : start_bar
+var int end_bar = na
+end_bar := na(end_bar) and time >= time2 ? bar_index : end_bar
+
+ma_length = na(start_bar) or na(end_bar) ? 14 : math.max(1, math.abs(end_bar - start_bar))
+ma = ta.sma(close, int(ma_length))
+
+// ==========================================
+// „Õ«”»Â „ÕÊ—Â«Ì œ«Ì‰«„Ìò
+// ==========================================
+angleRad = angleInput * math.pi / 180
+slopePerBar = math.tan(angleRad) * priceScale
+msPerBar = timeframe.in_seconds(timeframe.period) * 1000
+
+barsElapsed1 = (time - time1) / msPerBar
+dyn_lvl1 = price1 + (barsElapsed1 * slopePerBar)
+
+barsElapsed2 = (time - time2) / msPerBar
+dyn_lvl2 = price2 + (barsElapsed2 * slopePerBar)
+
+// ==========================================
+// ”Ì” „ Œ‰ÀÌù”«“Ì —Ê‰œ (Detrending œ— Å”ù“„Ì‰Â)
+// ==========================================
+baseline = dyn_lvl1
+
+// ”ÿÊÕ Ê MA »œÊ‰ —Ê‰œ
+flat_lvl1 = 0.0 
+flat_lvl2 = dyn_lvl2 - baseline
+flat_ma = ma - baseline
+
+// ==========================================
+// „Õ«”»«  ﬁ—Ì‰Âù”«“Ì —ÊÌ ‰„Êœ«— «›ﬁÌ (Å‰Â«‰)
+// ==========================================
+// «‰⁄ò«” ﬁÌ„  ÕÊ· ”ÿÊÕ
+flat_pref1_lvl1 = (2 * dyn_lvl1 - close) - baseline
+flat_pref1_lvl2 = (2 * dyn_lvl2 - close) - baseline
+
+// «‰⁄ò«” œÊ„ ÕÊ· MA
+flat_pref2_lvl1 = (2 * ma - (2 * dyn_lvl1 - close)) - baseline
+flat_pref2_lvl2 = (2 * ma - (2 * dyn_lvl2 - close)) - baseline
+
+// ==========================================
+// „‰ÿﬁ ”Ìê‰«·ùœÂÌ
+// ==========================================
+is_after = not na(end_bar) and bar_index > end_bar
+
+// --- „‰ÿﬁ ›—Ê‘ ---
+var float lowest_green = na
+var bool has_collided_sell = false
+var bool signal_fired_sell = false
+
+lowest_green := is_after and not has_collided_sell ? math.min(nz(lowest_green, flat_pref2_lvl1), flat_pref2_lvl1) : lowest_green
+
+is_hit_sell = is_after and not na(lowest_green) and not has_collided_sell and (ta.cross(flat_pref2_lvl2, lowest_green) or flat_pref2_lvl2 == lowest_green)
+sell_signal = is_hit_sell and not signal_fired_sell
+
+has_collided_sell := has_collided_sell or is_hit_sell
+signal_fired_sell := signal_fired_sell or sell_signal
+
+// ‰„«Ì‘ ”Ìê‰«· ›—Ê‘ »«·«Ì ò‰œ·
+plotshape(sell_signal, title="Sell Signal", text="SELL", style=shape.labeldown, location=location.abovebar, color=color.red, textcolor=color.white, size=size.small)
+
+// --- „‰ÿﬁ Œ—Ìœ ---
+var float highest_purple = na
+var bool has_collided_buy = false
+var bool signal_fired_buy = false
+
+highest_purple := is_after and not has_collided_buy ? math.max(nz(highest_purple, flat_pref2_lvl2), flat_pref2_lvl2) : highest_purple
+
+is_hit_buy = is_after and not na(highest_purple) and not has_collided_buy and (ta.cross(flat_pref2_lvl1, highest_purple) or flat_pref2_lvl1 == highest_purple)
+buy_signal = is_hit_buy and not signal_fired_buy
+
+has_collided_buy := has_collided_buy or is_hit_buy
+signal_fired_buy := signal_fired_buy or buy_signal
+
+// ‰„«Ì‘ ”Ìê‰«· Œ—Ìœ Å«ÌÌ‰ ò‰œ·
+plotshape(buy_signal, title="Buy Signal", text="BUY", style=shape.labelup, location=location.belowbar, color=color.green, textcolor=color.white, size=size.small)

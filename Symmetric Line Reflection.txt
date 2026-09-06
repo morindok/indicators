@@ -1,0 +1,123 @@
+//@version=5
+indicator("Mirror & Angle + Inverse + Optional Mirror", overlay=false)
+
+userTime = input.time(timestamp("2024-01-01 00:00"), "“„«‰", confirm=true)
+userPrice = input.price(50000, "”ÿÕ «Ê·", confirm=true)
+secondPrice = input.price(51000, "”ÿÕ œÊ„ (ò‰ —· ”—⁄ )", confirm=true)
+speed = input.float(0.1, "”—⁄ ", minval=0.01, maxval=10, step=0.01)
+
+// ê“Ì‰ÂùÂ«Ì „ ﬁ«—‰ ”«“Ì ‰”»  »Â ”ÿÊÕ
+mirrorToLevel1 = input.bool(false, "„ ﬁ«—‰ ‰”»  »Â ”ÿÕ «Ê·")
+mirrorToLevel2 = input.bool(false, "„ ﬁ«—‰ ‰”»  »Â ”ÿÕ œÊ„")
+
+var float currentLevel = na
+var int direction = 1
+var float prevLevel = na
+var float cumulativeSlope = 0.0
+var bool started = false
+
+priceRange = math.abs(secondPrice - userPrice)
+upperBound = math.max(userPrice, secondPrice)
+lowerBound = math.min(userPrice, secondPrice)
+
+if time >= userTime and not started
+    currentLevel := userPrice
+    direction := 1
+    prevLevel := userPrice
+    cumulativeSlope := 0.0
+    started := true
+
+deltaY = priceRange * speed * 0.01
+
+if started
+    prevLevel := currentLevel
+    newLevel = currentLevel + direction * deltaY
+    
+    if newLevel >= upperBound
+        excess = newLevel - upperBound
+        currentLevel := upperBound - excess
+        direction := -1
+        cumulativeSlope := cumulativeSlope + (upperBound - prevLevel)
+    else if newLevel <= lowerBound
+        excess = lowerBound - newLevel
+        currentLevel := lowerBound + excess
+        direction := 1
+        cumulativeSlope := cumulativeSlope + (lowerBound - prevLevel)
+    else
+        currentLevel := newLevel
+        cumulativeSlope := cumulativeSlope + (currentLevel - prevLevel)
+
+isAfterTime = time >= userTime
+
+// „Õ«”»Â ﬁÌ„ ùÂ«Ì „ ﬁ«—‰ »—«Ì ò‰œ·
+mirrorOpen = started ? 2 * currentLevel - open : na
+mirrorHigh = started ? 2 * currentLevel - high : na
+mirrorLow = started ? 2 * currentLevel - low : na
+mirrorClose = started ? 2 * currentLevel - close : na
+
+// „Õ«”»Â “«ÊÌÂ  Ã„⁄Ì
+cumulativeAngle = started ? userPrice + cumulativeSlope : na
+
+// „Õ«”»Â ﬁÌ„ ùÂ«Ì ò‰œ·Ì »—«Ì “«ÊÌÂ  Ã„⁄Ì
+angleOpen = cumulativeAngle
+angleHigh = cumulativeAngle
+angleLow = cumulativeAngle
+angleClose = cumulativeAngle
+
+// „Õ«”»Â „⁄òÊ” ò‰œ·ùÂ«Ì „ ﬁ«—‰ ‰”»  »Â Œÿ “«ÊÌÂ  Ã„⁄Ì
+inverseMirrorOpen = started ? 2 * cumulativeAngle - mirrorOpen : na
+inverseMirrorHigh = started ? 2 * cumulativeAngle - mirrorHigh : na
+inverseMirrorLow = started ? 2 * cumulativeAngle - mirrorLow : na
+inverseMirrorClose = started ? 2 * cumulativeAngle - mirrorClose : na
+
+// „Õ«”»Â „ ﬁ«—‰ ‰”»  »Â ”ÿÕ «Ê·
+level1MirrorOpen = started and mirrorToLevel1 ? 2 * userPrice - open : na
+level1MirrorHigh = started and mirrorToLevel1 ? 2 * userPrice - high : na
+level1MirrorLow = started and mirrorToLevel1 ? 2 * userPrice - low : na
+level1MirrorClose = started and mirrorToLevel1 ? 2 * userPrice - close : na
+
+// „Õ«”»Â „ ﬁ«—‰ ‰”»  »Â ”ÿÕ œÊ„
+level2MirrorOpen = started and mirrorToLevel2 ? 2 * secondPrice - open : na
+level2MirrorHigh = started and mirrorToLevel2 ? 2 * secondPrice - high : na
+level2MirrorLow = started and mirrorToLevel2 ? 2 * secondPrice - low : na
+level2MirrorClose = started and mirrorToLevel2 ? 2 * secondPrice - close : na
+
+// —‰ê ò‰œ· „ ﬁ«—‰ (”»“/ﬁ—„“)
+mirrorColor = mirrorClose >= mirrorOpen ? color.new(color.green, 0) : color.new(color.red, 0)
+mirrorWickColor = mirrorClose >= mirrorOpen ? color.new(color.green, 0) : color.new(color.red, 0)
+
+// —‰ê ò‰œ· “«ÊÌÂ (‰«—‰ÃÌ)
+angleColor = color.new(color.orange, 0)
+angleWickColor = color.new(color.orange, 0)
+
+// —‰ê ò‰œ· „⁄òÊ” „ ﬁ«—‰ (¬»Ì —Ê‘‰/»‰›‘)
+inverseMirrorColor = inverseMirrorClose >= inverseMirrorOpen ? color.new(color.aqua, 0) : color.new(color.purple, 0)
+inverseMirrorWickColor = inverseMirrorClose >= inverseMirrorOpen ? color.new(color.aqua, 0) : color.new(color.purple, 0)
+
+// —‰ê ò‰œ· „ ﬁ«—‰ ”ÿÕ «Ê· (¬»Ì/¬»Ì  Ì—Â)
+level1Color = level1MirrorClose >= level1MirrorOpen ? color.new(color.blue, 0) : color.new(color.navy, 0)
+level1WickColor = level1MirrorClose >= level1MirrorOpen ? color.new(color.blue, 0) : color.new(color.navy, 0)
+
+// —‰ê ò‰œ· „ ﬁ«—‰ ”ÿÕ œÊ„ (“—œ/‰«—‰ÃÌ  Ì—Â)
+level2Color = level2MirrorClose >= level2MirrorOpen ? color.new(color.yellow, 0) : color.new(color.maroon, 0)
+level2WickColor = level2MirrorClose >= level2MirrorOpen ? color.new(color.yellow, 0) : color.new(color.maroon, 0)
+
+// Å·«  ò‰œ· „ ﬁ«—‰ (”»“/ﬁ—„“)
+plotcandle(mirrorOpen, mirrorHigh, mirrorLow, mirrorClose, "ò‰œ· „ ﬁ«—‰", color=mirrorColor, wickcolor=mirrorWickColor, bordercolor=mirrorColor)
+
+// Å·«  ò‰œ· “«ÊÌÂ  Ã„⁄Ì (‰«—‰ÃÌ)
+plotcandle(angleOpen, angleHigh, angleLow, angleClose, "ò‰œ· “«ÊÌÂ", color=angleColor, wickcolor=angleWickColor, bordercolor=angleColor)
+
+// Å·«  ò‰œ· „⁄òÊ” „ ﬁ«—‰ ‰”»  »Â Œÿ »‰›‘ (¬»Ì —Ê‘‰/»‰›‘)
+plotcandle(inverseMirrorOpen, inverseMirrorHigh, inverseMirrorLow, inverseMirrorClose, "ò‰œ· „⁄òÊ”", color=inverseMirrorColor, wickcolor=inverseMirrorWickColor, bordercolor=inverseMirrorColor)
+
+// Å·«  ò‰œ· „ ﬁ«—‰ ‰”»  »Â ”ÿÕ «Ê· (¬»Ì/¬»Ì  Ì—Â)
+plotcandle(level1MirrorOpen, level1MirrorHigh, level1MirrorLow, level1MirrorClose, "„ ﬁ«—‰ ”ÿÕ «Ê·", color=level1Color, wickcolor=level1WickColor, bordercolor=level1Color)
+
+// Å·«  ò‰œ· „ ﬁ«—‰ ‰”»  »Â ”ÿÕ œÊ„ (“—œ/ﬁÂÊÂù«Ì)
+plotcandle(level2MirrorOpen, level2MirrorHigh, level2MirrorLow, level2MirrorClose, "„ ﬁ«—‰ ”ÿÕ œÊ„", color=level2Color, wickcolor=level2WickColor, bordercolor=level2Color)
+
+// Å·«  ”ÿÊÕ
+plot(isAfterTime ? userPrice : na, "”ÿÕ «Ê·", color.white, 2)
+plot(isAfterTime ? secondPrice : na, "”ÿÕ œÊ„", color.red, 2)
+plot(isAfterTime ? currentLevel : na, "”ÿÕ „ Õ—ò", color.yellow, 1, plot.style_circles)

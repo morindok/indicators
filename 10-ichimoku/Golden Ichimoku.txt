@@ -1,0 +1,53 @@
+//@version=5
+indicator("Dynamic Ichimoku by Pivot Distance", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// --- [ Inputs ] ---
+leftBars  = input.int(5, title="Pivot Left Bars")
+rightBars = input.int(5, title="Pivot Right Bars")
+tenkanLen = input.int(9, title="Tenkan-sen Length")
+fixedShift = input.int(26, title="Cloud Offset (Shift)")
+
+// --- [ Pivot Detection & Dynamic Length ] ---
+ph = ta.pivothigh(high, leftBars, rightBars)
+pl = ta.pivotlow(low, leftBars, rightBars)
+
+var int lastPivotBar = na
+var int prevPivotBar = na
+
+if not na(ph) or not na(pl)
+    prevPivotBar := lastPivotBar
+    lastPivotBar := bar_index[rightBars] 
+
+// „Õ«”»Â ›«’·Â »Ì‰ œÊ ÅÌÊÊ  ¬Œ—
+dynamicLen = na(prevPivotBar) ? 26 : math.max(1, lastPivotBar - prevPivotBar)
+
+// --- [ Ichimoku Calculations ] ---
+donchian(len) => math.avg(ta.highest(high, len), ta.lowest(low, len))
+
+tenkan = donchian(tenkanLen)
+kijun = donchian(dynamicLen)
+senkouA = math.avg(tenkan, kijun)
+senkouB = donchian(dynamicLen * 2)
+
+// --- [ Plotting ] ---
+plot(tenkan, color=color.blue, title="Tenkan-sen")
+plot(kijun, color=color.red, title="Kijun-sen (Dynamic)")
+
+pA = plot(senkouA, offset=fixedShift, color=color.green, title="Senkou Span A")
+pB = plot(senkouB, offset=fixedShift, color=color.red, title="Senkou Span B")
+
+fill(pA, pB, color=senkouA > senkouB ? color.new(color.green, 80) : color.new(color.red, 80), title="Kumo Cloud")
+
+plot(close, offset=-fixedShift, color=color.purple, title="Chikou Span")
+
+// --- [ Labels on Cloud ] ---
+// »—«Ì Ã·ÊêÌ—Ì «“ ‘·Ê€Ì ‰„Êœ«—° ·Ì»· ›ﬁÿ “„«‰Ì —”„ „Ìù‘Êœ òÂ „ﬁœ«— œÌ‰«„Ìò  €ÌÌ— ò‰œ
+if dynamicLen != dynamicLen[1]
+    // Ã«Ìê«Â x: ò‰œ· ›⁄·Ì + „ﬁœ«— ‘Ì›  »Â Ã·Ê
+    // Ã«Ìê«Â y: Ê”ÿ «»— („Ì«‰êÌ‰ ”‰òÊ A Ê B)
+    label.new(x = bar_index + fixedShift, y = math.avg(senkouA, senkouB), 
+              text = str.tostring(dynamicLen), 
+              color = color.new(color.white, 100), // Å”ù“„Ì‰Â ‘›«›
+              textcolor = color.gray, // —‰ê „ ‰
+              style = label.style_none, 
+              size = size.small)

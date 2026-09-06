@@ -1,0 +1,371 @@
+//@version=6
+indicator("Fractals + Dual Mirror Multi-Mode Zigzag", overlay=true, max_lines_count=500)
+n = input.int(2, title="Periods", minval=2)
+lineMode = input.string("Unified Highs/Lows (Yellow/Green)", title="Line Mode", 
+     options=["Separated Individual (Yellow/Green)", "Individual Chronological (White)", "Individual Alternating (Orange)", "Unified Alternating (Red)", "Unified Highs/Lows (Yellow/Green)"])
+
+//  ‰ŸÌ„«  ‰ﬁÿÂ  ﬁ«—‰ «Ê· (P1)
+mirrorLevel1 = input.price(0, title="P1 Mirror Level", confirm=true)
+selectedTime1 = input.time(0, title="P1 Reference Time", confirm=true)
+
+//  ‰ŸÌ„«  ‰ﬁÿÂ  ﬁ«—‰ œÊ„ (P2)
+mirrorLevel2 = input.price(0, title="P2 Mirror Level", confirm=true)
+selectedTime2 = input.time(0, title="P2 Reference Time", confirm=true)
+
+// ?. „Õ«”»Â Ê —”„ ò‰œ·ùÂ«Ì „ ﬁ«—‰ »—«Ì P1 (»‰›‘)
+mHigh1 = float(2.0 * mirrorLevel1 - low)
+mLow1  = float(2.0 * mirrorLevel1 - high)
+plotcandle(2.0 * mirrorLevel1 - open, mHigh1, mLow1, 2.0 * mirrorLevel1 - close, title="Mirror P1", color=color.new(color.purple, 60), wickcolor=color.new(color.purple, 60), bordercolor=color.new(color.purple, 60))
+
+// „Õ«”»Â Ê —”„ ò‰œ·ùÂ«Ì „ ﬁ«—‰ »—«Ì P2 (¬»Ì)
+mHigh2 = float(2.0 * mirrorLevel2 - low)
+mLow2  = float(2.0 * mirrorLevel2 - high)
+plotcandle(2.0 * mirrorLevel2 - open, mHigh2, mLow2, 2.0 * mirrorLevel2 - close, title="Mirror P2", color=color.new(color.blue, 60), wickcolor=color.new(color.blue, 60), bordercolor=color.new(color.blue, 60))
+
+// ?. „Õ«”»«  Å«ÌÂ ›—«ò «·ùÂ«
+bool u_dn = true, bool u_u0 = true, bool u_u1 = true, bool u_u2 = true, bool u_u3 = true, bool u_u4 = true
+bool d_dn = true, bool d_u0 = true, bool d_u1 = true, bool d_u2 = true, bool d_u3 = true, bool d_u4 = true
+
+for i = 1 to n
+    u_dn := u_dn and (high[n-i] < high[n])
+    u_u0 := u_u0 and (high[n+i] < high[n])
+    u_u1 := u_u1 and (high[n+1] <= high[n] and high[n+i+1] < high[n])
+    u_u2 := u_u2 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i+2] < high[n])
+    u_u3 := u_u3 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i+3] < high[n])
+    u_u4 := u_u4 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i+4] < high[n])
+    
+    d_dn := d_dn and (low[n-i] > low[n])
+    d_u0 := d_u0 and (low[n+i] > low[n])
+    d_u1 := d_u1 and (low[n+1] >= low[n] and low[n+i+1] > low[n])
+    d_u2 := d_u2 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i+2] > low[n])
+    d_u3 := d_u3 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i+3] > low[n])
+    d_u4 := d_u4 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i+4] > low[n])
+
+flagUp = u_u0 or u_u1 or u_u2 or u_u3 or u_u4
+flagDn = d_u0 or d_u1 or d_u2 or d_u3 or d_u4
+
+upFractal1 = u_dn and flagUp and time[n] < selectedTime1
+downFractal1 = d_dn and flagDn and time[n] < selectedTime1
+
+upFractal2 = u_dn and flagUp and time[n] < selectedTime2
+downFractal2 = d_dn and flagDn and time[n] < selectedTime2
+
+var int refBarIndex1 = na
+var int refBarIndex2 = na
+if time <= selectedTime1
+    refBarIndex1 := bar_index
+if time <= selectedTime2
+    refBarIndex2 := bar_index
+
+var upFracIdx1 = array.new_int(0)
+var dnFracIdx1 = array.new_int(0)
+if upFractal1
+    array.push(upFracIdx1, int(bar_index - n))
+if downFractal1
+    array.push(dnFracIdx1, int(bar_index - n))
+
+var upFracIdx2 = array.new_int(0)
+var dnFracIdx2 = array.new_int(0)
+if upFractal2
+    array.push(upFracIdx2, int(bar_index - n))
+if downFractal2
+    array.push(dnFracIdx2, int(bar_index - n))
+
+// ?. »——”Ì ÊﬁÊ⁄ ”Ìê‰«·ùÂ«Ì „ ﬁ«—‰ —ÊÌ ò‰œ· Ã«—Ì
+bool p1Up = not na(refBarIndex1) and bar_index > refBarIndex1 and array.indexof(upFracIdx1, 2 * refBarIndex1 - bar_index) >= 0
+bool p1Dn = not na(refBarIndex1) and bar_index > refBarIndex1 and array.indexof(dnFracIdx1, 2 * refBarIndex1 - bar_index) >= 0
+bool p2Up = not na(refBarIndex2) and bar_index > refBarIndex2 and array.indexof(upFracIdx2, 2 * refBarIndex2 - bar_index) >= 0
+bool p2Dn = not na(refBarIndex2) and bar_index > refBarIndex2 and array.indexof(dnFracIdx2, 2 * refBarIndex2 - bar_index) >= 0
+
+// ?. ·«ÌÂ –ŒÌ—Âù”«“Ì »—«Ì Õ«· ùÂ«Ì ?  « ?
+var chart.point p1LastHigh = na, var chart.point p1LastLow = na, var chart.point p1LastChron = na
+var chart.point p2LastHigh = na, var chart.point p2LastLow = na, var chart.point p2LastChron = na
+
+var chart.point p1AltLastHighPt = na, var chart.point p1AltLastLowPt = na
+var float p1AltLastHighY = na, var float p1AltLastLowY = na
+var line p1AltActiveLine = na
+var int p1AltDir = 0
+
+var chart.point p2AltLastHighPt = na, var chart.point p2AltLastLowPt = na
+var float p2AltLastHighY = na, var float p2AltLastLowY = na
+var line p2AltActiveLine = na
+var int p2AltDir = 0
+
+// —”„ Õ«· ùÂ«Ì ?  « ? »—«Ì P1
+if bar_index > refBarIndex1
+    if p1Up
+        chart.point currentPoint = chart.point.from_index(bar_index, mHigh1)
+        if lineMode == "Separated Individual (Yellow/Green)"
+            if not na(p1LastHigh)
+                line.new(p1LastHigh, currentPoint, color=color.yellow, width=2)
+            p1LastHigh := currentPoint
+        else if lineMode == "Individual Chronological (White)"
+            if not na(p1LastChron)
+                line.new(p1LastChron, currentPoint, color=color.white, width=2)
+            p1LastChron := currentPoint
+        else if lineMode == "Individual Alternating (Orange)"
+            if p1AltDir == -1
+                p1AltActiveLine := line.new(p1AltLastLowPt, currentPoint, color=color.orange, width=2)
+                p1AltLastHighPt := currentPoint
+                p1AltLastHighY := mHigh1
+                p1AltDir := 1
+            else if p1AltDir == 1 and (na(p1AltLastHighY) or mHigh1 > p1AltLastHighY)
+                if not na(p1AltActiveLine)
+                    line.delete(p1AltActiveLine)
+                if not na(p1AltLastLowPt)
+                    p1AltActiveLine := line.new(p1AltLastLowPt, currentPoint, color=color.orange, width=2)
+                p1AltLastHighPt := currentPoint
+                p1AltLastHighY := mHigh1
+            else if p1AltDir == 0
+                p1AltLastHighPt := currentPoint
+                p1AltLastHighY := mHigh1
+                p1AltDir := 1
+
+    if p1Dn
+        chart.point currentPoint = chart.point.from_index(bar_index, mLow1)
+        if lineMode == "Separated Individual (Yellow/Green)"
+            if not na(p1LastLow)
+                line.new(p1LastLow, currentPoint, color=color.green, width=2)
+            p1LastLow := currentPoint
+        else if lineMode == "Individual Chronological (White)"
+            if not na(p1LastChron)
+                line.new(p1LastChron, currentPoint, color=color.white, width=2)
+            p1LastChron := currentPoint
+        else if lineMode == "Individual Alternating (Orange)"
+            if p1AltDir == 1
+                p1AltActiveLine := line.new(p1AltLastHighPt, currentPoint, color=color.orange, width=2)
+                p1AltLastLowPt := currentPoint
+                p1AltLastLowY := mLow1
+                p1AltDir := -1
+            else if p1AltDir == -1 and (na(p1AltLastLowY) or mLow1 < p1AltLastLowY)
+                if not na(p1AltActiveLine)
+                    line.delete(p1AltActiveLine)
+                if not na(p1AltLastHighPt)
+                    p1AltActiveLine := line.new(p1AltLastHighPt, currentPoint, color=color.orange, width=2)
+                p1AltLastLowPt := currentPoint
+                p1AltLastLowY := mLow1
+            else if p1AltDir == 0
+                p1AltLastLowPt := currentPoint
+                p1AltLastLowY := mLow1
+                p1AltDir := -1
+
+// —”„ Õ«· ùÂ«Ì ?  « ? »—«Ì P2
+if bar_index > refBarIndex2
+    if p2Up
+        chart.point currentPoint = chart.point.from_index(bar_index, mHigh2)
+        if lineMode == "Separated Individual (Yellow/Green)"
+            if not na(p2LastHigh)
+                line.new(p2LastHigh, currentPoint, color=color.yellow, width=2)
+            p2LastHigh := currentPoint
+        else if lineMode == "Individual Chronological (White)"
+            if not na(p2LastChron)
+                line.new(p2LastChron, currentPoint, color=color.white, width=2)
+            p2LastChron := currentPoint
+        else if lineMode == "Individual Alternating (Orange)"
+            if p2AltDir == -1
+                p2AltActiveLine := line.new(p2AltLastLowPt, currentPoint, color=color.orange, width=2)
+                p2AltLastHighPt := currentPoint
+                p2AltLastHighY := mHigh2
+                p2AltDir := 1
+            else if p2AltDir == 1 and (na(p2AltLastHighY) or mHigh2 > p2AltLastHighY)
+                if not na(p2AltActiveLine)
+                    line.delete(p2AltActiveLine)
+                if not na(p2AltLastLowPt)
+                    p2AltActiveLine := line.new(p2AltLastLowPt, currentPoint, color=color.orange, width=2)
+                p2AltLastHighPt := currentPoint
+                p2AltLastHighY := mHigh2
+            else if p2AltDir == 0
+                p2AltLastHighPt := currentPoint
+                p2AltLastHighY := mHigh2
+                p2AltDir := 1
+
+    if p2Dn
+        chart.point currentPoint = chart.point.from_index(bar_index, mLow2)
+        if lineMode == "Separated Individual (Yellow/Green)"
+            if not na(p2LastLow)
+                line.new(p2LastLow, currentPoint, color=color.green, width=2)
+            p2LastLow := currentPoint
+        else if lineMode == "Individual Chronological (White)"
+            if not na(p2LastChron)
+                line.new(p2LastChron, currentPoint, color=color.white, width=2)
+            p2LastChron := currentPoint
+        else if lineMode == "Individual Alternating (Orange)"
+            if p2AltDir == 1
+                p2AltActiveLine := line.new(p2AltLastHighPt, currentPoint, color=color.orange, width=2)
+                p2AltLastLowPt := currentPoint
+                p2AltLastLowY := mLow2
+                p2AltDir := -1
+            else if p2AltDir == -1 and (na(p2AltLastLowY) or mLow2 < p2AltLastLowY)
+                if not na(p2AltActiveLine)
+                    line.delete(p2AltActiveLine)
+                if not na(p2AltLastHighPt)
+                    p2AltActiveLine := line.new(p2AltLastHighPt, currentPoint, color=color.orange, width=2)
+                p2AltLastLowPt := currentPoint
+                p2AltLastLowY := mLow2
+            else if p2AltDir == 0
+                p2AltLastLowPt := currentPoint
+                p2AltLastLowY := mLow2
+                p2AltDir := -1
+
+
+// ?. „Ê Ê— Õ«·  çÂ«—„: “Ìê“«ê „ ‰«Ê» «œ€«„ ‘œÂ (Unified Alternating)
+float uniUpY = p1Up and p2Up ? math.max(mHigh1, mHigh2) : p1Up ? mHigh1 : p2Up ? mHigh2 : na
+float uniDnY = p1Dn and p2Dn ? math.min(mLow1, mLow2) : p1Dn ? mLow1 : p2Dn ? mLow2 : na
+
+var chart.point uniLastHighPt = na, var chart.point uniLastLowPt = na
+var float uniLastHighY = na, var float uniLastLowY = na
+var line uniActiveLine = na
+var int uniDir = 0
+
+if lineMode == "Unified Alternating (Red)" and (not na(uniUpY) or not na(uniDnY))
+    bool processUpFirst = (uniDir == -1 or uniDir == 0)
+    if processUpFirst
+        if not na(uniUpY)
+            chart.point upPt = chart.point.from_index(bar_index, uniUpY)
+            if uniDir == -1
+                uniActiveLine := line.new(uniLastLowPt, upPt, color=color.red, width=2)
+                uniLastHighPt := upPt
+                uniLastHighY := uniUpY
+                uniDir := 1
+            else if uniDir == 1 and (na(uniLastHighY) or uniUpY > uniLastHighY)
+                if not na(uniActiveLine) and not na(uniLastLowPt)
+                    line.delete(uniActiveLine)
+                    uniActiveLine := line.new(uniLastLowPt, upPt, color=color.red, width=2)
+                uniLastHighPt := upPt
+                uniLastHighY := uniUpY
+            else if uniDir == 0
+                uniLastHighPt := upPt
+                uniLastHighY := uniUpY
+                uniDir := 1
+        if not na(uniDnY)
+            chart.point dnPt = chart.point.from_index(bar_index, uniDnY)
+            if uniDir == 1
+                uniActiveLine := line.new(uniLastHighPt, dnPt, color=color.red, width=2)
+                uniLastLowPt := dnPt
+                uniLastLowY := uniDnY
+                uniDir := -1
+            else if uniDir == -1 and (na(uniLastLowY) or uniDnY < uniLastLowY)
+                if not na(uniActiveLine) and not na(uniLastHighPt)
+                    line.delete(uniActiveLine)
+                    uniActiveLine := line.new(uniLastHighPt, dnPt, color=color.red, width=2)
+                uniLastLowPt := dnPt
+                uniLastLowY := uniDnY
+            else if uniDir == 0
+                uniLastLowPt := dnPt
+                uniLastLowY := uniDnY
+                uniDir := -1
+    else
+        if not na(uniDnY)
+            chart.point dnPt = chart.point.from_index(bar_index, uniDnY)
+            if uniDir == 1
+                uniActiveLine := line.new(uniLastHighPt, dnPt, color=color.red, width=2)
+                uniLastLowPt := dnPt
+                uniLastLowY := uniDnY
+                uniDir := -1
+            else if uniDir == -1 and (na(uniLastLowY) or uniDnY < uniLastLowY)
+                if not na(uniActiveLine) and not na(uniLastHighPt)
+                    line.delete(uniActiveLine)
+                    uniActiveLine := line.new(uniLastHighPt, dnPt, color=color.red, width=2)
+                uniLastLowPt := dnPt
+                uniLastLowY := uniDnY
+            else if uniDir == 0
+                uniLastLowPt := dnPt
+                uniLastLowY := uniDnY
+                uniDir := -1
+        if not na(uniUpY)
+            chart.point upPt = chart.point.from_index(bar_index, uniUpY)
+            if uniDir == -1
+                uniActiveLine := line.new(uniLastLowPt, upPt, color=color.red, width=2)
+                uniLastHighPt := upPt
+                uniLastHighY := uniUpY
+                uniDir := 1
+            else if uniDir == 1 and (na(uniLastHighY) or uniUpY > uniLastHighY)
+                if not na(uniActiveLine) and not na(uniLastLowPt)
+                    line.delete(uniActiveLine)
+                    uniActiveLine := line.new(uniLastLowPt, upPt, color=color.red, width=2)
+                uniLastHighPt := upPt
+                uniLastHighY := uniUpY
+            else if uniDir == 0
+                uniLastHighPt := upPt
+                uniLastHighY := uniUpY
+                uniDir := 1
+
+
+// ?. „Ê Ê— «Œ ’«’Ì Õ«·  Å‰Ã„: „ ’· ò—œ‰ “—œÂ« »Â “—œÂ« Ê ”»“Â« »Â ”»“Â« (Unified Highs/Lows) + ŒÿÊÿ «›ﬁÌ „ ﬁ«ÿ⁄ Ê „ ‰«Ÿ— „ ﬁ—‰
+var chart.point uniLastYellowPt = na
+var chart.point uniLastGreenPt = na
+
+// „ €Ì—Â«Ì –ŒÌ—Â „Œ ’«  Å«—ÂùŒÿ Ã«—Ì “—œ Ê ”»“ »—«Ì „Õ«”»Â  ﬁ«ÿ⁄
+var int yPrevX = na, var float yPrevY = na
+var int yCurrX = na, var float yCurrY = na
+var int gPrevX = na, var float gPrevY = na
+var int gCurrX = na, var float gCurrY = na
+
+bool triggerIntersectionCheck = false
+
+if lineMode == "Unified Highs/Lows (Yellow/Green)"
+    if p1Up
+        chart.point pt = chart.point.from_index(bar_index, mHigh1)
+        if not na(uniLastYellowPt)
+            line.new(uniLastYellowPt, pt, color=color.yellow, width=2)
+        uniLastYellowPt := pt
+        yPrevX := yCurrX
+        yPrevY := yCurrY
+        yCurrX := bar_index
+        yCurrY := mHigh1
+        triggerIntersectionCheck := true
+    if p2Up
+        chart.point pt = chart.point.from_index(bar_index, mHigh2)
+        if not na(uniLastYellowPt)
+            line.new(uniLastYellowPt, pt, color=color.yellow, width=2)
+        uniLastYellowPt := pt
+        yPrevX := yCurrX
+        yPrevY := yCurrY
+        yCurrX := bar_index
+        yCurrY := mHigh2
+        triggerIntersectionCheck := true
+
+    if p1Dn
+        chart.point pt = chart.point.from_index(bar_index, mLow1)
+        if not na(uniLastGreenPt)
+            line.new(uniLastGreenPt, pt, color=color.green, width=2)
+        uniLastGreenPt := pt
+        gPrevX := gCurrX
+        gPrevY := gCurrY
+        gCurrX := bar_index
+        gCurrY := mLow1
+        triggerIntersectionCheck := true
+    if p2Dn
+        chart.point pt = chart.point.from_index(bar_index, mLow2)
+        if not na(uniLastGreenPt)
+            line.new(uniLastGreenPt, pt, color=color.green, width=2)
+        uniLastGreenPt := pt
+        gPrevX := gCurrX
+        gPrevY := gCurrY
+        gCurrX := bar_index
+        gCurrY := mLow2
+        triggerIntersectionCheck := true
+
+    // «·êÊ—Ì „ „Õ«”»« Ì ÅÌœ« ò—œ‰ ‰ﬁÿÂ »—ŒÊ—œ Ê —”„ ŒÿÊÿ „ ﬁ«—‰
+    if triggerIntersectionCheck and not na(yPrevX) and not na(yCurrX) and not na(gPrevX) and not na(gCurrX)
+        if (yCurrX != yPrevX) and (gCurrX != gPrevX)
+            float m1 = (yCurrY - yPrevY) / (yCurrX - yPrevX)
+            float m2 = (gCurrY - gPrevY) / (gCurrX - gPrevX)
+            if m1 != m2
+                float ix = (m1 * yPrevX - m2 * gPrevX + gPrevY - yPrevY) / (m1 - m2)
+                if ix >= math.max(yPrevX, gPrevX) and ix <= math.min(yCurrX, gCurrX)
+                    float iy = m1 * (ix - yPrevX) + yPrevY
+                    
+                    // ?. —”„ Œÿ «›ﬁÌ «’·Ì (”›Ìœ) «“ ò‰œ·  ‘ŒÌ’ Ã«—Ì »Â ”„  —«” 
+                    line.new(x1=bar_index, y1=iy, x2=bar_index + 1, y2=iy, extend=extend.right, color=color.white, style=line.style_dashed, width=1)
+                    
+                    // ?. „Õ«”»Â Ê —”„ Œÿ «›ﬁÌ „ ﬁ«ÿ⁄ ﬁ—Ì‰Â (“—œ) ‰”»  »Â  —«“ „—ò“ P2
+                    float mirrorIy = 2.0 * mirrorLevel2 - iy
+                    line.new(x1=bar_index, y1=mirrorIy, x2=bar_index + 1, y2=mirrorIy, extend=extend.right, color=color.yellow, style=line.style_dashed, width=1)
+
+
+// ?. —”„ œ«Ì—ÂùÂ«Ì —‰êÌ À«»  —ÊÌ —√” ò‰œ·ùÂ« (»«·«ÌÌ = “—œ | Å«ÌÌ‰Ì = ”»“)
+plotshape(p1Up ? mHigh1 : na, title="P1 Upper Circle", style=shape.circle, location=location.absolute, color=color.yellow, size=size.tiny)
+plotshape(p1Dn ? mLow1 : na, title="P1 Lower Circle", style=shape.circle, location=location.absolute, color=color.green, size=size.tiny)
+plotshape(p2Up ? mHigh2 : na, title="P2 Upper Circle", style=shape.circle, location=location.absolute, color=color.yellow, size=size.tiny)
+plotshape(p2Dn ? mLow2 : na, title="P2 Lower Circle", style=shape.circle, location=location.absolute, color=color.green, size=size.tiny)

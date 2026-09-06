@@ -1,0 +1,139 @@
+//@version=6
+indicator("Liquidity Zones{Morindok} by BITMOON618", overlay = true, max_boxes_count = 500, max_labels_count = 20)
+
+// ─── تنظیمات ───────────────────────────────────────────────
+lookback   = input.int(240, "تعداد کندل‌های محاسبه", minval = 20, maxval = 4900)
+nCols      = input.int(24,  "ستون‌های زمانی",  minval = 2, maxval = 100)
+nRows      = input.int(20,  "ردیف‌های قیمتی",  minval = 2, maxval = 100)
+wickW      = input.float(2.5, "وزن سایه‌ها (رد شدن قیمت)", minval = 0, step = 0.5)
+bodyW      = input.float(0.5, "وزن بدنه کندل", minval = 0, step = 0.1)
+pivW       = input.float(3.0, "وزن سقف/کف‌های برابر (پیوت)", minval = 0, step = 0.5)
+pivLen     = input.int(3, "قدرت پیوت", minval = 1, maxval = 10)
+sweepPct   = input.float(0.75, "مصرف لیکویدیتی هنگام عبور بدنه (0-1)", minval = 0, maxval = 1, step = 0.05)
+transp     = input.int(70, "شفافیت", minval = 0, maxval = 95)
+colLow     = input.color(color.blue,   "لیکویدیتی کم")
+colMid     = input.color(color.yellow, "لیکویدیتی متوسط")
+colHigh    = input.color(color.red,    "لیکویدیتی زیاد")
+showZones  = input.bool(true, "هایلایت قوی‌ترین زون‌های فعال")
+zoneCount  = input.int(2, "تعداد زون در هر سمت", minval = 1, maxval = 3)
+
+if nCols * nRows > 490
+    runtime.error("ستون × ردیف باید حداکثر ۴۹۰ باشد (سهمیه باکس برای زون‌ها لازم است).")
+
+// ─── توابع (فقط در سطح global مجاز هستند) ──────────────────
+heatColor(float v, float mx) =>
+    float half = mx / 2.0
+    color g = v <= half ? color.from_gradient(v, 0, half, colLow, colMid) : color.from_gradient(v, half, mx, colMid, colHigh)
+    color.new(g, transp)
+
+rowOf(float price, float lo, float cH) =>
+    math.max(0, math.min(nRows - 1, int(math.floor((price - lo) / cH))))
+
+var array<box>   boxes  = array.new<box>()
+var array<label> labels = array.new<label>()
+
+if barstate.islast
+    for b in boxes
+        box.delete(b)
+    array.clear(boxes)
+    for lb in labels
+        label.delete(lb)
+    array.clear(labels)
+
+    int len = math.min(lookback, bar_index + 1)
+
+    // ۱) رنج قیمتی بازه
+    float hh = high
+    float ll = low
+    for i = 0 to len - 1
+        hh := math.max(hh, high[i])
+        ll := math.min(ll, low[i])
+    float cellH = (hh - ll) / nRows
+
+    if cellH > 0
+        // ۲) پیمایش زمانی: ساخت امتیاز لیکویدیتی + مصرف هنگام Sweep
+        array<float>  score = array.new<float>(nRows, 0.0)
+        matrix<float> grid  = matrix.new<float>(nRows, nCols, 0.0)
+
+        for p = 0 to len - 1
+            int i = len - 1 - p
+            int c = math.min(nCols - 1, int(math.floor(p * nCols / len)))
+            float vol     = nz(volume[i])
+            float bodyTop = math.max(open[i], close[i])
+            float bodyBot = math.min(open[i], close[i])
+
+            // الف) عبور بدنه = مصرف لیکویدیتی (Sweep)
+            int rbB = rowOf(bodyBot, ll, cellH)
+            int rbT = rowOf(bodyTop, ll, cellH)
+            for r = rbB to rbT
+                array.set(score, r, array.get(score, r) * (1 - sweepPct))
+
+            // ب) بدنه: حجم با وزن کم
+            float vBody = vol * bodyW / (rbT - rbB + 1)
+            for r = rbB to rbT
+                array.set(score, r, array.get(score, r) + vBody)
+
+            // ج) سایه‌ها: سفارش‌های خفته (وزن بالا)
+            int rwT = rowOf(high[i], ll, cellH)
+            if rwT > rbT
+                float vwU = vol * wickW / (rwT - rbT)
+                for r = rbT + 1 to rwT
+                    array.set(score, r, array.get(score, r) + vwU)
+            int rwB = rowOf(low[i], ll, cellH)
+            if rwB < rbB
+                float vwD = vol * wickW / (rbB - rwB)
+                for r = rwB to rbB - 1
+                    array.set(score, r, array.get(score, r) + vwD)
+
+            // د) پیوت (تجمع استاپ‌ها)
+            if i + pivLen <= len - 1 and i - pivLen >= 0
+                bool isPH = true
+                bool isPL = true
+                for k = 1 to pivLen
+                    isPH := isPH and high[i] >= high[i + k] and high[i] >= high[i - k]
+                    isPL := isPL and low[i] <= low[i + k] and low[i] <= low[i - k]
+                if isPH
+                    array.set(score, rwT, array.get(score, rwT) + vol * pivW)
+                if isPL
+                    array.set(score, rwB, array.get(score, rwB) + vol * pivW)
+
+            // ه) اسنپ‌شات این ستون زمانی
+            for r = 0 to nRows - 1
+                matrix.set(grid, r, c, array.get(score, r))
+
+        // ۳) رسم گرید هیت‌مپ
+        float maxV = matrix.max(grid)
+        if maxV > 0
+            for c = 0 to nCols - 1
+                int pS = int(math.floor(c * len / nCols))
+                int pE = int(math.floor((c + 1) * len / nCols)) - 1
+                if pE >= pS
+                    int xL = bar_index - (len - 1) + pS
+                    int xR = bar_index - (len - 1) + pE + 1
+                    for r = 0 to nRows - 1
+                        box bx = box.new(xL, ll + (r + 1) * cellH, xR, ll + r * cellH, xloc = xloc.bar_index, bgcolor = heatColor(matrix.get(grid, r, c), maxV), border_color = na)
+                        array.push(boxes, bx)
+
+            // ۴) قوی‌ترین زون‌های فعالِ جارونشده
+            if showZones
+                int curRow = rowOf(close, ll, cellH)
+                for side = 0 to 1
+                    array<int> used = array.new<int>()
+                    for z = 1 to zoneCount
+                        float best  = 0.0
+                        int   bestR = -1
+                        int   fromR = side == 0 ? curRow + 1 : 0
+                        int   toR   = side == 0 ? nRows - 1 : curRow - 1
+                        if toR >= fromR
+                            for r = fromR to toR
+                                if not array.includes(used, r) and array.get(score, r) > best
+                                    best  := array.get(score, r)
+                                    bestR := r
+                        if bestR >= 0 and best > maxV * 0.25
+                            array.push(used, bestR)
+                            color zc = side == 0 ? color.red : color.green
+                            box zb = box.new(bar_index - 10, ll + (bestR + 1) * cellH, bar_index + 15, ll + bestR * cellH, xloc = xloc.bar_index, bgcolor = color.new(zc, 75), border_color = color.new(zc, 30), border_width = 1)
+                            array.push(boxes, zb)
+                            string zt = side == 0 ? "Buy-side Liquidity ▲" : "Sell-side Liquidity ▼"
+                            label zl = label.new(bar_index + 15, ll + (bestR + 0.5) * cellH, zt, xloc = xloc.bar_index, style = label.style_label_left, color = color.new(zc, 80), textcolor = zc, size = size.small)
+                            array.push(labels, zl)

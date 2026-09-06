@@ -1,0 +1,14 @@
+//@version=5
+indicator("Symmetric Price", overlay=true)
+
+level = input.price(0, "Symmetry Level", confirm=true)
+
+var chart.point[] pts = array.new<chart.point>()
+
+if bar_index == 0
+    array.clear(pts)
+
+array.push(pts, chart.point.from_time(time, 2 * level - close))
+
+if barstate.islast and array.size(pts) >= 2
+    polyline.new(pts, xloc=xloc.bar_time, line_color=color.orange, line_width=1)

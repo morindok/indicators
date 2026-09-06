@@ -1,0 +1,41 @@
+//@version=5
+indicator("Directional Stacked Candles", overlay=true)
+
+// ãÊÛíÑí ÈÑÇí ĞÎíÑå ÓØÍ Çíå ÈÑÇí ÑÓã ˜äÏáåÇ
+var float current_level = na
+// ãŞÏÇÑÏåí Çæáíå ÏÑ Çæáíä ˜äÏá
+if na(current_level)
+    current_level := close 
+
+// ãÍÇÓÈå ÇÑÊİÇÚ æ ÌåÊ ˜äÏá ÇÕáí ÇÑÊ
+float c_height = high - low
+bool is_bull = close >= open
+
+// ãÊÛíÑåÇí ãÑÈæØ Èå ˜äÏáåÇí ÌÏíÏ
+float syn_open = na
+float syn_high = na
+float syn_low = na
+float syn_close = na
+
+// ãäØŞ ÇäÈÇÔÊ ÌåÊÏÇÑ
+if is_bull
+    // ÇÑ ÕÚæÏí ÈÇÔÏ¡ Èå ÓãÊ ÈÇáÇ ÑÓã ãíÔæÏ
+    syn_low := current_level
+    syn_high := current_level + c_height
+    syn_open := syn_low + (open - low)
+    syn_close := syn_low + (close - low)
+    current_level := syn_high // Çíå ˜äÏá ÈÚÏí Ñæí ÓŞİ Çíä ˜äÏá ŞÑÇÑ ãííÑÏ
+else
+    // ÇÑ äÒæáí ÈÇÔÏ¡ Èå ÓãÊ Çííä ÑÓã ãíÔæÏ
+    syn_high := current_level
+    syn_low := current_level - c_height
+    syn_open := syn_high - (high - open)
+    syn_close := syn_high - (high - close)
+    current_level := syn_low // Çíå ˜äÏá ÈÚÏí Ñæí ˜İ Çíä ˜äÏá ŞÑÇÑ ãííÑÏ
+
+// ÑÓã ˜äÏáåÇí ÇäÈÇÔÊå
+plotcandle(syn_open, syn_high, syn_low, syn_close, 
+           title="Directional Stacked Candles", 
+           color=is_bull ? color.new(color.green, 50) : color.new(color.red, 50),
+           bordercolor=is_bull ? color.green : color.red,
+           wickcolor=is_bull ? color.green : color.red)

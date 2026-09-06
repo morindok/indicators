@@ -1,0 +1,198 @@
+import dash
+from dash import dcc, html, Input, Output
+import plotly.graph_objects as go
+import numpy as np
+
+# --- Constants & Elements ---
+PHI = (1 + np.sqrt(5)) / 2  # Golden Ratio ~ 1.618
+B_FACTOR = (2 * np.log(PHI)) / np.pi  # Golden Logarithmic Spiral growth factor
+
+# Periodic Table (1 to 118)
+ELEMENTS = [
+    "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar",
+    "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge", "As", "Se", "Br", "Kr",
+    "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Te", "I", "Xe",
+    "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu",
+    "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra",
+    "Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr", "Rf", "Db",
+    "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn", "Nh", "Fl", "Mc", "Lv", "Ts", "Og"
+]
+
+# Generate dropdown options
+element_options = [{'label': f"{i + 1} - {sym}", 'value': i + 1} for i, sym in enumerate(ELEMENTS)]
+
+# Initialize Dash App
+app = dash.Dash(__name__)
+app.title = "Atomic Quantum-Harmonic Model"
+
+# App Layout
+app.layout = html.Div(
+    style={'backgroundColor': '#0a0a1a', 'color': '#e0e0e0', 'fontFamily': 'Arial, sans-serif', 'padding': '20px',
+           'minHeight': '100vh'}, children=[
+        html.H2("‘»ÌÂù”«“Ì „«·Ì-òÊ«‰ Ê„Ì («À— “„«‰° «— ›«⁄ „ÊÃ Ê ⁄œœ « „Ì)",
+                style={'textAlign': 'center', 'color': '#f2a900'}),
+
+        html.Div(
+            style={'display': 'flex', 'justifyContent': 'center', 'gap': '15px', 'margin': '20px 0', 'flexWrap': 'wrap',
+                   'backgroundColor': '#1a1a2e', 'padding': '15px', 'borderRadius': '10px'}, children=[
+                html.Div([
+                    html.Label("«‰ Œ«» « „ (Mendeleev):"),
+                    dcc.Dropdown(
+                        id='input-element',
+                        options=element_options,
+                        value=79,  # Default: Gold (Au, Z=79)
+                        style={'width': '150px', 'color': 'black', 'marginLeft': '5px'}
+                    )
+                ]),
+                html.Div([
+                    html.Label(" ⁄œ«œ ò‰œ· „ÊÃ:"),
+                    dcc.Input(id='input-candles', type='number', value=21, step=1,
+                              style={'width': '70px', 'marginLeft': '5px', 'backgroundColor': '#333', 'color': 'white'})
+                ]),
+                html.Div([
+                    html.Label(" «Ì„ ›—Ì„ (œﬁÌﬁÂ):"),
+                    dcc.Dropdown(
+                        id='input-timeframe',
+                        options=[
+                            {'label': '5 Min', 'value': 5},
+                            {'label': '15 Min', 'value': 15},
+                            {'label': '1 Hour', 'value': 60},
+                            {'label': '4 Hours', 'value': 240},
+                            {'label': '1 Day', 'value': 1440}
+                        ],
+                        value=60,
+                        style={'width': '100px', 'color': 'black', 'marginLeft': '5px'}
+                    )
+                ]),
+                html.Div([
+                    html.Label("«— ›«⁄ „ÊÃ (?P):"),
+                    dcc.Input(id='input-height', type='number', value=0.0500, step=0.001,
+                              style={'width': '90px', 'marginLeft': '5px', 'backgroundColor': '#333', 'color': 'white'})
+                ]),
+                html.Div([
+                    html.Label("ÅÌÊÊ  («·ò —Ê‰):"),
+                    dcc.Input(id='input-pivot', type='number', value=1.0500, step=0.0001,
+                              style={'width': '90px', 'marginLeft': '5px', 'backgroundColor': '#333', 'color': 'white'})
+                ])
+            ]),
+
+        html.Div(id='output-results',
+                 style={'textAlign': 'center', 'fontSize': '16px', 'margin': '15px', 'color': '#00ffcc',
+                        'fontWeight': 'bold', 'whiteSpace': 'pre-line'}),
+
+        dcc.Graph(id='spiral-graph', style={'height': '750px'})
+    ])
+
+
+# Callback for logic and visualization
+@app.callback(
+    [Output('spiral-graph', 'figure'),
+     Output('output-results', 'children')],
+    [Input('input-element', 'value'),
+     Input('input-candles', 'value'),
+     Input('input-timeframe', 'value'),
+     Input('input-height', 'value'),
+     Input('input-pivot', 'value')]
+)
+def update_simulation(atomic_number, candles, timeframe, height, pivot):
+    if not all([atomic_number, candles, timeframe, height, pivot]):
+        return go.Figure(), "·ÿ›«  „«„ „ﬁ«œÌ— —« Ê«—œ ò‰Ìœ."
+
+    element_sym = ELEMENTS[atomic_number - 1]
+
+    # 1. Time Factor
+    total_time_minutes = candles * timeframe
+    time_factor = np.log10(total_time_minutes + 1)
+    a_base = time_factor * 10
+
+    # 2. Atomic Force Factor (Z_f)
+    # log10(Z + 9) ensures Hydrogen (Z=1) gives a multiplier of 1.0
+    z_factor = np.log10(atomic_number + 9)
+
+    # 3. Dynamic Quantum Energy
+    energy_quantum = height * time_factor * z_factor
+
+    # 4. Calculate Orbits and Targets
+    shells_theta = np.array([n * (np.pi / 2) for n in range(7)])
+    shells_radii = a_base * np.exp(B_FACTOR * shells_theta)
+
+    prices_full = []
+    prices_half = []
+
+    for n in range(7):
+        dynamic_step = energy_quantum * (PHI ** (n / 2))
+        prices_full.append(pivot + dynamic_step)
+        prices_half.append(pivot + (dynamic_step / 2))  # Halved Targets
+
+    final_escape_price = prices_full[-1]
+
+    # 5. Generate Spiral Path Data
+    theta_continuous = np.linspace(0, 3 * np.pi, 500)
+    r_continuous = a_base * np.exp(B_FACTOR * theta_continuous)
+    x_spiral = r_continuous * np.cos(theta_continuous)
+    y_spiral = r_continuous * np.sin(theta_continuous)
+
+    # 6. Build Plotly Figure
+    fig = go.Figure()
+
+    # Plot Nucleus (scaled by atomic number for visual feedback)
+    nucleus_size = 10 + (atomic_number / 118) * 15
+    fig.add_trace(go.Scatter(x=[0], y=[0], mode='markers+text',
+                             text=[element_sym], textposition="middle center", textfont=dict(color='black', size=10),
+                             marker=dict(size=nucleus_size, color='yellow', line=dict(width=2, color='white')),
+                             name=f'Â” Â {element_sym} (Z={atomic_number})'))
+
+    # Plot Orbits and Targets
+    colors = ['#ff3333', '#ff9933', '#ffff33', '#33ff33', '#33ffff', '#3333ff', '#ff33ff']
+    for i in range(7):
+        r = shells_radii[i]
+        c_theta = np.linspace(0, 2 * np.pi, 100)
+        c_x = r * np.cos(c_theta)
+        c_y = r * np.sin(c_theta)
+
+        # Draw Orbit
+        fig.add_trace(
+            go.Scatter(x=c_x, y=c_y, mode='lines', line=dict(color=colors[i], width=1, dash='dot'), opacity=0.5,
+                       name=f'Orbit {i + 1}'))
+
+        # Full Target
+        pt_x = r * np.cos(shells_theta[i])
+        pt_y = r * np.sin(shells_theta[i])
+        fig.add_trace(go.Scatter(x=[pt_x], y=[pt_y], mode='markers+text',
+                                 text=[f"T{i + 1}: {prices_full[i]:.4f}"], textposition="top right",
+                                 marker=dict(size=10, color=colors[i], symbol='diamond'), showlegend=False))
+
+        # Halved Target
+        half_pt_x = (r * 0.85) * np.cos(shells_theta[i] - 0.2)
+        half_pt_y = (r * 0.85) * np.sin(shells_theta[i] - 0.2)
+        fig.add_trace(go.Scatter(x=[half_pt_x], y=[half_pt_y], mode='markers+text',
+                                 text=[f"H{i + 1}: {prices_half[i]:.4f}"], textposition="bottom left",
+                                 marker=dict(size=6, color='white', symbol='circle-open'), opacity=0.7,
+                                 showlegend=False))
+
+    # Plot Spiral Path
+    fig.add_trace(
+        go.Scatter(x=x_spiral, y=y_spiral, mode='lines', line=dict(color='#00ffcc', width=2), name='«”ÅÌ—«· ¬“«œ”«“Ì'))
+
+    # Chart Layout
+    fig.update_layout(
+        plot_bgcolor='#0a0a1a',
+        paper_bgcolor='#0a0a1a',
+        font=dict(color='#e0e0e0'),
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, scaleanchor="x", scaleratio=1),
+        title=dict(text=f"«À— Ã«–»Â Â” Â {element_sym} (Z={atomic_number}) »— ê«„ùÂ«Ì Õ—ò Ì ﬁÌ„ ", x=0.5),
+        margin=dict(l=20, r=20, t=50, b=20),
+        showlegend=True,
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(0,0,0,0.5)")
+    )
+
+    result_text = (f" Õ·Ì· »— «”«” « „ {element_sym} (›«ò Ê— « „Ì Z_f = {z_factor:.2f})\n"
+                   f" «—ê  ‰Â«ÌÌ (›—«— «“ „œ«— Â› „): {final_escape_price:.4f}\n"
+                   f" «—ê  „Ì«‰Ì (50%) „œ«— Â› „: {prices_half[-1]:.4f}")
+
+    return fig, result_text
+
+
+if __name__ == '__main__':
+    app.run(debug=True)

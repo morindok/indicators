@@ -1,0 +1,208 @@
+//@version=5
+indicator("Shifted System & Boxes", overlay=true, max_bars_back=5000)
+
+// === helpers ===
+tripleMax(a,b,c)=>math.max(a,math.max(b,c))
+tripleMin(a,b,c)=>math.min(a,math.min(b,c))
+
+// === inputs ===
+length=input.int(100,"Length")
+src=input.source(close,"Source")
+useGoldenRatio=input.bool(false,"Use Golden Ratio")
+phi=input.float(1.618,"Golden Ratio")
+startTime=input.time(timestamp("2023-01-01 00:00"),"Start Time")
+drawBearish=input.bool(false,"Draw Bearish Boxes")
+maxExtraBoxes=input.int(50,"Max Boxes In B1 Range",minval=1,maxval=500)
+
+// === base system ===
+ma=ta.sma(src,length)
+highest_val=ta.highest(ma,length)
+lowest_val=ta.lowest(ma,length)
+mid=useGoldenRatio?ma+(highest_val-ma)/phi:(highest_val+lowest_val)/2
+sym_ma=2*mid-ma
+
+plot(ma,color=color.yellow,title="MA")
+plot(sym_ma,color=color.fuchsia,title="Symmetric MA")
+
+// === first box (B1) ===
+var float b1_top=na
+var float b1_bot=na
+var int b1_left=na
+var int b1_right=na
+var bool b1_done=false
+
+if time>=startTime and not b1_done and na(b1_left)
+    b1_left:=bar_index
+    b1_top:=tripleMax(high,ma,sym_ma)
+    b1_bot:=tripleMin(low,ma,sym_ma)
+
+if not na(b1_left) and not b1_done
+    b1_top:=math.max(b1_top,tripleMax(high,ma,sym_ma))
+    b1_bot:=math.min(b1_bot,tripleMin(low,ma,sym_ma))
+    if ta.cross(ma,sym_ma) and bar_index>b1_left
+        b1_right:=bar_index
+        b1_done:=true
+        box.new(b1_left,b1_top,b1_right,b1_bot,border_color=color.purple,border_width=2,bgcolor=color.new(color.purple,80))
+
+// === derived params from B1 ===
+float H=b1_done?(b1_top-b1_bot):na
+float shiftH=b1_done?H*(drawBearish?-1:1):na
+int W=b1_done?(b1_right-b1_left):length
+
+// === new system based on W ===
+new_len=b1_done and W>0?W:length
+new_ma=ta.sma(src,new_len)
+new_h=ta.highest(new_ma,new_len)
+new_l=ta.lowest(new_ma,new_len)
+new_mid=useGoldenRatio?new_ma+(new_h-new_ma)/phi:(new_h+new_l)/2
+new_sym_ma=2*new_mid-new_ma
+
+shifted_ma=new_ma+shiftH
+shifted_sym_ma=new_sym_ma+shiftH
+plot(b1_done?shifted_ma:na,color=color.aqua,title="Shifted MA",offset=W)
+plot(b1_done?shifted_sym_ma:na,color=color.blue,title="Shifted Sym MA",offset=W)
+
+// === segment tracking on new system ===
+var int[] segStart=array.new_int()
+var int[] segEnd=array.new_int()
+var float[] segHigh=array.new_float()
+var float[] segLow=array.new_float()
+var int lastCross=na
+var float segCurHigh=na
+var float segCurLow=na
+
+float curMax=tripleMax(high,new_ma,new_sym_ma)
+float curMin=tripleMin(low,new_ma,new_sym_ma)
+
+if ta.cross(new_ma,new_sym_ma)
+    if not na(lastCross)
+        array.push(segStart,lastCross)
+        array.push(segEnd,bar_index)
+        array.push(segHigh,segCurHigh)
+        array.push(segLow,segCurLow)
+    lastCross:=bar_index
+    segCurHigh:=curMax
+    segCurLow:=curMin
+else if not na(lastCross)
+    segCurHigh:=math.max(segCurHigh,curMax)
+    segCurLow:=math.min(segCurLow,curMin)
+
+// === draw cyan boxes within B1 range ===
+var bool b2plus_done=false
+var int[] boxL=array.new_int()
+var int[] boxR=array.new_int()
+
+if b1_done and not b2plus_done and not na(shiftH) and W>0 and array.size(segEnd)>0
+    int drawn=0
+    for i=array.size(segEnd)-1 to 0
+        if drawn>=maxExtraBoxes
+            break
+        int endIdx=array.get(segEnd,i)
+        int startIdx=array.get(segStart,i)
+        float maxVal=array.get(segHigh,i)
+        float minVal=array.get(segLow,i)
+        if na(endIdx) or na(startIdx) or na(maxVal) or na(minVal)
+            continue
+        int shifted_end=endIdx+W
+        if shifted_end>=b1_left and shifted_end<=b1_right
+            int shifted_left=startIdx+W
+            int shifted_right=endIdx+W
+            float final_top=maxVal+shiftH
+            float final_bottom=minVal+shiftH
+            box.new(shifted_left,final_top,shifted_right,final_bottom,border_color=color.aqua,border_width=2,bgcolor=color.new(color.aqua,80))
+            array.push(boxL,shifted_left)
+            array.push(boxR,shifted_right)
+            drawn+=1
+    b2plus_done:=true
+
+// === MASTER BOX (includes B1 + all cyan boxes) ===
+var bool master_done = false
+var box masterBox = na
+var int mLeft = na
+var int mRight = na
+var float mTop = na
+var float mBot = na
+
+if b1_done and b2plus_done and not master_done
+    mLeft := b1_left
+    mRight := b1_right
+    mTop := b1_top
+    mBot := b1_bot
+
+    if array.size(boxL) > 0
+        int counted = 0
+        for i = array.size(segEnd) - 1 to 0
+            if counted >= maxExtraBoxes
+                break
+            int e = array.get(segEnd, i)
+            int s = array.get(segStart, i)
+            float hi = array.get(segHigh, i)
+            float lo = array.get(segLow, i)
+            int se = e + W
+            if se >= b1_left and se <= b1_right
+                int l = s + W
+                int r = e + W
+                float t = hi + shiftH
+                float b = lo + shiftH
+
+                mLeft := math.min(mLeft, l)
+                mRight := math.max(mRight, r)
+                mTop := math.max(mTop, t)
+                mBot := math.min(mBot, b)
+                counted += 1
+
+    if mRight > mLeft
+        masterBox := box.new(mLeft, mTop, mRight, mBot, border_color=color.orange, border_width=2, bgcolor=color.new(color.orange, 85))
+        master_done := true
+
+// === MASTER SYSTEM ===
+int Wm = master_done ? (mRight - mLeft) : na
+float Hm = master_done ? (mTop - mBot) : na
+float shiftHm = master_done ? Hm * (drawBearish ? -1 : 1) : na
+
+master_len = (master_done and Wm > 0) ? Wm : length
+master_ma = ta.sma(src, master_len)
+master_h = ta.highest(master_ma, master_len)
+master_l = ta.lowest(master_ma, master_len)
+master_mid = useGoldenRatio ? master_ma + (master_h - master_ma)/phi : (master_h + master_l)/2
+master_sym = 2 * master_mid - master_ma
+
+master_shifted_ma = master_ma + shiftHm
+master_shifted_sym = master_sym + shiftHm
+
+plot(master_done ? master_shifted_ma : na, color=color.orange, title="Master Shifted MA", offset=Wm, linewidth=2)
+plot(master_done ? master_shifted_sym : na, color=color.red, title="Master Shifted Sym", offset=Wm, linewidth=2)
+
+// === FIRST & LOWEST NODE after B1 on MASTER system ===
+var int firstNodeBar = na
+var float firstNodeY = na
+var line firstNodeLine = na
+
+var int lowNodeBar = na
+var float lowNodeY = na
+var line lowNodeLine = na
+
+if master_done and Wm > 0
+    bool isNode = ta.cross(master_ma, master_sym)
+    if isNode
+        int nodeBarShifted = bar_index + Wm
+        bool afterB1 = nodeBarShifted > b1_right
+        if afterB1
+            float nodeY = master_ma + shiftHm
+
+            // first node
+            if na(firstNodeBar)
+                firstNodeBar := nodeBarShifted
+                firstNodeY := nodeY
+                firstNodeLine := line.new(firstNodeBar, firstNodeY, firstNodeBar + 1, firstNodeY,
+                                          xloc=xloc.bar_index, extend=extend.right, color=color.orange, width=2)
+
+            // lowest node
+            if na(lowNodeBar) or nodeY < lowNodeY
+                lowNodeBar := nodeBarShifted
+                lowNodeY := nodeY
+                if na(lowNodeLine)
+                    lowNodeLine := line.new(lowNodeBar, lowNodeY, lowNodeBar + 1, lowNodeY,xloc=xloc.bar_index, extend=extend.right, color=color.red, width=2)
+                else
+                    line.set_xy1(lowNodeLine, lowNodeBar, lowNodeY)
+                    line.set_xy2(lowNodeLine, lowNodeBar + 1, lowNodeY)

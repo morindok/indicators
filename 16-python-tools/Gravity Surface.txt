@@ -1,0 +1,228 @@
+import dash
+from dash import dcc, html, Input, Output, dash_table
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import numpy as np
+import pandas as pd
+import yfinance as yf
+
+app = dash.Dash(__name__)
+
+def compute_gravitational_physics(period="1d", gamma=1.0, phi_crit=1.5):
+    """
+    „Õ«”»Â Â‰œ”Â œÌ›—«‰”Ì· ”ÿÕ° »—œ«—Â«Ì ‰Ì—Ê Ê ‰—Œ ›—«— ê—«‰‘Ì
+    """
+    btc = yf.Ticker("BTC-USD")
+    df = btc.history(period=period, interval="5m")
+
+    if df.empty or len(df) < 40:
+        times = pd.date_range(end=pd.Timestamp.now(), periods=80, freq="5min")
+        np.random.seed(42)
+        prices = 90000 + np.cumsum(np.random.randn(80) * 80)
+        volumes = np.random.randint(100, 1000, 80)
+        df = pd.DataFrame({'Close': prices, 'Volume': volumes}, index=times)
+
+    df = df.copy()
+    n = len(df)
+
+    # ?. ‰—„«·ù”«“Ì «»⁄«œ “„«‰ Ê ﬁÌ„  »—«Ì „ﬁÌ«”ùÅ–Ì—Ì „Õ«”»«  ›Ì“ÌòÌ
+    t_raw = np.arange(n)
+    p_raw = df['Close'].values
+    v_raw = df['Volume'].values
+
+    t_norm = (t_raw - t_raw.min()) / (t_raw.max() - t_raw.min() + 1e-8) * 100
+    p_span = p_raw.max() - p_raw.min()
+    p_norm = (p_raw - p_raw.min()) / (p_span + 1e-8) * 100
+
+    # ?. Ã—„ ê—«‰‘Ì Â— ò‰œ·: Volume * |Delta Price|
+    price_diff = np.abs(np.diff(p_raw, prepend=p_raw[0]))
+    mass = v_raw * price_diff
+    mass_norm = 0.1 + (mass - mass.min()) / (mass.max() - mass.min() + 1e-8) * 2.0
+
+    # ?. „Õ«”»Â „Ìœ«‰ Å «‰”Ì· U Ê »—œ«— ‰Ì—ÊÌ F_y œ— ÿÊ· „”Ì— ﬁÌ„ 
+    U = np.zeros(n)
+    F_y = np.zeros(n)
+    epsilon = 2.0  # À«»  Â„Ê«—”«“Ì »—«Ì Ã·ÊêÌ—Ì «“  òÌ‰êÌ (Singularity)
+
+    for j in range(n):
+        dt = t_norm[j] - t_norm
+        dp = p_norm[j] - p_norm
+        r_sq = dt**2 + gamma * (dp**2)
+        r = np.sqrt(r_sq) + epsilon
+
+        # Å «‰”Ì· ê—«‰‘Ì œ— ‰ﬁÿÂ j
+        U[j] = -np.sum(mass_norm / r)
+
+        # »—œ«— ‰Ì—ÊÌ ê—«‰‘Ì —«” «Ì ﬁÌ„  (ê—«œÌ«‰)
+        F_y[j] = np.sum(mass_norm * gamma * (-dp) / (r**3))
+
+    # ?. „Õ«”»Â «‰—éÌ Ã‰»‘Ì Ê ‰—Œ ›—«— ê—«‰‘Ì (Phi)
+    velocity = np.diff(p_norm, prepend=p_norm[0])
+    E_kinetic = 0.5 * mass_norm * (velocity**2)
+    E_potential = np.abs(U) + 1e-8
+    Phi = E_kinetic / E_potential
+
+    # ?. „‰ÿﬁ ’œÊ— ”Ìê‰«·
+    signals = np.zeros(n)
+    for i in range(1, n):
+        if Phi[i] > phi_crit:
+            if F_y[i] > 0 and velocity[i] > 0:
+                signals[i] = 1   # BUY
+            elif F_y[i] < 0 and velocity[i] < 0:
+                signals[i] = -1  # SELL
+
+    df['T_Norm'] = t_norm
+    df['P_Norm'] = p_norm
+    df['U_Field'] = U
+    df['Force_Y'] = F_y
+    df['Escape_Ratio'] = Phi
+    df['Signal'] = signals
+
+    return df, t_norm, p_norm, mass_norm
+
+# çÌœ„«‰ Ê«”ÿ ò«—»—
+app.layout = html.Div([
+    html.H2("”Ì” „ ”Ìê‰«·ùœÂÌ ÅÌ‘—› Â „» ‰Ì »— Â‰œ”Â „Ìœ«‰ ê—«‰‘Ì ﬁÌ„ ",
+            style={'textAlign': 'center', 'color': '#ffffff', 'fontFamily': 'Tahoma'}),
+
+    html.Div([
+        html.Div([
+            html.Label("¬” «‰Â ‰—Œ ›—«— (Critical Escape Ratio):", style={'color': '#fff', 'fontFamily': 'Tahoma'}),
+            dcc.Slider(id='phi-slider', min=0.5, max=5.0, step=0.1, value=1.5,
+                       marks={0.5: 'Õ”«”', 1.5: '„ ⁄«œ·', 4.0: '”Œ ùêÌ—'})
+        ], style={'width': '45%'}),
+
+        html.Div([
+            html.Label("÷—Ì» «‰Õ‰«Ì „ÕÊ— ﬁÌ„  (Gamma):", style={'color': '#fff', 'fontFamily': 'Tahoma'}),
+            dcc.Slider(id='gamma-slider', min=0.2, max=3.0, step=0.1, value=1.0,
+                       marks={0.2: ' √ÀÌ— ‰—„', 1.0: '«” «‰œ«—œ', 3.0: ' √ÀÌ— „ „—ò“'})
+        ], style={'width': '45%'})
+    ], style={'display': 'flex', 'justifyContent': 'space-around', 'margin': '20px 0'}),
+
+    dcc.Graph(id='3d-field-graph', style={'height': '65vh'}),
+    dcc.Graph(id='2d-signals-graph', style={'height': '50vh'}),
+
+    html.H3(" «—ÌŒçÂ ”Ìê‰«·ùÂ«Ì „Ìœ«‰ ê—«‰‘Ì",
+            style={'textAlign': 'center', 'color': '#ffffff', 'fontFamily': 'Tahoma', 'marginTop': '20px'}),
+
+    html.Div([
+        dash_table.DataTable(
+            id='signals-table',
+            columns=[
+                {'name': '“„«‰', 'id': 'Time'},
+                {'name': '‰Ê⁄ ”Ìê‰«·', 'id': 'Type'},
+                {'name': 'ﬁÌ„  (USD)', 'id': 'Price'},
+                {'name': '»—œ«— ‰Ì—ÊÌ ê—«‰‘ (F_y)', 'id': 'Force'},
+                {'name': '‰—Œ ›—«— (Phi)', 'id': 'Phi'}
+            ],
+            style_header={'backgroundColor': '#1f2937', 'color': 'white', 'fontWeight': 'bold', 'textAlign': 'center'},
+            style_cell={'backgroundColor': '#111827', 'color': 'white', 'textAlign': 'center', 'fontFamily': 'Tahoma'},
+            style_data_conditional=[
+                {'if': {'filter_query': '{Type} = "Œ—Ìœ (BUY)"'}, 'color': '#00ff88', 'fontWeight': 'bold'},
+                {'if': {'filter_query': '{Type} = "›—Ê‘ (SELL)"'}, 'color': '#ff3366', 'fontWeight': 'bold'}
+            ],
+            page_size=6
+        )
+    ], style={'width': '85%', 'margin': '0 auto 50px auto'}),
+
+    dcc.Interval(id='timer', interval=60000, n_intervals=0)
+], style={'backgroundColor': '#0b0f19', 'minHeight': '100vh', 'padding': '15px', 'direction': 'rtl'})
+
+
+@app.callback(
+    [Output('3d-field-graph', 'figure'),
+     Output('2d-signals-graph', 'figure'),
+     Output('signals-table', 'data')],
+    [Input('phi-slider', 'value'),
+     Input('gamma-slider', 'value'),
+     Input('timer', 'n_intervals')]
+)
+def update_physics_dashboard(phi_crit, gamma, n):
+    df, t_norm, p_norm, mass_norm = compute_gravitational_physics("1d", gamma, phi_crit)
+
+    # --- ?. ”«Œ  ‘»òÂ Ê ”ÿÕ ? »⁄œÌ „Ìœ«‰ Å «‰”Ì· Ê«ﬁ⁄Ì U(t, P) ---
+    grid_res = 50
+    t_grid = np.linspace(0, 100, grid_res)
+    p_grid = np.linspace(0, 100, grid_res)
+    T_mesh, P_mesh = np.meshgrid(t_grid, p_grid)
+
+    Z_mesh = np.zeros_like(T_mesh)
+    for i in range(grid_res):
+        for j in range(grid_res):
+            dt = T_mesh[i, j] - t_norm
+            dp = P_mesh[i, j] - p_norm
+            r = np.sqrt(dt**2 + gamma * (dp**2)) + 2.0
+            Z_mesh[i, j] = -np.sum(mass_norm / r)
+
+    fig_3d = go.Figure()
+
+    # ”ÿÕ Å «‰”Ì·
+    fig_3d.add_trace(go.Surface(
+        x=T_mesh, y=P_mesh, z=Z_mesh,
+        colorscale='Viridis',
+        colorbar=dict(title='Å «‰”Ì· ê—«‰‘Ì U', len=0.8),
+        opacity=0.85
+    ))
+
+    # „”Ì— ﬁÌ„  —ÊÌ ”ÿÕ Å «‰”Ì·
+    fig_3d.add_trace(go.Scatter3d(
+        x=df['T_Norm'], y=df['P_Norm'], z=df['U_Field'] + 0.1,
+        mode='lines+markers',
+        line=dict(color='#ffffff', width=5),
+        marker=dict(size=3, color='#f59e0b'),
+        name='„”Ì— Õ—ò  ﬁÌ„ '
+    ))
+
+    fig_3d.update_layout(
+        template='plotly_dark',
+        title='„Ìœ«‰ Å «‰”Ì· ê—«‰‘Ì ? »⁄œÌ Ê  ÊÅÊ·ÊéÌ ç«ÂùÂ«Ì ﬁÌ„ ',
+        scene=dict(
+            xaxis_title='“„«‰ ‰—„«·ù‘œÂ',
+            yaxis_title='ﬁÌ„  ‰—„«·ù‘œÂ',
+            zaxis_title='⁄„ﬁ Å «‰”Ì· (U)',
+            camera=dict(eye=dict(x=1.3, y=-1.3, z=1.0))
+        ),
+        paper_bgcolor='#0b0f19',
+        margin=dict(l=0, r=0, b=0, t=40)
+    )
+
+    # --- ?. ‰„Êœ«— ? »⁄œÌ ﬁÌ„  Ê „ €Ì—Â«Ì ›Ì“ÌòÌ ---
+    fig_2d = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08,
+                           subplot_titles=('‰„Êœ«— ﬁÌ„ -“„«‰ Ê ”Ìê‰«·ùÂ«Ì ›—«— „Ìœ«‰', '‰—Œ ›—«— ê—«‰‘Ì (Escape Ratio)'))
+
+    # ﬁÌ„  Ê ”Ìê‰«·ùÂ«
+    fig_2d.add_trace(go.Scatter(x=df.index, y=df['Close'], name='ﬁÌ„ ', line=dict(color='#60a5fa', width=2)), row=1, col=1)
+
+    buys = df[df['Signal'] == 1]
+    sells = df[df['Signal'] == -1]
+
+    fig_2d.add_trace(go.Scatter(
+        x=buys.index, y=buys['Close'], mode='markers', name='”Ìê‰«· Œ—Ìœ (BUY)',
+        marker=dict(symbol='triangle-up', size=14, color='#00ff88', line=dict(width=1, color='white'))
+    ), row=1, col=1)
+
+    fig_2d.add_trace(go.Scatter(
+        x=sells.index, y=sells['Close'], mode='markers', name='”Ìê‰«· ›—Ê‘ (SELL)',
+        marker=dict(symbol='triangle-down', size=14, color='#ff3366', line=dict(width=1, color='white'))
+    ), row=1, col=1)
+
+    # ‰—Œ ›—«—
+    fig_2d.add_trace(go.Scatter(x=df.index, y=df['Escape_Ratio'], name='‰—Œ ›—«— (Phi)', line=dict(color='#a855f7')), row=2, col=1)
+    fig_2d.add_hline(y=phi_crit, line_dash="dash", line_color="#ef4444", annotation_text="¬” «‰Â ›—«—", row=2, col=1)
+
+    fig_2d.update_layout(template='plotly_dark', paper_bgcolor='#0b0f19', plot_bgcolor='#111827', showlegend=True)
+
+    # --- ?. ”«Œ  ÃœÊ·  «—ÌŒçÂ ”Ìê‰«·ùÂ« ---
+    sig_df = df[df['Signal'] != 0].copy()
+    sig_df['Time'] = sig_df.index.strftime('%Y-%m-%d %H:%M')
+    sig_df['Type'] = sig_df['Signal'].apply(lambda x: 'Œ—Ìœ (BUY)' if x == 1 else '›—Ê‘ (SELL)')
+    sig_df['Price'] = sig_df['Close'].round(2)
+    sig_df['Force'] = sig_df['Force_Y'].round(4)
+    sig_df['Phi'] = sig_df['Escape_Ratio'].round(2)
+
+    table_data = sig_df[['Time', 'Type', 'Price', 'Force', 'Phi']].sort_values(by='Time', ascending=False).to_dict('records')
+
+    return fig_3d, fig_2d, table_data
+
+if __name__ == '__main__':
+    app.run(debug=True)

@@ -1,0 +1,179 @@
+//@version=5
+indicator("Mirror Candles with Angled Levels & Gaps", overlay=true, max_boxes_count=500)
+
+time1 = input.time(timestamp("2024-01-01 00:00"), "Start Time", confirm=true)
+time2 = input.time(timestamp("2024-01-02 00:00"), "End Time", confirm=true)
+
+preGapsLimit = input.int(10, "Max Gaps Before Start Time", minval=0)
+postGapsLimit = input.int(10, "Max Gaps After Start Time", minval=0)
+
+hideQuickFilled = input.bool(true, "Hide Quick Filled Gaps")
+quickFillLimit = input.int(20, "Quick Fill Candle Limit", minval=1)
+
+price1 = input.price(50000, "Upper Level", confirm=true)
+price2 = input.price(45000, "Lower Level", confirm=true)
+angle1 = input.float(0, "Upper Level Angle (degrees)", minval=-89, maxval=89, step=1)
+angle2 = input.float(0, "Lower Level Angle (degrees)", minval=-89, maxval=89, step=1)
+
+slope1 = math.tan(angle1 * math.pi / 180)
+slope2 = math.tan(angle2 * math.pi / 180)
+
+barsFromStart = (time - time1) / (time2 - time1) * (price1 - price2)
+adjustedPrice1 = price1 + slope1 * barsFromStart
+adjustedPrice2 = price2 + slope2 * barsFromStart
+
+redCandle = close < open
+greenCandle = close >= open
+
+mirrorOpen = greenCandle ? adjustedPrice1 - (open - adjustedPrice1) : redCandle ? adjustedPrice2 + (adjustedPrice2 - open) : na
+mirrorHigh = greenCandle ? adjustedPrice1 - (high - adjustedPrice1) : redCandle ? adjustedPrice2 + (adjustedPrice2 - high) : na
+mirrorLow = greenCandle ? adjustedPrice1 - (low - adjustedPrice1) : redCandle ? adjustedPrice2 + (adjustedPrice2 - low) : na
+mirrorClose = greenCandle ? adjustedPrice1 - (close - adjustedPrice1) : redCandle ? adjustedPrice2 + (adjustedPrice2 - close) : na
+
+plotcandle(mirrorOpen, mirrorHigh, mirrorLow, mirrorClose, color=greenCandle ? color.purple : color.orange, wickcolor=greenCandle ? color.purple : color.orange, bordercolor=greenCandle ? color.purple : color.orange)
+
+origAdjOpen = redCandle ? open + (slope1 * barsFromStart) : greenCandle ? open + (slope2 * barsFromStart) : open
+origAdjHigh = redCandle ? high + (slope1 * barsFromStart) : greenCandle ? high + (slope2 * barsFromStart) : high
+origAdjLow = redCandle ? low + (slope1 * barsFromStart) : greenCandle ? low + (slope2 * barsFromStart) : low
+origAdjClose = redCandle ? close + (slope1 * barsFromStart) : greenCandle ? close + (slope2 * barsFromStart) : close
+
+plotcandle(origAdjOpen, origAdjHigh, origAdjLow, origAdjClose, title="Adjusted Original Candles", color=greenCandle ? color.green : color.red, wickcolor=greenCandle ? color.green : color.red, bordercolor=greenCandle ? color.green : color.red)
+
+plot(adjustedPrice1, "Upper Level", color=color.black, linewidth=2, style=plot.style_line)
+plot(adjustedPrice2, "Lower Level", color=color.black, linewidth=2, style=plot.style_line)
+
+var line startLine = na
+var line endLine = na
+
+if barstate.islast
+    if not na(startLine)
+        line.delete(startLine)
+    if not na(endLine)
+        line.delete(endLine)
+    chartLow = low[500]
+    chartHigh = high[500]
+    for i = 0 to 499
+        chartLow := math.min(chartLow, low[i])
+        chartHigh := math.max(chartHigh, high[i])
+    rangeExtension = (chartHigh - chartLow) * 0.2
+    minPrice = chartLow - rangeExtension
+    maxPrice = chartHigh + rangeExtension
+    startLine := line.new(x1=time1, y1=minPrice, x2=time1, y2=maxPrice, xloc=xloc.bar_time, color=color.black, style=line.style_dashed, width=3)
+    endLine := line.new(x1=time2, y1=minPrice, x2=time2, y2=maxPrice, xloc=xloc.bar_time, color=color.black, style=line.style_dashed, width=3)
+
+// ==========================================
+// ÈÎÔ åÇ æ ÑÓã ÈÇ˜ÓåÇ
+// ==========================================
+var float prevPurpleTop = na
+var float prevPurpleBot = na
+var float prevOrangeTop = na
+var float prevOrangeBot = na
+
+var box[] activeBoxes = array.new_box() 
+var box[] preBoxesAll = array.new_box() 
+var int postBoxCount = 0
+
+curTop = na(mirrorHigh) ? na : math.max(mirrorHigh, mirrorLow)
+curBot = na(mirrorLow) ? na : math.min(mirrorHigh, mirrorLow)
+
+if not na(curTop) and not na(curBot)
+    isPurple = greenCandle
+    pTop = isPurple ? prevPurpleTop : prevOrangeTop
+    pBot = isPurple ? prevPurpleBot : prevOrangeBot
+    
+    bColor = isPurple ? color.new(color.purple, 30) : color.new(color.orange, 30)
+    bgColor = isPurple ? color.new(color.purple, 70) : color.new(color.orange, 70)
+
+    if not na(pTop) and not na(pBot)
+        isGap = false
+        float gTop = na
+        float gBot = na
+        
+        if curBot > pTop
+            isGap := true
+            gTop := curBot
+            gBot := pTop
+        else if curTop < pBot
+            isGap := true
+            gTop := pBot
+            gBot := curTop
+            
+        if isGap
+            allowDraw = true
+            if slope1 < 0 and slope2 > 0
+                if gBot < adjustedPrice1
+                    allowDraw := false
+            else if slope1 > 0 and slope2 < 0
+                if gTop > adjustedPrice2
+                    allowDraw := false
+
+            if allowDraw
+                if time <= time1 
+                    if preGapsLimit > 0
+                        bx = box.new(bar_index, gTop, bar_index + 1, gBot, border_color=bColor, bgcolor=bgColor, extend=extend.right)
+                        array.push(preBoxesAll, bx)
+                        array.push(activeBoxes, bx)
+                        
+                        if array.size(preBoxesAll) > preGapsLimit
+                            old_bx = array.shift(preBoxesAll)
+                            idx = array.indexof(activeBoxes, old_bx)
+                            if idx >= 0
+                                array.remove(activeBoxes, idx)
+                            box.delete(old_bx)
+                else 
+                    if postBoxCount < postGapsLimit
+                        bx = box.new(bar_index, gTop, bar_index + 1, gBot, border_color=bColor, bgcolor=bgColor, extend=extend.right)
+                        array.push(activeBoxes, bx)
+                        postBoxCount += 1
+
+    if isPurple
+        prevPurpleTop := curTop
+        prevPurpleBot := curBot
+    else
+        prevOrangeTop := curTop
+        prevOrangeBot := curBot
+
+// ãÏíÑíÊ ÈÑÎæÑÏ ˜äÏáåÇí ãíÑæÑ æ Ñ ÔÏä  (˜Çãá íÇ ÌÒÆí)
+if array.size(activeBoxes) > 0
+    for i = array.size(activeBoxes) - 1 to 0
+        bx = array.get(activeBoxes, i)
+        bLeft = box.get_left(bx)
+        
+        if bar_index > bLeft
+            cTop = box.get_top(bx)
+            cBot = box.get_bottom(bx)
+            
+            // ÇÓÊÝÇÏå ÇÒ curTop æ curBot (˜äÏáåÇí ãíÑæÑ) Èå ÌÇí high æ low
+            if not na(curTop) and not na(curBot)
+                // ÇÑ ˜äÏá ãíÑæÑ Èå  äÝæÐ ˜äÏ
+                if curTop >= cBot and curBot <= cTop
+                    newTop = cTop
+                    newBot = cBot
+                    
+                    // ÈÑÑÓí äÍæå ÈÑÎæÑÏ ˜äÏá ãíÑæÑ
+                    if curTop >= cTop and curBot <= cBot
+                        newTop := cBot // æÔÔ ˜Çãá
+                    else if curTop < cTop and curBot <= cBot
+                        newBot := curTop // ÈÑÎæÑÏ ÇÒ Çííä
+                    else if curBot > cBot and curTop >= cTop
+                        newTop := curBot // ÈÑÎæÑÏ ÇÒ ÈÇáÇ
+                    else if curBot > cBot and curTop < cTop
+                        // ˜äÏá ãíÑæÑ ˜ÇãáÇð ÏÇÎá 
+                        if (cTop - curTop) < (curBot - cBot)
+                            newTop := curBot
+                        else
+                            newBot := curTop
+                    
+                    box.set_top(bx, newTop)
+                    box.set_bottom(bx, newBot)
+                    
+                    // ÇÑ  ˜ÇãáÇð Ñ ÔÏå ÈÇÔÏ
+                    if newTop <= newBot + syminfo.mintick
+                        array.remove(activeBoxes, i)
+                        
+                        // ÈÑÑÓí ÔÑØ ÍÐÝ ÏÑ ÕæÑÊ Ñ ÔÏä ÓÑíÚ
+                        if hideQuickFilled and (bar_index - bLeft <= quickFillLimit)
+                            box.delete(bx)
+                        else
+                            box.set_right(bx, bar_index)
+                            box.set_extend(bx, extend.none)

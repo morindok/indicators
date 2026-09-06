@@ -1,0 +1,534 @@
+﻿//@version=5
+indicator("Morindok Footprint Pro v2 — Signal Engine", overlay=false, max_labels_count=500)
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  MORINDOK FOOTPRINT PRO v2
+//  موتور سیگنال ۷ لایه‌ای بر پایه آمار Order Flow
+//  لایه‌ها: Delta Trend · CVD Divergence · Absorption · Imbalance Cascade
+//           POC Migration · Volume Climax · Trapped Traders
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║                     INPUTS                                   ║
+// ╚══════════════════════════════════════════════════════════════╝
+grp1 = "⚙️ تنظیمات اصلی"
+BINS        = input.int  (10,   "تعداد سطوح قیمتی",         minval=4,    maxval=20,   group=grp1)
+BAR_COUNT   = input.int  (5,    "تعداد کندل نمایشی",         minval=3,    maxval=6,    group=grp1)
+show_signal = input.bool (true, "نمایش پنل سیگنال",                                    group=grp1)
+show_labels = input.bool (true, "نمایش لیبل سیگنال روی چارت",                         group=grp1)
+
+grp2 = "📊 پارامترهای آستانه"
+imbal_thresh  = input.float(0.68, "آستانه Imbalance",     minval=0.50, maxval=0.95, step=0.05, group=grp2)
+hvn_thresh    = input.float(0.75, "آستانه HVN",           minval=0.50, maxval=0.99, step=0.05, group=grp2)
+climax_mult   = input.float(2.0,  "ضریب Volume Climax",   minval=1.2,  maxval=5.0,  step=0.1,  group=grp2)
+sig_min_score = input.int  (3,    "حداقل امتیاز سیگنال",  minval=1,    maxval=7,               group=grp2)
+
+grp3 = "🎨 رنگ‌ها"
+col_buy     = input.color(color.new(color.green,  65), "خریدار",   group=grp3)
+col_sell    = input.color(color.new(color.red,    65), "فروشنده",  group=grp3)
+col_neutral = input.color(color.new(color.gray,   75), "خنثی",     group=grp3)
+col_poc     = input.color(color.new(color.yellow, 45), "POC",      group=grp3)
+col_imbal   = input.color(color.new(color.orange, 55), "Imbalance",group=grp3)
+col_absorb  = input.color(color.new(color.aqua,   55), "Absorption",group=grp3)
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║              PERSISTENT STATE (var arrays)                   ║
+// ╚══════════════════════════════════════════════════════════════╝
+// ذخیره دلتا، CVD، POC و حجم برای N کندل اخیر جهت محاسبات آماری
+var float[] hist_delta   = array.new_float(0)  // تاریخچه دلتا
+var float[] hist_cvd     = array.new_float(0)  // CVD تجمعی
+var float[] hist_poc_px  = array.new_float(0)  // قیمت POC هر کندل
+var float[] hist_vol     = array.new_float(0)  // حجم هر کندل
+var float   running_cvd  = 0.0                 // CVD جاری
+
+int HIST_LEN = 20  // عمق تاریخچه
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║              HELPER FUNCTIONS                                ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+// ── وزن‌دهی حجم به سطح قیمتی ─────────────────────────────────
+f_vol_weight(float lv_lo, float lv_hi, float o, float c, float h, float l) =>
+    body_lo = math.min(o, c)
+    body_hi = math.max(o, c)
+    overlap  = math.max(0.0, math.min(lv_hi, body_hi) - math.max(lv_lo, body_lo))
+    body_rng = math.max(body_hi - body_lo, 0.0001)
+    shd_rng  = math.max(h - l, 0.0001)
+    overlap / body_rng * 1.8 + (lv_hi - lv_lo) / shd_rng * 0.8
+
+// ── نسبت Buy در هر سطح ────────────────────────────────────────
+f_buy_ratio(float lv_lo, float lv_hi, float o, float c, float h, float l) =>
+    is_bull  = c >= o
+    body_lo  = math.min(o, c)
+    body_hi  = math.max(o, c)
+    mid_lv   = (lv_lo + lv_hi) / 2.0
+    pos_fac  = (mid_lv - l) / math.max(h - l, 0.0001)
+    float br = 0.5
+    if is_bull
+        br := 0.55 + (1.0 - pos_fac) * 0.20
+        if mid_lv >= body_lo and mid_lv <= body_hi
+            br := 0.65
+    else
+        br := 0.45 - pos_fac * 0.20
+        if mid_lv >= body_lo and mid_lv <= body_hi
+            br := 0.35
+    math.max(0.1, math.min(0.9, br))
+
+// ── محاسبه کامل یک کندل: برمی‌گرداند (delta, poc_price, imbal_buy_count, imbal_sell_count, absorption) ──
+f_calc_bar(int bi, int bins_n) =>
+    h = high[bi]
+    l = low[bi]
+    c = close[bi]
+    o = open[bi]
+    v = volume[bi]
+    rng  = math.max(h - l, syminfo.mintick)
+    step = rng / bins_n
+
+    float[] bvs = array.new_float(bins_n, 0.0)
+    float[] svs = array.new_float(bins_n, 0.0)
+    float[] tvs = array.new_float(bins_n, 0.0)
+
+    // وزن کل
+    float tw = 0.0
+    for j = 0 to bins_n - 1
+        lo_j = l + j * step
+        hi_j = lo_j + step
+        tw  += f_vol_weight(lo_j, hi_j, o, c, h, l)
+
+    // توزیع حجم
+    for j = 0 to bins_n - 1
+        lo_j = l + j * step
+        hi_j = lo_j + step
+        w_j  = f_vol_weight(lo_j, hi_j, o, c, h, l)
+        lv   = v * (w_j / math.max(tw, 0.0001))
+        br   = f_buy_ratio(lo_j, hi_j, o, c, h, l)
+        array.set(bvs, j, lv * br)
+        array.set(svs, j, lv * (1.0 - br))
+        array.set(tvs, j, lv)
+
+    // POC
+    float mx_v   = array.max(tvs)
+    int   poc_i  = array.indexof(tvs, mx_v)
+    float poc_px = l + poc_i * step + step / 2.0
+
+    // دلتا کل
+    float delta = 0.0
+    for j = 0 to bins_n - 1
+        delta += array.get(bvs, j) - array.get(svs, j)
+
+    // شمارش imbalance در هر جهت
+    int ibc = 0  // buy imbalance count
+    int isc = 0  // sell imbalance count
+    for j = 0 to bins_n - 1
+        tv_j = array.get(tvs, j)
+        bv_j = array.get(bvs, j)
+        sv_j = array.get(svs, j)
+        if bv_j / math.max(tv_j, 0.0001) >= imbal_thresh
+            ibc += 1
+        if sv_j / math.max(tv_j, 0.0001) >= imbal_thresh
+            isc += 1
+
+    // Absorption: فروش سنگین ولی کندل صعودی (یا برعکس)
+    bool absorb_bull = (delta < 0) and (c > o)   // فشار فروش جذب‌شده توسط خریدار
+    bool absorb_bear = (delta > 0) and (c < o)   // فشار خرید جذب‌شده توسط فروشنده
+    int  absorb_sign = absorb_bull ? 1 : (absorb_bear ? -1 : 0)
+
+    [delta, poc_px, ibc, isc, absorb_sign, bvs, svs, tvs]
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║          SIGNAL ENGINE — 7 LAYERS                            ║
+// ╚══════════════════════════════════════════════════════════════╝
+// هر لایه حداکثر ۱ امتیاز می‌دهد (مثبت=LONG ، منفی=SHORT)
+// جمع امتیازات: [-7, +7]  →  سیگنال نهایی
+
+f_signal_engine() =>
+    // ── گردآوری داده ۳ کندل اخیر ──────────────────────────────
+    [d0, poc0, ibc0, isc0, abs0, bvs0, svs0, tvs0] = f_calc_bar(0, BINS)
+    [d1, poc1, ibc1, isc1, abs1, bvs1, svs1, tvs1] = f_calc_bar(1, BINS)
+    [d2, poc2, ibc2, isc2, abs2, bvs2, svs2, tvs2] = f_calc_bar(2, BINS)
+
+    float score = 0.0
+    string reasons = ""
+
+    // ── Layer 1: Delta Trend ──────────────────────────────────
+    // آیا دلتا در ۳ کندل اخیر یک‌طرفه حرکت کرده؟
+    bool delta_up   = d0 > d1 and d1 > d2 and d0 > 0
+    bool delta_down = d0 < d1 and d1 < d2 and d0 < 0
+    if delta_up
+        score += 1.0
+        reasons += "▲DeltaTrend "
+    else if delta_down
+        score -= 1.0
+        reasons += "▼DeltaTrend "
+
+    // ── Layer 2: CVD Divergence ───────────────────────────────
+    // قیمت بالا رفته ولی CVD پایین → Bearish Divergence
+    // قیمت پایین رفته ولی CVD بالا → Bullish Divergence
+    price_up   = close[0] > close[2]
+    price_down = close[0] < close[2]
+    cvd_up     = d0 + d1 > 0
+    cvd_down   = d0 + d1 < 0
+    bool bull_div = price_down and cvd_up
+    bool bear_div = price_up   and cvd_down
+    if bull_div
+        score += 1.5  // وزن بیشتر برای divergence چون قوی‌تره
+        reasons += "▲CVD-Div "
+    else if bear_div
+        score -= 1.5
+        reasons += "▼CVD-Div "
+
+    // ── Layer 3: Absorption ───────────────────────────────────
+    // abs0=1 یعنی خریدار جذب کرده → LONG
+    // abs0=-1 یعنی فروشنده جذب کرده → SHORT
+    if abs0 == 1
+        score += 1.0
+        reasons += "▲Absorption "
+    else if abs0 == -1
+        score -= 1.0
+        reasons += "▼Absorption "
+
+    // ── Layer 4: Imbalance Cascade ────────────────────────────
+    // اگر سطوح imbalance در کندل اخیر بیشتر از یک طرف باشد
+    float imbal_ratio = 0.0
+    if ibc0 + isc0 > 0
+        imbal_ratio := (ibc0 - isc0) / float(ibc0 + isc0)
+    if imbal_ratio > 0.4
+        score += 1.0
+        reasons += "▲ImbalCascade "
+    else if imbal_ratio < -0.4
+        score -= 1.0
+        reasons += "▼ImbalCascade "
+
+    // ── Layer 5: POC Migration ────────────────────────────────
+    // POC از کندل به کندل بالا می‌رود → فشار خرید
+    poc_rising  = poc0 > poc1 and poc1 > poc2
+    poc_falling = poc0 < poc1 and poc1 < poc2
+    if poc_rising
+        score += 0.5
+        reasons += "▲POC-Migrate "
+    else if poc_falling
+        score -= 0.5
+        reasons += "▼POC-Migrate "
+
+    // ── Layer 6: Volume Climax + Delta Reversal ───────────────
+    // حجم بسیار بالا + دلتای معکوس نسبت به ترند = Exhaustion
+    avg_vol = (volume[1] + volume[2] + volume[3] + volume[4]) / 4.0
+    is_climax = volume[0] > avg_vol * climax_mult
+    if is_climax
+        // اگر climax + دلتای منفی در روند صعودی → برگشت نزولی
+        trend_up   = close[0] > ta.sma(close, 10)
+        trend_down = close[0] < ta.sma(close, 10)
+        if is_climax and d0 < 0 and trend_up
+            score -= 1.5
+            reasons += "▼Climax-Exhaust "
+        else if is_climax and d0 > 0 and trend_down
+            score += 1.5
+            reasons += "▲Climax-Exhaust "
+
+    // ── Layer 7: Trapped Traders ──────────────────────────────
+    // HVN بالای قیمت فعلی با sell imbalance = خریداران قبلی گیر افتادند
+    // HVN پایین قیمت فعلی با buy imbalance = فروشندگان قبلی گیر افتادند
+    h0  = high[0]
+    l0  = low[0]
+    c0  = close[0]
+    rng0 = math.max(h0 - l0, syminfo.mintick)
+    stp0 = rng0 / BINS
+    float mx_tv = array.max(tvs0)
+
+    bool trapped_bear = false  // فروشنده‌ها گیر افتادند → LONG
+    bool trapped_bull = false  // خریداران گیر افتادند → SHORT
+    for jj = 0 to BINS - 1
+        lv_lo_jj = l0 + jj * stp0
+        lv_hi_jj = lv_lo_jj + stp0
+        tv_jj = array.get(tvs0, jj)
+        bv_jj = array.get(bvs0, jj)
+        sv_jj = array.get(svs0, jj)
+        is_hvn_jj = tv_jj >= mx_tv * hvn_thresh
+        lv_mid_jj = (lv_lo_jj + lv_hi_jj) / 2.0
+        if is_hvn_jj
+            if lv_mid_jj > c0 and sv_jj / math.max(tv_jj, 0.0001) >= imbal_thresh
+                trapped_bull := true  // HVN sell بالای قیمت → خریداران گیر
+            if lv_mid_jj < c0 and bv_jj / math.max(tv_jj, 0.0001) >= imbal_thresh
+                trapped_bear := true  // HVN buy پایین قیمت → فروشندگان گیر
+
+    if trapped_bear
+        score += 1.0
+        reasons += "▲Trapped-Sellers "
+    if trapped_bull
+        score -= 1.0
+        reasons += "▼Trapped-Buyers "
+
+    // ── نتیجه‌گیری نهایی ──────────────────────────────────────
+    float abs_score  = math.abs(score)
+    int   stars      = math.min(int(abs_score / 1.5) + 1, 5)  // ۱-۵ ستاره
+    string direction = score >= float(sig_min_score) ? "LONG" : (score <= -float(sig_min_score) ? "SHORT" : "WAIT")
+    string star_str  = stars >= 5 ? "★★★★★" : stars >= 4 ? "★★★★☆" : stars >= 3 ? "★★★☆☆" : stars >= 2 ? "★★☆☆☆" : "★☆☆☆☆"
+
+    [score, direction, star_str, reasons, abs_score, d0, d1, d2, poc0, poc1, poc2, abs0, is_climax, trapped_bull, trapped_bear]
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║              TABLE BUILDING                                  ║
+// ╚══════════════════════════════════════════════════════════════╝
+int TABLE_ROWS = BINS + 6
+int TABLE_COLS = BAR_COUNT + 1
+
+var table fp = table.new(
+     position.middle_center, TABLE_COLS, TABLE_ROWS,
+     bgcolor=color.new(color.black, 88), border_width=1, border_color=color.new(color.gray, 60))
+
+// ── جدول سیگنال (پنل جداگانه سمت راست) ──────────────────────
+var table sig_tbl = table.new(
+     position.bottom_right, 2, 12,
+     bgcolor=color.new(color.black, 82), border_width=1, border_color=color.new(color.gray, 50),
+     frame_width=2, frame_color=color.new(color.gray, 30))
+
+// ── ردیف لیبل‌ها ──────────────────────────────────────────────
+f_row_labels() =>
+    table.cell(fp, 0, 0, text="LVL", text_color=color.silver, bgcolor=color.new(color.black, 70), text_size=size.tiny)
+    for j = 0 to BINS - 1
+        ri = BINS - j
+        table.cell(fp, 0, ri, text=str.tostring(j+1), text_color=color.new(color.gray, 20), bgcolor=color.new(color.black, 80), text_size=size.tiny)
+    table.cell(fp, 0, BINS+1, text="Δ",     text_color=color.silver, bgcolor=color.new(color.black, 70), text_size=size.tiny)
+    table.cell(fp, 0, BINS+2, text="CVD",   text_color=color.silver, bgcolor=color.new(color.black, 70), text_size=size.tiny)
+    table.cell(fp, 0, BINS+3, text="POC",   text_color=color.silver, bgcolor=color.new(color.black, 70), text_size=size.tiny)
+    table.cell(fp, 0, BINS+4, text="ABS",   text_color=color.silver, bgcolor=color.new(color.black, 70), text_size=size.tiny)
+    table.cell(fp, 0, BINS+5, text="INFO",  text_color=color.silver, bgcolor=color.new(color.black, 70), text_size=size.tiny)
+
+// ── رسم یک کندل در جدول ──────────────────────────────────────
+f_draw_bar(int bi, int ci) =>
+    h = high[bi]
+    l = low[bi]
+    c = close[bi]
+    o = open[bi]
+    v = volume[bi]
+    rng  = math.max(h - l, syminfo.mintick)
+    step = rng / BINS
+
+    float[] bvs = array.new_float(BINS, 0.0)
+    float[] svs = array.new_float(BINS, 0.0)
+    float[] tvs = array.new_float(BINS, 0.0)
+
+    float tw = 0.0
+    for j = 0 to BINS - 1
+        lo_j = l + j * step
+        hi_j = lo_j + step
+        tw  += f_vol_weight(lo_j, hi_j, o, c, h, l)
+
+    for j = 0 to BINS - 1
+        lo_j = l + j * step
+        hi_j = lo_j + step
+        w_j  = f_vol_weight(lo_j, hi_j, o, c, h, l)
+        lv   = v * (w_j / math.max(tw, 0.0001))
+        br   = f_buy_ratio(lo_j, hi_j, o, c, h, l)
+        array.set(bvs, j, lv * br)
+        array.set(svs, j, lv * (1.0 - br))
+        array.set(tvs, j, lv)
+
+    float mx_v  = array.max(tvs)
+    int   poc_i = array.indexof(tvs, mx_v)
+    float poc_p = l + poc_i * step + step / 2.0
+    float delta = 0.0
+    for j = 0 to BINS - 1
+        delta += array.get(bvs, j) - array.get(svs, j)
+
+    // هدر ستون
+    hdr_txt  = bi == 0 ? "●LIVE" : "-" + str.tostring(bi)
+    hdr_col  = bi == 0 ? color.yellow : color.new(color.white, 20)
+    hdr_bg   = bi == 0 ? color.new(color.blue, 65) : color.new(color.navy, 80)
+    table.cell(fp, ci, 0, text=hdr_txt, text_color=hdr_col, bgcolor=hdr_bg, text_size=size.small)
+
+    // سلول‌های سطح
+    for j = 0 to BINS - 1
+        ri   = BINS - j
+        bv_j = array.get(bvs, j)
+        sv_j = array.get(svs, j)
+        tv_j = array.get(tvs, j)
+
+        is_poc_j  = j == poc_i
+        is_hvn_j  = tv_j >= mx_v * hvn_thresh and not is_poc_j
+        buy_dom_j = bv_j / math.max(tv_j, 0.0001) >= imbal_thresh
+        sell_dom_j= sv_j / math.max(tv_j, 0.0001) >= imbal_thresh
+        is_imb_j  = buy_dom_j or sell_dom_j
+
+        cell_t = str.tostring(math.round(sv_j)) + "×" + str.tostring(math.round(bv_j))
+        imb_mk = buy_dom_j ? "▲" : (sell_dom_j ? "▼" : "")
+        ratio_j= bv_j / math.max(tv_j, 0.0001)
+
+        bgc = col_neutral
+        if is_poc_j
+            bgc := col_poc
+        else if is_imb_j
+            bgc := col_imbal
+        else if is_hvn_j
+            bgc := color.new(color.yellow, 80)
+        else if ratio_j > 0.55
+            int i2 = math.min(int((ratio_j - 0.55) / 0.35 * 55), 55)
+            bgc := color.new(color.green, i2 + 38)
+        else if ratio_j < 0.45
+            int i2 = math.min(int((0.45 - ratio_j) / 0.35 * 55), 55)
+            bgc := color.new(color.red, i2 + 38)
+
+        tcol = (is_poc_j or is_hvn_j) ? color.black : color.white
+        table.cell(fp, ci, ri, text=cell_t + imb_mk, text_color=tcol, bgcolor=bgc, text_size=size.small)
+
+    // ردیف دلتا
+    d_col = delta > 0 ? color.lime : color.red
+    d_txt = (delta > 0 ? "▲+" : "▼") + str.tostring(math.round(delta))
+    table.cell(fp, ci, BINS+1, text=d_txt, text_color=d_col, bgcolor=color.new(color.black, 75), text_size=size.small)
+
+    // ردیف CVD (تجمعی ساده)
+    cvd_color = delta > 0 ? color.aqua : color.fuchsia
+    table.cell(fp, ci, BINS+2, text="CVD:" + str.tostring(math.round(delta)), text_color=cvd_color, bgcolor=color.new(color.black, 78), text_size=size.tiny)
+
+    // ردیف POC
+    table.cell(fp, ci, BINS+3, text="POC:" + str.tostring(math.round(poc_p, 2)), text_color=color.yellow, bgcolor=color.new(color.black, 78), text_size=size.tiny)
+
+    // ردیف Absorption
+    is_bull_abs = c > o and delta < 0
+    is_bear_abs = c < o and delta > 0
+    abs_txt = is_bull_abs ? "BULL ABS ▲" : (is_bear_abs ? "BEAR ABS ▼" : "—")
+    abs_col = is_bull_abs ? col_absorb : (is_bear_abs ? color.fuchsia : color.gray)
+    table.cell(fp, ci, BINS+4, text=abs_txt, text_color=abs_col, bgcolor=color.new(color.black, 78), text_size=size.tiny)
+
+    // ردیف INFO
+    bp = math.round(math.abs(c - o) / math.max(h - l, 0.0001) * 100)
+    info_t = (c >= o ? "▲" : "▼") + " B:" + str.tostring(bp) + "% V:" + str.tostring(math.round(v / 1000)) + "K"
+    table.cell(fp, ci, BINS+5, text=info_t, text_color=color.new(color.white, 15), bgcolor=color.new(color.black, 82), text_size=size.tiny)
+
+// ── رسم پنل سیگنال ────────────────────────────────────────────
+f_draw_signal_panel(float sc, string dir, string stars, string rsns, float abs_sc, float d0, float d1, float d2, float poc0, float poc1, float poc2, int abs0v, bool is_climax, bool trapped_bull, bool trapped_bear) =>
+    // ── ردیف عنوان ─
+    table.cell(sig_tbl, 0, 0, text="MORINDOK ORDER FLOW SIGNAL", text_color=color.white,bgcolor=color.new(color.navy, 50), text_size=size.small)
+    table.cell(sig_tbl, 1, 0, text="v2.0", text_color=color.silver,
+         bgcolor=color.new(color.navy, 50), text_size=size.tiny)
+
+    // ── سیگنال اصلی ─
+    sig_bg  = dir == "LONG"  ? color.new(color.green, 40) :
+              dir == "SHORT" ? color.new(color.red,   40) :
+                               color.new(color.gray,  55)
+    sig_col = dir == "LONG"  ? color.lime :
+              dir == "SHORT" ? color.new(color.red, 10) :
+                               color.silver
+    sig_icon = dir == "LONG" ? "🟢 LONG" : dir == "SHORT" ? "🔴 SHORT" : "⚪ WAIT"
+    table.cell(sig_tbl, 0, 1, text=sig_icon, text_color=sig_col,
+         bgcolor=sig_bg, text_size=size.normal)
+    table.cell(sig_tbl, 1, 1, text=stars, text_color=color.yellow,
+         bgcolor=sig_bg, text_size=size.small)
+
+    // ── امتیاز کل ─
+    sc_txt = "Score: " + (sc > 0 ? "+" : "") + str.tostring(math.round(sc * 10) / 10.0) + " / 7"
+    sc_col = sc > 0 ? color.lime : sc < 0 ? color.red : color.silver
+    table.cell(sig_tbl, 0, 2, text=sc_txt, text_color=sc_col,
+         bgcolor=color.new(color.black, 75), text_size=size.small)
+    table.cell(sig_tbl, 1, 2, text="Abs: " + str.tostring(math.round(abs_sc * 10) / 10.0), text_color=color.silver,
+         bgcolor=color.new(color.black, 75), text_size=size.tiny)
+
+    // ── خط جداکننده ─
+    table.cell(sig_tbl, 0, 3, text="─── LAYER STATUS ───", text_color=color.new(color.gray, 30),
+         bgcolor=color.new(color.black, 80), text_size=size.tiny)
+    table.cell(sig_tbl, 1, 3, text="", bgcolor=color.new(color.black, 80))
+
+    // ── وضعیت هر لایه ─
+    // Layer 1: Delta Trend
+    dt_up   = d0 > d1 and d1 > d2 and d0 > 0
+    dt_down = d0 < d1 and d1 < d2 and d0 < 0
+    l1_txt  = dt_up ? "▲ Rising" : dt_down ? "▼ Falling" : "── Flat"
+    l1_col  = dt_up ? color.lime  : dt_down ? color.red   : color.gray
+    table.cell(sig_tbl, 0, 4, text="L1 Delta Trend", text_color=color.silver, bgcolor=color.new(color.black, 80), text_size=size.tiny)
+    table.cell(sig_tbl, 1, 4, text=l1_txt, text_color=l1_col, bgcolor=color.new(color.black, 75), text_size=size.tiny)
+
+    // Layer 2: CVD Div
+    pup  = close[0] > close[2]
+    pdwn = close[0] < close[2]
+    cup  = d0 + d1 > 0
+    cdwn = d0 + d1 < 0
+    bool bdiv = pdwn and cup
+    bool brdiv= pup  and cdwn
+    l2_txt = bdiv ? "▲ Bull Div" : brdiv ? "▼ Bear Div" : "── None"
+    l2_col = bdiv ? color.lime   : brdiv ? color.red    : color.gray
+    table.cell(sig_tbl, 0, 5, text="L2 CVD Divergence", text_color=color.silver, bgcolor=color.new(color.black, 80), text_size=size.tiny)
+    table.cell(sig_tbl, 1, 5, text=l2_txt, text_color=l2_col, bgcolor=color.new(color.black, 75), text_size=size.tiny)
+
+    // Layer 3: Absorption
+    l3_txt = abs0v == 1 ? "▲ Bull Absorb" : abs0v == -1 ? "▼ Bear Absorb" : "── None"
+    l3_col = abs0v == 1 ? color.aqua : abs0v == -1 ? color.fuchsia : color.gray
+    table.cell(sig_tbl, 0, 6, text="L3 Absorption", text_color=color.silver, bgcolor=color.new(color.black, 80), text_size=size.tiny)
+    table.cell(sig_tbl, 1, 6, text=l3_txt, text_color=l3_col, bgcolor=color.new(color.black, 75), text_size=size.tiny)
+
+    // Layer 5+6: POC Migration + Climax
+    poc_r = poc0 > poc1 and poc1 > poc2
+    poc_f = poc0 < poc1 and poc1 < poc2
+    l5_txt = poc_r ? "▲ Rising POC" : poc_f ? "▼ Falling POC" : "── Stable"
+    l5_col = poc_r ? color.lime : poc_f ? color.red : color.gray
+    table.cell(sig_tbl, 0, 7, text="L5 POC Migration", text_color=color.silver, bgcolor=color.new(color.black, 80), text_size=size.tiny)
+    table.cell(sig_tbl, 1, 7, text=l5_txt, text_color=l5_col, bgcolor=color.new(color.black, 75), text_size=size.tiny)
+
+    l6_txt = is_climax ? "⚡ CLIMAX VOL" : "── Normal"
+    l6_col = is_climax ? color.orange : color.gray
+    table.cell(sig_tbl, 0, 8, text="L6 Vol Climax", text_color=color.silver, bgcolor=color.new(color.black, 80), text_size=size.tiny)
+    table.cell(sig_tbl, 1, 8, text=l6_txt, text_color=l6_col, bgcolor=color.new(color.black, 75), text_size=size.tiny)
+
+    // Layer 7: Trapped Traders
+    trap_txt = trapped_bear ? "▲ Sellers Trapped" : trapped_bull ? "▼ Buyers Trapped" : "── None"
+    trap_col = trapped_bear ? color.lime : trapped_bull ? color.red : color.gray
+    table.cell(sig_tbl, 0, 9, text="L7 Trapped Traders", text_color=color.silver, bgcolor=color.new(color.black, 80), text_size=size.tiny)
+    table.cell(sig_tbl, 1, 9, text=trap_txt, text_color=trap_col, bgcolor=color.new(color.black, 75), text_size=size.tiny)
+
+    // ── لایه‌های فعال (دلایل) ─
+    table.cell(sig_tbl, 0, 10, text="Active Layers:", text_color=color.silver, bgcolor=color.new(color.black, 85), text_size=size.tiny)
+    table.cell(sig_tbl, 1, 10, text=str.length(rsns) > 0 ? rsns : "none", text_color=color.new(color.white, 20),
+         bgcolor=color.new(color.black, 80), text_size=size.tiny)
+
+    // ── هشدار ریسک ─
+    risk_txt = dir == "LONG" ? "⚠ SL below POC/HVN" : dir == "SHORT" ? "⚠ SL above POC/HVN" : "⚠ Wait for confirmation"
+    table.cell(sig_tbl, 0, 11, text=risk_txt, text_color=color.new(color.orange, 20),
+         bgcolor=color.new(color.black, 85), text_size=size.tiny)
+    table.cell(sig_tbl, 1, 11, text="Risk: 1-2%", text_color=color.new(color.orange, 20),
+         bgcolor=color.new(color.black, 85), text_size=size.tiny)
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║              OVERLAY LABELS                                  ║
+// ╚══════════════════════════════════════════════════════════════╝
+f_draw_label(string dir, string stars, float sc) =>
+    if show_labels
+        lbl_txt  = dir == "LONG"  ? "▲ LONG "  + stars :
+                   dir == "SHORT" ? "▼ SHORT " + stars : ""
+        lbl_col  = dir == "LONG"  ? color.new(color.lime, 10) :dir == "SHORT" ? color.new(color.red,  10) : color.navy
+        lbl_size = math.abs(sc) >= 5 ? size.normal : size.small
+        if dir != "WAIT"
+            label.new(bar_index, dir == "LONG" ? low * 0.9995 : high * 1.0005, text=lbl_txt, color=lbl_col, textcolor=color.white, style=dir == "LONG" ? label.style_label_up : label.style_label_down, size=lbl_size)
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║                    MAIN RENDER                               ║
+// ╚══════════════════════════════════════════════════════════════╝
+if barstate.islast
+    // ── جدول اصلی فوت‌پرینت ──
+    f_row_labels()
+    for i = 0 to BAR_COUNT - 1
+        f_draw_bar(i, BAR_COUNT - i)
+
+    // ── موتور سیگنال ──
+    [sc, dir, stars, rsns, abs_sc, d0, d1, d2, poc0, poc1, poc2, abs0v, is_climax, t_bull, t_bear] = f_signal_engine()
+
+    if show_signal
+        f_draw_signal_panel(sc, dir, stars, rsns, abs_sc, d0, d1, d2, poc0, poc1, poc2, abs0v, is_climax, t_bull, t_bear)
+
+    f_draw_label(dir, stars, sc)
+
+// ── Plot دلتا برای Data Window ──────────────────────────────
+float plot_delta = 0.0
+float plot_delta_sum = 0.0
+rng_p  = math.max(high - low, syminfo.mintick)
+step_p = rng_p / BINS
+float tw_p = 0.0
+for jj = 0 to BINS - 1
+    tw_p += f_vol_weight(low + jj * step_p, low + (jj + 1) * step_p, open, close, high, low)
+for jj = 0 to BINS - 1
+    lo_p = low  + jj * step_p
+    hi_p = lo_p + step_p
+    ww   = f_vol_weight(lo_p, hi_p, open, close, high, low)
+    lv_p = volume * (ww / math.max(tw_p, 0.0001))
+    br_p = f_buy_ratio(lo_p, hi_p, open, close, high, low)
+    plot_delta_sum += lv_p * br_p - lv_p * (1.0 - br_p)
+plot_delta := plot_delta_sum
+plot(plot_delta, "Delta", color=plot_delta > 0 ? color.lime : color.red, display=display.data_window)

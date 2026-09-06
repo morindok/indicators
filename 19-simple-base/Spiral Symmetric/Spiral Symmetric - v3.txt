@@ -1,0 +1,262 @@
+//@version=5
+indicator("ÊÞÇÑä ÏæÇäå æ ÇÓíÑÇá ØáÇíí + ÓØÍ ÑÇåäãÇí ÏÞíÞ", overlay=true, max_polylines_count=100, max_lines_count=100)
+
+// --- ÏÑíÇÝÊ æÑæÏíåÇ ---
+upperLevel = input.price(title="ÇäÊÎÇÈ ÓØÍ ÈÇáÇ", defval=0, confirm=true)
+lowerLevel = input.price(title="ÇäÊÎÇÈ ÓØÍ Çííä", defval=0, confirm=true)
+t1         = input.time(title="ÇäÊÎÇÈ ÒãÇä ÔÑæÚ", defval=0, confirm=true)
+t2         = input.time(title="ÇäÊÎÇÈ ÒãÇä ÇíÇä", defval=0, confirm=true)
+reverseDir = input.bool(title="ãÚ˜æÓ ˜ÑÏä ÌåÊ ÑÏÔ ÇÓíÑÇáåÇ", defval=false)
+
+divisorMode = input.string(title="ãÈäÇí ÊÞÓíã Øæá ÇÓíÑÇáåÇ", 
+     defval="ÊÚÏÇÏ: ÊÝ˜í˜ÔÏå (ÈÇáÇ:ÓÈÒ¡ Çííä:ÞÑãÒ)", 
+     options=[
+         "ÊÚÏÇÏ: ÊÝ˜í˜ÔÏå (ÈÇáÇ:ÓÈÒ¡ Çííä:ÞÑãÒ)", 
+         "ÊÚÏÇÏ: ˜á ˜äÏáåÇ", 
+         "ÊÚÏÇÏ: ˜äÏáåÇí ÓÈÒ", 
+         "ÊÚÏÇÏ: ˜äÏáåÇí ÞÑãÒ",
+         "ÇÑÊÝÇÚ: ÊÝ˜í˜ÔÏå (ÈÇáÇ:ÓÈÒ¡ Çííä:ÞÑãÒ)",
+         "ÇÑÊÝÇÚ: ˜á ˜äÏáåÇ",
+         "ÇÑÊÝÇÚ: ˜äÏáåÇí ÓÈÒ",
+         "ÇÑÊÝÇÚ: ˜äÏáåÇí ÞÑãÒ"
+     ])
+
+multUp   = input.float(title="ÖÑíÈ Øæá ÇÓíÑÇá ÈÇáÇ", defval=1.0, step=0.1)
+multDown = input.float(title="ÖÑíÈ Øæá ÇÓíÑÇá Çííä", defval=1.0, step=0.1)
+
+useSpiralEnds   = input.bool(title="ÊÞÇÑä Ïæã äÓÈÊ Èå ÇäÊåÇí ÇÓíÑÇáåÇ", defval=true)
+mirrorEndpoints = input.bool(title="ÊÞÇÑä ÓÇÏå äÓÈÊ Èå ÇäÊåÇí ÇÓíÑÇáåÇ", defval=true)
+showSymSpirals  = input.bool(title="ÑÓã ÇÓíÑÇáåÇí ãÊÞÇÑä", defval=true)
+showSymPrice    = input.bool(title="ÊÞÇÑä ÞíãÊ äÓÈÊ Èå ÇäÊåÇí ãÊÞÇÑä", defval=true)
+showGuideLevel  = input.bool(title="äãÇíÔ ÓØæÍ ÑÇåäãÇí åãæÔÇäí", defval=true)
+
+// --- ãÊÛíÑåÇí ÐÎíÑåÓÇÒí æ ãÍÇÓÈÇÊí ---
+var int totalBarCount = 0
+var int greenBarCount = 0 
+var int redBarCount   = 0 
+var float totalHeight = 0.0
+var float greenHeight = 0.0
+var float redHeight   = 0.0
+
+var float max_p = na
+var float min_p = na
+var int   end_t = na
+var float end_p = na
+var int   start_t = na
+var float start_p = na
+
+var all_t = array.new_int()
+var all_c = array.new_float()
+array.push(all_t, time)
+array.push(all_c, close)
+
+time_start = math.min(t1, t2)
+time_end   = math.max(t1, t2)
+in_range   = time >= time_start and time <= time_end
+
+plot(upperLevel, color=color.new(color.blue, 50), title="ãÍæÑ ÈÇáÇ", linewidth=2)
+plot(lowerLevel, color=color.new(color.red, 50), title="ãÍæÑ Çííä", linewidth=2)
+centerLevel = (upperLevel + lowerLevel) / 2.0
+plot(centerLevel, color=color.new(color.gray, 50), title="ãÑ˜Ò Ïæ ÓØÍ", style=plot.style_cross)
+
+if in_range
+    float c_height = high - low
+    totalBarCount += 1
+    totalHeight   += c_height
+    if close > open
+        greenBarCount += 1
+        greenHeight   += c_height
+    else if close < open
+        redBarCount   += 1
+        redHeight     += c_height
+    
+    max_p := na(max_p) ? high : math.max(max_p, high)
+    min_p := na(min_p) ? low : math.min(min_p, low)
+    end_t := time
+    end_p := hl2
+    if na(start_t)
+        start_t := time
+        start_p := hl2
+
+if barstate.islast
+    float dt = math.abs(t2 - t1)
+    float dp = math.abs(max_p - min_p)
+    if dt == 0
+        dt := timeframe.in_seconds("") * 1000.0
+    if dp == 0
+        dp := 1.0
+
+    float totalDistanceUp   = 0.0
+    float totalDistanceDown = 0.0
+    int size = array.size(all_t)
+    int start_idx = math.max(0, size - 9000)
+    
+    for i = start_idx to size - 1
+        int t_i = array.get(all_t, i)
+        float c_i = array.get(all_c, i)
+        if t_i >= time_start and t_i <= time_end
+            float m_center = 2 * centerLevel - c_i
+            totalDistanceUp   += math.abs((2 * upperLevel - m_center) - c_i)
+            totalDistanceDown += math.abs((2 * lowerLevel - m_center) - c_i)
+
+    float divUp   = 1.0
+    float divDown = 1.0
+    
+    if divisorMode == "ÊÚÏÇÏ: ˜á ˜äÏáåÇ"
+        divUp := totalBarCount, divDown := totalBarCount
+    else if divisorMode == "ÊÚÏÇÏ: ˜äÏáåÇí ÓÈÒ"
+        divUp := greenBarCount, divDown := greenBarCount
+    else if divisorMode == "ÊÚÏÇÏ: ˜äÏáåÇí ÞÑãÒ"
+        divUp := redBarCount, divDown := redBarCount
+    else if divisorMode == "ÊÚÏÇÏ: ÊÝ˜í˜ÔÏå (ÈÇáÇ:ÓÈÒ¡ Çííä:ÞÑãÒ)"
+        divUp := greenBarCount, divDown := redBarCount
+    else if divisorMode == "ÇÑÊÝÇÚ: ˜á ˜äÏáåÇ"
+        divUp := totalHeight, divDown := totalHeight
+    else if divisorMode == "ÇÑÊÝÇÚ: ˜äÏáåÇí ÓÈÒ"
+        divUp := greenHeight, divDown := greenHeight
+    else if divisorMode == "ÇÑÊÝÇÚ: ˜äÏáåÇí ÞÑãÒ"
+        divUp := redHeight, divDown := redHeight
+    else if divisorMode == "ÇÑÊÝÇÚ: ÊÝ˜í˜ÔÏå (ÈÇáÇ:ÓÈÒ¡ Çííä:ÞÑãÒ)"
+        divUp := greenHeight, divDown := redHeight
+
+    float baseLenUp   = divUp > 0 ? totalDistanceUp / divUp : totalDistanceUp
+    float baseLenDown = divDown > 0 ? totalDistanceDown / divDown : totalDistanceDown
+    float targetLenUp   = baseLenUp * multUp
+    float targetLenDown = baseLenDown * multDown
+
+    float b_coeff = math.log(1.6180339887) / (math.pi / 2)
+    float a = 0.02
+    int dir = reverseDir ? -1 : 1
+    
+    float final_p_up   = end_p
+    float final_p_down = start_p
+    float sym_final_p_up   = end_p
+    float sym_final_p_down = start_p
+
+    // --- ãÍÇÓÈå ÏÞíÞ ÓØÍ ÑÇåäãÇ ÈÑÇí åãæÔÇäí ˜Çãá (Binary Search) ---
+    if showGuideLevel
+        float N_bars = totalBarCount
+        float K_up   = (N_bars > 0 and divUp > 0)   ? (N_bars * multUp / divUp) : 0.0
+        float K_down = (N_bars > 0 and divDown > 0) ? (N_bars * multDown / divDown) : 0.0
+        
+        float low_D  = 0.0
+        float high_D = dp * 200.0
+        float req_D  = na
+        
+        for iter = 1 to 40
+            float mid_D = (low_D + high_D) / 2.0
+            float test_lenUp   = mid_D * K_up
+            float test_lenDown = mid_D * K_down
+            
+            float test_dy_up = 0.0, float acc_up = 0.0, float prev_t_u = end_t, float prev_p_u = end_p
+            for i = 1 to 2000
+                float th = i * 0.1, float r = a * math.exp(b_coeff * th)
+                float c_t = end_t + r * dt * math.cos(th), float dy = dir * r * dp * math.sin(th), float c_p = end_p + dy
+                acc_up += math.sqrt(math.pow(((c_t - prev_t_u)/dt)*dp, 2) + math.pow(c_p - prev_p_u, 2))
+                if acc_up >= test_lenUp
+                    test_dy_up := dy
+                    break
+                prev_t_u := c_t, prev_p_u := c_p
+                
+            float test_dy_down = 0.0, float acc_dn = 0.0, float prev_t_d = start_t, float prev_p_d = start_p
+            for i = 1 to 2000
+                float th = i * 0.1, float r = a * math.exp(b_coeff * th)
+                float c_t = start_t + r * dt * math.cos(th), float dy = dir * r * dp * math.sin(th), float c_p = start_p - dy
+                acc_dn += math.sqrt(math.pow(((c_t - prev_t_d)/dt)*dp, 2) + math.pow(c_p - prev_p_d, 2))
+                if acc_dn >= test_lenDown
+                    test_dy_down := dy
+                    break
+                prev_t_d := c_t, prev_p_d := c_p
+                
+            float test_sym_up   = end_p - test_dy_up
+            float test_sym_down = start_p + test_dy_down
+            
+            if (test_sym_up - test_sym_down) > 0
+                low_D := mid_D
+            else
+                high_D := mid_D
+                
+        req_D := (low_D + high_D) / 2.0
+        
+        if not na(req_D)
+            float guide_upper = lowerLevel + req_D
+            float guide_lower = upperLevel - req_D
+            
+            line.new(start_t, guide_upper, time, guide_upper, xloc=xloc.bar_time, color=color.white)
+            label.new(time, guide_upper, "ÑÇåäãÇí ÈÇáÇ\nÈÑÇí åãæÔÇäí ˜Çãá", xloc=xloc.bar_time, color=color.new(color.white, 100), textcolor=color.white, style=label.style_label_left)
+            
+            line.new(start_t, guide_lower, time, guide_lower, xloc=xloc.bar_time, color=color.white)
+            label.new(time, guide_lower, "ÑÇåäãÇí Çííä\nÈÑÇí åãæÔÇäí ˜Çãá", xloc=xloc.bar_time, color=color.new(color.white, 100), textcolor=color.white, style=label.style_label_left)
+
+    // ÑÓã ÇÓíÑÇá ÈÇáÇ
+    if targetLenUp > 0
+        pts_spiral_up = array.new<chart.point>(), pts_sym_spiral_up = array.new<chart.point>()
+        array.push(pts_spiral_up, chart.point.from_time(end_t, end_p)), array.push(pts_sym_spiral_up, chart.point.from_time(end_t, end_p))
+        float acc_len_up = 0.0, float prev_t_up = end_t, float prev_p_up = end_p
+        for i = 1 to 3000
+            float theta = i * 0.1, float r = a * math.exp(b_coeff * theta)
+            int curr_t = math.round(end_t + r * dt * math.cos(theta))
+            float curr_p = end_p + (dir * r * dp * math.sin(theta)), float sym_curr_p = end_p - (dir * r * dp * math.sin(theta))
+            float seg = math.sqrt(math.pow(((curr_t - prev_t_up) / dt) * dp, 2) + math.pow(curr_p - prev_p_up, 2))
+            if acc_len_up <= targetLenUp
+                array.push(pts_spiral_up, chart.point.from_time(curr_t, curr_p)), array.push(pts_sym_spiral_up, chart.point.from_time(curr_t, sym_curr_p))
+                acc_len_up += seg, final_p_up := curr_p, sym_final_p_up := sym_curr_p, prev_t_up := curr_t, prev_p_up := curr_p
+            else
+                break
+        polyline.new(pts_spiral_up, xloc=xloc.bar_time, line_color=color.fuchsia, line_width=2)
+        if showSymSpirals
+            polyline.new(pts_sym_spiral_up, xloc=xloc.bar_time, line_color=color.new(color.fuchsia, 40), line_width=2, line_style=line.style_dashed)
+
+    // ÑÓã ÇÓíÑÇá Çííä
+    if targetLenDown > 0 and not na(start_t)
+        pts_spiral_down = array.new<chart.point>(), pts_sym_spiral_down = array.new<chart.point>()
+        array.push(pts_spiral_down, chart.point.from_time(start_t, start_p)), array.push(pts_sym_spiral_down, chart.point.from_time(start_t, start_p))
+        float acc_len_down = 0.0, float prev_t_down = start_t, float prev_p_down = start_p
+        for i = 1 to 3000
+            float theta = i * 0.1, float r = a * math.exp(b_coeff * theta)
+            int curr_t = math.round(start_t + r * dt * math.cos(theta))
+            float curr_p = start_p - (dir * r * dp * math.sin(theta)), float sym_curr_p = start_p + (dir * r * dp * math.sin(theta))
+            float seg = math.sqrt(math.pow(((curr_t - prev_t_down) / dt) * dp, 2) + math.pow(curr_p - prev_p_down, 2))
+            if acc_len_down <= targetLenDown
+                array.push(pts_spiral_down, chart.point.from_time(curr_t, curr_p)), array.push(pts_sym_spiral_down, chart.point.from_time(curr_t, sym_curr_p))
+                acc_len_down += seg, final_p_down := curr_p, sym_final_p_down := sym_curr_p, prev_t_down := curr_t, prev_p_down := curr_p
+            else
+                break
+        polyline.new(pts_spiral_down, xloc=xloc.bar_time, line_color=color.yellow, line_width=2)
+        if showSymSpirals
+            polyline.new(pts_sym_spiral_down, xloc=xloc.bar_time, line_color=color.new(color.yellow, 40), line_width=2, line_style=line.style_dashed)
+
+    // ÑÓã ÊÞÇÑäåÇ
+    pts_mirrored_up = array.new<chart.point>(), pts_mirrored_down = array.new<chart.point>()
+    float refUp = useSpiralEnds ? final_p_up : upperLevel, float refDown = useSpiralEnds ? final_p_down : lowerLevel
+    for i = start_idx to size - 1
+        int t_i = array.get(all_t, i), float c_i = array.get(all_c, i)
+        float m_center = 2 * centerLevel - c_i
+        array.push(pts_mirrored_up, chart.point.from_time(t_i, 2 * refUp - m_center))
+        array.push(pts_mirrored_down, chart.point.from_time(t_i, 2 * refDown - m_center))
+    polyline.new(pts_mirrored_up, xloc=xloc.bar_time, line_color=color.green, line_width=2)
+    polyline.new(pts_mirrored_down, xloc=xloc.bar_time, line_color=color.orange, line_width=2)
+
+    int chart_start_t = array.get(all_t, 0)
+    
+    if mirrorEndpoints
+        line.new(chart_start_t, final_p_up, time, final_p_up, xloc=xloc.bar_time, color=color.new(color.fuchsia, 50), style=line.style_dashed, width=2)
+        line.new(chart_start_t, final_p_down, time, final_p_down, xloc=xloc.bar_time, color=color.new(color.yellow, 50), style=line.style_dashed, width=2)
+        pts_mirrored_end_up = array.new<chart.point>(), pts_mirrored_end_down = array.new<chart.point>()
+        for i = start_idx to size - 1
+            int t_i = array.get(all_t, i), float c_i = array.get(all_c, i)
+            array.push(pts_mirrored_end_up, chart.point.from_time(t_i, 2 * final_p_up - c_i))
+            array.push(pts_mirrored_end_down, chart.point.from_time(t_i, 2 * final_p_down - c_i))
+        polyline.new(pts_mirrored_end_up, xloc=xloc.bar_time, line_color=color.new(color.fuchsia, 20), line_width=1)
+        polyline.new(pts_mirrored_end_down, xloc=xloc.bar_time, line_color=color.new(color.yellow, 20), line_width=1)
+
+    if showSymPrice
+        line.new(chart_start_t, sym_final_p_up, time, sym_final_p_up, xloc=xloc.bar_time, color=color.new(color.aqua, 50), style=line.style_dotted, width=2)
+        line.new(chart_start_t, sym_final_p_down, time, sym_final_p_down, xloc=xloc.bar_time, color=color.new(color.red, 50), style=line.style_dotted, width=2)
+        pts_sym_mirrored_end_up = array.new<chart.point>(), pts_sym_mirrored_end_down = array.new<chart.point>()
+        for i = start_idx to size - 1
+            int t_i = array.get(all_t, i), float c_i = array.get(all_c, i)
+            array.push(pts_sym_mirrored_end_up, chart.point.from_time(t_i, 2 * sym_final_p_up - c_i))
+            array.push(pts_sym_mirrored_end_down, chart.point.from_time(t_i, 2 * sym_final_p_down - c_i))
+        polyline.new(pts_sym_mirrored_end_up, xloc=xloc.bar_time, line_color=color.new(color.aqua, 30), line_width=1)
+        polyline.new(pts_sym_mirrored_end_down, xloc=xloc.bar_time, line_color=color.new(color.red, 30), line_width=1)

@@ -1,0 +1,122 @@
+//@version=5
+indicator("Symmetrical Candles & Williams Fractal Gap", overlay=true, max_boxes_count=500)
+
+// ---  ‰ŸÌ„«  ---
+maLength      = input.int(20, title="MA Length", minval=1)
+reverseMirror = input.bool(false, title="Reverse Mirroring")
+n             = input.int(title="Fractal Periods", defval=2, minval=2)
+maxSearch     = input.int(20, title="Max Candles to Search Next Red/Green", minval=1)
+
+// --- „Õ«”»«  Å«ÌÂ ---
+ma    = ta.sma(close, maLength)
+isRed = close < open
+isGreen = close > open
+
+// --- „ ﬁ«—‰ù”«“Ì ---
+mirrorAbove = reverseMirror ? not isRed : isRed
+
+dO = math.abs(open  - ma)
+dC = math.abs(close - ma)
+dH = math.abs(high  - ma)
+dL = math.abs(low   - ma)
+
+newO = mirrorAbove ? ma + dO : ma - dO
+newC = mirrorAbove ? ma + dC : ma - dC
+newH = mirrorAbove ? ma + math.max(dH, dL) : ma - math.min(dH, dL)
+newL = mirrorAbove ? ma + math.min(dH, dL) : ma - math.max(dH, dL)
+
+plot(ma, "Moving Average", color=color.blue)
+plotcandle(newO, newH, newL, newC, title="Mirrored",
+     color       = isRed ? color.red   : color.green,
+     wickcolor   = isRed ? color.red   : color.green,
+     bordercolor = isRed ? color.red   : color.green)
+
+// --- ›—«ò «· ÊÌ·Ì«„“ (Å«ÌÌ‰ Ê »«·«) ---
+bool downflagDownFrontier = true
+bool downflagUpFrontier0  = true
+bool downflagUpFrontier1  = true
+bool downflagUpFrontier2  = true
+bool downflagUpFrontier3  = true
+bool downflagUpFrontier4  = true
+
+bool upflagUpFrontier   = true
+bool upflagDownFrontier0 = true
+bool upflagDownFrontier1 = true
+bool upflagDownFrontier2 = true
+bool upflagDownFrontier3 = true
+bool upflagDownFrontier4 = true
+
+for i = 1 to n
+    // ›—«ò «· Å«ÌÌ‰
+    downflagDownFrontier := downflagDownFrontier and (low[n-i]  > low[n])
+    downflagUpFrontier0  := downflagUpFrontier0  and (low[n+i]  > low[n])
+    downflagUpFrontier1  := downflagUpFrontier1  and (low[n+1] >= low[n] and low[n+i+1] > low[n])
+    downflagUpFrontier2  := downflagUpFrontier2  and (low[n+1] >= low[n] and low[n+2]  >= low[n] and low[n+i+2] > low[n])
+    downflagUpFrontier3  := downflagUpFrontier3  and (low[n+1] >= low[n] and low[n+2]  >= low[n] and low[n+3]  >= low[n] and low[n+i+3] > low[n])
+    downflagUpFrontier4  := downflagUpFrontier4  and (low[n+1] >= low[n] and low[n+2]  >= low[n] and low[n+3]  >= low[n] and low[n+4]  >= low[n] and low[n+i+4] > low[n])
+
+    // ›—«ò «· »«·«
+    upflagUpFrontier     := upflagUpFrontier     and (high[n-i] < high[n])
+    upflagDownFrontier0  := upflagDownFrontier0  and (high[n+i] < high[n])
+    upflagDownFrontier1  := upflagDownFrontier1  and (high[n+1] <= high[n] and high[n+i+1] < high[n])
+    upflagDownFrontier2  := upflagDownFrontier2  and (high[n+1] <= high[n] and high[n+2]  <= high[n] and high[n+i+2] < high[n])
+    upflagDownFrontier3  := upflagDownFrontier3  and (high[n+1] <= high[n] and high[n+2]  <= high[n] and high[n+3]  <= high[n] and high[n+i+3] < high[n])
+    upflagDownFrontier4  := upflagDownFrontier4  and (high[n+1] <= high[n] and high[n+2]  <= high[n] and high[n+3]  <= high[n] and high[n+4]  <= high[n] and high[n+i+4] < high[n])
+
+flagDownFrontier = downflagUpFrontier0 or downflagUpFrontier1 or downflagUpFrontier2 or downflagUpFrontier3 or downflagUpFrontier4
+downFractal      = downflagDownFrontier and flagDownFrontier
+
+flagUpFrontier = upflagDownFrontier0 or upflagDownFrontier1 or upflagDownFrontier2 or upflagDownFrontier3 or upflagDownFrontier4
+upFractal      = upflagUpFrontier and flagUpFrontier
+
+// --- ‘—Êÿ ò‰œ·ùÂ«Ì «’·Ì ›—«ò «· ---
+isRedFractalCandle = downFractal and isRed[n]
+isGreenFractalCandle = upFractal and isGreen[n]
+
+// --- ¬—«ÌÂ »—«Ì ‰êÂœ«—Ì »«ò”ùÂ«Ì ›⁄«· ÃÂ  »——”Ì »—ŒÊ—œ »« ﬁÌ„  ---
+var box[] activeBoxes = array.new_box()
+
+// --- „‰ÿﬁ «ÌÃ«œ »«ò” »—«Ì ò‰œ· ﬁ—„“ („«‰‰œ ﬁ»·) ---
+if isRedFractalCandle
+    fractalMirrorL = newL[n]
+    fractalBarIdx  = bar_index[n]
+    for j = 1 to maxSearch
+        if n - j >= 0
+            if isRed[n - j]
+                nextMirrorH = newH[n - j]
+                nextBarIdx  = bar_index[n - j]
+                if fractalMirrorL > nextMirrorH
+                    newBox = box.new(left=fractalBarIdx, top=fractalMirrorL, right=nextBarIdx, bottom=nextMirrorH, border_color=color.black, border_width=2, bgcolor=color.new(color.fuchsia, 70))
+                    array.push(activeBoxes, newBox)
+                break
+
+// --- „‰ÿﬁ «ÌÃ«œ »«ò” »—«Ì ò‰œ· ”»“ ---
+if isGreenFractalCandle
+    fractalMirrorH = newH[n]
+    fractalBarIdx  = bar_index[n]
+    for j = 1 to maxSearch
+        if n - j >= 0
+            if isGreen[n - j]
+                nextMirrorL = newL[n - j]
+                nextBarIdx  = bar_index[n - j]
+                // ‘—ÿ êÅ »—«Ì ”»“: ”ﬁ› „ ﬁ«—‰ ›—«ò «· Å«ÌÌ‰ù — «“ ò› „ ﬁ«—‰ ò‰œ· »⁄œÌ »«‘œ
+                if fractalMirrorH < nextMirrorL
+                    newBox = box.new(left=fractalBarIdx, top=nextMirrorL, right=nextBarIdx, bottom=fractalMirrorH, border_color=color.black, border_width=2, bgcolor=color.new(color.lime, 70))
+                    array.push(activeBoxes, newBox)
+                break
+
+// --- »—Ê“—”«‰Ì Ê »——”Ì »—ŒÊ—œ ﬁÌ„  «’·Ì »« »«ò”ùÂ« ---
+if array.size(activeBoxes) > 0
+    for i = array.size(activeBoxes) - 1 to 0
+        b = array.get(activeBoxes, i)
+        boxTop = box.get_top(b)
+        boxBot = box.get_bottom(b)
+        
+        // «ê— ﬁÌ„  «’·Ì (‰Â „ ﬁ«—‰) »Â „ÕœÊœÂ »«ò” »—”œ
+        if high >= boxBot and low <= boxTop
+            //  Êﬁ› «ò” ‰œ Ê Õ–› «“ ·Ì”  ›⁄«·ùÂ«
+            box.set_right(b, bar_index)
+            array.remove(activeBoxes, i)
+        else
+            // «ê— »—ŒÊ—œ ‰ò—œ° »«ò”  « ò‰œ· Ã«—Ì «„ œ«œ ÅÌœ« ò‰œ
+            box.set_right(b, bar_index)

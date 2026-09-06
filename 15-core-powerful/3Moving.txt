@@ -1,0 +1,74 @@
+//@version=5
+indicator("Conditional MAs Dynamic Color & Width - Level 2 Fixed", overlay=true)
+
+length = input.int(20, "Length")
+show_bounds = input.bool(false, "Show Above/Below MAs")
+
+// --- ÓØÍ Çæá ---
+ma_main = ta.sma(close, length)
+
+sum_above = math.sum(close > ma_main ? close : 0, length)
+count_above = math.sum(close > ma_main ? 1 : 0, length)
+ma_above = count_above > 0 ? sum_above / count_above : na
+
+sum_below = math.sum(close < ma_main ? close : 0, length)
+count_below = math.sum(close < ma_main ? 1 : 0, length)
+ma_below = count_below > 0 ? sum_below / count_below : na
+
+dist_above = math.abs(ma_above - ma_main)
+dist_below = math.abs(ma_main - ma_below)
+total_dist = dist_above + dist_below
+
+ratio_above = total_dist > 0 ? (dist_above / total_dist) * 100 : 50
+ratio_below = total_dist > 0 ? (dist_below / total_dist) * 100 : 50
+
+transp_green = ratio_above * 2
+transp_red = ratio_below * 2
+ma_color = dist_above < dist_below ? color.new(color.green, transp_green) : (dist_below < dist_above ? color.new(color.red, transp_red) : color.blue)
+
+is_very_close_main = (ratio_above < 10) or (ratio_below < 10)
+
+// --- ÓØÍ Ïæã ÈÑÇí ãæíä ÈÇáÇ ---
+sum_a_up = math.sum(close > ma_above ? close : 0, length)
+cnt_a_up = math.sum(close > ma_above ? 1 : 0, length)
+ma_a_up = cnt_a_up > 0 ? sum_a_up / cnt_a_up : na
+
+sum_a_dn = math.sum(close < ma_above ? close : 0, length)
+cnt_a_dn = math.sum(close < ma_above ? 1 : 0, length)
+ma_a_dn = cnt_a_dn > 0 ? sum_a_dn / cnt_a_dn : na
+
+dist_a_up = math.abs(ma_a_up - ma_above)
+dist_a_dn = math.abs(ma_above - ma_a_dn)
+tot_dist_a = dist_a_up + dist_a_dn
+rat_a_up = tot_dist_a > 0 ? (dist_a_up / tot_dist_a) * 100 : 50
+rat_a_dn = tot_dist_a > 0 ? (dist_a_dn / tot_dist_a) * 100 : 50
+is_close_above_ma = (rat_a_up < 10) or (rat_a_dn < 10)
+
+// --- ÓØÍ Ïæã ÈÑÇí ãæíä Çííä ---
+sum_b_up = math.sum(close > ma_below ? close : 0, length)
+cnt_b_up = math.sum(close > ma_below ? 1 : 0, length)
+ma_b_up = cnt_b_up > 0 ? sum_b_up / cnt_b_up : na
+
+sum_b_dn = math.sum(close < ma_below ? close : 0, length)
+cnt_b_dn = math.sum(close < ma_below ? 1 : 0, length)
+ma_b_dn = cnt_b_dn > 0 ? sum_b_dn / cnt_b_dn : na
+
+dist_b_up = math.abs(ma_b_up - ma_below)
+dist_b_dn = math.abs(ma_below - ma_b_dn)
+tot_dist_b = dist_b_up + dist_b_dn
+rat_b_up = tot_dist_b > 0 ? (dist_b_up / tot_dist_b) * 100 : 50
+rat_b_dn = tot_dist_b > 0 ? (dist_b_dn / tot_dist_b) * 100 : 50
+is_close_below_ma = (rat_b_up < 10) or (rat_b_dn < 10)
+
+// --- ÔÑØ äåÇíí ÖÎÇãÊ ãæíä ÇÕáí ---
+is_thick = is_very_close_main or is_close_above_ma or is_close_below_ma
+
+// --- ÑÓã Ñæí ÇÑÊ ---
+
+// ãæíä ÇÕáí ÈÇ ÊÇËíÑ ÑÝÊä ÖÎÇãÊ ÇÒ ÊãÇãí ÔÑÇíØ
+plot(ma_main, color=is_thick ? ma_color : na, title="Main MA (Thick)", linewidth=4)
+plot(ma_main, color=not is_thick ? ma_color : na, title="Main MA (Normal)", linewidth=2)
+
+// ãæíä ÈÇáÇ æ Çííä ÈÇ ÖÎÇãÊ ËÇÈÊ
+plot(show_bounds ? ma_above : na, color=color.green, title="MA Above", linewidth=1)
+plot(show_bounds ? ma_below : na, color=color.red, title="MA Below", linewidth=1)

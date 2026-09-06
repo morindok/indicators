@@ -1,0 +1,136 @@
+//@version=5
+indicator("Price Symmetry Levels - Box Diagonals", overlay=true, max_bars_back=1000)
+
+// œ—Ì«›  ‰ﬁ«ÿ  ‘òÌ· œÂ‰œÂ »«ò”
+t1 = input.time(0, "Time 1", confirm=true)
+p1 = input.price(0.0, "Price 1", confirm=true)
+t2 = input.time(0, "Time 2", confirm=true)
+p2 = input.price(0.0, "Price 2", confirm=true)
+
+//  ‰ŸÌ„ ”ÿÕ ”Ê„ (‰”»  »Ì‰ œÊ ”ÿÕ »«·« Ê Å«ÌÌ‰)
+sym_ratio  = input.float(0.5, "Middle Level Ratio (0.0 to 1.0)", step=0.1)
+
+// ---  ‰ŸÌ„«  ”ÿÕ „Ì«‰Ì ---
+use_ma_center = input.bool(false, "Use Moving Average Center («” ›«œÂ «“ „ÊÊÌ‰ê »—«Ì ”ÿÕ „Ì«‰Ì)", group="Symmetry Settings")
+use_cum_slope = input.bool(false, "Use Cumulative Price Slope («” ›«œÂ «“ ‘Ì»  Ã„⁄Ì ﬁÌ„ )", group="Symmetry Settings")
+
+//  ‰ŸÌ„«  ‘Ì» œ” Ì Ê « Ê„« Ìò
+use_manual_slope = input.bool(false, "Use Manual Slope («” ›«œÂ «“ ‘Ì» œ” Ì)")
+manual_slope_down = input.float(-1.0, "Manual Slope Down (‘Ì» œ” Ì ‰“Ê·Ì)", step=0.1)
+manual_slope_up   = input.float(1.0, "Manual Slope Up (‘Ì» œ” Ì ’⁄ÊœÌ)", step=0.1)
+angle_mult = input.float(1.0, "Auto Angle Multiplier (÷—Ì» “«ÊÌÂ ‘Ì» ŒÊœò«—)", step=0.1)
+
+//  ‰ŸÌ„«  ‰„«Ì‘
+show_sym_upper  = input.bool(true, "Show Symmetric Candles (Upper Diagonal - Green)")
+show_sym_lower  = input.bool(true, "Show Symmetric Candles (Lower Diagonal - Blue)")
+show_sym_custom = input.bool(true, "Show Symmetric Candles (Custom Mirrored)")
+show_sym_main   = input.bool(true, "Show Symmetric Candles (Main Price - Orange)")
+
+// „Õ«”»«  «»⁄«œ »«ò”
+baseUpper = math.max(p1, p2)
+baseLower = math.min(p1, p2)
+tStart    = math.min(t1, t2)
+tEnd      = math.max(t1, t2)
+
+// „Õ«”»Â  ⁄œ«œ ò‰œ·ùÂ«Ì »Ì‰ œÊ “„«‰ „‘Œ’ ‘œÂ
+bars_between = math.max(1, int(math.round((tEnd - tStart) / (timeframe.in_seconds(timeframe.period) * 1000))))
+dp = baseUpper - baseLower
+
+// ‘Ì» ﬁÿ—Â«Ì »«ò” (« Ê„« Ìò)
+auto_slope_down = (-dp / bars_between) * angle_mult 
+auto_slope_up   = (dp / bars_between) * angle_mult  
+
+// «‰ Œ«» ‘Ì» ‰Â«ÌÌ (œ” Ì Ì« « Ê„« Ìò)
+slope_down = use_manual_slope ? manual_slope_down : auto_slope_down
+slope_up   = use_manual_slope ? manual_slope_up : auto_slope_up
+
+barsFromStart = math.round((time - tStart) / (timeframe.in_seconds(timeframe.period) * 1000))
+
+// ŒÿÊÿ ﬁÿ—Ì »«ò”
+upperLevel = baseUpper + (slope_down * barsFromStart) 
+lowerLevel = baseLower + (slope_up * barsFromStart)   
+
+// ”ÿÕ ”Ê„ Å«ÌÂ (Œÿ ’«› »‰›‘)
+p_sym_base = lowerLevel + (upperLevel - lowerLevel) * sym_ratio
+
+// --- 1. „‰ÿﬁ „ÊÊÌ‰ê «Ê—ÌÃ (MA) ---
+float ma_val = ta.sma(close, bars_between)
+var float ma_offset = 0.0
+if time == tStart
+    ma_offset := p_sym_base - ma_val
+float p_sym_ma = ma_val + ma_offset
+
+// --- 2. „‰ÿﬁ „Õ«”»Â ‘Ì»  Ã„⁄Ì ﬁÌ„  (Linear Regression Slope) ---
+var int bars_since_start = 0
+if time >= tStart
+    bars_since_start := bars_since_start + 1
+
+var float t1_p_sym_base = na
+var float locked_slope = 0.0
+
+// „Õ«”»Â ÿÊ· œ«Ì‰«„Ìò »—«Ì œÊ—Â »Ì‰ œÊ ‰ﬁÿÂ
+int current_len = math.max(2, bars_since_start)
+
+// „Õ«”»Â ‘Ì» —ê—”ÌÊ‰ ŒÿÌ ﬁÌ„ : «Œ ·«› »Ì‰ ¬›”  0 Ê ¬›”  1
+float lr_end = ta.linreg(close, current_len, 0)
+float lr_prev = ta.linreg(close, current_len, 1)
+float current_dyn_slope = lr_end - lr_prev
+
+//  ‰ŸÌ„ ‰ﬁÿÂ ‘—Ê⁄ ”ÿÕ „Ì«‰Ì
+if time == tStart
+    t1_p_sym_base := p_sym_base
+    bars_since_start := 0
+
+// ¬ÅœÌ  ‘Ì» ›ﬁÿ œ— œ«Œ· »«“Â “„«‰Ì »«ò” «‰Ã«„ „Ìù‘Êœ
+if time >= tStart and time <= tEnd
+    locked_slope := current_dyn_slope
+
+// —”„ Œÿ »— «”«” ‘Ì»  Ã„⁄Ì
+float p_sym_cum = t1_p_sym_base + (locked_slope * bars_since_start)
+
+// ---  ⁄ÌÌ‰ ”ÿÕ ‰Â«ÌÌ „Ì«‰Ì »— «”«” «‰ Œ«» ò«—»— ---
+// «Ê·ÊÌ : „ÊÊÌ‰ê «Ê—ÌÃ -> ‘Ì»  Ã„⁄Ì -> Œÿ Å«ÌÂ ’«›
+p_sym = use_ma_center ? p_sym_ma : (use_cum_slope ? p_sym_cum : p_sym_base)
+
+// 1. „Õ«”»«  ò‰œ·ùÂ«Ì ﬁ—Ì‰Â ﬁÿ—Â«Ì »«·« Ê Å«ÌÌ‰ ‰”»  »Â ﬁÌ„  «’·Ì
+symOpenUpper  = 2 * upperLevel - open
+symHighUpper  = 2 * upperLevel - low 
+symLowUpper   = 2 * upperLevel - high
+symCloseUpper = 2 * upperLevel - close
+
+symOpenLower  = 2 * lowerLevel - open
+symHighLower  = 2 * lowerLevel - low
+symLowLower   = 2 * lowerLevel - high
+symCloseLower = 2 * lowerLevel - close
+
+// 2. ﬁ—Ì‰Â ò—œ‰ ò‰œ·ùÂ«Ì ”»“ ‰”»  »Â ”ÿÕ ÃœÌœ (»‰›‘)
+symOpenUpperCustom  = 2 * p_sym - symOpenUpper
+symHighUpperCustom  = 2 * p_sym - symLowUpper  
+symLowUpperCustom   = 2 * p_sym - symHighUpper
+symCloseUpperCustom = 2 * p_sym - symCloseUpper
+
+// 3. ﬁ—Ì‰Â ò—œ‰ ò‰œ·ùÂ«Ì ¬»Ì ‰”»  »Â ”ÿÕ ÃœÌœ
+symOpenLowerCustom  = 2 * p_sym - symOpenLower
+symHighLowerCustom  = 2 * p_sym - symLowLower
+symLowLowerCustom   = 2 * p_sym - symHighLower
+symCloseLowerCustom = 2 * p_sym - symCloseLower
+
+// 4. ﬁ—Ì‰Â ò—œ‰ ŒÊœ ﬁÌ„  «’·Ì ‰”»  »Â ”ÿÕ ÃœÌœ
+symOpenMain  = 2 * p_sym - open
+symHighMain  = 2 * p_sym - low
+symLowMain   = 2 * p_sym - high
+symCloseMain = 2 * p_sym - close
+
+// —”„ ò‰œ·ùÂ«
+plotcandle(symOpenUpper, symHighUpper, symLowUpper, symCloseUpper, title="Symmetric Upper", color=color.green, wickcolor=color.green, bordercolor=color.green, display=show_sym_upper ? display.all : display.none)
+plotcandle(symOpenLower, symHighLower, symLowLower, symCloseLower, title="Symmetric Lower", color=color.blue, wickcolor=color.blue, bordercolor=color.blue, display=show_sym_lower ? display.all : display.none)
+
+plotcandle(symOpenUpperCustom, symHighUpperCustom, symLowUpperCustom, symCloseUpperCustom, title="Mirrored Upper (Purple)", color=color.purple, wickcolor=color.purple, bordercolor=color.purple, display=show_sym_custom ? display.all : display.none)
+plotcandle(symOpenLowerCustom, symHighLowerCustom, symLowLowerCustom, symCloseLowerCustom, title="Mirrored Lower (Fuchsia)", color=color.fuchsia, wickcolor=color.fuchsia, bordercolor=color.fuchsia, display=show_sym_custom ? display.all : display.none)
+
+plotcandle(symOpenMain, symHighMain, symLowMain, symCloseMain, title="Mirrored Main Price (Orange)", color=color.orange, wickcolor=color.orange, bordercolor=color.orange, display=show_sym_main ? display.all : display.none)
+
+// —”„ ŒÿÊÿ
+plot(upperLevel, color=color.red,   linewidth=2, title="Upper Diagonal (Box)")
+plot(lowerLevel, color=color.green, linewidth=2, title="Lower Diagonal (Box)")
+plot(p_sym,      color=color.purple,linewidth=2, title="Middle Symmetry Level")

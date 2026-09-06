@@ -1,0 +1,673 @@
+//@version=5
+indicator("Time Machine Pro{Morindok} by BITMOON618", overlay=true, max_lines_count=500, max_polylines_count=100, max_bars_back=5000)
+
+max_bars_back(close, 5000)
+max_bars_back(high, 5000)
+max_bars_back(low, 5000)
+max_bars_back(open, 5000)
+max_bars_back(volume, 5000)
+
+// =============================================================================
+//                                   INPUTS
+// =============================================================================
+price1 = input.price(0, title="Price Level 1", confirm=true)
+price2 = input.price(0, title="Price Level 2", confirm=true)
+time1  = input.time(0, title="Start/End Time 1", confirm=true)
+time2  = input.time(0, title="Start/End Time 2", confirm=true)
+
+useInvMaForRed = input.bool(false, title="Use Inverse MA for Red Candles Distances?")
+attachToMa     = input.bool(false, title="Attach Lines to Reference instead of Candle?")
+swapPositions  = input.bool(false, title="Swap Line Positions (Up/Down)?")
+calcMethod     = input.string("Sum of Distances", title="Distance Calculation Method", options=["Volume-Weighted Average", "Simple Average", "Sum of Distances"])
+
+group_spiral   = "Spiral Settings"
+use_spirals    = input.bool(true, "Use Spirals instead of Vertical Lines", group=group_spiral)
+mirror_spirals = input.bool(true, "Mirror Spirals (Invert Y-Axis)", group=group_spiral)
+opt_continue   = input.bool(false, "Continue Spirals Indefinitely", group=group_spiral)
+upper_slope    = input.float(0.0, "Upper Slope (Angle)", group=group_spiral, step=0.1)
+lower_slope    = input.float(0.0, "Lower Slope (Angle)", group=group_spiral, step=0.1)
+apply_int_slope= input.bool(false, "Apply Interval Slope to Spirals", group=group_spiral)
+show_end_path  = input.bool(true, "Show Price-Time Target Path", group=group_spiral)
+
+// --- New Symmetry Inputs ---
+use_sym_ratio   = input.bool(false, "Draw Symmetry Axes & Mirror Price", group=group_spiral)
+sym_ratio_green = input.float(0.618, "Axis Ratio (Green Spiral)", group=group_spiral, step=0.001)
+sym_ratio_red   = input.float(0.618, "Axis Ratio (Red Spiral)", group=group_spiral, step=0.001)
+sym_ratio_total = input.float(0.618, "Axis Ratio (Total/Blue)", group=group_spiral, step=0.001)
+
+group_basis  = "Calculation Basis Settings"
+calcBasis    = input.string("Bollinger Bands", title="Calculation Basis", options=["SMA", "Dual Fib SMA", "HH/LL", "Bollinger Bands", "Flat Multiplier", "VWAP", "ATR Bands", "Fibo Wavy", "Spiral Spine"], group=group_basis)
+bbMult       = input.float(2.0, title="Bands Multiplier (BB & VWAP)", group=group_basis, step=0.1)
+atrMult      = input.float(2.0, title="ATR Multiplier", step=0.1, group=group_basis)
+invertHHLL   = input.bool(false, title="Invert HH/LL Manually", group=group_basis)
+
+// =============================================================================
+//                      ARRAY-BASED DYNAMIC MATH FUNCTIONS
+// =============================================================================
+f_atan2(float y, float x) =>
+    float res = 0.0
+    if x > 0
+        res := math.atan(y / x)
+    else if x < 0 and y >= 0
+        res := math.atan(y / x) + math.pi
+    else if x < 0 and y < 0
+        res := math.atan(y / x) - math.pi
+    else if x == 0 and y > 0
+        res := math.pi / 2
+    else if x == 0 and y < 0
+        res := -math.pi / 2
+    res
+
+f_arr_sma(float[] arr, int len) =>
+    int sz = array.size(arr)
+    int actual_len = math.min(sz, math.max(1, len))
+    float sum = 0.0
+    if actual_len > 0
+        for j = 0 to actual_len - 1
+            sum := sum + array.get(arr, sz - 1 - j)
+    actual_len > 0 ? sum / actual_len : na
+
+f_arr_lowest(float[] arr, int len) =>
+    int sz = array.size(arr)
+    int actual_len = math.min(sz, math.max(1, len))
+    float val = na
+    if actual_len > 0
+        val := array.get(arr, sz - 1)
+        if actual_len > 1
+            for j = 1 to actual_len - 1
+                val := math.min(val, array.get(arr, sz - 1 - j))
+    val
+
+f_arr_highest(float[] arr, int len) =>
+    int sz = array.size(arr)
+    int actual_len = math.min(sz, math.max(1, len))
+    float val = na
+    if actual_len > 0
+        val := array.get(arr, sz - 1)
+        if actual_len > 1
+            for j = 1 to actual_len - 1
+                val := math.max(val, array.get(arr, sz - 1 - j))
+    val
+
+f_arr_stdev(float[] arr, int len, float mean) =>
+    int sz = array.size(arr)
+    int actual_len = math.min(sz, math.max(1, len))
+    float sum_sq_diff = 0.0
+    if actual_len > 0 and not na(mean)
+        for j = 0 to actual_len - 1
+            float val = array.get(arr, sz - 1 - j)
+            sum_sq_diff := sum_sq_diff + math.pow(val - mean, 2)
+    actual_len > 0 ? math.sqrt(sum_sq_diff / actual_len) : na
+
+f_arr_sum(float[] arr, int len) =>
+    int sz = array.size(arr)
+    int actual_len = math.min(sz, math.max(1, len))
+    float sum = 0.0
+    if actual_len > 0
+        for j = 0 to actual_len - 1
+            sum := sum + array.get(arr, sz - 1 - j)
+    sum
+
+f_arr_wma(float[] arr, int len) =>
+    int sz = array.size(arr)
+    int actual_len = math.min(sz, math.max(1, len))
+    float sum = 0.0
+    float weight_sum = 0.0
+    if actual_len > 0
+        for j = 0 to actual_len - 1
+            float w = actual_len - j
+            sum := sum + array.get(arr, sz - 1 - j) * w
+            weight_sum := weight_sum + w
+    weight_sum > 0 ? sum / weight_sum : na
+
+f_spine_vol(float[] hArr, float[] lArr, int sum_len, int wma_len) =>
+    int sz = array.size(hArr)
+    float wma_sum = 0.0
+    float w_sum = 0.0
+    int actual_wma = math.min(sz, wma_len)
+    if actual_wma > 0
+        for j = 0 to actual_wma - 1
+            int idx = sz - 1 - j
+            if idx >= 0
+                float r_sum = 0.0
+                int r_len = math.min(idx + 1, sum_len)
+                for k = 0 to r_len - 1
+                    r_sum := r_sum + (array.get(hArr, idx - k) - array.get(lArr, idx - k))
+                float w = actual_wma - j
+                wma_sum := wma_sum + r_sum * w
+                w_sum := w_sum + w
+    w_sum > 0 ? wma_sum / w_sum : 0.0
+
+// =============================================================================
+//                             GLOBAL DRAWING ARRAYS & SPIRAL FUNCTION
+// =============================================================================
+var line[]     drawnLines  = array.new_line()
+var polyline[] drawnPolys  = array.new<polyline>()
+var label[]    drawnLabels = array.new_label()
+
+f_draw_spiral(t_base, p_base, target_len, slope_angle, is_reverse, col, dt, dp, opt_cont, mirror) =>
+    float b_coeff = math.log(1.618) / (math.pi / 2)
+    float a = 0.02
+    chart.point[] pts = array.new<chart.point>()
+    array.push(pts, chart.point.from_time(math.round(t_base), p_base))
+    
+    float acc_len = 0.0
+    float prev_t = t_base
+    float prev_p = p_base
+    float end_p = p_base
+    float y_dir = mirror ? -1.0 : 1.0
+    
+    for i = 1 to 2000
+        float theta = i * 0.1
+        float r = a * math.exp(b_coeff * theta)
+        float t_angle = (is_reverse ? -theta : theta) + slope_angle
+        
+        int curr_t = math.round(t_base + r * dt * math.cos(t_angle))
+        float curr_p = p_base + y_dir * (r * dp * math.sin(t_angle))
+        
+        float dt_norm = (curr_t - prev_t) / dt
+        float seg = math.sqrt(math.pow(dt_norm * dp, 2) + math.pow(curr_p - prev_p, 2))
+        
+        if opt_cont or acc_len <= target_len
+            array.push(pts, chart.point.from_time(curr_t, curr_p))
+            acc_len += seg
+            end_p := curr_p
+        else
+            break
+        prev_t := curr_t
+        prev_p := curr_p
+    
+    if array.size(pts) > 1 and not use_sym_ratio // <--- Added Hide Condition Here
+        array.push(drawnPolys, polyline.new(pts, xloc=xloc.bar_time, line_color=col, line_width=2))
+    end_p
+
+// =============================================================================
+//                             TIME WINDOW SETUP
+// =============================================================================
+startTime   = math.min(time1, time2)
+endTime     = math.max(time1, time2)
+centerPrice = (price1 + price2) / 2
+
+inRange = time >= startTime and time <= endTime
+var int startBarIdx = na
+var int endBarIdx   = na
+var int actualStartTimeMs = na
+var int actualEndTimeMs   = na
+
+if inRange
+    if na(startBarIdx)
+        startBarIdx := bar_index
+        actualStartTimeMs := time
+    endBarIdx := bar_index
+    actualEndTimeMs := time
+
+var int fixed_N = na
+var bool calcComplete = false
+if not calcComplete and not na(endBarIdx) and ((inRange[1] and not inRange) or (barstate.islast and inRange))
+    fixed_N := endBarIdx - startBarIdx + 1
+    calcComplete := true
+
+var int est_N = 1
+if bar_index == 1 and time > time[1]
+    est_N := math.max(1, int((endTime - startTime) / (time - time[1])))
+int ma_length = calcComplete ? math.max(nz(fixed_N, 1), 1) : est_N
+
+// =============================================================================
+//                        ARRAY HISTORICAL DATA COLLECTION
+// =============================================================================
+var float[] cPrices     = array.new_float()
+var float[] oPrices     = array.new_float()
+var float[] hPrices     = array.new_float()
+var float[] lPrices     = array.new_float()
+var float[] vPrices     = array.new_float() 
+var float[] trVals      = array.new_float()
+var float[] hlc3Vol     = array.new_float()
+var float[] hlc3SqVol   = array.new_float()
+var int[]   bIndices    = array.new_int()
+var int[]   tValues     = array.new_int()
+var float[] orangeVals  = array.new_float()
+var float[] purpleVals  = array.new_float()
+
+tr_val = ta.tr(true)
+hlc3_val = (high + low + close) / 3
+vol_val = nz(volume, 1)
+hlc3_vol_val = hlc3_val * vol_val
+hlc3_sq_vol_val = math.pow(hlc3_val, 2) * vol_val
+
+var int lastBarIndex = na
+if na(lastBarIndex) or bar_index > lastBarIndex
+    array.push(cPrices, close)
+    array.push(oPrices, open)
+    array.push(hPrices, high)
+    array.push(lPrices, low)
+    array.push(vPrices, vol_val)
+    array.push(trVals, tr_val)
+    array.push(hlc3Vol, hlc3_vol_val)
+    array.push(hlc3SqVol, hlc3_sq_vol_val)
+    array.push(bIndices, bar_index)
+    array.push(tValues, time)
+    array.push(orangeVals, na)
+    array.push(purpleVals, na)
+    lastBarIndex := bar_index
+else
+    int lastIdx = array.size(cPrices) - 1
+    if lastIdx >= 0
+        array.set(cPrices, lastIdx, close)
+        array.set(oPrices, lastIdx, open)
+        array.set(hPrices, lastIdx, high)
+        array.set(lPrices, lastIdx, low)
+        array.set(vPrices, lastIdx, vol_val)
+        array.set(trVals, lastIdx, tr_val)
+        array.set(hlc3Vol, lastIdx, hlc3_vol_val)
+        array.set(hlc3SqVol, lastIdx, hlc3_sq_vol_val)
+
+// =============================================================================
+//                           DYNAMIC BASIS CALCULATIONS
+// =============================================================================
+sma_val       = f_arr_sma(cPrices, ma_length)
+sma_fib_start = f_arr_sma(cPrices, math.max(1, math.round(ma_length * 0.618)))
+sma_fib_end   = f_arr_sma(cPrices, math.max(1, math.round(ma_length * 1.618)))
+val_ll = f_arr_lowest(lPrices, ma_length)
+val_hh = f_arr_highest(hPrices, ma_length)
+stdev_val    = f_arr_stdev(cPrices, ma_length, sma_val)
+val_bb_upper = sma_val + bbMult * stdev_val
+val_bb_lower = sma_val - bbMult * stdev_val
+
+sum_vol = math.max(1e-10, f_arr_sum(vPrices, ma_length))
+vwap_val = f_arr_sum(hlc3Vol, ma_length) / sum_vol
+vwap_sq_val = f_arr_sum(hlc3SqVol, ma_length) / sum_vol
+vwap_dev = math.sqrt(math.max(vwap_sq_val - math.pow(vwap_val, 2), 0))
+val_vwap_upper = vwap_val + (bbMult * vwap_dev)
+val_vwap_lower = vwap_val - (bbMult * vwap_dev)
+
+dyn_atr = f_arr_sma(trVals, ma_length)
+val_atr_upper = sma_val + (atrMult * dyn_atr)
+val_atr_lower = sma_val - (atrMult * dyn_atr)
+
+f_get_wave(t, t_start, t_end, p_start, p_end, len_bars) =>
+    float _amp = math.abs(p_end - p_start) != 0 ? math.abs(p_end - p_start) / 2 : nz(dyn_atr, 0.0)
+    float _mid_time = t_start + (t_end - t_start) * 0.5
+    float _bar_ms = timeframe.in_seconds(timeframe.period) * 1000
+    float _rel_x = (t - _mid_time) / _bar_ms
+    float _dist = math.abs(_rel_x)
+    float _len = math.max(1, len_bars)
+    float _cyc_idx = math.floor((_dist % (_len * 5)) / _len)
+    float _fibo_amp = (math.pow(1.618, _cyc_idx) / math.pow(1.618, 4)) * _amp
+    math.sin(_rel_x * 2 * math.pi / _len) * _fibo_amp
+
+dyn_wave = f_get_wave(time, nz(actualStartTimeMs, startTime), nz(actualEndTimeMs, endTime), price1, price2, ma_length)
+wave_up = centerPrice + dyn_wave
+wave_dn = centerPrice - dyn_wave
+
+sp_smooth_price = f_arr_wma(cPrices, 3)
+sp_current_step = bar_index % math.max(1, ma_length)
+sp_sum_len = math.min(sp_current_step + 1, 4999)
+sp_smooth_vol = f_spine_vol(hPrices, lPrices, sp_sum_len, math.min(10, bar_index + 1))
+sp_wave = math.sin((float(sp_current_step) / math.max(1, ma_length)) * math.pi)
+spine_upper = sp_smooth_price + (sp_smooth_vol * 0.15 * sp_wave * math.sin(math.toradians(137.5)))
+spine_lower = sp_smooth_price + (sp_smooth_vol * 0.15 * sp_wave * math.sin(math.toradians(222.5)))
+
+var float stepped_price = na
+if time >= startTime and na(stepped_price)
+    stepped_price := close
+if not inRange and inRange[1]
+    stepped_price := close
+
+float orange_line = na
+float purple_line = na
+
+if calcBasis == "SMA"
+    orange_line := sma_val
+    purple_line := (2 * centerPrice) - sma_val
+else if calcBasis == "Dual Fib SMA"
+    orange_line := invertHHLL ? sma_fib_start : sma_fib_end
+    purple_line := (2 * centerPrice) - (invertHHLL ? sma_fib_end : sma_fib_start)
+else if calcBasis == "HH/LL"
+    orange_line := invertHHLL ? val_ll : val_hh
+    purple_line := (2 * centerPrice) - (invertHHLL ? val_hh : val_ll)
+else if calcBasis == "Bollinger Bands"
+    orange_line := invertHHLL ? val_bb_lower : val_bb_upper
+    purple_line := (2 * centerPrice) - (invertHHLL ? val_bb_upper : val_bb_lower)
+else if calcBasis == "Flat Multiplier"
+    orange_line := stepped_price
+    purple_line := (2 * centerPrice) - stepped_price
+else if calcBasis == "VWAP"
+    orange_line := invertHHLL ? val_vwap_lower : val_vwap_upper
+    purple_line := (2 * centerPrice) - (invertHHLL ? val_vwap_upper : val_vwap_lower)
+else if calcBasis == "ATR Bands"
+    orange_line := invertHHLL ? val_atr_lower : val_atr_upper
+    purple_line := (2 * centerPrice) - (invertHHLL ? val_atr_upper : val_atr_lower)
+else if calcBasis == "Fibo Wavy"
+    orange_line := invertHHLL ? wave_dn : wave_up
+    purple_line := (2 * centerPrice) - (invertHHLL ? wave_up : wave_dn)
+else if calcBasis == "Spiral Spine"
+    orange_line := invertHHLL ? spine_lower : spine_upper
+    purple_line := (2 * centerPrice) - (invertHHLL ? spine_upper : spine_lower)
+
+int currentSize = array.size(orangeVals)
+if currentSize > 0
+    array.set(orangeVals, currentSize - 1, orange_line)
+    array.set(purpleVals, currentSize - 1, purple_line)
+
+// =============================================================================
+//                        CALCULATIONS & DRAWINGS
+// =============================================================================
+var float global_sym_green = na
+var float global_sym_red   = na
+var float global_sym_total = na
+
+if barstate.islast and not na(startBarIdx) and not na(endBarIdx)
+    
+    if array.size(drawnLines) > 0
+        for i = 0 to array.size(drawnLines) - 1
+            line.delete(array.get(drawnLines, i))
+        array.clear(drawnLines)
+        
+    if array.size(drawnPolys) > 0
+        for i = 0 to array.size(drawnPolys) - 1
+            polyline.delete(array.get(drawnPolys, i))
+        array.clear(drawnPolys)
+
+    if array.size(drawnLabels) > 0
+        for i = 0 to array.size(drawnLabels) - 1
+            label.delete(array.get(drawnLabels, i))
+        array.clear(drawnLabels)
+
+    int windowLength = endBarIdx - startBarIdx + 1
+    int totalBars    = array.size(cPrices)
+    
+    var chart.point[] maPoints    = array.new<chart.point>()
+    var chart.point[] invMaPoints = array.new<chart.point>()
+    array.clear(maPoints)
+    array.clear(invMaPoints)
+    
+    int startCalc = math.max(windowLength - 1, 0)
+        
+    for i = startCalc to totalBars - 1
+        float maVal    = array.get(orangeVals, i)
+        float invMaVal = array.get(purpleVals, i)
+        int currentTime = array.get(tValues, i)
+        
+        array.push(maPoints, chart.point.from_time(currentTime, maVal))
+        array.push(invMaPoints, chart.point.from_time(currentTime, invMaVal))
+        
+        if array.size(maPoints) > 9000 or i == totalBars - 1
+            if not use_sym_ratio // <--- Added Hide Condition Here
+                array.push(drawnPolys, polyline.new(maPoints, xloc=xloc.bar_time, line_color=color.orange, line_width=2))
+                array.push(drawnPolys, polyline.new(invMaPoints, xloc=xloc.bar_time, line_color=color.purple, line_width=2))
+            
+            if i != totalBars - 1
+                chart.point lastMa  = array.pop(maPoints)
+                chart.point lastInv = array.pop(invMaPoints)
+                array.clear(maPoints)
+                array.clear(invMaPoints)
+                array.push(maPoints, lastMa)
+                array.push(invMaPoints, lastInv)
+
+    // --- First Pass: Calculate Final Distances & Window Range ---
+    float sumGreenDist = 0.0
+    float sumGreenDistVol = 0.0
+    float sumGreenVol = 0.0
+    int countGreen = 0
+    
+    float sumRedDist = 0.0
+    float sumRedDistVol = 0.0
+    float sumRedVol = 0.0
+    int countRed = 0
+    
+    int idxInArrayStart = array.indexof(bIndices, startBarIdx)
+    int idxInArrayEnd   = array.indexof(bIndices, endBarIdx)
+    
+    float window_max_p = na
+    float window_min_p = na
+
+    if idxInArrayStart >= 0 and idxInArrayEnd >= 0
+        for i = idxInArrayStart to idxInArrayEnd
+            float c = array.get(cPrices, i)
+            float o = array.get(oPrices, i)
+            float h = array.get(hPrices, i)
+            float l = array.get(lPrices, i)
+            float v = array.get(vPrices, i) 
+            
+            window_max_p := na(window_max_p) ? h : math.max(window_max_p, h)
+            window_min_p := na(window_min_p) ? l : math.min(window_min_p, l)
+            
+            float refMaGreen = array.get(orangeVals, i)
+            float refMaRed   = useInvMaForRed ? array.get(purpleVals, i) : array.get(orangeVals, i)
+            
+            if c > o
+                float dist = (c > refMaGreen) ? (h - refMaGreen) : (refMaGreen - l)
+                sumGreenDist += dist
+                sumGreenDistVol += (dist * v)
+                sumGreenVol += v
+                countGreen += 1
+            else if c < o
+                float dist = (c > refMaRed) ? (h - refMaRed) : (refMaRed - l)
+                sumRedDist += dist
+                sumRedDistVol += (dist * v)
+                sumRedVol += v
+                countRed += 1
+
+        float finalGreenDist = 0.0
+        float finalRedDist = 0.0
+        
+        float sumTotalDist    = sumGreenDist + sumRedDist
+        float sumTotalDistVol = sumGreenDistVol + sumRedDistVol
+        float sumTotalVol     = sumGreenVol + sumRedVol
+        int   countTotal      = countGreen + countRed
+        float finalTotalDist  = 0.0
+        
+        if calcMethod == "Volume-Weighted Average"
+            finalGreenDist := sumGreenVol > 0 ? (sumGreenDistVol / sumGreenVol) : 0.0
+            finalRedDist   := sumRedVol > 0 ? (sumRedDistVol / sumRedVol) : 0.0
+            finalTotalDist := sumTotalVol > 0 ? (sumTotalDistVol / sumTotalVol) : 0.0
+        else if calcMethod == "Simple Average"
+            finalGreenDist := countGreen > 0 ? (sumGreenDist / countGreen) : 0.0
+            finalRedDist   := countRed > 0 ? (sumRedDist / countRed) : 0.0
+            finalTotalDist := countTotal > 0 ? (sumTotalDist / countTotal) : 0.0
+        else
+            finalGreenDist := sumGreenDist
+            finalRedDist   := sumRedDist
+            finalTotalDist := sumTotalDist
+
+        float startOrangeVal = array.get(orangeVals, idxInArrayStart)
+        float startPurpleVal = array.get(purpleVals, idxInArrayStart)
+        float startRedVal    = useInvMaForRed ? startPurpleVal : startOrangeVal
+        float endOrangeVal   = array.get(orangeVals, idxInArrayEnd)
+        float endPurpleVal   = array.get(purpleVals, idxInArrayEnd)
+        float endRedVal      = useInvMaForRed ? endPurpleVal : endOrangeVal
+        
+        float endBarH = array.get(hPrices, idxInArrayEnd)
+        float endBarL = array.get(lPrices, idxInArrayEnd)
+        int endBarTime = array.get(tValues, idxInArrayEnd)
+        
+        float startBarH = array.get(hPrices, idxInArrayStart)
+        float startBarL = array.get(lPrices, idxInArrayStart)
+        int startBarTime = array.get(tValues, idxInArrayStart)
+
+        float endGreenBaseY   = attachToMa ? endOrangeVal : (swapPositions ? endBarL : endBarH)
+        float endRedBaseY     = attachToMa ? endRedVal    : (swapPositions ? endBarH : endBarL)
+        float startGreenBaseY = attachToMa ? startOrangeVal : (swapPositions ? startBarH : startBarL)
+        float startRedBaseY   = attachToMa ? startRedVal    : (swapPositions ? startBarL : startBarH)
+
+        // Base Y for Total (Center of Candle)
+        float startTotalBaseY = (startBarH + startBarL) / 2.0
+        float endTotalBaseY   = (endBarH + endBarL) / 2.0
+
+        float dt = math.abs(endBarTime - startBarTime)
+        float dp = math.abs(window_max_p - window_min_p)
+        if dt == 0
+            dt := timeframe.in_seconds(timeframe.period) * 1000.0
+        if dp == 0
+            dp := 1.0
+
+        float y_dir = mirror_spirals ? -1.0 : 1.0
+        float eff_upper_slope = upper_slope
+        float eff_lower_slope = lower_slope
+        
+        if apply_int_slope
+            float price_diff = array.get(cPrices, idxInArrayEnd) - array.get(cPrices, idxInArrayStart)
+            float time_diff = endBarTime - startBarTime
+            float int_angle = f_atan2(price_diff / dp, time_diff / dt)
+            eff_upper_slope := int_angle
+            eff_lower_slope := int_angle
+
+        float endGreenTargetY = na
+        float endRedTargetY = na
+        float startGreenTargetY = na
+        float startRedTargetY = na
+        
+        float endTotalTargetY = na
+        float startTotalTargetY = na
+
+        if use_spirals
+            endGreenTargetY := f_draw_spiral(endBarTime, endGreenBaseY, finalGreenDist, eff_upper_slope, false, color.green, dt, dp, opt_continue, mirror_spirals)
+            endRedTargetY := f_draw_spiral(endBarTime, endRedBaseY, finalRedDist, eff_lower_slope, true, color.red, dt, dp, opt_continue, mirror_spirals)
+            startGreenTargetY := f_draw_spiral(startBarTime, startGreenBaseY, finalGreenDist, eff_upper_slope, false, color.green, dt, dp, opt_continue, mirror_spirals)
+            startRedTargetY := f_draw_spiral(startBarTime, startRedBaseY, finalRedDist, eff_lower_slope, true, color.red, dt, dp, opt_continue, mirror_spirals)
+            
+            // Draw Total Spirals (Upward by default)
+            endTotalTargetY := f_draw_spiral(endBarTime, endTotalBaseY, finalTotalDist, eff_upper_slope, false, color.blue, dt, dp, opt_continue, mirror_spirals)
+            startTotalTargetY := f_draw_spiral(startBarTime, startTotalBaseY, finalTotalDist, eff_upper_slope, false, color.blue, dt, dp, opt_continue, mirror_spirals)
+        else
+            endGreenTargetY := endGreenBaseY + y_dir * finalGreenDist
+            endRedTargetY := endRedBaseY - y_dir * finalRedDist
+            startGreenTargetY := startGreenBaseY + y_dir * finalGreenDist
+            startRedTargetY := startRedBaseY - y_dir * finalRedDist
+            
+            endTotalTargetY := endTotalBaseY + y_dir * finalTotalDist
+            startTotalTargetY := startTotalBaseY + y_dir * finalTotalDist
+            
+            if not use_sym_ratio // <--- Added Hide Condition Here
+                array.push(drawnLines, line.new(x1=endBarTime, y1=endGreenBaseY, x2=endBarTime, y2=endGreenTargetY, xloc=xloc.bar_time, color=color.green, width=2))
+                array.push(drawnLines, line.new(x1=endBarTime, y1=endRedBaseY, x2=endBarTime, y2=endRedTargetY, xloc=xloc.bar_time, color=color.red, width=2))
+                array.push(drawnLines, line.new(x1=endBarTime, y1=endTotalBaseY, x2=endBarTime, y2=endTotalTargetY, xloc=xloc.bar_time, color=color.blue, width=2))
+                
+                array.push(drawnLines, line.new(x1=startBarTime, y1=startGreenBaseY, x2=startBarTime, y2=startGreenTargetY, xloc=xloc.bar_time, color=color.green, width=2, style=line.style_dashed))
+                array.push(drawnLines, line.new(x1=startBarTime, y1=startRedBaseY, x2=startBarTime, y2=startRedTargetY, xloc=xloc.bar_time, color=color.red, width=2, style=line.style_dashed))
+                array.push(drawnLines, line.new(x1=startBarTime, y1=startTotalBaseY, x2=startBarTime, y2=startTotalTargetY, xloc=xloc.bar_time, color=color.blue, width=2, style=line.style_dashed))
+
+        array.push(drawnLines, line.new(x1=endBarTime, y1=endGreenTargetY, x2=endBarTime + 10000000, y2=endGreenTargetY, xloc=xloc.bar_time, color=color.green, extend=extend.right))
+        array.push(drawnLines, line.new(x1=endBarTime, y1=endRedTargetY, x2=endBarTime + 10000000, y2=endRedTargetY, xloc=xloc.bar_time, color=color.red, extend=extend.right))
+        array.push(drawnLines, line.new(x1=endBarTime, y1=endTotalTargetY, x2=endBarTime + 10000000, y2=endTotalTargetY, xloc=xloc.bar_time, color=color.blue, extend=extend.right))
+        
+        array.push(drawnLines, line.new(x1=startBarTime, y1=startGreenTargetY, x2=startBarTime + 10000000, y2=startGreenTargetY, xloc=xloc.bar_time, color=color.green, extend=extend.right, style=line.style_dashed))
+        array.push(drawnLines, line.new(x1=startBarTime, y1=startRedTargetY, x2=startBarTime + 10000000, y2=startRedTargetY, xloc=xloc.bar_time, color=color.red, extend=extend.right, style=line.style_dashed))
+        array.push(drawnLines, line.new(x1=startBarTime, y1=startTotalTargetY, x2=startBarTime + 10000000, y2=startTotalTargetY, xloc=xloc.bar_time, color=color.blue, extend=extend.right, style=line.style_dashed))
+
+        // --- Calculate Global Symmetry Axes Values ---
+        global_sym_green := endGreenBaseY + (endGreenTargetY - endGreenBaseY) * sym_ratio_green
+        global_sym_red   := endRedBaseY   + (endRedTargetY   - endRedBaseY)   * sym_ratio_red
+        global_sym_total := endTotalBaseY + (endTotalTargetY - endTotalBaseY) * sym_ratio_total
+
+        // --- Labels ---
+        if not use_sym_ratio // <--- Added Hide Condition Here
+            label.new(endBarTime, window_max_p, "Green: " + str.tostring(finalGreenDist, "#.##") + "\nRed: " + str.tostring(finalRedDist, "#.##") + "\nTotal: " + str.tostring(finalTotalDist, "#.##"), xloc=xloc.bar_time, color=color.new(color.black, 100), textcolor=color.white, style=label.style_label_down)
+
+        // --- Second Pass: Price-Time Path scaled to Interval's Price Range ---
+        if show_end_path and not use_sym_ratio // <--- Added Hide Condition Here
+            chart.point[] pathStartGreen = array.new<chart.point>()
+            chart.point[] pathStartRed   = array.new<chart.point>()
+            chart.point[] pathStartTotal = array.new<chart.point>()
+            chart.point[] pathEndGreen   = array.new<chart.point>()
+            chart.point[] pathEndRed     = array.new<chart.point>()
+            chart.point[] pathEndTotal   = array.new<chart.point>()
+
+            float path_vertical_range = na(window_max_p) or na(window_min_p) ? 0.0 : window_max_p - window_min_p
+            if path_vertical_range <= 0
+                path_vertical_range := dp
+
+            float runSumGreenDist = 0.0
+            float runSumRedDist   = 0.0
+            float runSumTotalDist = 0.0
+            
+            for i = idxInArrayStart to idxInArrayEnd
+                float c = array.get(cPrices, i)
+                float o = array.get(oPrices, i)
+                float h = array.get(hPrices, i)
+                float l = array.get(lPrices, i)
+                int t_i = array.get(tValues, i)
+                
+                float rMaGreen = array.get(orangeVals, i)
+                float rMaRed   = useInvMaForRed ? array.get(purpleVals, i) : array.get(orangeVals, i)
+                
+                if c > o
+                    float dist = (c > rMaGreen) ? (h - rMaGreen) : (rMaGreen - l)
+                    runSumGreenDist += dist
+                else if c < o
+                    float dist = (c > rMaRed) ? (h - rMaRed) : (rMaRed - l)
+                    runSumRedDist += dist
+                    
+                runSumTotalDist := runSumGreenDist + runSumRedDist
+                
+                float gRatio = sumGreenDist > 0 ? (runSumGreenDist / sumGreenDist) : 0.0
+                float rRatio = sumRedDist > 0 ? (runSumRedDist / sumRedDist) : 0.0
+                float tRatio = sumTotalDist > 0 ? (runSumTotalDist / sumTotalDist) : 0.0
+                
+                float green_path_offset = gRatio * path_vertical_range
+                float red_path_offset   = rRatio * path_vertical_range
+                float total_path_offset = tRatio * path_vertical_range
+                
+                float psgY = startGreenBaseY + green_path_offset * y_dir
+                float psrY = startRedBaseY   - red_path_offset   * y_dir
+                float pstY = startTotalBaseY + total_path_offset * y_dir
+                
+                float pegY = endGreenBaseY   + green_path_offset * y_dir
+                float perY = endRedBaseY     - red_path_offset   * y_dir
+                float petY = endTotalBaseY   + total_path_offset * y_dir
+                
+                array.push(pathStartGreen, chart.point.from_time(t_i, psgY))
+                array.push(pathStartRed,   chart.point.from_time(t_i, psrY))
+                array.push(pathStartTotal, chart.point.from_time(t_i, pstY))
+                
+                array.push(pathEndGreen,   chart.point.from_time(t_i, pegY))
+                array.push(pathEndRed,     chart.point.from_time(t_i, perY))
+                array.push(pathEndTotal,   chart.point.from_time(t_i, petY))
+                
+            if array.size(pathStartGreen) > 1
+                array.push(drawnPolys, polyline.new(pathStartGreen, xloc=xloc.bar_time, line_color=color.green, line_width=2))
+            if array.size(pathStartRed) > 1
+                array.push(drawnPolys, polyline.new(pathStartRed, xloc=xloc.bar_time, line_color=color.red, line_width=2))
+            if array.size(pathStartTotal) > 1
+                array.push(drawnPolys, polyline.new(pathStartTotal, xloc=xloc.bar_time, line_color=color.blue, line_width=2))
+                
+            if array.size(pathEndGreen) > 1
+                array.push(drawnPolys, polyline.new(pathEndGreen, xloc=xloc.bar_time, line_color=color.green, line_width=2))
+            if array.size(pathEndRed) > 1
+                array.push(drawnPolys, polyline.new(pathEndRed, xloc=xloc.bar_time, line_color=color.red, line_width=2))
+            if array.size(pathEndTotal) > 1
+                array.push(drawnPolys, polyline.new(pathEndTotal, xloc=xloc.bar_time, line_color=color.blue, line_width=2))
+
+
+// =============================================================================
+//              SYMMETRY AXES AND MIRRORED PRICE (POLYLINE)
+// =============================================================================
+plot(use_sym_ratio ? global_sym_green : na, "Green Symmetry Axis", color.new(color.green, 40), 1, plot.style_linebr, offset=-9999, editable=false)
+plot(use_sym_ratio ? global_sym_red   : na, "Red Symmetry Axis", color.new(color.red, 40), 1, plot.style_linebr, offset=-9999, editable=false)
+plot(use_sym_ratio ? global_sym_total : na, "Total Symmetry Axis", color.new(color.blue, 40), 1, plot.style_linebr, offset=-9999, editable=false)
+
+// Drawing Mirrored Price Chart using Polyline for full history
+if barstate.islast and use_sym_ratio
+    chart.point[] mirG = array.new<chart.point>()
+    chart.point[] mirR = array.new<chart.point>()
+    chart.point[] mirT = array.new<chart.point>()
+    
+    int sz = array.size(cPrices)
+    int step = math.max(1, sz / 500) // Optimization for performance
+    
+    for i = 0 to sz - 1 by step
+        int t = array.get(tValues, i)
+        float p = array.get(cPrices, i)
+        if not na(global_sym_green)
+            array.push(mirG, chart.point.from_time(t, 2 * global_sym_green - p))
+        if not na(global_sym_red)
+            array.push(mirR, chart.point.from_time(t, 2 * global_sym_red - p))
+        if not na(global_sym_total)
+            array.push(mirT, chart.point.from_time(t, 2 * global_sym_total - p))
+
+    if array.size(mirG) > 1
+        array.push(drawnPolys, polyline.new(mirG, xloc=xloc.bar_time, line_color=color.new(color.green, 70), line_width=1))
+    if array.size(mirR) > 1
+        array.push(drawnPolys, polyline.new(mirR, xloc=xloc.bar_time, line_color=color.new(color.red, 70), line_width=1))
+    if array.size(mirT) > 1
+        array.push(drawnPolys, polyline.new(mirT, xloc=xloc.bar_time, line_color=color.new(color.blue, 70), line_width=1))

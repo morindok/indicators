@@ -1,0 +1,130 @@
+//@version=5
+indicator("Dual Sym MA & Reflected Candles Angled - Orig Symmetrical", overlay=true)
+
+l1 = input.price(0, title="Level 1", confirm=true)
+a1 = input.float(0.0, title="Angle Level 1 (deg)")
+l2 = input.price(0, title="Level 2", confirm=true)
+a2 = input.float(0.0, title="Angle Level 2 (deg)")
+t1 = input.time(0, title="Time 1", confirm=true)
+t2 = input.time(0, title="Time 2", confirm=true)
+use_man_ma = input.bool(false, title="Manual MA?")
+man_ma_len = input.int(14, title="Manual Length")
+auto_h = input.bool(true, title="Auto Height?")
+h_pct = input.float(1.618, title="Height Multiplier")
+cont_refl = input.bool(true, title="Continue until opposite MA/Level?")
+sep_sym = input.bool(true, title="Symmetric Mirror of Reflected Prices?")
+sym_orig = input.bool(true, title="Symmetric Mirror of Original Prices?")
+fit_orig_ma = input.bool(true, title="Fit Original MA on Levels?")
+use_lvl_only = input.bool(false, title="Use Levels Instead of MA?")
+
+t_min = math.min(t1, t2)
+t_max = math.max(t1, t2)
+in_rng = time >= t_min and time <= t_max
+tf_ms = math.max(1, timeframe.in_seconds("") * 1000)
+est_bars = math.max(1, int(math.abs(t2 - t1) / tf_ms))
+ma_len = use_man_ma ? man_ma_len : est_bars
+
+box_h = math.abs(l1 - l2)
+slope_factor = box_h / est_bars
+
+s1 = slope_factor * math.tan(a1 * math.pi / 180)
+s2 = slope_factor * math.tan(a2 * math.pi / 180)
+
+bars_offset = (time - t_min) / tf_ms
+cur_l1 = l1 + s1 * bars_offset
+cur_l2 = l2 + s2 * bars_offset
+
+base_up = math.max(cur_l1, cur_l2)
+base_dn = math.min(cur_l1, cur_l2)
+mid = (base_up + base_dn) / 2
+
+var float max_diff = 0.0
+max_diff := in_rng ? math.max(max_diff, high - mid, mid - low) : max_diff
+
+dyn_h = max_diff * 2 * h_pct
+f_up = auto_h ? mid + dyn_h / 2 : base_up
+f_dn = auto_h ? mid - dyn_h / 2 : base_dn
+
+ma = ta.sma(close, int(ma_len))
+
+ma_shift_up = ma + (f_up - mid)
+ma_shift_dn = ma + (f_dn - mid)
+
+// ãÍÇÓÈå ãÑÒåÇ ÈÑ ÇÓÇÓ ÇäÊÎÇÈ ˜ÇÑÈÑ (ÓØÍ ËÇÈÊ¡ ãææíä ÇÕáí ÔíÝÊ ÏÇÏå ÔÏå¡ íÇ ãææíä ãÊÞÇÑä)
+sym_ma_upper = use_lvl_only ? f_up : (fit_orig_ma ? ma_shift_up : ((2 * f_up) - ma))
+sym_ma_lower = use_lvl_only ? f_dn : (fit_orig_ma ? ma_shift_dn : ((2 * f_dn) - ma))
+
+plot(sym_ma_upper, color=color.red, title="Upper Bound", linewidth=2)
+plot(sym_ma_lower, color=color.green, title="Lower Bound", linewidth=2)
+
+rng = sym_ma_upper - sym_ma_lower
+rng2 = rng > 0 ? 2 * rng : 1e-9
+
+get_mod(v) => v - sym_ma_lower - math.floor((v - sym_ma_lower) / rng2) * rng2
+reflect_mod(v) => get_mod(v) > rng ? sym_ma_upper - (get_mod(v) - rng) : sym_ma_lower + get_mod(v)
+
+var float anc_raw = na
+var float anc_ref = na
+var int d = na
+
+p_raw = nz(anc_raw[1], open)
+p_ref = nz(anc_ref[1], open)
+p_d = nz(d[1], 1)
+
+reflect_cont(p) => 
+    t_p = p_ref + p_d * (p - p_raw)
+    t_p > sym_ma_upper ? sym_ma_upper - (t_p - sym_ma_upper) : t_p < sym_ma_lower ? sym_ma_lower + (sym_ma_lower - t_p) : t_p
+
+t_c = p_ref + p_d * (close - p_raw)
+anc_raw := close
+anc_ref := t_c > sym_ma_upper ? sym_ma_upper - (t_c - sym_ma_upper) : t_c < sym_ma_lower ? sym_ma_lower + (sym_ma_lower - t_c) : t_c
+d := t_c > sym_ma_upper ? -1 : t_c < sym_ma_lower ? 1 : p_d
+
+reflect(v) => cont_refl ? reflect_cont(v) : reflect_mod(v)
+
+// ãÍÇÓÈå ÞíãÊåÇí ÇäÚ˜ÇÓí Çíå
+r_open = reflect(open)
+r_high = reflect(high)
+r_low = reflect(low)
+r_close = reflect(close)
+
+// --- ÞÑíäå ˜ÑÏä ÞíãÊåÇí ÇäÚ˜ÇÓí äÓÈÊ Èå ãÑÒåÇ ---
+c1_o = sep_sym ? (2 * sym_ma_upper - r_open) : r_open
+c1_c = sep_sym ? (2 * sym_ma_upper - r_close) : r_close
+c1_h_temp = sep_sym ? (2 * sym_ma_upper - r_high) : r_high
+c1_l_temp = sep_sym ? (2 * sym_ma_upper - r_low) : r_low
+c1_h = math.max(c1_o, c1_c, c1_h_temp, c1_l_temp)
+c1_l = math.min(c1_o, c1_c, c1_h_temp, c1_l_temp)
+c1_col = c1_c >= c1_o ? color.new(color.lime, 0) : color.new(color.red, 0)
+
+c2_o = sep_sym ? (2 * sym_ma_lower - r_open) : na
+c2_c = sep_sym ? (2 * sym_ma_lower - r_close) : na
+c2_h_temp = sep_sym ? (2 * sym_ma_lower - r_high) : na
+c2_l_temp = sep_sym ? (2 * sym_ma_lower - r_low) : na
+c2_h = sep_sym ? math.max(c2_o, c2_c, c2_h_temp, c2_l_temp) : na
+c2_l = sep_sym ? math.min(c2_o, c2_c, c2_h_temp, c2_l_temp) : na
+c2_col = c2_c >= c2_o ? color.new(color.lime, 0) : color.new(color.red, 0)
+
+// --- ÞÑíäå ˜ÑÏä ÞíãÊåÇí ÇÕáí äÓÈÊ Èå ãÑÒåÇ ---
+mo_u_o = sym_orig ? (2 * sym_ma_upper - open) : na
+mo_u_c = sym_orig ? (2 * sym_ma_upper - close) : na
+mo_u_h_temp = sym_orig ? (2 * sym_ma_upper - high) : na
+mo_u_l_temp = sym_orig ? (2 * sym_ma_upper - low) : na
+mo_u_h = sym_orig ? math.max(mo_u_o, mo_u_c, mo_u_h_temp, mo_u_l_temp) : na
+mo_u_l = sym_orig ? math.min(mo_u_o, mo_u_c, mo_u_h_temp, mo_u_l_temp) : na
+mo_u_col = mo_u_c >= mo_u_o ? color.new(color.blue, 0) : color.new(color.orange, 0)
+
+mo_l_o = sym_orig ? (2 * sym_ma_lower - open) : na
+mo_l_c = sym_orig ? (2 * sym_ma_lower - close) : na
+mo_l_h_temp = sym_orig ? (2 * sym_ma_lower - high) : na
+mo_l_l_temp = sym_orig ? (2 * sym_ma_lower - low) : na
+mo_l_h = sym_orig ? math.max(mo_l_o, mo_l_c, mo_l_h_temp, mo_l_l_temp) : na
+mo_l_l = sym_orig ? math.min(mo_l_o, mo_l_c, mo_l_h_temp, mo_l_l_temp) : na
+mo_l_col = mo_l_c >= mo_l_o ? color.new(color.blue, 0) : color.new(color.orange, 0)
+
+
+plotcandle(c1_o, c1_h, c1_l, c1_c, title="Reflected Upper/Bounded", color=c1_col, wickcolor=c1_col, bordercolor=c1_col)
+plotcandle(c2_o, c2_h, c2_l, c2_c, title="Reflected Lower", color=c2_col, wickcolor=c2_col, bordercolor=c2_col)
+
+plotcandle(mo_u_o, mo_u_h, mo_u_l, mo_u_c, title="Orig Sym Upper", color=mo_u_col, wickcolor=mo_u_col, bordercolor=mo_u_col)
+plotcandle(mo_l_o, mo_l_h, mo_l_l, mo_l_c, title="Orig Sym Lower", color=mo_l_col, wickcolor=mo_l_col, bordercolor=mo_l_col)

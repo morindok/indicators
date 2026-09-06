@@ -1,0 +1,57 @@
+//@version=5
+indicator("Mirror Candles with Angled Levels", overlay=true)
+
+time1 = input.time(timestamp("2024-01-01 00:00"), "Start Time", confirm=true)
+time2 = input.time(timestamp("2024-01-02 00:00"), "End Time", confirm=true)
+price1 = input.price(50000, "Upper Level", confirm=true)
+price2 = input.price(45000, "Lower Level", confirm=true)
+angle1 = input.float(0, "Upper Level Angle (degrees)", minval=-89, maxval=89, step=1)
+angle2 = input.float(0, "Lower Level Angle (degrees)", minval=-89, maxval=89, step=1)
+
+timeDiff = time - time1
+slope1 = math.tan(angle1 * math.pi / 180)
+slope2 = math.tan(angle2 * math.pi / 180)
+
+barsFromStart = (time - time1) / (time2 - time1) * (price1 - price2)
+adjustedPrice1 = price1 + slope1 * barsFromStart
+adjustedPrice2 = price2 + slope2 * barsFromStart
+
+redCandle = close < open
+greenCandle = close >= open
+
+mirrorOpen = greenCandle ? adjustedPrice1 - (open - adjustedPrice1) : redCandle ? adjustedPrice2 + (adjustedPrice2 - open) : na
+mirrorHigh = greenCandle ? adjustedPrice1 - (high - adjustedPrice1) : redCandle ? adjustedPrice2 + (adjustedPrice2 - high) : na
+mirrorLow = greenCandle ? adjustedPrice1 - (low - adjustedPrice1) : redCandle ? adjustedPrice2 + (adjustedPrice2 - low) : na
+mirrorClose = greenCandle ? adjustedPrice1 - (close - adjustedPrice1) : redCandle ? adjustedPrice2 + (adjustedPrice2 - close) : na
+
+//  €ÌÌ— —‰ê ò‰œ· Â«Ì  ⁄œÌ· ‘œÂ »Â »‰›‘ Ê ‰«—‰ÃÌ
+plotcandle(mirrorOpen, mirrorHigh, mirrorLow, mirrorClose, color=greenCandle ? color.purple : color.orange, wickcolor=greenCandle ? color.purple : color.orange, bordercolor=greenCandle ? color.purple : color.orange)
+
+origAdjOpen = redCandle ? open + (slope1 * barsFromStart) : greenCandle ? open + (slope2 * barsFromStart) : open
+origAdjHigh = redCandle ? high + (slope1 * barsFromStart) : greenCandle ? high + (slope2 * barsFromStart) : high
+origAdjLow = redCandle ? low + (slope1 * barsFromStart) : greenCandle ? low + (slope2 * barsFromStart) : low
+origAdjClose = redCandle ? close + (slope1 * barsFromStart) : greenCandle ? close + (slope2 * barsFromStart) : close
+
+plotcandle(origAdjOpen, origAdjHigh, origAdjLow, origAdjClose, title="Adjusted Original Candles", color=greenCandle ? color.green : color.red, wickcolor=greenCandle ? color.green : color.red, bordercolor=greenCandle ? color.green : color.red)
+
+plot(adjustedPrice1, "Upper Level", color=color.black, linewidth=2, style=plot.style_line)
+plot(adjustedPrice2, "Lower Level", color=color.black, linewidth=2, style=plot.style_line)
+
+var line startLine = na
+var line endLine = na
+
+if barstate.islast
+    if not na(startLine)
+        line.delete(startLine)
+    if not na(endLine)
+        line.delete(endLine)
+    chartLow = low[500]
+    chartHigh = high[500]
+    for i = 0 to 499
+        chartLow := math.min(chartLow, low[i])
+        chartHigh := math.max(chartHigh, high[i])
+    rangeExtension = (chartHigh - chartLow) * 0.2
+    minPrice = chartLow - rangeExtension
+    maxPrice = chartHigh + rangeExtension
+    startLine := line.new(x1=time1, y1=minPrice, x2=time1, y2=maxPrice, xloc=xloc.bar_time, color=color.black, style=line.style_dashed, width=3)
+    endLine := line.new(x1=time2, y1=minPrice, x2=time2, y2=maxPrice, xloc=xloc.bar_time, color=color.black, style=line.style_dashed, width=3)

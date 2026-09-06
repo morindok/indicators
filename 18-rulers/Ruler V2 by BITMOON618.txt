@@ -1,0 +1,279 @@
+//@version=6
+indicator("Ruler V2{Morindok} by BITMOON618", overlay = true, max_lines_count = 50, max_labels_count = 50)
+
+// ─── ورودی‌های خط ────────────────────────────
+selectedTime = input.time(timestamp("2024-01-01 00:00"), title = "زمان مبنا (برای پیوت قبل از آن)", confirm = true)
+liveTime     = input.time(timestamp("2024-01-02 00:00"), title = "زمان فرض‌شده به‌عنوان لایو", confirm = true)
+
+leftBars   = input.int(5, title = "بار سمت چپ پیوت", minval = 1)
+rightBars  = input.int(5, title = "بار سمت راست پیوت", minval = 1)
+pivotType  = input.string("هر دو", title = "نوع پیوت مبنا", options = ["سقف", "کف", "هر دو"])
+extendLine = input.bool(true, title = "امتداد خط پس از عبور")
+
+colHighShadow = input.color(color.red,    title = "رنگ خط شدو بالا")
+colLowShadow  = input.color(color.green,  title = "رنگ خط شدو پایین")
+colCenter     = input.color(color.yellow, title = "رنگ خط مرکز کندل")
+lineW         = input.int(2, title = "ضخامت خط‌ها", minval = 1, maxval = 5)
+
+// ─── ورودی‌های سیستم داینامیک و فاکتورها ────────────
+lookahead   = input.int(3, title = "تعداد کندل جلوتر برای تاریخچه", minval = 1)
+tableSize   = input.string(size.small, title = "اندازه‌ی جدول", options = [size.tiny, size.small, size.normal, size.large])
+zoneATR     = input.float(2.0, title = "فاصله شروع محاسبه داینامیک (بر اساس ATR)")
+
+// ─── متغیرهای پایه برای محاسبه فاکتورها ────────────
+atrVal      = ta.atr(14)
+rsiVal      = ta.rsi(close, 14)
+trendEma50  = ta.ema(close, 50)
+trendEma200 = ta.ema(close, 200)
+volSma      = ta.sma(volume, 20)
+isUptrend   = trendEma50 > trendEma200
+volRatio    = (na(volume) or na(volSma) or volSma == 0) ? 1.0 : (volume / volSma)
+
+// ─── ذخیره‌ی تاریخچه‌ی OHLC ───
+var array<float> arrOpen  = array.new_float(0)
+var array<float> arrHigh  = array.new_float(0)
+var array<float> arrLow   = array.new_float(0)
+var array<float> arrClose = array.new_float(0)
+
+array.push(arrOpen,  open)
+array.push(arrHigh,  high)
+array.push(arrLow,   low)
+array.push(arrClose, close)
+
+// ─── تاریخچه‌ی پیوت‌ها ─────────────────────────
+var array<int>   pivotBars   = array.new_int(0)
+var array<float> pivotPrices = array.new_float(0)
+var array<int>   pivotTimes  = array.new_int(0)
+
+ph = ta.pivothigh(high, leftBars, rightBars)
+pl = ta.pivotlow(low, leftBars, rightBars)
+confirmedBar  = bar_index - rightBars
+confirmedTime = time[rightBars]
+
+if not na(ph) and (pivotType == "سقف" or pivotType == "هر دو")
+    array.push(pivotBars, confirmedBar)
+    array.push(pivotPrices, ph)
+    array.push(pivotTimes, confirmedTime)
+
+if not na(pl) and (pivotType == "کف" or pivotType == "هر دو")
+    array.push(pivotBars, confirmedBar)
+    array.push(pivotPrices, pl)
+    array.push(pivotTimes, confirmedTime)
+
+findPivotBeforeTime() =>
+    int   foundBar   = na
+    float foundPrice = na
+    n = array.size(pivotTimes)
+    if n > 0
+        for i = n - 1 to 0
+            if array.get(pivotTimes, i) <= selectedTime
+                foundBar   := array.get(pivotBars, i)
+                foundPrice := array.get(pivotPrices, i)
+                break
+    [foundBar, foundPrice]
+
+// ─── نقطه‌ی زمان لایو ───────────────────
+var int   liveBar     = na
+var float liveHighV   = na
+var float liveLowV    = na
+var float liveCenterV = na
+
+if time <= liveTime
+    liveBar     := bar_index
+    liveHighV   := high
+    liveLowV    := low
+    liveCenterV := (high + low) / 2
+
+// ─── توابع کمکی ────────
+lineValueAt(bar, x1, y1, x2, y2) =>
+    x2 != x1 ? y1 + (y2 - y1) / (x2 - x1) * (bar - x1) : y1
+
+countTouches(x1, y1, x2, y2) =>
+    int fromBelowTotal = 0, int fromBelowWin = 0
+    int fromAboveTotal = 0, int fromAboveWin = 0
+    bool wasTouching = false
+
+    if not na(x1) and not na(x2) and x2 > x1 + 1
+        for i = x1 + 1 to x2
+            lv     = lineValueAt(i, x1, y1, x2, y2)
+            lvPrev = lineValueAt(i - 1, x1, y1, x2, y2)
+            
+            if i < array.size(arrHigh) and (i - 1) >= 0 and (i + lookahead) < array.size(arrClose)
+                hi = array.get(arrHigh, i), lo = array.get(arrLow, i)
+                clPrev = array.get(arrClose, i - 1), cl = array.get(arrClose, i)
+                touching = lo <= lv and hi >= lv
+
+                if touching and not wasTouching
+                    j = i + lookahead
+                    if j <= x2 and j < array.size(arrClose)
+                        clFuture = array.get(arrClose, j)
+                        if clPrev < lvPrev
+                            fromBelowTotal += 1
+                            if clFuture < cl
+                                fromBelowWin += 1
+                        else if clPrev > lvPrev
+                            fromAboveTotal += 1
+                            if clFuture > cl
+                                fromAboveWin += 1
+                wasTouching := touching
+    [fromBelowTotal, fromBelowWin, fromAboveTotal, fromAboveWin]
+
+// ─── موتور محاسبه فاکتورهای پیشرفته و امتیاز ────────
+calcDynamicScore(tot, win, isBounceUp, _rsi, _isUptrend, _vol) =>
+    float baseRate = tot > 0 ? (win / tot * 100) : 50.0 // اگر تاریخچه نداشت پیش‌فرض 50
+    float score = baseRate
+
+    // 1. فاکتور روند (15 امتیاز)
+    if isBounceUp
+        score += _isUptrend ? 15 : -10
+    else
+        score += not _isUptrend ? 15 : -10
+
+    // 2. فاکتور مومنتوم RSI (20 امتیاز)
+    if isBounceUp
+        if _rsi < 35
+            score += 20 // اشباع فروش روی حمایت -> قدرت صعود بالا
+        else if _rsi > 65
+            score -= 15 // اشباع خرید روی حمایت -> خطر شکست
+    else
+        if _rsi > 65
+            score += 20 // اشباع خرید روی مقاومت -> قدرت ریزش بالا
+        else if _rsi < 35
+            score -= 15 // اشباع فروش روی مقاومت -> خطر شکست
+
+    // 3. فاکتور حجم اسپایک (15 امتیاز)
+    if _vol >= 2.0
+        score += 15
+    else if _vol >= 1.5
+        score += 10
+    else if _vol <= 0.6
+        score -= 10
+
+    math.max(0, math.min(100, score)) // محدود کردن بین 0 تا 100
+
+// قالب‌بندی‌ها
+getWinColor(tot, win) =>
+    if tot == 0
+        color.new(color.gray, 80)
+    else
+        rate = (win / tot) * 100
+        rate >= 60 ? color.new(color.green, 70) : rate <= 40 ? color.new(color.red, 70) : color.new(color.orange, 70)
+
+pctDownFromBelow(tot, win) => tot > 0 ? str.tostring(win / tot * 100, "#.#") + "%" : "بدون داده"
+pctUpFromAbove(tot, win)   => tot > 0 ? str.tostring(win / tot * 100, "#.#") + "%" : "بدون داده"
+
+// ─── متغیرهای کنترل فریز و لیبل‌های متحرک ────────
+var line lineHighShadow = na
+var line lineLowShadow  = na
+var line lineCenter     = na
+var table statsTable    = na
+
+var int lastCalculatedAnchor = na
+var bool frozenHigh   = false
+var bool frozenLow    = false
+var bool frozenCenter = false
+
+var label dynLblHigh   = na
+var label dynLblLow    = na
+var label dynLblCenter = na
+
+if barstate.islast
+    [anchorBar, anchorPrice] = findPivotBeforeTime()
+
+    // ریست کردن فریزها در صورت تغییر پیوت مبنا
+    if not na(anchorBar) and anchorBar != lastCalculatedAnchor
+        frozenHigh   := false
+        frozenLow    := false
+        frozenCenter := false
+        lastCalculatedAnchor := anchorBar
+
+    if not na(anchorBar) and not na(liveBar)
+        line.delete(lineHighShadow), line.delete(lineLowShadow), line.delete(lineCenter)
+
+        lineHighShadow := line.new(anchorBar, anchorPrice, liveBar, liveHighV, xloc=xloc.bar_index, extend=extendLine ? extend.right : extend.none, color=colHighShadow, width=lineW)
+        lineLowShadow  := line.new(anchorBar, anchorPrice, liveBar, liveLowV, xloc=xloc.bar_index, extend=extendLine ? extend.right : extend.none, color=colLowShadow, width=lineW)
+        lineCenter     := line.new(anchorBar, anchorPrice, liveBar, liveCenterV, xloc=xloc.bar_index, extend=extendLine ? extend.right : extend.none, color=colCenter, width=lineW)
+
+        [hbTot, hbWin, haTot, haWin] = countTouches(anchorBar, anchorPrice, liveBar, liveHighV)
+        [lbTot, lbWin, laTot, laWin] = countTouches(anchorBar, anchorPrice, liveBar, liveLowV)
+        [cbTot, cbWin, caTot, caWin] = countTouches(anchorBar, anchorPrice, liveBar, liveCenterV)
+
+        // آپدیت جدول استاتیک
+        table.delete(statsTable)
+        statsTable := table.new(position.top_right, 3, 4, bgcolor=color.new(color.black, 10), border_width=1, border_color=color.new(color.white, 80))
+        table.cell(statsTable, 0, 0, "نوع خط", text_color=color.white, bgcolor=color.new(color.blue, 60), text_size=tableSize)
+        table.cell(statsTable, 1, 0, "از پایین (ریزش)", text_color=color.white, bgcolor=color.new(color.blue, 60), text_size=tableSize)
+        table.cell(statsTable, 2, 0, "از بالا (صعود)", text_color=color.white, bgcolor=color.new(color.blue, 60), text_size=tableSize)
+        
+        table.cell(statsTable, 0, 1, "شدو بالا", text_color=colHighShadow, bgcolor=color.new(color.gray, 90), text_size=tableSize)
+        table.cell(statsTable, 1, 1, pctDownFromBelow(hbTot, hbWin), text_color=color.white, bgcolor=getWinColor(hbTot, hbWin), text_size=tableSize)
+        table.cell(statsTable, 2, 1, pctUpFromAbove(haTot, haWin), text_color=color.white, bgcolor=getWinColor(haTot, haWin), text_size=tableSize)
+
+        table.cell(statsTable, 0, 2, "شدو پایین", text_color=colLowShadow, bgcolor=color.new(color.gray, 90), text_size=tableSize)
+        table.cell(statsTable, 1, 2, pctDownFromBelow(lbTot, lbWin), text_color=color.white, bgcolor=getWinColor(lbTot, lbWin), text_size=tableSize)
+        table.cell(statsTable, 2, 2, pctUpFromAbove(laTot, laWin), text_color=color.white, bgcolor=getWinColor(laTot, laWin), text_size=tableSize)
+
+        table.cell(statsTable, 0, 3, "مرکز کندل", text_color=colCenter, bgcolor=color.new(color.gray, 90), text_size=tableSize)
+        table.cell(statsTable, 1, 3, pctDownFromBelow(cbTot, cbWin), text_color=color.white, bgcolor=getWinColor(cbTot, cbWin), text_size=tableSize)
+        table.cell(statsTable, 2, 3, pctUpFromAbove(caTot, caWin), text_color=color.white, bgcolor=getWinColor(caTot, caWin), text_size=tableSize)
+
+        // ─── هسته داینامیک و فریز ───
+        lvHighC = lineValueAt(bar_index, anchorBar, anchorPrice, liveBar, liveHighV)
+        lvLowC  = lineValueAt(bar_index, anchorBar, anchorPrice, liveBar, liveLowV)
+        lvCentC = lineValueAt(bar_index, anchorBar, anchorPrice, liveBar, liveCenterV)
+
+        // 1. خط شدو بالا
+        distHigh = math.abs(close - lvHighC)
+        isApproachingHighFromBelow = close < lvHighC
+        if not frozenHigh
+            if low <= lvHighC and high >= lvHighC
+                // لحظه برخورد -> فریز
+                frozenHigh := true
+                label.delete(dynLblHigh)
+                bool expectBounceUp = close[1] > lvHighC
+                float finalScore = calcDynamicScore(expectBounceUp ? haTot : hbTot, expectBounceUp ? haWin : hbWin, expectBounceUp, rsiVal, isUptrend, volRatio)
+                string alertTxt = "✅ فریز برخورد: شدو بالا\n🎯 احتمال برد نهایی: " + str.tostring(finalScore, "#.#") + "%\n[RSI: " + str.tostring(rsiVal, "#") + " | Vol: " + str.tostring(volRatio, "#.#") + "x]"
+                label.new(bar_index, expectBounceUp ? low : high, text=alertTxt, color=color.new(color.purple, 10), textcolor=color.white, style=expectBounceUp ? label.style_label_up : label.style_label_down)
+                alert(alertTxt, alert.freq_once_per_bar)
+            else if distHigh <= (atrVal * zoneATR)
+                // در حال نزدیک شدن -> شناور داینامیک
+                label.delete(dynLblHigh)
+                float dynScore = calcDynamicScore(isApproachingHighFromBelow ? hbTot : haTot, isApproachingHighFromBelow ? hbWin : haWin, not isApproachingHighFromBelow, rsiVal, isUptrend, volRatio)
+                string dynTxt = "🔄 در حال بررسی (شدو بالا)...\n📊 احتمال زنده: " + str.tostring(dynScore, "#.#") + "%"
+                dynLblHigh := label.new(bar_index, isApproachingHighFromBelow ? high : low, text=dynTxt, color=color.new(color.blue, 30), textcolor=color.white, style=isApproachingHighFromBelow ? label.style_label_down : label.style_label_up)
+
+        // 2. خط شدو پایین
+        distLow = math.abs(close - lvLowC)
+        isApproachingLowFromBelow = close < lvLowC
+        if not frozenLow
+            if low <= lvLowC and high >= lvLowC
+                frozenLow := true
+                label.delete(dynLblLow)
+                bool expectBounceUp = close[1] > lvLowC
+                float finalScore = calcDynamicScore(expectBounceUp ? laTot : lbTot, expectBounceUp ? laWin : lbWin, expectBounceUp, rsiVal, isUptrend, volRatio)
+                string alertTxt = "✅ فریز برخورد: شدو پایین\n🎯 احتمال برد نهایی: " + str.tostring(finalScore, "#.#") + "%\n[RSI: " + str.tostring(rsiVal, "#") + " | Vol: " + str.tostring(volRatio, "#.#") + "x]"
+                label.new(bar_index, expectBounceUp ? low : high, text=alertTxt, color=color.new(color.purple, 10), textcolor=color.white, style=expectBounceUp ? label.style_label_up : label.style_label_down)
+                alert(alertTxt, alert.freq_once_per_bar)
+            else if distLow <= (atrVal * zoneATR)
+                label.delete(dynLblLow)
+                float dynScore = calcDynamicScore(isApproachingLowFromBelow ? lbTot : laTot, isApproachingLowFromBelow ? lbWin : laWin, not isApproachingLowFromBelow, rsiVal, isUptrend, volRatio)
+                string dynTxt = "🔄 در حال بررسی (شدو پایین)...\n📊 احتمال زنده: " + str.tostring(dynScore, "#.#") + "%"
+                dynLblLow := label.new(bar_index, isApproachingLowFromBelow ? high : low, text=dynTxt, color=color.new(color.blue, 30), textcolor=color.white, style=isApproachingLowFromBelow ? label.style_label_down : label.style_label_up)
+
+        // 3. خط مرکز
+        distCent = math.abs(close - lvCentC)
+        isApproachingCentFromBelow = close < lvCentC
+        if not frozenCenter
+            if low <= lvCentC and high >= lvCentC
+                frozenCenter := true
+                label.delete(dynLblCenter)
+                bool expectBounceUp = close[1] > lvCentC
+                float finalScore = calcDynamicScore(expectBounceUp ? caTot : cbTot, expectBounceUp ? caWin : cbWin, expectBounceUp, rsiVal, isUptrend, volRatio)
+                string alertTxt = "✅ فریز برخورد: خط مرکز\n🎯 احتمال برد نهایی: " + str.tostring(finalScore, "#.#") + "%\n[RSI: " + str.tostring(rsiVal, "#") + " | Vol: " + str.tostring(volRatio, "#.#") + "x]"
+                label.new(bar_index, expectBounceUp ? low : high, text=alertTxt, color=color.new(color.purple, 10), textcolor=color.white, style=expectBounceUp ? label.style_label_up : label.style_label_down)
+                alert(alertTxt, alert.freq_once_per_bar)
+            else if distCent <= (atrVal * zoneATR)
+                label.delete(dynLblCenter)
+                float dynScore = calcDynamicScore(isApproachingCentFromBelow ? cbTot : caTot, isApproachingCentFromBelow ? cbWin : caWin, not isApproachingCentFromBelow, rsiVal, isUptrend, volRatio)
+                string dynTxt = "🔄 در حال بررسی (مرکز)...\n📊 احتمال زنده: " + str.tostring(dynScore, "#.#") + "%"
+                dynLblCenter := label.new(bar_index, isApproachingCentFromBelow ? high : low, text=dynTxt, color=color.new(color.blue, 30), textcolor=color.white, style=isApproachingCentFromBelow ? label.style_label_down : label.style_label_up)

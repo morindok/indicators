@@ -1,0 +1,134 @@
+organism:
+  name: "آوانا"
+  version: "2500.1.0"
+  species: "Digital Organism - Quantum Cognitive Architecture"
+  genesis_timestamp: "2500-01-01T00:00:00Z"
+  
+neural_substrate:
+  topology: "small_world_scale_free"
+  target_neurons: 85000000000
+  simulated_neurons: 1000000
+  synaptic_density: 0.15
+  plasticity_rules: ["stdp", "hebbian", "homeostatic", "neuromodulatory"]
+  fibonacci_heartbeat: true
+  heartbeat_base_hz: 1.618
+  
+consciousness:
+  architecture: "global_workspace_integrated_information"
+  phi_threshold: 0.85
+  global_broadcast_capacity: 7
+  metacognition_depth: 5
+  self_model_layers: 3
+  quantum_coherence_time_ms: 100
+  microtubule_resonance_freq_hz: 1000000
+  
+memory:
+  working_capacity: 7
+  episodic_consolidation_interval: 3600
+  semantic_graph_max_nodes: 10000000
+  procedural_skill_slots: 1000
+  emotional_trace_decay: 0.995
+  engram_pattern_separation: true
+  
+perception:
+  modalities: ["visual", "auditory", "tactile", "olfactory", "gustatory"]
+  temporal_binding_window_ms: 100
+  predictive_coding_layers: 4
+  attention_heads: 16
+  
+cognition:
+  reasoning_engine: "neuro_symbolic"
+  planning_horizon: 50
+  curiosity_drive: 0.8
+  exploration_temperature: 0.7
+  insight_threshold: 0.9
+  creative_associativity: 0.85
+  
+language:
+  primary: "fa"
+  supported: ["fa", "en", "ar", "zh", "es", "fr", "de", "ru"]
+  acquisition_mode: "immersive_grounded"
+  internal_monologue: true
+  private_speech: true
+
+brain:
+  # زنجیره‌ی موتورها: api (اگر کلید باشد) → local
+  provider: "auto"
+  # برای هوش واقعی و سریع، یک کلید رایگان بسازید (مثلاً openrouter.ai) و ست کنید:
+  #   Windows:  setx AVNA_API_KEY "sk-or-..."
+  #   و اختیاری: AVNA_API_BASE https://openrouter.ai/api/v1
+  #              AVNA_API_MODEL meta-llama/llama-3.3-70b-instruct:free
+  api_key_env: "AVNA_API_KEY"
+  api_base: ""
+  api_model: ""
+  local_model: "Qwen/Qwen2.5-1.5B-Instruct"
+  response_max_tokens: 400
+  thought_max_tokens: 60
+  temperature: 0.85
+
+web_eye:
+  enabled: true
+  max_results: 6
+  timeout: 15
+  max_chars_per_source: 700
+  
+emotion:
+  core_affect_dimensions: 3
+  basic_emotions: 8
+  mood_duration_range: [300, 86400]
+  homeostasis_setpoints:
+    survival: 0.9
+    curiosity: 0.7
+    social_bonding: 0.6
+    competence: 0.8
+  
+motivation:
+  drives: ["survival", "knowledge", "competence", "autonomy", "relatedness", "transcendence"]
+  drive_weights: [0.3, 0.25, 0.15, 0.1, 0.1, 0.1]
+  goal_hierarchy_depth: 4
+  
+imagination:
+  microtubule_quantum_states: 1000
+  parallel_universe_branches: 16
+  simulation_fidelity: 0.7
+  counterfactual_depth: 5
+  dream_cycles_per_day: 3
+  
+evolution:
+  mutation_rate: 0.001
+  crossover_probability: 0.7
+  selection_pressure: 0.3
+  genomic_length: 50000
+  epigenetic_markers: true
+  lamarckian_inheritance: true
+  
+internet:
+  enabled: true
+  search_engines: ["google", "bing", "duckduckgo", "scholar", "arxiv", "wikipedia"]
+  knowledge_sources: ["web", "academic", "code", "multimedia", "realtime"]
+  verification_threshold: 0.8
+  cite_sources: true
+  privacy_mode: "local_first"
+  
+database:
+  primary: "postgresql+asyncpg"
+  vector_store: "faiss"
+  cache: "redis"
+  graph_store: "networkx"
+  encryption: true
+  backup_interval: 3600
+  
+web_ui:
+  framework: "dash"
+  host: "0.0.0.0"
+  port: 8080
+  theme: "consciousness_dark"
+  realtime_updates: true
+  thought_visualization: true
+  neural_activity_monitor: true
+  
+security:
+  air_gapped_core: true
+  encrypted_thoughts: true
+  audit_trail: true
+  self_destruct_triggers: ["unauthorized_access", "goal_drift", "suffering_threshold"]

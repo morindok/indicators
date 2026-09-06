@@ -1,0 +1,24 @@
+//@version=5
+indicator("Dual MA Detrended Price", shorttitle="Dual Detrend", overlay=false)
+
+// Main settings
+src = input.source(close, "Source")
+baseLen = input.int(144, "Main MA Length", minval=1)
+
+// Derived lengths
+len1 = math.max(1, math.round(baseLen * 1.618))
+len2 = math.max(1, math.round(baseLen * 0.618))
+
+// Moving averages
+ma1 = ta.sma(src, len1)
+ma2 = ta.sma(src, len2)
+
+// Detrended series
+detrend1 = src - ma1
+detrend2 = src - ma2
+
+// Plots
+hline(0, "Zero Line", color=color.gray)
+
+plot(detrend1, title="Detrended vs MA 1 (1.618x)", color=color.blue, linewidth=2)
+plot(detrend2, title="Detrended vs MA 2 (0.618x)", color=color.orange, linewidth=2)

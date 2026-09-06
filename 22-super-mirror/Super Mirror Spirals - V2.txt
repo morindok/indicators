@@ -1,0 +1,392 @@
+//@version=5
+indicator("Super Mirror + Golden Spiral Symmetry {Morindok}", overlay=true)
+
+// ==========================================
+// œ—Ì«›  œÊ ‰ﬁÿÂ «“ —ÊÌ ç«—  (Â— ‰ﬁÿÂ ‘«„· “„«‰ Ê ﬁÌ„ )
+// ==========================================
+time1  = input.time(0, title="Point 1 (Start/Upper)", confirm=true, inline="p1")
+price1 = input.price(0, title="", confirm=true, inline="p1")
+
+time2  = input.time(0, title="Point 2 (End/Lower)", confirm=true, inline="p2")
+price2 = input.price(0, title="", confirm=true, inline="p2")
+
+// »——”Ì ‘Ì» „‰›Ì »—«Ì „⁄òÊ” ò—œ‰ ”Ì” „
+is_inverted = price2 < price1
+
+// ==========================================
+//  ‰ŸÌ„«  ‰”» ùÂ«Ì  ﬁ«—‰ (Fibonacci Ratios)
+// ==========================================
+ratio1 = input.float(1, title="Ratio Level 1", step=0.001, group="Reflection Settings")
+ratio2 = input.float(1, title="Ratio Level 2", step=0.001, group="Reflection Settings")
+
+// ==========================================
+//  ‰ŸÌ„«  «”ÅÌ—«· ÿ·«ÌÌ («÷«›Â ‘œÂ «“ òœ «Ê·)
+// ==========================================
+reverseDir = input.bool(false, title="„⁄òÊ” ò—œ‰ ÃÂ  ê—œ‘ «”ÅÌ—«·ùÂ«", group="Spiral Settings")
+divisorMode = input.string(" ⁄œ«œ:  ›òÌòù‘œÂ (»«·«:”»“° Å«ÌÌ‰:ﬁ—„“)", title="„»‰«Ì  ﬁ”Ì„ ÿÊ· «”ÅÌ—«·ùÂ«", 
+     options=[
+         " ⁄œ«œ:  ›òÌòù‘œÂ (»«·«:”»“° Å«ÌÌ‰:ﬁ—„“)", 
+         " ⁄œ«œ: ò· ò‰œ·ùÂ«", 
+         " ⁄œ«œ: ò‰œ·ùÂ«Ì ”»“", 
+         " ⁄œ«œ: ò‰œ·ùÂ«Ì ﬁ—„“",
+         "«— ›«⁄:  ›òÌòù‘œÂ (»«·«:”»“° Å«ÌÌ‰:ﬁ—„“)",
+         "«— ›«⁄: ò· ò‰œ·ùÂ«",
+         "«— ›«⁄: ò‰œ·ùÂ«Ì ”»“",
+         "«— ›«⁄: ò‰œ·ùÂ«Ì ﬁ—„“"
+     ], group="Spiral Settings")
+multUp   = input.float(1.0, title="÷—Ì» ÿÊ· «”ÅÌ—«· »«·«", step=0.1, group="Spiral Settings")
+multDown = input.float(1.0, title="÷—Ì» ÿÊ· «”ÅÌ—«· Å«ÌÌ‰", step=0.1, group="Spiral Settings")
+useSpiralEnds = input.bool(true, title=" ﬁ«—‰ ‰”»  »Â «‰ Â«Ì «”ÅÌ—«·ùÂ« (»Ã«Ì ”ÿÊÕ)", group="Spiral Settings")
+
+// ==========================================
+//  ‰ŸÌ„«  ”Ê—” Ê  «Ì„ù›—Ì„
+// ==========================================
+src_input = input.source(close, title="Source")
+tf_input = input.timeframe("", title="Timeframe")
+
+src_price = request.security(syminfo.tickerid, tf_input, src_input)
+high_price = request.security(syminfo.tickerid, tf_input, high)
+low_price = request.security(syminfo.tickerid, tf_input, low)
+time_val = request.security(syminfo.tickerid, tf_input, time)
+bar_idx = request.security(syminfo.tickerid, tf_input, bar_index)
+
+baseline_type = input.string("Golden Cloud", options=["Golden Cloud", "Moving Average", "HH/LL", "ATR", "Bollinger Bands", "Ichimoku Cloud", "RSI", "CCI", "MACD", "Fibo Wave"], title="Baseline Type", group="Baseline Settings")
+
+// ==========================================
+//  ‰ŸÌ„«  »Ì” ·«Ì‰ Â« Ê «„Ê«Ã ›Ì»Ê‰«çÌ
+// ==========================================
+lookback = input.int(20, "Lookback Period (Golden/HHLL)", group="Baseline Settings")
+atr_len = input.int(14, "ATR Length", group="Baseline Settings")
+atr_mult = input.float(1.0, "ATR Multiplier", group="Baseline Settings")
+bb_len = input.int(20, "Bollinger Length", group="Baseline Settings")
+bb_mult = input.float(2.0, "Bollinger Multiplier", group="Baseline Settings")
+rsi_len = input.int(14, "RSI Length", group="Baseline Settings")
+cci_len = input.int(20, "CCI Length", group="Baseline Settings")
+
+macd_fast = input.int(12, "MACD Fast Length", group="Baseline Settings")
+macd_slow = input.int(26, "MACD Slow Length", group="Baseline Settings")
+macd_signal = input.int(9, "MACD Signal Length", group="Baseline Settings")
+
+tenkan_len = input.int(9, "Tenkan-sen Length", group="Baseline Settings")
+kijun_len = input.int(26, "Kijun-sen Length", group="Baseline Settings")
+senkou_len = input.int(52, "Senkou Span B Length", group="Baseline Settings")
+
+sym_center_ratio = input.float(0.5, title="Wave Symmetry Center Ratio", step=0.1, tooltip="0.5 means center, 1.0 means end, 0.0 means start", group="Fibo Wave Settings")
+reset_wave = input.bool(true, title="Reset Wave After 5 Cycles", group="Fibo Wave Settings")
+
+// ==========================================
+// „ €Ì—Â«Ì “„«‰Ì
+// ==========================================
+var int start_bar = na
+start_bar := na(start_bar) and time_val >= time1 ? bar_idx : start_bar
+var int end_bar = na
+end_bar := na(end_bar) and time_val >= time2 ? bar_idx : end_bar
+
+// ==========================================
+// „Õ«”»«  »Ì” ·«Ì‰ Â«
+// ==========================================
+ma_length = na(start_bar) or na(end_bar) ? 14 : math.max(1, math.abs(end_bar - start_bar))
+ma = ta.sma(src_price, int(ma_length))
+
+highestPrice = ta.highest(high_price, lookback)
+lowestPrice = ta.lowest(low_price, lookback)
+goldenRatio = 1.618
+midPoint = (highestPrice + lowestPrice) / 2
+priceRange = highestPrice - lowestPrice
+goldenRange = priceRange / goldenRatio
+upperLevel = midPoint + (goldenRange / 2)
+lowerLevel = midPoint - (goldenRange / 2)
+
+tr = math.max(high_price - low_price, math.max(math.abs(high_price - src_price[1]), math.abs(low_price - src_price[1])))
+atr_val = ta.rma(tr, atr_len) * atr_mult
+atr_upper = ma + atr_val
+atr_lower = ma - atr_val
+
+[bb_mid, bb_upper, bb_lower] = ta.bb(src_price, bb_len, bb_mult)
+
+tenkan = math.avg(ta.highest(high_price, tenkan_len), ta.lowest(low_price, tenkan_len))
+kijun = math.avg(ta.highest(high_price, kijun_len), ta.lowest(low_price, kijun_len))
+senkouA = math.avg(tenkan, kijun)
+senkouB = math.avg(ta.highest(high_price, senkou_len), ta.lowest(low_price, senkou_len))
+ichi_upper = math.max(nz(senkouA, src_price), nz(senkouB, src_price))
+ichi_lower = math.min(nz(senkouA, src_price), nz(senkouB, src_price))
+
+rsi_val = ta.rsi(src_price, rsi_len)
+highest_price_rsi = ta.highest(high_price, rsi_len)
+lowest_price_rsi = ta.lowest(low_price, rsi_len)
+rsi_mapped = lowest_price_rsi + (rsi_val / 100) * (highest_price_rsi - lowest_price_rsi)
+
+cci_val = ta.cci(src_price, cci_len)
+cci_highest = ta.highest(cci_val, cci_len)
+cci_lowest = ta.lowest(cci_val, cci_len)
+cci_ratio = (cci_val - cci_lowest) / math.max(cci_highest - cci_lowest, 1e-10) 
+highest_price_cci = ta.highest(high_price, cci_len)
+lowest_price_cci = ta.lowest(low_price, cci_len)
+cci_mapped = lowest_price_cci + cci_ratio * (highest_price_cci - lowest_price_cci)
+
+[macd_line, signal_line, _] = ta.macd(src_price, macd_fast, macd_slow, macd_signal)
+macd_highest = ta.highest(macd_line, macd_slow)
+macd_lowest = ta.lowest(macd_line, macd_slow)
+macd_ratio_val = (macd_line - macd_lowest) / math.max(macd_highest - macd_lowest, 1e-10)
+highest_price_macd = ta.highest(high_price, macd_slow)
+lowest_price_macd = ta.lowest(low_price, macd_slow)
+macd_mapped = lowest_price_macd + macd_ratio_val * (highest_price_macd - lowest_price_macd)
+
+mid_time = math.round(time1 + (time2 - time1) * sym_center_ratio)
+bar_ms = timeframe.in_seconds(tf_input == "" ? timeframe.period : tf_input) * 1000
+fibo_ma_len = math.max(1, math.round(math.abs(time2 - time1) / bar_ms))
+base_amp = math.abs(price2 - price1) != 0 ? math.abs(price2 - price1) / 2 : ta.atr(14)
+relative_x = (time_val - mid_time) / bar_ms
+dist_bars = math.abs(relative_x)
+int max_cycles = 5
+cycle_index = reset_wave ? math.floor((dist_bars % (fibo_ma_len * max_cycles)) / fibo_ma_len) : math.floor(dist_bars / fibo_ma_len)
+max_fibo = math.pow(1.618, max_cycles - 1)
+fibo_amp = (math.pow(1.618, cycle_index) / max_fibo) * base_amp
+wave = math.sin(relative_x * 2 * math.pi / math.max(1, fibo_ma_len)) * fibo_amp
+
+fibo_upper_line = ma + wave
+fibo_lower_line = ma - wave
+
+actual_upper = baseline_type == "Golden Cloud" ? upperLevel : 
+               baseline_type == "HH/LL" ? highestPrice : 
+               baseline_type == "ATR" ? atr_upper : 
+               baseline_type == "Bollinger Bands" ? bb_upper :
+               baseline_type == "Ichimoku Cloud" ? ichi_upper :
+               baseline_type == "RSI" ? rsi_mapped :
+               baseline_type == "CCI" ? cci_mapped :
+               baseline_type == "MACD" ? macd_mapped :
+               baseline_type == "Fibo Wave" ? fibo_upper_line :
+               ma
+
+actual_lower = baseline_type == "Golden Cloud" ? lowerLevel : 
+               baseline_type == "HH/LL" ? lowestPrice : 
+               baseline_type == "ATR" ? atr_lower : 
+               baseline_type == "Bollinger Bands" ? bb_lower :
+               baseline_type == "Ichimoku Cloud" ? ichi_lower :
+               baseline_type == "RSI" ? rsi_mapped :
+               baseline_type == "CCI" ? cci_mapped :
+               baseline_type == "MACD" ? macd_mapped :
+               baseline_type == "Fibo Wave" ? fibo_lower_line :
+               ma
+
+p_upper = plot(actual_upper, "Upper Baseline", color=color.blue, display=display.none)
+p_lower = plot(actual_lower, "Lower Baseline", color=color.red, display=display.none)
+
+// ==========================================
+// „Õ«”»«  «”ÅÌ—«· ÿ·«ÌÌ (»ÂÌ‰Âù”«“Ì ‘œÂ »—«Ì «Ã—«Ì  «—ÌŒÌ)
+// ==========================================
+var int totalBarCount = 0
+var int greenBarCount = 0 
+var int redBarCount   = 0 
+
+var float totalHeight = 0.0
+var float greenHeight = 0.0
+var float redHeight   = 0.0
+
+var float max_p = na
+var float min_p = na
+
+var int   end_t = na
+var float end_p = na
+var int   start_t = na
+var float start_p = na
+
+var float totalDistanceUp   = 0.0
+var float totalDistanceDown = 0.0
+
+time_start = math.min(time1, time2)
+time_end   = math.max(time1, time2)
+in_range   = time >= time_start and time <= time_end
+
+centerLevel = (price1 + price2) / 2.0
+
+// Ã„⁄ù¬Ê—Ì œ«œÂùÂ«Ì œ—Ê‰ »«“Â »Â ’Ê—  ÅÊÌ«
+if in_range
+    float c_height = high - low
+    totalBarCount += 1
+    totalHeight   += c_height
+    if close > open
+        greenBarCount += 1
+        greenHeight   += c_height
+    else if close < open
+        redBarCount   += 1
+        redHeight     += c_height
+    
+    max_p := na(max_p) ? high : math.max(max_p, high)
+    min_p := na(min_p) ? low : math.min(min_p, low)
+    
+    end_t := time
+    end_p := hl2
+    
+    if na(start_t)
+        start_t := time
+        start_p := hl2
+        
+    float m_center = 2 * centerLevel - close
+    float m_up_base   = 2 * price1 - m_center
+    float m_down_base = 2 * price2 - m_center
+    
+    totalDistanceUp   += math.abs(m_up_base - close)
+    totalDistanceDown += math.abs(m_down_base - close)
+
+// „Õ«”»Â «‰ Â«Ì «”ÅÌ—«·ùÂ« (Ìò »«— Å” «“ Å«Ì«‰ »«“Â “„«‰Ì)
+var bool range_closed = false
+var float calc_final_p_up = na
+var float calc_final_p_down = na
+
+if not range_closed and time > time_end and not na(end_t)
+    range_closed := true
+    
+    float dt = math.abs(time2 - time1)
+    float dp = math.abs(max_p - min_p)
+   
+    if dt == 0
+        dt := timeframe.in_seconds("") * 1000.0
+    if dp == 0
+        dp := 1.0
+
+    float divUp   = 1.0
+    float divDown = 1.0
+    
+    if divisorMode == " ⁄œ«œ: ò· ò‰œ·ùÂ«"
+        divUp   := totalBarCount
+        divDown := totalBarCount
+    else if divisorMode == " ⁄œ«œ: ò‰œ·ùÂ«Ì ”»“"
+        divUp   := greenBarCount
+        divDown := greenBarCount
+    else if divisorMode == " ⁄œ«œ: ò‰œ·ùÂ«Ì ﬁ—„“"
+        divUp   := redBarCount
+        divDown := redBarCount
+    else if divisorMode == " ⁄œ«œ:  ›òÌòù‘œÂ (»«·«:”»“° Å«ÌÌ‰:ﬁ—„“)"
+        divUp   := greenBarCount
+        divDown := redBarCount
+    else if divisorMode == "«— ›«⁄: ò· ò‰œ·ùÂ«"
+        divUp   := totalHeight
+        divDown := totalHeight
+    else if divisorMode == "«— ›«⁄: ò‰œ·ùÂ«Ì ”»“"
+        divUp   := greenHeight
+        divDown := greenHeight
+    else if divisorMode == "«— ›«⁄: ò‰œ·ùÂ«Ì ﬁ—„“"
+        divUp   := redHeight
+        divDown := redHeight
+    else if divisorMode == "«— ›«⁄:  ›òÌòù‘œÂ (»«·«:”»“° Å«ÌÌ‰:ﬁ—„“)"
+        divUp   := greenHeight
+        divDown := redHeight
+
+    float baseLenUp   = divUp > 0 ? totalDistanceUp / divUp : totalDistanceUp
+    float baseLenDown = divDown > 0 ? totalDistanceDown / divDown : totalDistanceDown
+    
+    float targetLenUp   = baseLenUp * multUp
+    float targetLenDown = baseLenDown * multDown
+
+    float b_coeff = math.log(1.6180339887) / (math.pi / 2)
+    float a = 0.02
+    int dir = reverseDir ? -1 : 1
+    
+    calc_final_p_up   := end_p
+    calc_final_p_down := start_p
+
+    if targetLenUp > 0
+        float acc_len_up = 0.0
+        float prev_t_up = end_t
+        float prev_p_up = end_p
+       
+        for i = 1 to 2000
+            float theta = i * 0.1
+            float r = a * math.exp(b_coeff * theta)
+            int curr_t = math.round(end_t + r * dt * math.cos(theta))
+            float curr_p = end_p + (dir * r * dp * math.sin(theta))
+            
+            float seg = math.sqrt(math.pow(((curr_t - prev_t_up) / dt) * dp, 2) + math.pow(curr_p - prev_p_up, 2))
+           
+            if acc_len_up <= targetLenUp
+                acc_len_up   += seg
+                calc_final_p_up   := curr_p
+                prev_t_up    := curr_t
+                prev_p_up    := curr_p
+            else
+                break
+
+    if targetLenDown > 0 and not na(start_t)
+        float acc_len_down = 0.0
+        float prev_t_down = start_t
+        float prev_p_down = start_p
+       
+        for i = 1 to 2000
+            float theta = i * 0.1
+            float r = a * math.exp(b_coeff * theta)
+            int curr_t = math.round(start_t + r * dt * math.cos(theta))
+            float curr_p = start_p - (dir * r * dp * math.sin(theta))
+            
+            float seg = math.sqrt(math.pow(((curr_t - prev_t_down) / dt) * dp, 2) + math.pow(curr_p - prev_p_down, 2))
+           
+            if acc_len_down <= targetLenDown
+                acc_len_down  += seg
+                calc_final_p_down  := curr_p
+                prev_t_down   := curr_t
+                prev_p_down   := curr_p
+            else
+                break
+
+final_p_up = calc_final_p_up
+final_p_down = calc_final_p_down
+
+// ==========================================
+//  ﬁ«—‰ ﬁÌ„  (Reflection) - »— «”«” «‰ Â«Ì «”ÅÌ—«·ùÂ«
+// ==========================================
+// «‰ Œ«» „ÕÊ—  ﬁ«—‰: œ— ’Ê—  ›⁄«· »Êœ‰° «“ «‰ Â«Ì «”ÅÌ—«·ùÂ« «” ›«œÂ „Ìù‘Êœ
+float sym_upper = useSpiralEnds ? nz(final_p_up, actual_upper) : actual_upper
+float sym_lower = useSpiralEnds ? nz(final_p_down, actual_lower) : actual_lower
+
+price_ref1_lvl1 = price1 + (price1 - src_price) * ratio1
+price_ref1_lvl2 = price2 + (price2 - src_price) * ratio2
+plot(price_ref1_lvl1, title="Reflected Price on Level 1", display=display.none)
+plot(price_ref1_lvl2, title="Reflected Price on Level 2", display=display.none)
+
+// «⁄„«·  ﬁ«—‰ À«‰ÊÌÂ ‰”»  »Â «‰ Â«Ì «”ÅÌ—«·ùÂ«
+price_ref2_lvl1 = 2 * sym_upper - price_ref1_lvl1
+price_ref2_lvl2 = 2 * sym_lower - price_ref1_lvl2
+plot(price_ref2_lvl1, title="Reflected back on Spiral Upper End", display=display.none)
+plot(price_ref2_lvl2, title="Reflected back on Spiral Lower End", display=display.none)
+
+// ==========================================
+// „‰ÿﬁ ”Ìê‰«·ùœÂÌ «Ê·ÌÂ
+// ==========================================
+is_after = not na(end_bar) and bar_idx > end_bar
+
+// --- „‰ÿﬁ 1 ---
+var float lowest_green = na
+var bool has_collided_1 = false
+var bool signal_fired_1 = false
+
+lowest_green := is_after and not has_collided_1 ? math.min(nz(lowest_green, price_ref2_lvl1), price_ref2_lvl1) : lowest_green
+plot(is_after ? lowest_green : na, title="Lowest Green Tracker", display=display.none)
+
+is_hit_1 = is_after and not na(lowest_green) and not has_collided_1 and (ta.cross(price_ref2_lvl2, lowest_green) or price_ref2_lvl2 == lowest_green)
+logic_signal_1 = is_hit_1 and not signal_fired_1
+
+has_collided_1 := has_collided_1 or is_hit_1
+signal_fired_1 := signal_fired_1 or logic_signal_1
+
+// --- „‰ÿﬁ 2 ---
+var float highest_purple = na
+var bool has_collided_2 = false
+var bool signal_fired_2 = false
+
+highest_purple := is_after and not has_collided_2 ? math.max(nz(highest_purple, price_ref2_lvl2), price_ref2_lvl2) : highest_purple
+plot(is_after ? highest_purple : na, title="Highest Purple Tracker", display=display.none)
+
+is_hit_2 = is_after and not na(highest_purple) and not has_collided_2 and (ta.cross(price_ref2_lvl1, highest_purple) or price_ref2_lvl1 == highest_purple)
+logic_signal_2 = is_hit_2 and not signal_fired_2
+
+has_collided_2 := has_collided_2 or is_hit_2
+signal_fired_2 := signal_fired_2 or logic_signal_2
+
+// ==========================================
+// „⁄òÊ” ò—œ‰ ”Ì” „ »— «”«” ‘Ì»
+// ==========================================
+final_sell = is_inverted ? logic_signal_2 : logic_signal_1
+final_buy  = is_inverted ? logic_signal_1 : logic_signal_2
+
+plotshape(final_sell, title="Sell Signal", text="SELL", style=shape.labeldown, location=location.abovebar, color=color.red, textcolor=color.white, size=size.small)
+plotshape(final_buy, title="Buy Signal", text="BUY", style=shape.labelup, location=location.belowbar, color=color.green, textcolor=color.white, size=size.small)

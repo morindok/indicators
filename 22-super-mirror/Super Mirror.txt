@@ -1,0 +1,67 @@
+//@version=5
+indicator("Super Mirror {Morindok}", overlay=true)
+price1 = input.price(0, title="Level 1", confirm=true)
+price2 = input.price(0, title="Level 2", confirm=true)
+time1 = input.time(0, title="Start Time", confirm=true)
+time2 = input.time(0, title="End Time", confirm=true)
+
+var int start_bar = na
+start_bar := na(start_bar) and time >= time1 ? bar_index : start_bar
+var int end_bar = na
+end_bar := na(end_bar) and time >= time2 ? bar_index : end_bar
+
+ma_length = na(start_bar) or na(end_bar) ? 14 : math.max(1, math.abs(end_bar - start_bar))
+ma = ta.sma(close, int(ma_length))
+plot(ma, color=color.blue, linewidth=2, title="Main MA")
+
+ma_sym_lvl1 = 2 * price1 - ma
+ma_sym_lvl2 = 2 * price2 - ma
+plot(ma_sym_lvl1, color=color.aqua, title="Symmetric MA on Level 1")
+plot(ma_sym_lvl2, color=color.fuchsia, title="Symmetric MA on Level 2")
+
+price_ref1_lvl1 = 2 * price1 - close
+price_ref1_lvl2 = 2 * price2 - close
+plot(price_ref1_lvl1, color=color.red, title="Reflected Price on Level 1")
+plot(price_ref1_lvl2, color=color.orange, title="Reflected Price on Level 2")
+
+price_ref2_lvl1 = 2 * ma - price_ref1_lvl1
+price_ref2_lvl2 = 2 * ma - price_ref1_lvl2
+plot(price_ref2_lvl1, color=color.green, title="Reflected back on MA (Lvl 1)")
+plot(price_ref2_lvl2, color=color.purple, title="Reflected back on MA (Lvl 2)")
+
+// ==========================================
+// „‰ÿﬁ ”Ìê‰«·ùœÂÌ
+// ==========================================
+is_after = not na(end_bar) and bar_index > end_bar
+
+// --- „‰ÿﬁ ›—Ê‘ (ò„ —Ì‰ ”»“° »—ŒÊ—œ »‰›‘) ---
+var float lowest_green = na
+var bool has_collided_sell = false
+var bool signal_fired_sell = false
+
+lowest_green := is_after and not has_collided_sell ? math.min(nz(lowest_green, price_ref2_lvl1), price_ref2_lvl1) : lowest_green
+plot(is_after ? lowest_green : na, color=color.yellow, style=plot.style_cross, linewidth=2, title="Lowest Green Tracker")
+
+is_hit_sell = is_after and not na(lowest_green) and not has_collided_sell and (ta.cross(price_ref2_lvl2, lowest_green) or price_ref2_lvl2 == lowest_green)
+sell_signal = is_hit_sell and not signal_fired_sell
+
+has_collided_sell := has_collided_sell or is_hit_sell
+signal_fired_sell := signal_fired_sell or sell_signal
+
+plotshape(sell_signal, title="Sell Signal", text="SELL", style=shape.labeldown, location=location.abovebar, color=color.red, textcolor=color.white, size=size.small)
+
+// --- „‰ÿﬁ Œ—Ìœ (»Ì‘ —Ì‰ »‰›‘° »—ŒÊ—œ ”»“) ---
+var float highest_purple = na
+var bool has_collided_buy = false
+var bool signal_fired_buy = false
+
+highest_purple := is_after and not has_collided_buy ? math.max(nz(highest_purple, price_ref2_lvl2), price_ref2_lvl2) : highest_purple
+plot(is_after ? highest_purple : na, color=color.white, style=plot.style_cross, linewidth=2, title="Highest Purple Tracker")
+
+is_hit_buy = is_after and not na(highest_purple) and not has_collided_buy and (ta.cross(price_ref2_lvl1, highest_purple) or price_ref2_lvl1 == highest_purple)
+buy_signal = is_hit_buy and not signal_fired_buy
+
+has_collided_buy := has_collided_buy or is_hit_buy
+signal_fired_buy := signal_fired_buy or buy_signal
+
+plotshape(buy_signal, title="Buy Signal", text="BUY", style=shape.labelup, location=location.belowbar, color=color.green, textcolor=color.white, size=size.small)

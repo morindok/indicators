@@ -1,0 +1,83 @@
+{
+  "app": {
+    "title": "HIVE INSTITUTIONAL v7",
+    "host": "0.0.0.0",
+    "port": 8060,
+    "debug": false,
+    "rtl": true
+  },
+  "mode": {
+    "live_mode": false,
+    "testnet": true,
+    "execution_enabled": false,
+    "replay_mode": false,
+    "scan_interval_sec": 30,
+    "manage_interval_sec": 10,
+    "dashboard_tick_sec": 5
+  },
+  "bybit": {
+    "api_key": "",
+    "api_secret": "",
+    "recv_window": 5000,
+    "category": "linear",
+    "base_urls_live": [
+      "https://api.bybit.com",
+      "https://api.bytick.com"
+    ],
+    "base_urls_testnet": [
+      "https://api-testnet.bybit.com"
+    ]
+  },
+  "universe": {
+    "max_symbols": 16,
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT",
+      "SOLUSDT",
+      "XRPUSDT",
+      "BNBUSDT",
+      "DOGEUSDT",
+      "AVAXUSDT",
+      "ADAUSDT",
+      "LINKUSDT",
+      "SUIUSDT",
+      "TONUSDT",
+      "LTCUSDT",
+      "DOTUSDT",
+      "TRXUSDT",
+      "BCHUSDT",
+      "NEARUSDT"
+    ],
+    "min_turnover_24h": 1200000,
+    "max_spread_bps": 5.0
+  },
+  "risk": {
+    "initial_capital": 500.0,
+    "base_leverage": 20,
+    "min_leverage": 5,
+    "max_leverage": 50,
+    "max_positions": 5,
+    "risk_per_trade": 0.011,
+    "daily_loss_limit": 0.04,
+    "consecutive_loss_limit": 4,
+    "volatility_pause_pct": 0.03,
+    "correlation_block": 0.92,
+    "kelly_fraction": 0.35,
+    "atr_stop_mult": 1.8,
+    "partial_exit_1r": 0.25,
+    "partial_exit_2r": 0.25
+  },
+  "learning": {
+    "score_threshold": 0.53,
+    "conv_threshold": 0.42,
+    "pattern_memory_size": 500,
+    "recent_backtest_candles": 2000,
+    "walk_forward_train": 1500,
+    "walk_forward_test": 300,
+    "memory_decay": 0.985
+  },
+  "ui": {
+    "theme": "cyborg",
+    "update_ms": 5000
+  }
+}

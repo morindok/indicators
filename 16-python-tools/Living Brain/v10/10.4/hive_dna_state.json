@@ -1,0 +1,35 @@
+{
+  "generation": 3,
+  "adaptive": {
+    "score_threshold": 0.5361889726204871,
+    "conv_threshold": 0.43498195866772726
+  },
+  "awareness": 0.5977264683974212,
+  "win_streak": 0,
+  "loss_streak": 7,
+  "organism_weights": {
+    "Aether": 1.1072320406604124,
+    "Pulse": 0.9939178216065044,
+    "Flux": 0.9052341742699606,
+    "Vector": 0.8426389681242815
+  },
+  "organism_performance": {
+    "Pulse": {
+      "pnl": -28.757712520468054,
+      "count": 26
+    },
+    "Flux": {
+      "pnl": -28.757712520468054,
+      "count": 26
+    },
+    "Aether": {
+      "pnl": -6.04684307522847,
+      "count": 3
+    },
+    "Vector": {
+      "pnl": -12.458728825573058,
+      "count": 7
+    }
+  },
+  "saved_at": "2026-08-19T14:33:16.530507+00:00"
+}

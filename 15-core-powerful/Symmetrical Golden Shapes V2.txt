@@ -1,0 +1,392 @@
+//@version=5
+indicator("Symmetrical Golden Shapes{Morindok}", overlay=true, max_polylines_count=100, max_lines_count=500, max_boxes_count=100)
+
+max_bars_back(close, 5000)
+
+sym_level = input.price(0.0, "Symmetry Level", confirm=true)
+time_start = input.time(0, "Start Time", confirm=true)
+time_end = input.time(0, "End Time", confirm=true)
+center_ratio_start = input.float(0, "Center Ratio Start (0-1)", minval=0.0, maxval=1.0, step=0.1)
+center_ratio_end = input.float(1, "Center Ratio End (0-1)", minval=0.0, maxval=1.0, step=0.1)
+mirror_shapes = input.bool(false, "Mirror Shapes")
+sym_peri = input.bool(false, "Symmetry Prices to Shape Perimeter")
+
+use_slope = input.bool(false, "Enable Slope")
+manual_slope = input.float(0.0, "Manual Slope (Points/Bar)", step=0.1)
+auto_slope = input.bool(false, "Auto Slope (Based on Range)")
+rotate_shapes = input.bool(false, "Rotate Shapes with Slope")
+
+width_factor_1 = input.float(0.4, "Width Factor Box 1", minval=0.01, step=0.1)
+height_factor_1 = input.float(0.4, "Height Factor Box 1", minval=0.01, step=0.1)
+width_factor_2 = input.float(0.7, "Width Factor Box 2", minval=0.01, step=0.1)
+height_factor_2 = input.float(0.7, "Height Factor Box 2", minval=0.01, step=0.1)
+show_star = input.bool(false, "Show Star")
+shape_type = input.string("Diamond", "Shape Type", options=["Rectangle", "Ellipse", "Triangle", "Diamond", "Pentagon", "Hexagon", "Octagon", "Star"])
+
+in_range = time >= time_start and time <= time_end
+
+var int pivot_bar = 0
+var float pivot_close = 0.0
+var float final_auto_slope = 0.0
+
+var int start_bar = na
+var int end_bar = na
+var float start_price = na
+var float end_price = na
+
+if in_range and not in_range[1]
+    pivot_bar := bar_index
+    pivot_close := close
+    final_auto_slope := 0.0
+    start_bar := bar_index
+    start_price := low + (high - low) * center_ratio_start
+
+if in_range
+    final_auto_slope := (close - pivot_close) / math.max(1, bar_index - pivot_bar)
+    end_bar := bar_index
+    end_price := low + (high - low) * center_ratio_end
+
+rot_x(cx, cy, rx, ry, a, theta) =>
+    raw_px = int(math.round(cx + rx * math.cos(a + theta)))
+    math.min(bar_index + 499, math.max(bar_index - 4999, math.max(0, raw_px)))
+
+rot_y(cx, cy, rx, ry, a, theta) =>
+    cy + ry * math.sin(a + theta)
+
+drawPoly(cx, cy, rx, ry, n, offset, theta, col) =>
+    pts = array.new<chart.point>()
+    for i = 0 to n
+        a = 2 * math.pi * i / n + offset
+        px = rot_x(cx, cy, rx, ry, a, theta)
+        py = rot_y(cx, cy, rx, ry, a, theta)
+        pts.push(chart.point.from_index(px, py))
+    polyline.new(pts, closed=true, line_color=col, line_width=2)
+
+drawStar(cx, cy, rx, ry, theta, col) =>
+    pts = array.new<chart.point>()
+    for i = 0 to 9
+        r = i % 2 == 0 ? 1.0 : 0.45
+        a = 2 * math.pi * i / 10 - math.pi / 2
+        px = rot_x(cx, cy, rx * r, ry * r, a, theta)
+        py = rot_y(cx, cy, rx * r, ry * r, a, theta)
+        pts.push(chart.point.from_index(px, py))
+    polyline.new(pts, closed=true, line_color=col, line_width=2)
+
+drawSingleShape(cx, cy, rx, ry, theta, col) =>
+    if shape_type == "Rectangle"
+        drawPoly(float(cx), cy, float(rx), ry, 4, math.pi/4, theta, col)
+    else if shape_type == "Triangle"
+        drawPoly(float(cx), cy, float(rx), ry, 3, -math.pi/2, theta, col)
+    else if shape_type == "Diamond"
+        drawPoly(float(cx), cy, float(rx), ry, 4, -math.pi/2, theta, col)
+    else if shape_type == "Pentagon"
+        drawPoly(float(cx), cy, float(rx), ry, 5, -math.pi/2, theta, col)
+    else if shape_type == "Hexagon"
+        drawPoly(float(cx), cy, float(rx), ry, 6, 0.0, theta, col)
+    else if shape_type == "Octagon"
+        drawPoly(float(cx), cy, float(rx), ry, 8, -math.pi/8, theta, col)
+    else if shape_type == "Star"
+        drawStar(float(cx), cy, float(rx), ry, theta, col)
+    else
+        drawPoly(float(cx), cy, float(rx), ry, 60, 0.0, theta, col)
+
+point_in_shape(cx, cy, rx, ry, theta, type, px, py) =>
+    dx = float(px - cx)
+    dy = py - cy
+    cos_t = math.cos(-theta)
+    sin_t = math.sin(-theta)
+    lx = dx * cos_t - dy * sin_t
+    ly = dx * sin_t + dy * cos_t
+    nx = rx > 0 ? math.abs(lx) / rx : 1.0
+    ny = ry > 0 ? math.abs(ly) / ry : 1.0
+    result = false
+    if type == "Ellipse"
+        result := (nx * nx + ny * ny) <= 1.0
+    else if type == "Diamond"
+        result := (nx + ny) <= 1.0
+    else if type == "Rectangle"
+        result := nx <= 1.0 and ny <= 1.0
+    else
+        result := (nx * nx + ny * ny) <= 1.0
+    result
+
+get_shape_dy(dx, rx, ry, type) =>
+    float dy = ry
+    nx = rx > 0 ? math.abs(dx) / rx : 1.0
+    if type == "Ellipse" or type == "Pentagon" or type == "Hexagon" or type == "Octagon" or type == "Star"
+        dy := ry * math.sqrt(math.max(0.0, 1.0 - nx * nx))
+    else if type == "Diamond" or type == "Triangle"
+        dy := ry * math.max(0.0, 1.0 - nx)
+    else if type == "Rectangle"
+        dy := ry
+    dy
+
+get_exact_bounds(cx, cy, rx, ry, theta, type, is_left) =>
+    float extreme_x = is_left ? 99999999.0 : -99999999.0
+    float extreme_y = cy
+    int n = 60
+    if type == "Rectangle" or type == "Diamond"
+        n := 4
+    else if type == "Triangle"
+        n := 3
+    else if type == "Pentagon"
+        n := 5
+    else if type == "Hexagon"
+        n := 6
+    else if type == "Octagon"
+        n := 8
+    
+    float offset = 0.0
+    if type == "Rectangle"
+        offset := math.pi/4
+    else if type == "Triangle" or type == "Diamond" or type == "Pentagon"
+        offset := -math.pi/2
+    else if type == "Octagon"
+        offset := -math.pi/8
+
+    if type == "Star"
+        for i = 0 to 9
+            r = i % 2 == 0 ? 1.0 : 0.45
+            a = 2 * math.pi * i / 10 - math.pi / 2
+            px = cx + (rx * r) * math.cos(a + theta)
+            py = cy + (ry * r) * math.sin(a + theta)
+            if is_left ? (px < extreme_x) : (px > extreme_x)
+                extreme_x := px
+                extreme_y := py
+    else
+        for i = 0 to n
+            a = 2 * math.pi * i / n + offset
+            px = cx + rx * math.cos(a + theta)
+            py = cy + ry * math.sin(a + theta)
+            if is_left ? (px < extreme_x) : (px > extreme_x)
+                extreme_x := px
+                extreme_y := py
+    [extreme_x, extreme_y]
+
+draw_elements(s_bar, s_p, e_bar, e_p, r_x1, r_y1, r_x2, r_y2, theta, active_slope, piv_bar, s_level) =>
+    isRect = shape_type == "Rectangle"
+    isTri = shape_type == "Triangle"
+    isDia = shape_type == "Diamond"
+
+    a45 = math.pi / 4
+    a135 = 3 * math.pi / 4
+    a225 = 5 * math.pi / 4
+    a315 = 7 * math.pi / 4
+    aTri0 = -math.pi / 2
+    aTri1 = math.pi / 6 * 5
+    aTri2 = math.pi / 6
+    aDia0 = -math.pi / 2
+    aDia1 = math.pi
+    aDia2 = math.pi / 2
+    aDia3 = 0.0
+
+    tl1x = isRect ? rot_x(s_bar, s_p, r_x1, r_y1, a135, theta) : isTri ? rot_x(s_bar, s_p, r_x1, r_y1, aTri1, theta) : isDia ? rot_x(s_bar, s_p, r_x1, r_y1, aDia0, theta) : rot_x(s_bar, s_p, r_x1, r_y1, a135, theta)
+    tl1y = isRect ? rot_y(s_bar, s_p, r_x1, r_y1, a135, theta) : isTri ? rot_y(s_bar, s_p, r_x1, r_y1, aTri1, theta) : isDia ? rot_y(s_bar, s_p, r_x1, r_y1, aDia0, theta) : rot_y(s_bar, s_p, r_x1, r_y1, a135, theta)
+    tr1x = isRect ? rot_x(s_bar, s_p, r_x1, r_y1, a45, theta) : isTri ? rot_x(s_bar, s_p, r_x1, r_y1, aTri0, theta) : isDia ? rot_x(s_bar, s_p, r_x1, r_y1, aDia3, theta) : rot_x(s_bar, s_p, r_x1, r_y1, a45, theta)
+    tr1y = isRect ? rot_y(s_bar, s_p, r_x1, r_y1, a45, theta) : isTri ? rot_y(s_bar, s_p, r_x1, r_y1, aTri0, theta) : isDia ? rot_y(s_bar, s_p, r_x1, r_y1, aDia3, theta) : rot_y(s_bar, s_p, r_x1, r_y1, a45, theta)
+    bl1x = isRect ? rot_x(s_bar, s_p, r_x1, r_y1, a225, theta) : isTri ? rot_x(s_bar, s_p, r_x1, r_y1, aTri2, theta) : isDia ? rot_x(s_bar, s_p, r_x1, r_y1, aDia1, theta) : rot_x(s_bar, s_p, r_x1, r_y1, a225, theta)
+    bl1y = isRect ? rot_y(s_bar, s_p, r_x1, r_y1, a225, theta) : isTri ? rot_y(s_bar, s_p, r_x1, r_y1, aTri2, theta) : isDia ? rot_y(s_bar, s_p, r_x1, r_y1, aDia1, theta) : rot_y(s_bar, s_p, r_x1, r_y1, a225, theta)
+    br1x = isRect ? rot_x(s_bar, s_p, r_x1, r_y1, a315, theta) : isTri ? rot_x(s_bar, s_p, r_x1, r_y1, aTri2, theta) : isDia ? rot_x(s_bar, s_p, r_x1, r_y1, aDia2, theta) : rot_x(s_bar, s_p, r_x1, r_y1, a315, theta)
+    br1y = isRect ? rot_y(s_bar, s_p, r_x1, r_y1, a315, theta) : isTri ? rot_y(s_bar, s_p, r_x1, r_y1, aTri2, theta) : isDia ? rot_y(s_bar, s_p, r_x1, r_y1, aDia2, theta) : rot_y(s_bar, s_p, r_x1, r_y1, a315, theta)
+
+    tl2x = isRect ? rot_x(e_bar, e_p, r_x2, r_y2, a135, theta) : isTri ? rot_x(e_bar, e_p, r_x2, r_y2, aTri1, theta) : isDia ? rot_x(e_bar, e_p, r_x2, r_y2, aDia0, theta) : rot_x(e_bar, e_p, r_x2, r_y2, a135, theta)
+    tl2y = isRect ? rot_y(e_bar, e_p, r_x2, r_y2, a135, theta) : isTri ? rot_y(e_bar, e_p, r_x2, r_y2, aTri1, theta) : isDia ? rot_y(e_bar, e_p, r_x2, r_y2, aDia0, theta) : rot_y(e_bar, e_p, r_x2, r_y2, a135, theta)
+    tr2x = isRect ? rot_x(e_bar, e_p, r_x2, r_y2, a45, theta) : isTri ? rot_x(e_bar, e_p, r_x2, r_y2, aTri0, theta) : isDia ? rot_x(e_bar, e_p, r_x2, r_y2, aDia3, theta) : rot_x(e_bar, e_p, r_x2, r_y2, a45, theta)
+    tr2y = isRect ? rot_y(e_bar, e_p, r_x2, r_y2, a45, theta) : isTri ? rot_y(e_bar, e_p, r_x2, r_y2, aTri0, theta) : isDia ? rot_y(e_bar, e_p, r_x2, r_y2, aDia3, theta) : rot_y(e_bar, e_p, r_x2, r_y2, a45, theta)
+    bl2x = isRect ? rot_x(e_bar, e_p, r_x2, r_y2, a225, theta) : isTri ? rot_x(e_bar, e_p, r_x2, r_y2, aTri2, theta) : isDia ? rot_x(e_bar, e_p, r_x2, r_y2, aDia1, theta) : rot_x(e_bar, e_p, r_x2, r_y2, a225, theta)
+    bl2y = isRect ? rot_y(e_bar, e_p, r_x2, r_y2, a225, theta) : isTri ? rot_y(e_bar, e_p, r_x2, r_y2, aTri2, theta) : isDia ? rot_y(e_bar, e_p, r_x2, r_y2, aDia1, theta) : rot_y(e_bar, e_p, r_x2, r_y2, a225, theta)
+    br2x = isRect ? rot_x(e_bar, e_p, r_x2, r_y2, a315, theta) : isTri ? rot_x(e_bar, e_p, r_x2, r_y2, aTri2, theta) : isDia ? rot_x(e_bar, e_p, r_x2, r_y2, aDia2, theta) : rot_x(e_bar, e_p, r_x2, r_y2, a315, theta)
+    br2y = isRect ? rot_y(e_bar, e_p, r_x2, r_y2, a315, theta) : isTri ? rot_y(e_bar, e_p, r_x2, r_y2, aTri2, theta) : isDia ? rot_y(e_bar, e_p, r_x2, r_y2, aDia2, theta) : rot_y(e_bar, e_p, r_x2, r_y2, a315, theta)
+
+    drawSingleShape(s_bar, s_p, r_x1, r_y1, theta, color.blue)
+    drawSingleShape(e_bar, e_p, r_x2, r_y2, theta, color.blue)
+
+    line.new(tl1x, tl1y, tl2x, tl2y, color=color.red, width=1)
+    line.new(tl1x, tl1y, bl2x, bl2y, color=color.orange, width=1)
+    line.new(tl1x, tl1y, tr2x, tr2y, color=color.red, width=1)
+    line.new(tl1x, tl1y, br2x, br2y, color=color.orange, width=1)
+    line.new(bl1x, bl1y, tl2x, tl2y, color=color.orange, width=1)
+    line.new(bl1x, bl1y, bl2x, bl2y, color=color.red, width=1)
+    line.new(bl1x, bl1y, tr2x, tr2y, color=color.orange, width=1)
+    line.new(bl1x, bl1y, br2x, br2y, color=color.red, width=1)
+    line.new(tr1x, tr1y, tl2x, tl2y, color=color.red, width=1)
+    line.new(tr1x, tr1y, bl2x, bl2y, color=color.orange, width=1)
+    line.new(tr1x, tr1y, tr2x, tr2y, color=color.red, width=1)
+    line.new(tr1x, tr1y, br2x, br2y, color=color.orange, width=1)
+    line.new(br1x, br1y, tl2x, tl2y, color=color.orange, width=1)
+    line.new(br1x, br1y, bl2x, bl2y, color=color.red, width=1)
+    line.new(br1x, br1y, tr2x, tr2y, color=color.orange, width=1)
+    line.new(br1x, br1y, br2x, br2y, color=color.red, width=1)
+
+    if show_star
+        line.new(tl1x, tl1y, br2x, br2y, color=color.yellow, width=2)
+        line.new(bl1x, bl1y, tr2x, tr2y, color=color.yellow, width=2)
+        line.new(tr1x, tr1y, bl2x, bl2y, color=color.fuchsia, width=2)
+        line.new(br1x, br1y, tl2x, tl2y, color=color.fuchsia, width=2)
+
+    [s_left_x, s_left_y] = get_exact_bounds(s_bar, s_p, r_x1, r_y1, theta, shape_type, true)
+    [s_right_x, s_right_y] = get_exact_bounds(s_bar, s_p, r_x1, r_y1, theta, shape_type, false)
+    [e_left_x, e_left_y] = get_exact_bounds(e_bar, e_p, r_x2, r_y2, theta, shape_type, true)
+    [e_right_x, e_right_y] = get_exact_bounds(e_bar, e_p, r_x2, r_y2, theta, shape_type, false)
+
+    int s_search_left = int(s_left_x) - int(s_bar)
+    int s_search_right = int(s_right_x) - int(s_bar)
+    int e_search_left = int(e_left_x) - int(e_bar)
+    int e_search_right = int(e_right_x) - int(e_bar)
+
+    int exact_enter_idx = na
+    for i = s_search_left to s_search_right
+        int current_idx = int(s_bar) + i
+        int bars_back = bar_index - current_idx
+        if bars_back >= 0 and bars_back <= 4999
+            if point_in_shape(s_bar, s_p, r_x1, r_y1, theta, shape_type, current_idx, close[bars_back]) and na(exact_enter_idx)
+                exact_enter_idx := current_idx
+    if na(exact_enter_idx)
+        exact_enter_idx := int(s_bar) + s_search_left
+
+    int last_inside_idx = na
+    for i = e_search_right to e_search_left
+        int current_idx = int(e_bar) + i
+        int bars_back = bar_index - current_idx
+        if bars_back >= 0 and bars_back <= 4999
+            if point_in_shape(e_bar, e_p, r_x2, r_y2, theta, shape_type, current_idx, close[bars_back]) and na(last_inside_idx)
+                last_inside_idx := current_idx
+    int exact_exit_idx = not na(last_inside_idx) ? last_inside_idx + 1 : int(e_bar) + e_search_right
+
+    float white_y1 = na
+    float white_y2 = na
+    int bb_enter = bar_index - exact_enter_idx
+    if bb_enter >= 0 and bb_enter <= 4999
+        white_y1 := 2 * (s_level + active_slope * (exact_enter_idx - piv_bar)) - close[bb_enter]
+    int valid_exit_idx = math.min(exact_exit_idx, bar_index)
+    int bb_exit = bar_index - valid_exit_idx
+    if bb_exit >= 0 and bb_exit <= 4999
+        white_y2 := 2 * (s_level + active_slope * (valid_exit_idx - piv_bar)) - close[bb_exit]
+    if not na(white_y1) and not na(white_y2)
+        line.new(exact_enter_idx, white_y1, valid_exit_idx, white_y2, color=color.white, width=2, extend=extend.right)
+
+    int rev_enter_idx = na
+    for i = s_search_left to s_search_right
+        int current_idx = int(s_bar) + i
+        int bars_back = bar_index - current_idx
+        if bars_back >= 0 and bars_back <= 4999
+            float dyn_lv = s_level + active_slope * (current_idx - piv_bar)
+            float sym_price = 2 * dyn_lv - close[bars_back]
+            if point_in_shape(s_bar, s_p, r_x1, r_y1, theta, shape_type, current_idx, sym_price) and na(rev_enter_idx)
+                rev_enter_idx := current_idx
+    if na(rev_enter_idx)
+        rev_enter_idx := int(s_bar) + s_search_left
+
+    int rev_last_inside_idx = na
+    for i = e_search_right to e_search_left
+        int current_idx = int(e_bar) + i
+        int bars_back = bar_index - current_idx
+        if bars_back >= 0 and bars_back <= 4999
+            float dyn_lv = s_level + active_slope * (current_idx - piv_bar)
+            float sym_price = 2 * dyn_lv - close[bars_back]
+            if point_in_shape(e_bar, e_p, r_x2, r_y2, theta, shape_type, current_idx, sym_price) and na(rev_last_inside_idx)
+                rev_last_inside_idx := current_idx
+    int rev_exit_idx = not na(rev_last_inside_idx) ? rev_last_inside_idx + 1 : int(e_bar) + e_search_right
+
+    float orange_y1 = na
+    float orange_y2 = na
+    int bb_rev_enter = bar_index - rev_enter_idx
+    if not na(rev_enter_idx) and bb_rev_enter >= 0 and bb_rev_enter <= 4999
+        orange_y1 := close[bb_rev_enter]
+    int valid_rev_exit = math.min(rev_exit_idx, bar_index)
+    int bb_rev_exit = bar_index - valid_rev_exit
+    if bb_rev_exit >= 0 and bb_rev_exit <= 4999
+        orange_y2 := close[bb_rev_exit]
+    if not na(orange_y1) and not na(orange_y2)
+        line.new(rev_enter_idx, orange_y1, valid_rev_exit, orange_y2, color=color.orange, width=2, extend=extend.right)
+
+if barstate.islast
+    active_slope_final = use_slope ? (auto_slope ? final_auto_slope : manual_slope) : 0.0
+    shape_angle = (use_slope and rotate_shapes) ? math.atan(active_slope_final) : 0.0
+
+    sym_pts = array.new<chart.point>()
+    loop_limit = math.min(bar_index, 4999)
+    for i = loop_limit to 0
+        idx = bar_index - i
+        past_close = close[i]
+        dyn_level = sym_level + (active_slope_final * (idx - pivot_bar))
+        sym_c = 2 * dyn_level - past_close
+        sym_pts.push(chart.point.from_index(idx, sym_c))
+    polyline.new(sym_pts, closed=false, line_color=color.new(color.purple, 0), line_width=2)
+
+    if not na(start_bar) and not na(end_bar)
+        bars_to_start = bar_index - start_bar
+        bars_to_end = bar_index - end_bar
+        loop_start_box = math.min(bars_to_start, 4999)
+        loop_end_box = math.max(bars_to_end, 0)
+
+        final_acc_total = 0.0
+        final_max_dist = 0.0
+
+        if loop_start_box >= loop_end_box
+            for i = loop_start_box to loop_end_box
+                idx = bar_index - i
+                past_close = close[i]
+                dyn_level = sym_level + (active_slope_final * (idx - pivot_bar))
+                sym_c = 2 * dyn_level - past_close
+                dist = math.abs(past_close - sym_c)
+                final_acc_total += dist
+                final_max_dist := math.max(final_max_dist, dist)
+
+        range_bars = math.max(1, end_bar - start_bar)
+        capped_width = math.min(range_bars, final_acc_total)
+        
+        rx1 = math.round(capped_width * width_factor_1)
+        ry1 = final_max_dist / 2 * height_factor_1
+        rx2 = math.round(capped_width * width_factor_2)
+        ry2 = final_max_dist / 2 * height_factor_2
+
+        center_b = math.round((start_bar + end_bar) / 2)
+        center_p = (start_price + end_price) / 2
+        rx_c = (rx1 + rx2) / 2
+        ry_c = (ry1 + ry2) / 2
+        drawSingleShape(center_b, center_p, rx_c, ry_c, shape_angle, color.fuchsia)
+
+        draw_elements(start_bar, start_price, end_bar, end_price, rx1, ry1, rx2, ry2, shape_angle, active_slope_final, pivot_bar, sym_level)
+
+        if mirror_shapes
+            sym_start_price = 2 * (sym_level + active_slope_final * (start_bar - pivot_bar)) - start_price
+            sym_end_price = 2 * (sym_level + active_slope_final * (end_bar - pivot_bar)) - end_price
+            
+            sym_center_price = (sym_start_price + sym_end_price) / 2
+            drawSingleShape(center_b, sym_center_price, rx_c, ry_c, -shape_angle, color.fuchsia)
+            
+            draw_elements(start_bar, sym_start_price, end_bar, sym_end_price, rx1, ry1, rx2, ry2, -shape_angle, active_slope_final, pivot_bar, sym_level)
+
+        if sym_peri
+            pts_top1 = array.new<chart.point>()
+            pts_bot1 = array.new<chart.point>()
+            limit1 = math.round(rx1)
+            for i = -limit1 to limit1
+                idx = int(start_bar) + i
+                bb = bar_index - idx
+                if bb >= 0 and bb <= 4999
+                    c_val = close[bb]
+                    dy = get_shape_dy(i, rx1, ry1, shape_type)
+                    y_top = start_price + dy
+                    y_bot = start_price - dy
+                    pts_top1.push(chart.point.from_index(idx, 2 * y_top - c_val))
+                    pts_bot1.push(chart.point.from_index(idx, 2 * y_bot - c_val))
+            polyline.new(pts_top1, closed=false, line_color=color.green, line_width=1)
+            polyline.new(pts_bot1, closed=false, line_color=color.red, line_width=1)
+            
+            pts_top2 = array.new<chart.point>()
+            pts_bot2 = array.new<chart.point>()
+            limit2 = math.round(rx2)
+            for i = -limit2 to limit2
+                idx = int(end_bar) + i
+                bb = bar_index - idx
+                if bb >= 0 and bb <= 4999
+                    c_val = close[bb]
+                    dy = get_shape_dy(i, rx2, ry2, shape_type)
+                    y_top = end_price + dy
+                    y_bot = end_price - dy
+                    pts_top2.push(chart.point.from_index(idx, 2 * y_top - c_val))
+                    pts_bot2.push(chart.point.from_index(idx, 2 * y_bot - c_val))
+            polyline.new(pts_top2, closed=false, line_color=color.green, line_width=1)
+            polyline.new(pts_bot2, closed=false, line_color=color.red, line_width=1)

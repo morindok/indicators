@@ -1,0 +1,48 @@
+//@version=5
+indicator("Detrended Price + Detrended MAs", shorttitle="Detrend MAs", overlay=false, max_bars_back=5000)
+
+// User-selected range
+startTime = input.time(timestamp("2024-01-01 00:00 +0000"), "Start Time", confirm=true)
+endTime   = input.time(timestamp("2024-01-10 00:00 +0000"), "End Time", confirm=true)
+
+// Normalize selected times
+rangeStart = math.min(startTime, endTime)
+rangeEnd   = math.max(startTime, endTime)
+
+// Convert time span to bar count
+tfSec = timeframe.in_seconds()
+rangeSec = math.max(1, int((rangeEnd - rangeStart) / 1000))
+baseLenRaw = tfSec > 0 ? rangeSec / tfSec : na
+baseLen = math.max(1, int(math.round(baseLenRaw)))
+
+// Lengths
+len1 = baseLen
+len2 = math.max(1, int(math.round(baseLen * 1.618)))
+len3 = math.max(1, int(math.round(baseLen * 0.618)))
+
+// Main MAs on price
+ma1 = ta.sma(close, len1)
+ma2 = ta.sma(close, len2)
+ma3 = ta.sma(close, len3)
+
+// Detrended price series
+detr1 = close - ma1
+detr2 = close - ma2
+detr3 = close - ma3
+
+// MAs of detrended price series
+detrMa1 = ta.sma(detr1, len1)
+detrMa2 = ta.sma(detr2, len2)
+detrMa3 = ta.sma(detr3, len3)
+
+// Plot detrended series
+plot(detr1, "Detrended L", color=color.new(color.blue, 0), linewidth=1)
+plot(detr2, "Detrended 1.618L", color=color.new(color.orange, 0), linewidth=1)
+plot(detr3, "Detrended 0.618L", color=color.new(color.green, 0), linewidth=1)
+
+// Plot moving averages of detrended series
+plot(detrMa1, "MA of Detrended L", color=color.new(color.blue, 70), linewidth=3)
+plot(detrMa2, "MA of Detrended 1.618L", color=color.new(color.orange, 70), linewidth=3)
+plot(detrMa3, "MA of Detrended 0.618L", color=color.new(color.green, 70), linewidth=3)
+
+hline(0, "Zero Line", color=color.gray)

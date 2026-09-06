@@ -1,0 +1,169 @@
+//@version=6
+indicator("Fractals + Cross-Level Mirror Connections (Last 2)", overlay=true, max_lines_count=500, max_labels_count=500)
+n = input.int(2, title="Periods", minval=2)
+
+//  ‰ŸÌ„«  ‰ﬁÿÂ  ﬁ«—‰ «Ê· (P1 - »‰›‘)
+mirrorLevel1 = input.price(0, title="P1 Mirror Level (Purple)", confirm=true)
+selectedTime1 = input.time(0, title="P1 Reference Time", confirm=true)
+
+//  ‰ŸÌ„«  ‰ﬁÿÂ  ﬁ«—‰ œÊ„ (P2 - ¬»Ì)
+mirrorLevel2 = input.price(0, title="P2 Mirror Level (Blue)", confirm=true)
+selectedTime2 = input.time(0, title="P2 Reference Time", confirm=true)
+
+// ?. „Õ«”»Â ﬁÌ„ ùÂ«Ì „ ﬁ«—‰
+mHigh1 = float(2.0 * mirrorLevel1 - low)
+mLow1  = float(2.0 * mirrorLevel1 - high)
+mHigh2 = float(2.0 * mirrorLevel2 - low)
+mLow2  = float(2.0 * mirrorLevel2 - high)
+
+plotcandle(2.0 * mirrorLevel1 - open, mHigh1, mLow1, 2.0 * mirrorLevel1 - close, title="Mirror P1", color=color.new(color.purple, 60), wickcolor=color.new(color.purple, 60), bordercolor=color.new(color.purple, 60))
+plotcandle(2.0 * mirrorLevel2 - open, mHigh2, mLow2, 2.0 * mirrorLevel2 - close, title="Mirror P2", color=color.new(color.blue, 60), wickcolor=color.new(color.blue, 60), bordercolor=color.new(color.blue, 60))
+
+// ?. „Õ«”»«  Å«ÌÂ ›—«ò «·ùÂ«
+bool u_dn = true, bool u_u0 = true, bool u_u1 = true, bool u_u2 = true, bool u_u3 = true, bool u_u4 = true
+bool d_dn = true, bool d_u0 = true, bool d_u1 = true, bool d_u2 = true, bool d_u3 = true, bool d_u4 = true
+
+for i = 1 to n
+    u_dn := u_dn and (high[n-i] < high[n])
+    u_u0 := u_u0 and (high[n+i] < high[n])
+    u_u1 := u_u1 and (high[n+1] <= high[n] and high[n+i+1] < high[n])
+    u_u2 := u_u2 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i+2] < high[n])
+    u_u3 := u_u3 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i+3] < high[n])
+    u_u4 := u_u4 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i+4] < high[n])
+    d_dn := d_dn and (low[n-i] > low[n])
+    d_u0 := d_u0 and (low[n+i] > low[n])
+    d_u1 := d_u1 and (low[n+1] >= low[n] and low[n+i+1] > low[n])
+    d_u2 := d_u2 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i+2] > low[n])
+    d_u3 := d_u3 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i+3] > low[n])
+    d_u4 := d_u4 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i+4] > low[n])
+
+flagUp = u_u0 or u_u1 or u_u2 or u_u3 or u_u4
+flagDn = d_u0 or d_u1 or d_u2 or d_u3 or d_u4
+
+upFractal = u_dn and flagUp
+downFractal = d_dn and flagDn
+
+// “„«‰ùÂ«Ì „—Ã⁄
+var int refBarIndex1 = na
+var int refBarIndex2 = na
+if time <= selectedTime1
+    refBarIndex1 := bar_index
+if time <= selectedTime2
+    refBarIndex2 := bar_index
+
+// „œÌ—Ì  ¬—«ÌÂùÂ« Ê ·Ì»·ùÂ«Ì ê–‘ Â (Õœ«òÀ— ? ⁄œœ)
+var upFracIdx1 = array.new_int(0)
+var dnFracIdx1 = array.new_int(0)
+var upLbl1     = array.new_label(0)
+var dnLbl1     = array.new_label(0)
+
+if upFractal and time[n] <= selectedTime1
+    array.push(upFracIdx1, int(bar_index - n))
+    lbl1 = label.new(bar_index - n, mHigh1[n], style=label.style_circle, color=color.yellow, size=size.tiny)
+    array.push(upLbl1, lbl1)
+    if array.size(upFracIdx1) > 2
+        array.shift(upFracIdx1)
+        label.delete(array.shift(upLbl1))
+
+if downFractal and time[n] <= selectedTime1
+    array.push(dnFracIdx1, int(bar_index - n))
+    lbl2 = label.new(bar_index - n, mLow1[n], style=label.style_circle, color=color.green, size=size.tiny)
+    array.push(dnLbl1, lbl2)
+    if array.size(dnFracIdx1) > 2
+        array.shift(dnFracIdx1)
+        label.delete(array.shift(dnLbl1))
+
+var upFracIdx2 = array.new_int(0)
+var dnFracIdx2 = array.new_int(0)
+var upLbl2     = array.new_label(0)
+var dnLbl2     = array.new_label(0)
+
+if upFractal and time[n] <= selectedTime2
+    array.push(upFracIdx2, int(bar_index - n))
+    lbl3 = label.new(bar_index - n, mHigh2[n], style=label.style_circle, color=color.orange, size=size.tiny)
+    array.push(upLbl2, lbl3)
+    if array.size(upFracIdx2) > 2
+        array.shift(upFracIdx2)
+        label.delete(array.shift(upLbl2))
+
+if downFractal and time[n] <= selectedTime2
+    array.push(dnFracIdx2, int(bar_index - n))
+    lbl4 = label.new(bar_index - n, mLow2[n], style=label.style_circle, color=color.red, size=size.tiny)
+    array.push(dnLbl2, lbl4)
+    if array.size(dnFracIdx2) > 2
+        array.shift(dnFracIdx2)
+        label.delete(array.shift(dnLbl2))
+
+
+// ?. »——”Ì ‰ﬁ«ÿ „ ﬁ«—‰ œ— ¬Ì‰œÂ Ê —”„ ŒÿÊÿ « ’«·  ﬁ«ÿ⁄Ì »Ì‰ ”ÿÊÕ (P1 <-> P2)
+bool drawFuture_mLow1 = false
+bool drawFuture_mHigh1 = false
+bool drawFuture_mLow2 = false
+bool drawFuture_mHigh2 = false
+
+var allLines = array.new_line()
+
+// --- « ’«· ê–‘ Â P1 »Â ¬Ì‰œÂ P2 ---
+if not na(refBarIndex1) and bar_index > refBarIndex1
+    pastIndex1 = 2 * refBarIndex1 - bar_index
+    dist1 = bar_index - pastIndex1
+    if array.indexof(upFracIdx1, pastIndex1) >= 0
+        past_mHigh1 = 2.0 * mirrorLevel1 - low[dist1]
+        l1 = line.new(chart.point.from_index(pastIndex1, past_mHigh1), chart.point.from_index(bar_index, mLow2), color=color.white, width=2)
+        array.push(allLines, l1)
+        drawFuture_mLow2 := true
+    if array.indexof(dnFracIdx1, pastIndex1) >= 0
+        past_mLow1 = 2.0 * mirrorLevel1 - high[dist1]
+        l2 = line.new(chart.point.from_index(pastIndex1, past_mLow1), chart.point.from_index(bar_index, mHigh2), color=color.white, width=2)
+        array.push(allLines, l2)
+        drawFuture_mHigh2 := true
+
+// --- « ’«· ê–‘ Â P2 »Â ¬Ì‰œÂ P1 ---
+if not na(refBarIndex2) and bar_index > refBarIndex2
+    pastIndex2 = 2 * refBarIndex2 - bar_index
+    dist2 = bar_index - pastIndex2
+    if array.indexof(upFracIdx2, pastIndex2) >= 0
+        past_mHigh2 = 2.0 * mirrorLevel2 - low[dist2]
+        l3 = line.new(chart.point.from_index(pastIndex2, past_mHigh2), chart.point.from_index(bar_index, mLow1), color=color.white, width=2)
+        array.push(allLines, l3)
+        drawFuture_mLow1 := true
+    if array.indexof(dnFracIdx2, pastIndex2) >= 0
+        past_mLow2 = 2.0 * mirrorLevel2 - high[dist2]
+        l4 = line.new(chart.point.from_index(pastIndex2, past_mLow2), chart.point.from_index(bar_index, mHigh1), color=color.white, width=2)
+        array.push(allLines, l4)
+        drawFuture_mHigh1 := true
+
+// ?. —”„ œ«Ì—ÂùÂ«Ì ‰ﬁ«ÿ „ ’· ‘œÂ œ— ¬Ì‰œÂ
+plotshape(drawFuture_mLow1 ? mLow1 : na, style=shape.circle, location=location.absolute, color=color.orange, size=size.tiny)
+plotshape(drawFuture_mHigh1 ? mHigh1 : na, style=shape.circle, location=location.absolute, color=color.red, size=size.tiny)
+plotshape(drawFuture_mLow2 ? mLow2 : na, style=shape.circle, location=location.absolute, color=color.yellow, size=size.tiny)
+plotshape(drawFuture_mHigh2 ? mHigh2 : na, style=shape.circle, location=location.absolute, color=color.green, size=size.tiny)
+
+// ?. Ì«› ‰ »«·« —Ì‰  ﬁ«ÿ⁄ Ê —”„ Œÿ „„ œ
+if barstate.islast and array.size(allLines) > 1
+    float highestY = na
+    float highestX = na
+    int numLines = array.size(allLines)
+    for i = 0 to numLines - 2
+        for j = i + 1 to numLines - 1
+            line L1 = array.get(allLines, i)
+            line L2 = array.get(allLines, j)
+            float x1 = line.get_x1(L1)
+            float y1 = line.get_y1(L1)
+            float x2 = line.get_x2(L1)
+            float y2 = line.get_y2(L1)
+            float x3 = line.get_x1(L2)
+            float y3 = line.get_y1(L2)
+            float x4 = line.get_x2(L2)
+            float y4 = line.get_y2(L2)
+            float den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+            if den != 0
+                float px = ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / den
+                float py = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / den
+                bool isInsideX = px >= math.max(math.min(x1, x2), math.min(x3, x4)) and px <= math.min(math.max(x1, x2), math.max(x3, x4))
+                if isInsideX
+                    if na(highestY) or py > highestY
+                        highestY := py
+                        highestX := px
+    if not na(highestY)
+        line.new(chart.point.from_index(math.round(highestX), highestY), chart.point.from_index(bar_index, highestY), color=color.fuchsia, width=2, extend=extend.right)

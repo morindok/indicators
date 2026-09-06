@@ -1,0 +1,250 @@
+//@version=5
+indicator("Symmetric Candles + Both Boxes (Fixed) {Morindok}", overlay=true, max_lines_count=500, max_boxes_count=50)
+
+t1 = input.time(0, "ÒãÇä ÔÑæÚ ÈÇÒå", confirm=true)
+t2 = input.time(0, "ÒãÇä ÇíÇä ÈÇÒå", confirm=true)
+
+p1 = input.price(0, "ÓØÍ Çæá (ÈÇáÇ/Çííä)", confirm=true)
+p2 = input.price(0, "ÓØÍ Ïæã (ÈÇáÇ/Çííä)", confirm=true)
+
+adj_opp = input.bool(true, "ÈÑ ÇÓÇÓ ÝÇÕáå ãÏá ? ÈÇ ãÏá ? ãÊÖÇÏ")
+adj_between = input.bool(false, "ÝÇÕáå 2 ãÏá äÓÈÊ Èå åã (ãÓÊÞá - ˜á ÇÑÊ)")
+
+reflect(src, pivot) => 2 * pivot - src
+
+high_lvl = math.max(p1, p2)
+low_lvl  = math.min(p1, p2)
+
+in_range = time >= t1 and time <= t2
+ended_range = in_range[1] and not in_range
+
+// ==========================================
+// ÂÑÇíååÇ ÈÑÇí ÐÎíÑå ÏÇÏååÇí ÎÇã ÈÇÒå
+// ==========================================
+var int[]   a_idx = array.new_int()
+var float[] a_o   = array.new_float()
+var float[] a_h   = array.new_float()
+var float[] a_l   = array.new_float()
+var float[] a_c   = array.new_float()
+
+var float lowest_in_range = na
+var float highest_in_range = na
+
+// ÑÏíÇÈí ÓÞÝ æ ˜Ý ˜äÏáåÇí ÇÕáí ÏÑ ÈÇÒå (ÈÑÇí ÍÇáÊ ãÓÊÞá)
+var float highest_orig = na
+var float lowest_orig = na
+var float mid_lvl_indep = na
+
+if in_range
+    array.push(a_idx, bar_index)
+    array.push(a_o, open)
+    array.push(a_h, high)
+    array.push(a_l, low)
+    array.push(a_c, close)
+    
+    // ãÍÇÓÈå ÈÑÇí ÈÇ˜ÓåÇ
+    mid_initial = (high_lvl + low_lvl) / 2.0
+    m1_H_init = reflect(low, mid_initial) 
+    m1_L_init = reflect(high, mid_initial)
+    m1_dL_init = reflect(m1_H_init, low_lvl)
+    m1_uH_init = reflect(m1_L_init, high_lvl)
+    
+    lowest_in_range  := na(lowest_in_range) ? m1_dL_init : math.min(lowest_in_range, m1_dL_init)
+    highest_in_range := na(highest_in_range) ? m1_uH_init : math.max(highest_in_range, m1_uH_init)
+    
+    // ãÍÇÓÈå ÓØÍ æÓØ ÈÑÇí ÍÇáÊ ãÓÊÞá (ÈÑ ÇÓÇÓ ÓÞÝ æ ˜Ý ˜äÏáåÇí ÇÕáí)
+    highest_orig := na(highest_orig) ? high : math.max(highest_orig, high)
+    lowest_orig := na(lowest_orig) ? low : math.min(lowest_orig, low)
+    mid_lvl_indep := (highest_orig + lowest_orig) / 2.0
+
+calc_m2(m1_val, m2_raw, m2_opp_raw) =>
+    adj_opp ? m1_val + (m1_val - m2_opp_raw) : m2_raw
+
+draw_candle(idx, o, h, l, c, col) =>
+    line.new(x1=idx, y1=h, x2=idx, y2=l, color=col, width=1)
+    line.new(x1=idx, y1=o, x2=idx, y2=c, color=col, width=4)
+
+// ==========================================
+// ÈÎÔ ãÓÊÞá: ÝÇÕáå 2 ãÏá äÓÈÊ Èå åã ÏÑ ÓÑÇÓÑ ÇÑÊ
+// ÓØÍ æÓØ ÇÒ ÈÇÒå ÓÞÝ æ ˜Ý ˜äÏáåÇí ÇÕáí ãÍÇÓÈå ãíÔæÏ
+// ==========================================
+mid_lvl = mid_lvl_indep
+
+// ãÏá Çæá: ÇÈÊÏÇ æÓØ¡ ÓÓ ÈÇáÇ æ Çííä
+m1_O = reflect(open, mid_lvl)
+m1_H = reflect(low, mid_lvl)
+m1_L = reflect(high, mid_lvl)
+m1_C = reflect(close, mid_lvl)
+
+m1_uO = reflect(m1_O, high_lvl)
+m1_uH = reflect(m1_L, high_lvl)
+m1_uL = reflect(m1_H, high_lvl)
+m1_uC = reflect(m1_C, high_lvl)
+
+m1_dO = reflect(m1_O, low_lvl)
+m1_dH = reflect(m1_L, low_lvl)
+m1_dL = reflect(m1_H, low_lvl)
+m1_dC = reflect(m1_C, low_lvl)
+
+// ãÏá Ïæã (ÎÇã): ÇÈÊÏÇ ÈÇáÇ æ Çííä¡ ÓÓ æÓØ
+m2_uO_tmp = reflect(open, high_lvl)
+m2_uH_tmp = reflect(low, high_lvl)
+m2_uL_tmp = reflect(high, high_lvl)
+m2_uC_tmp = reflect(close, high_lvl)
+
+m2_dO_tmp = reflect(open, low_lvl)
+m2_dH_tmp = reflect(low, low_lvl)
+m2_dL_tmp = reflect(high, low_lvl)
+m2_dC_tmp = reflect(close, low_lvl)
+
+m2_uO_raw = reflect(m2_uO_tmp, mid_lvl)
+m2_uH_raw = reflect(m2_uL_tmp, mid_lvl)
+m2_uL_raw = reflect(m2_uH_tmp, mid_lvl)
+m2_uC_raw = reflect(m2_uC_tmp, mid_lvl)
+
+m2_dO_raw = reflect(m2_dO_tmp, mid_lvl)
+m2_dH_raw = reflect(m2_dL_tmp, mid_lvl)
+m2_dL_raw = reflect(m2_dH_tmp, mid_lvl)
+m2_dC_raw = reflect(m2_dC_tmp, mid_lvl)
+
+// ÇÚãÇá ÔÑØ ÝÇÕáå (adj_between)
+m2_uO = adj_between ? m1_uO + (m1_uO - m2_uO_raw) : m2_uO_raw
+m2_uH = adj_between ? m1_uH + (m1_uH - m2_uH_raw) : m2_uH_raw
+m2_uL = adj_between ? m1_uL + (m1_uL - m2_uL_raw) : m2_uL_raw
+m2_uC = adj_between ? m1_uC + (m1_uC - m2_uC_raw) : m2_uC_raw
+
+m2_dO = adj_between ? m1_dO + (m1_dO - m2_dO_raw) : m2_dO_raw
+m2_dH = adj_between ? m1_dH + (m1_dH - m2_dH_raw) : m2_dH_raw
+m2_dL = adj_between ? m1_dL + (m1_dL - m2_dL_raw) : m2_dL_raw
+m2_dC = adj_between ? m1_dC + (m1_dC - m2_dC_raw) : m2_dC_raw
+
+// ÑÓã ˜äÏáåÇí ãÓÊÞá ÏÑ ÓÑÇÓÑ ÇÑÊ (ÝÞØ ÏÑ ÕæÑÊ ÝÚÇá ÈæÏä adj_between)
+c_indep_m1_U = adj_between ? color.new(color.blue, 60) : na
+c_indep_m1_D = adj_between ? color.new(color.red, 60) : na
+c_indep_m2_U = adj_between ? color.new(color.aqua, 60) : na
+c_indep_m2_D = adj_between ? color.new(color.orange, 60) : na
+
+plotcandle(m1_uO, m1_uH, m1_uL, m1_uC, "Indep M1 Up", color=c_indep_m1_U, wickcolor=c_indep_m1_U, bordercolor=c_indep_m1_U)
+plotcandle(m1_dO, m1_dH, m1_dL, m1_dC, "Indep M1 Dn", color=c_indep_m1_D, wickcolor=c_indep_m1_D, bordercolor=c_indep_m1_D)
+plotcandle(m2_uO, m2_uH, m2_uL, m2_uC, "Indep M2 Up", color=c_indep_m2_U, wickcolor=c_indep_m2_U, bordercolor=c_indep_m2_U)
+plotcandle(m2_dO, m2_dH, m2_dL, m2_dC, "Indep M2 Dn", color=c_indep_m2_D, wickcolor=c_indep_m2_D, bordercolor=c_indep_m2_D)
+
+// ==========================================
+// ÇÌÑÇí ÑÓã æ ãÍÇÓÈÇÊ Ó ÇÒ ÇíÇä ÈÇÒå (˜äÏáåÇí ÇÕáí æ ÈÇ˜ÓåÇ)
+// ==========================================
+if ended_range
+    final_mid_up = lowest_in_range
+    final_mid_dn = highest_in_range
+    
+    top_m1_top = 0.0, top_m1_bot = 0.0
+    top_m2_top = 0.0, top_m2_bot = 0.0
+    bot_m1_top = 0.0, bot_m1_bot = 0.0
+    bot_m2_top = 0.0, bot_m2_bot = 0.0
+    
+    c_m1_U = color.new(color.blue, 20)
+    c_m1_D = color.new(color.red, 20)
+    c_m2_U = color.new(color.aqua, 20)
+    c_m2_D = color.new(color.orange, 20)
+
+    size = array.size(a_idx)
+    if size > 0
+        for i = 0 to size - 1
+            idx = array.get(a_idx, i)
+            o_v = array.get(a_o, i)
+            h_v = array.get(a_h, i)
+            l_v = array.get(a_l, i)
+            c_v = array.get(a_c, i)
+            
+            // --- ÓíÓÊã ÈÇáÇ (M1 & M2) ÇÕáí ---
+            m1_O_up = reflect(o_v, final_mid_up)
+            m1_H_up = reflect(l_v, final_mid_up)
+            m1_L_up = reflect(h_v, final_mid_up)
+            m1_C_up = reflect(c_v, final_mid_up)
+            
+            m1_uO_main = reflect(m1_O_up, high_lvl)
+            m1_uH_main = reflect(m1_L_up, high_lvl)
+            m1_uL_main = reflect(m1_H_up, high_lvl)
+            m1_uC_main = reflect(m1_C_up, high_lvl)
+            
+            m2_uO_tmp_main = reflect(o_v, high_lvl)
+            m2_uH_tmp_main = reflect(l_v, high_lvl)
+            m2_uL_tmp_main = reflect(h_v, high_lvl)
+            m2_uC_tmp_main = reflect(c_v, high_lvl)
+            
+            m2_dO_tmp_main = reflect(o_v, low_lvl)
+            m2_dH_tmp_main = reflect(l_v, low_lvl)
+            m2_dL_tmp_main = reflect(h_v, low_lvl)
+            m2_dC_tmp_main = reflect(c_v, low_lvl)
+            
+            m2_uO_raw_up = reflect(m2_uO_tmp_main, final_mid_up)
+            m2_uH_raw_up = reflect(m2_uL_tmp_main, final_mid_up)
+            m2_uL_raw_up = reflect(m2_uH_tmp_main, final_mid_up)
+            m2_uC_raw_up = reflect(m2_uC_tmp_main, final_mid_up)
+            
+            m2_dO_raw_up = reflect(m2_dO_tmp_main, final_mid_up)
+            m2_dH_raw_up = reflect(m2_dL_tmp_main, final_mid_up)
+            m2_dL_raw_up = reflect(m2_dH_tmp_main, final_mid_up)
+            m2_dC_raw_up = reflect(m2_dC_tmp_main, final_mid_up)
+            
+            m2_uO_main = calc_m2(m1_uO_main, m2_uO_raw_up, m2_dO_raw_up)
+            m2_uH_main = calc_m2(m1_uH_main, m2_uH_raw_up, m2_dH_raw_up)
+            m2_uL_main = calc_m2(m1_uL_main, m2_uL_raw_up, m2_dL_raw_up)
+            m2_uC_main = calc_m2(m1_uC_main, m2_uC_raw_up, m2_dC_raw_up)
+            
+            draw_candle(idx, m1_uO_main, m1_uH_main, m1_uL_main, m1_uC_main, c_m1_U)
+            draw_candle(idx, m2_uO_main, m2_uH_main, m2_uL_main, m2_uC_main, c_m2_U)
+            
+            top_m1_top := i == 0 ? m1_uH_main : math.max(top_m1_top, m1_uH_main)
+            top_m1_bot := i == 0 ? m1_uL_main : math.min(top_m1_bot, m1_uL_main)
+            top_m2_top := i == 0 ? m2_uH_main : math.max(top_m2_top, m2_uH_main)
+            top_m2_bot := i == 0 ? m2_uL_main : math.min(top_m2_bot, m2_uL_main)
+            
+            // --- ÓíÓÊã Çííä (M1 & M2) ÇÕáí ---
+            m1_O_dn = reflect(o_v, final_mid_dn)
+            m1_H_dn = reflect(l_v, final_mid_dn)
+            m1_L_dn = reflect(h_v, final_mid_dn)
+            m1_C_dn = reflect(c_v, final_mid_dn)
+            
+            m1_dO_main = reflect(m1_O_dn, low_lvl)
+            m1_dH_main = reflect(m1_L_dn, low_lvl)
+            m1_dL_main = reflect(m1_H_dn, low_lvl)
+            m1_dC_main = reflect(m1_C_dn, low_lvl)
+            
+            m2_dO_raw_dn = reflect(m2_dO_tmp_main, final_mid_dn)
+            m2_dH_raw_dn = reflect(m2_dL_tmp_main, final_mid_dn)
+            m2_dL_raw_dn = reflect(m2_dH_tmp_main, final_mid_dn)
+            m2_dC_raw_dn = reflect(m2_dC_tmp_main, final_mid_dn)
+            
+            m2_uO_raw_dn = reflect(m2_uO_tmp_main, final_mid_dn)
+            m2_uH_raw_dn = reflect(m2_uL_tmp_main, final_mid_dn)
+            m2_uL_raw_dn = reflect(m2_uH_tmp_main, final_mid_dn)
+            m2_uC_raw_dn = reflect(m2_uC_tmp_main, final_mid_dn)
+            
+            m2_dO_main = calc_m2(m1_dO_main, m2_dO_raw_dn, m2_uO_raw_dn)
+            m2_dH_main = calc_m2(m1_dH_main, m2_dH_raw_dn, m2_uH_raw_dn)
+            m2_dL_main = calc_m2(m1_dL_main, m2_dL_raw_dn, m2_uL_raw_dn)
+            m2_dC_main = calc_m2(m1_dC_main, m2_dC_raw_dn, m2_uC_raw_dn)
+            
+            draw_candle(idx, m1_dO_main, m1_dH_main, m1_dL_main, m1_dC_main, c_m1_D)
+            draw_candle(idx, m2_dO_main, m2_dH_main, m2_dL_main, m2_dC_main, c_m2_D)
+            
+            bot_m1_top := i == 0 ? m1_dH_main : math.max(bot_m1_top, m1_dH_main)
+            bot_m1_bot := i == 0 ? m1_dL_main : math.min(bot_m1_bot, m1_dL_main)
+            bot_m2_top := i == 0 ? m2_dH_main : math.max(bot_m2_top, m2_dH_main)
+            bot_m2_bot := i == 0 ? m2_dL_main : math.min(bot_m2_bot, m2_dL_main)
+
+    // ÊÚííä ãÏáåÇí ÈÑäÏå æ ãÞÇÏíÑ äåÇíí ÈÇ˜ÓåÇ
+    is_top_m1_highest = top_m1_top > top_m2_top
+    final_top_box_top = is_top_m1_highest ? top_m1_top : top_m2_top
+    final_top_box_bot = is_top_m1_highest ? top_m1_bot : top_m2_bot
+
+    is_bot_m1_lowest = bot_m1_bot < bot_m2_bot
+    final_bot_box_top = is_bot_m1_lowest ? bot_m1_top : bot_m2_top
+    final_bot_box_bot = is_bot_m1_lowest ? bot_m1_bot : bot_m2_bot
+
+    // ÑÓã ÈÇ˜ÓåÇ æ ÞØÑåÇ Èå ÕæÑÊ äåÇíí
+    box.new(left=t1, top=final_top_box_top, right=t2, bottom=final_top_box_bot, xloc=xloc.bar_time, border_color=color.green, border_width=2, bgcolor=color.new(color.green, 85))
+    line.new(x1=t1, y1=final_top_box_top, x2=t2, y2=final_top_box_bot, xloc=xloc.bar_time, color=color.green, width=2, extend=extend.right)
+    
+    box.new(left=t1, top=final_bot_box_top, right=t2, bottom=final_bot_box_bot, xloc=xloc.bar_time, border_color=color.red, border_width=2, bgcolor=color.new(color.red, 85))
+    line.new(x1=t1, y1=final_bot_box_bot, x2=t2, y2=final_bot_box_top, xloc=xloc.bar_time, color=color.red, width=2, extend=extend.right)

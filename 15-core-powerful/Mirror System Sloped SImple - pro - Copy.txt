@@ -1,0 +1,176 @@
+//@version=5
+indicator("Price Level Symmetry with Slope Multiplier", overlay=true, max_lines_count=500)
+
+targetTF = input.timeframe("", "Timeframe", group="General Settings")
+
+level1 = input.price(100, "Level 1 (Price at Time 1)", confirm=true, group="General Settings")
+level2 = input.price(200, "Level 2 (Price at Time 2)", confirm=true, group="General Settings")
+midLevel = input.price(150, "Mid Level", confirm=true, group="General Settings")
+useDistance = input.bool(true, "Use Mid Level Distance", group="General Settings")
+useBoundarySymmetry = input.bool(false, "Use Boundary Symmetry", group="General Settings")
+showMA = input.bool(false, "Show Moving Average on Mid Level", group="General Settings")
+maType = input.string("SMA", "MA Type", options=["SMA", "EMA", "WMA"], group="General Settings")
+useAngle = input.bool(true, "Use Dynamic Slope (Box Diagonal)", group="General Settings")
+midSlopeRatio = input.float(0.5, "Mid Slope Ratio (relative to Upper Slope)", step=0.1, group="General Settings")
+skipWeekend = input.bool(false, "Skip Weekend Gaps (For Gold/Forex)", group="General Settings")
+invertAngles = input.bool(false, "Invert Angles", group="General Settings")
+useSlopeMultiplier = input.bool(true, "Use Slope Multiplier", group="General Settings")
+slopeMultiplier = input.float(1.618, "Slope Multiplier", minval=0.01, step=0.01, group="General Settings")
+
+anchorTime1 = input.time(timestamp("2024-01-01 00:00"), "Anchor Time 1", confirm=true, group="Set 1")
+enableSet2 = input.bool(true, "Enable Set 2", group="Set 2")
+anchorTime2 = input.time(timestamp("2024-02-01 00:00"), "Anchor Time 2", confirm=true, group="Set 2")
+
+req_o = request.security(syminfo.tickerid, targetTF, open)
+req_h = request.security(syminfo.tickerid, targetTF, high)
+req_l = request.security(syminfo.tickerid, targetTF, low)
+req_c = request.security(syminfo.tickerid, targetTF, close)
+req_t = request.security(syminfo.tickerid, targetTF, time)
+
+// ÇÕáÇÍ ãÍÇÓÈå ÒãÇä ÈÑÇí ÊÈÏíá ÔÏä Èå simple int
+req_tf_seconds = timeframe.in_seconds(targetTF)
+
+week_ms = 604800000.0
+weekend_ms_box = skipWeekend ? (math.floor((anchorTime2 + 345600000) / week_ms) - math.floor((anchorTime1 + 345600000) / week_ms)) * 172800000 : 0.0
+dT = ((anchorTime2 - anchorTime1) - weekend_ms_box) / 60000.0
+
+priceSlope = dT != 0 ? (level2 - level1) / dT : 0.0
+isBullish = level2 > level1
+sign = invertAngles ? -1 : 1
+
+baseUpperSlope = sign * (isBullish ? priceSlope : -priceSlope)
+baseLowerSlope = sign * (isBullish ? -priceSlope : priceSlope)
+
+upperSlopeVal = useSlopeMultiplier ? baseUpperSlope * slopeMultiplier : baseUpperSlope
+lowerSlopeVal = useSlopeMultiplier ? baseLowerSlope * slopeMultiplier : baseLowerSlope
+
+midSlope1 = sign * (-1 * math.abs(upperSlopeVal) * midSlopeRatio)
+midSlope2 = -midSlope1
+
+baseUpperLevel = math.max(level1, level2)
+baseLowerLevel = math.min(level1, level2)
+
+tf_minutes = math.max(1, req_tf_seconds / 60)
+dynamicMaLength = int(math.max(1, math.round(math.abs(dT) / tf_minutes)))
+
+var float ma = na
+ma := maType == "SMA" ? ta.sma(req_c, dynamicMaLength) : maType == "EMA" ? ta.ema(req_c, dynamicMaLength) : ta.wma(req_c, dynamicMaLength)
+
+weekend_ms1 = skipWeekend ? (math.floor((req_t + 345600000) / week_ms) - math.floor((anchorTime1 + 345600000) / week_ms)) * 172800000 : 0.0
+x1 = ((req_t - anchorTime1) - weekend_ms1) / 60000.0
+
+upperLevel1 = baseUpperLevel
+lowerLevel1 = baseLowerLevel
+adjustedMidLevel1 = midLevel
+
+if useAngle
+    upperLevel1 := baseUpperLevel + upperSlopeVal * x1
+    lowerLevel1 := baseLowerLevel + lowerSlopeVal * x1
+    adjustedMidLevel1 := midLevel + midSlope1 * x1
+
+plot(upperLevel1, "Upper Level 1", color=color.red, linewidth=2)
+plot(lowerLevel1, "Lower Level 1", color=color.blue, linewidth=2)
+plot(adjustedMidLevel1, "Mid Level 1", color=color.yellow, linewidth=2)
+
+theoreticalMid1 = (upperLevel1 + lowerLevel1) / 2
+userOffset1 = adjustedMidLevel1 - theoreticalMid1
+midMA1 = showMA ? (ma + userOffset1) : na
+plot(midMA1, "Mid MA 1", color=color.new(color.orange, 50), linewidth=2)
+
+activeMidLevel1 = showMA ? midMA1 : adjustedMidLevel1
+distanceToUpper1 = upperLevel1 - activeMidLevel1
+distanceToLower1 = activeMidLevel1 - lowerLevel1
+
+var float symOpen1 = na
+var float symHigh1 = na
+var float symLow1 = na
+var float symClose1 = na
+var float invOpen1 = na
+var float invHigh1 = na
+var float invLow1 = na
+var float invClose1 = na
+
+if useDistance
+    symOpen1 := req_o < activeMidLevel1 ? upperLevel1 + distanceToUpper1 * ((activeMidLevel1 - req_o) / distanceToLower1) : lowerLevel1 - distanceToLower1 * ((req_o - activeMidLevel1) / distanceToUpper1)
+    symHigh1 := req_h < activeMidLevel1 ? upperLevel1 + distanceToUpper1 * ((activeMidLevel1 - req_h) / distanceToLower1) : lowerLevel1 - distanceToLower1 * ((req_h - activeMidLevel1) / distanceToUpper1)
+    symLow1 := req_l < activeMidLevel1 ? upperLevel1 + distanceToUpper1 * ((activeMidLevel1 - req_l) / distanceToLower1) : lowerLevel1 - distanceToLower1 * ((req_l - activeMidLevel1) / distanceToUpper1)
+    symClose1 := req_c < activeMidLevel1 ? upperLevel1 + distanceToUpper1 * ((activeMidLevel1 - req_c) / distanceToLower1) : lowerLevel1 - distanceToLower1 * ((req_c - activeMidLevel1) / distanceToUpper1)
+
+    invOpen1 := req_o > activeMidLevel1 ? upperLevel1 + (req_o - activeMidLevel1) : lowerLevel1 - (activeMidLevel1 - req_o)
+    invHigh1 := req_h > activeMidLevel1 ? upperLevel1 + (req_h - activeMidLevel1) : lowerLevel1 - (activeMidLevel1 - req_h)
+    invLow1 := req_l > activeMidLevel1 ? upperLevel1 + (req_l - activeMidLevel1) : lowerLevel1 - (activeMidLevel1 - req_l)
+    invClose1 := req_c > activeMidLevel1 ? upperLevel1 + (req_c - activeMidLevel1) : lowerLevel1 - (activeMidLevel1 - req_c)
+
+    if useBoundarySymmetry
+        symOpen1 := symOpen1 < lowerLevel1 ? lowerLevel1 + (lowerLevel1 - symOpen1) : symOpen1 > upperLevel1 ? upperLevel1 - (symOpen1 - upperLevel1) : symOpen1
+        symHigh1 := symHigh1 < lowerLevel1 ? lowerLevel1 + (lowerLevel1 - symHigh1) : symHigh1 > upperLevel1 ? upperLevel1 - (symHigh1 - upperLevel1) : symHigh1
+        symLow1 := symLow1 < lowerLevel1 ? lowerLevel1 + (lowerLevel1 - symLow1) : symLow1 > upperLevel1 ? upperLevel1 - (symLow1 - upperLevel1) : symLow1
+        symClose1 := symClose1 < lowerLevel1 ? lowerLevel1 + (lowerLevel1 - symClose1) : symClose1 > upperLevel1 ? upperLevel1 - (symClose1 - upperLevel1) : symClose1
+
+plotcandle(symOpen1, symHigh1, symLow1, symClose1, "Sym Candles 1", color=color.green, wickcolor=color.green, bordercolor=color.green)
+plotcandle(invOpen1, invHigh1, invLow1, invClose1, "Inv Candles 1", color=color.orange, wickcolor=color.orange, bordercolor=color.orange)
+
+weekend_ms2 = skipWeekend ? (math.floor((req_t + 345600000) / week_ms) - math.floor((anchorTime2 + 345600000) / week_ms)) * 172800000 : 0.0
+x2 = ((req_t - anchorTime2) - weekend_ms2) / 60000.0
+
+upperLevel2 = baseUpperLevel
+lowerLevel2 = baseLowerLevel
+adjustedMidLevel2 = midLevel
+
+if useAngle and enableSet2
+    upperLevel2 := baseUpperLevel + upperSlopeVal * x2
+    lowerLevel2 := baseLowerLevel + lowerSlopeVal * x2
+    adjustedMidLevel2 := midLevel + midSlope2 * x2
+
+plot(enableSet2 ? upperLevel2 : na, "Upper Level 2", color=color.new(color.red, 30), linewidth=2)
+plot(enableSet2 ? lowerLevel2 : na, "Lower Level 2", color=color.new(color.blue, 30), linewidth=2)
+plot(enableSet2 ? adjustedMidLevel2 : na, "Mid Level 2", color=color.new(color.yellow, 30), linewidth=2)
+
+theoreticalMid2 = (upperLevel2 + lowerLevel2) / 2
+userOffset2 = adjustedMidLevel2 - theoreticalMid2
+midMA2 = (showMA and enableSet2) ? (ma + userOffset2) : na
+plot(midMA2, "Mid MA 2", color=color.new(color.orange, 70), linewidth=2)
+
+activeMidLevel2 = showMA ? midMA2 : adjustedMidLevel2
+distanceToUpper2 = upperLevel2 - activeMidLevel2
+distanceToLower2 = activeMidLevel2 - lowerLevel2
+
+var float symOpen2 = na
+var float symHigh2 = na
+var float symLow2 = na
+var float symClose2 = na
+var float invOpen2 = na
+var float invHigh2 = na
+var float invLow2 = na
+var float invClose2 = na
+
+if enableSet2
+    if useDistance
+        symOpen2 := req_o < activeMidLevel2 ? upperLevel2 + distanceToUpper2 * ((activeMidLevel2 - req_o) / distanceToLower2) : lowerLevel2 - distanceToLower2 * ((req_o - activeMidLevel2) / distanceToUpper2)
+        symHigh2 := req_h < activeMidLevel2 ? upperLevel2 + distanceToUpper2 * ((activeMidLevel2 - req_h) / distanceToLower2) : lowerLevel2 - distanceToLower2 * ((req_h - activeMidLevel2) / distanceToUpper2)
+        symLow2 := req_l < activeMidLevel2 ? upperLevel2 + distanceToUpper2 * ((activeMidLevel2 - req_l) / distanceToLower2) : lowerLevel2 - distanceToLower2 * ((req_l - activeMidLevel2) / distanceToUpper2)
+        symClose2 := req_c < activeMidLevel2 ? upperLevel2 + distanceToUpper2 * ((activeMidLevel2 - req_c) / distanceToLower2) : lowerLevel2 - distanceToLower2 * ((req_c - activeMidLevel2) / distanceToUpper2)
+
+        invOpen2 := req_o > activeMidLevel2 ? upperLevel2 + (req_o - activeMidLevel2) : lowerLevel2 - (activeMidLevel2 - req_o)
+        invHigh2 := req_h > activeMidLevel2 ? upperLevel2 + (req_h - activeMidLevel2) : lowerLevel2 - (activeMidLevel2 - req_h)
+        invLow2 := req_l > activeMidLevel2 ? upperLevel2 + (req_l - activeMidLevel2) : lowerLevel2 - (activeMidLevel2 - req_l)
+        invClose2 := req_c > activeMidLevel2 ? upperLevel2 + (req_c - activeMidLevel2) : lowerLevel2 - (activeMidLevel2 - req_c)
+
+        if useBoundarySymmetry
+            symOpen2 := symOpen2 < lowerLevel2 ? lowerLevel2 + (lowerLevel2 - symOpen2) : symOpen2 > upperLevel2 ? upperLevel2 - (symOpen2 - upperLevel2) : symOpen2
+            symHigh2 := symHigh2 < lowerLevel2 ? lowerLevel2 + (lowerLevel2 - symHigh2) : symHigh2 > upperLevel2 ? upperLevel2 - (symHigh2 - upperLevel2) : symHigh2
+            symLow2 := symLow2 < lowerLevel2 ? lowerLevel2 + (lowerLevel2 - symLow2) : symLow2 > upperLevel2 ? upperLevel2 - (symLow2 - upperLevel2) : symLow2
+            symClose2 := symClose2 < lowerLevel2 ? lowerLevel2 + (lowerLevel2 - symClose2) : symClose2 > upperLevel2 ? upperLevel2 - (symClose2 - upperLevel2) : symClose2
+    else
+        symOpen2 := req_o < activeMidLevel2 ? upperLevel2 + (upperLevel2 - req_o) : lowerLevel2 + (lowerLevel2 - req_o)
+        symHigh2 := req_h < activeMidLevel2 ? upperLevel2 + (upperLevel2 - req_h) : lowerLevel2 + (lowerLevel2 - req_h)
+        symLow2 := req_l < activeMidLevel2 ? upperLevel2 + (upperLevel2 - req_l) : lowerLevel2 + (lowerLevel2 - req_l)
+        symClose2 := req_c < activeMidLevel2 ? upperLevel2 + (upperLevel2 - req_c) : lowerLevel2 + (lowerLevel2 - req_c)
+
+        invOpen2 := req_o > activeMidLevel2 ? upperLevel2 + (req_o - upperLevel2) : lowerLevel2 + (req_o - lowerLevel2)
+        invHigh2 := req_h > activeMidLevel2 ? upperLevel2 + (req_h - upperLevel2) : lowerLevel2 + (req_h - lowerLevel2)
+        invLow2 := req_l > activeMidLevel2 ? upperLevel2 + (req_l - upperLevel2) : lowerLevel2 + (req_l - lowerLevel2)
+        invClose2 := req_c > activeMidLevel2 ? upperLevel2 + (req_c - upperLevel2) : lowerLevel2 + (req_c - lowerLevel2)
+
+plotcandle(enableSet2 ? symOpen2 : na, enableSet2 ? symHigh2 : na, enableSet2 ? symLow2 : na, enableSet2 ? symClose2 : na, "Sym Candles 2", color=color.new(color.fuchsia, 30), wickcolor=color.new(color.fuchsia, 30), bordercolor=color.new(color.fuchsia, 30))
+plotcandle(enableSet2 ? invOpen2 : na, enableSet2 ? invHigh2 : na, enableSet2 ? invLow2 : na, enableSet2 ? invClose2 : na, "Inv Candles 2", color=color.new(color.aqua, 30), wickcolor=color.new(color.aqua, 30), bordercolor=color.new(color.aqua, 30))

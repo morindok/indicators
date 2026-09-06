@@ -1,0 +1,23 @@
+//@version=5
+indicator("Symmetrical Candles around MA", overlay=true)
+maLength = input.int(20, title="MA Length", minval=1)
+reverseMirror = input.bool(false, title="Reverse Mirroring")
+
+ma = ta.sma(close, maLength)
+isRed = close < open
+
+// ÊÚííä ÌåÊ ÇäÊÞÇá ÈÑ ÇÓÇÓ æÖÚíÊ Êí˜ ÊäÙíãÇÊ
+mirrorAbove = reverseMirror ? not isRed : isRed
+
+dO = math.abs(open - ma)
+dC = math.abs(close - ma)
+dH = math.abs(high - ma)
+dL = math.abs(low - ma)
+
+newO = mirrorAbove ? ma + dO : ma - dO
+newC = mirrorAbove ? ma + dC : ma - dC
+newH = mirrorAbove ? ma + math.max(dH, dL) : ma - math.min(dH, dL)
+newL = mirrorAbove ? ma + math.min(dH, dL) : ma - math.max(dH, dL)
+
+plot(ma, "Moving Average", color=color.blue)
+plotcandle(newO, newH, newL, newC, title="Mirrored", color=isRed ? color.red : color.green, wickcolor=isRed ? color.red : color.green, bordercolor=isRed ? color.red : color.green)

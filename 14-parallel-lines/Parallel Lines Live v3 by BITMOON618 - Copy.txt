@@ -1,0 +1,157 @@
+//@version=5
+indicator("Parallel Lines Live{Morindok}V2 by BITMOON618", overlay=true, max_lines_count=100)
+// --- تنظیمات سیستم کوانت ---
+i_step_mult = input.float(1.0, "ضریب گسترش شبکه فرکتال", step=0.1, group="هندسه شبکه")
+
+// وزن‌دهی به فاکتورهای علمی (جمعا باید حدود 1.0 باشد برای درک بهتر)
+w_orderflow = input.float(0.35, "وزن جریان سفارشات (Delta)", step=0.05, group="موتور هوش مصنوعی (AI Engine)")
+w_kinetic   = input.float(0.25, "وزن انرژی جنبشی (VAKE)", step=0.05, group="موتور هوش مصنوعی (AI Engine)")
+w_sweep     = input.float(0.25, "وزن جاروب نقدینگی (Absorption)", step=0.05, group="موتور هوش مصنوعی (AI Engine)")
+w_regime    = input.float(0.15, "وزن رژیم بازار (Trend)", step=0.05, group="موتور هوش مصنوعی (AI Engine)")
+
+var float phi_ratio = 1.0 + (0.001618 * i_step_mult)
+
+// --- حافظه‌های پردازشی (نقشه‌برداری امتیازات) ---
+// به جای شمارش ساده، امتیازات وزن‌دار (Scores) را ذخیره می‌کنیم
+var bull_score_map = map.new<int, float>()
+var bear_score_map = map.new<int, float>()
+
+// --- محاسبات متغیرهای سراسری بازار (خارج از حلقه برای جلوگیری از خطا) ---
+float atr20 = ta.atr(20)
+float ema50 = ta.ema(close, 50)
+float bar_range = high - low
+float current_vol = na(volume) ? 1.0 : volume
+
+// --- موتور پردازش تاریخچه ---
+bool update_history = barstate.ishistory or barstate.isconfirmed
+
+if update_history and bar_range > 0 and atr20 > 0
+    int min_N = int(math.ceil(math.log(low) / math.log(phi_ratio)))
+    int max_N = int(math.floor(math.log(high) / math.log(phi_ratio)))
+    
+    if min_N <= max_N
+        // 1. تقریب Order Flow (Delta)
+        float buy_pressure  = current_vol * ((close - low) / bar_range)
+        float sell_pressure = current_vol * ((high - close) / bar_range)
+        float total_pressure = buy_pressure + sell_pressure
+        float buy_ratio  = total_pressure > 0 ? (buy_pressure / total_pressure) : 0.5
+        float sell_ratio = total_pressure > 0 ? (sell_pressure / total_pressure) : 0.5
+        
+        // 2. انرژی جنبشی (VAKE)
+        float kinetic_energy = math.abs(close - open) / atr20
+        float norm_ke = math.min(kinetic_energy, 3.0) / 3.0 // نرمال‌سازی بین 0 تا 1
+        
+        // 3. رژیم بازار
+        float bull_regime_score = close > ema50 ? 1.0 : 0.0
+        float bear_regime_score = close < ema50 ? 1.0 : 0.0
+
+        for i = min_N to max_N
+            float lvl = math.pow(phi_ratio, i)
+            
+            // 4. جاروب نقدینگی (Sweep/Absorption) روی این خط مشخص
+            float bull_sweep = 0.0
+            float bear_sweep = 0.0
+            // اگر قیمت پایین خط رفته ولی بالا بسته شده (تله خرسی)
+            if low < lvl and close >= lvl
+                bull_sweep := (lvl - low) / bar_range
+            // اگر قیمت بالای خط رفته ولی پایین بسته شده (تله گاوی)
+            if high > lvl and close <= lvl
+                bear_sweep := (high - lvl) / bar_range
+
+            // --- تجمیع امتیازات کوانت (Quantitative Scoring) ---
+            float touch_bull_score = 0.0
+            float touch_bear_score = 0.0
+
+            if close > lvl
+                touch_bull_score := (buy_ratio * w_orderflow) + (norm_ke * w_kinetic) + (bull_sweep * w_sweep) + (bull_regime_score * w_regime)
+                float current_b_score = na(bull_score_map.get(i)) ? 0.0 : bull_score_map.get(i)
+                bull_score_map.put(i, current_b_score + touch_bull_score)
+            else if close < lvl
+                touch_bear_score := (sell_ratio * w_orderflow) + (norm_ke * w_kinetic) + (bear_sweep * w_sweep) + (bear_regime_score * w_regime)
+                float current_s_score = na(bear_score_map.get(i)) ? 0.0 : bear_score_map.get(i)
+                bear_score_map.put(i, current_s_score + touch_bear_score)
+
+// --- رابط کاربری و پردازش سیگنال لایو ---
+if barstate.islast
+    int below_idx = int(math.floor(math.log(close) / math.log(phi_ratio)))
+    int above_idx = int(math.ceil(math.log(close) / math.log(phi_ratio)))
+    if below_idx == above_idx
+        above_idx += 1
+
+    int center_N = int(math.round(math.log(close) / math.log(phi_ratio)))
+    
+    // رسم شبکه
+    for i = center_N - 50 to center_N + 49
+        float lvl = math.pow(phi_ratio, i)
+        color line_col = color.new(#d4af37, 75)
+        int line_wid = 1
+        
+        if i == above_idx
+            line_col := color.new(color.red, 20)
+            line_wid := 2
+        else if i == below_idx
+            line_col := color.new(color.green, 20)
+            line_wid := 2
+            
+        line.new(bar_index, lvl, bar_index + 10, lvl, color=line_col, width=line_wid, extend=extend.right)
+        
+    // جدول UI
+    var table prob_table = table.new(position.top_right, 4, 12, border_width=1, border_color=color.rgb(30, 30, 30))
+    
+    color bg_header = color.rgb(10, 10, 12)
+    color text_header = color.rgb(220, 180, 60)
+    
+    table.cell(prob_table, 0, 0, "سطح هندسی", bgcolor=bg_header, text_color=text_header)
+    table.cell(prob_table, 1, 0, "سیگنال الگوریتم", bgcolor=bg_header, text_color=text_header)
+    table.cell(prob_table, 2, 0, "احتمال صعود", bgcolor=bg_header, text_color=text_header)
+    table.cell(prob_table, 3, 0, "احتمال نزول", bgcolor=bg_header, text_color=text_header)
+
+    int row = 1
+    for i = center_N + 5 to center_N - 5
+        float lvl = math.pow(phi_ratio, i)
+        
+        // استخراج امتیازات خام از هسته تحلیلی
+        float total_bull = na(bull_score_map.get(i)) ? 0.0 : bull_score_map.get(i)
+        float total_bear = na(bear_score_map.get(i)) ? 0.0 : bear_score_map.get(i)
+        
+        float combined_score = total_bull + total_bear
+        
+        // محاسبه احتمال علمی بر اساس کسر وزن‌دار
+        float final_bull_prob = combined_score > 0 ? (total_bull / combined_score) * 100.0 : 0.0
+        float final_bear_prob = combined_score > 0 ? (total_bear / combined_score) * 100.0 : 0.0
+
+        // وضعیت لایو قیمت نسبت به خط
+        bool is_touched_now = (high >= lvl) and (low <= lvl)
+        string status_text = ""
+        color bg_c = color.rgb(20, 20, 22)
+        color text_c = color.rgb(190, 190, 190)
+        
+        if is_touched_now
+            status_text := "🎯 برخورد قطعی"
+            bg_c := color.rgb(160, 110, 10) // طلایی تیره در لحظه درگیری قیمت
+            text_c := color.white
+        else if i == above_idx
+            status_text := "مقاومت هدف"
+            bg_c := color.new(color.red, 80)
+            text_c := color.white
+        else if i == below_idx
+            status_text := "حمایت هدف"
+            bg_c := color.new(color.green, 85)
+            text_c := color.white
+        else
+            status_text := "آماده"
+            
+        // رنگ‌بندی داینامیک درصدها (هرچه درصد بالاتر، رنگ روشن‌تر)
+        color bg_bull = color.new(color.green, 100 - (final_bull_prob * 0.8))
+        color text_bull = final_bull_prob > 50 ? color.rgb(100, 255, 100) : color.rgb(100, 150, 100)
+        
+        color bg_bear = color.new(color.red, 100 - (final_bear_prob * 0.8))
+        color text_bear = final_bear_prob > 50 ? color.rgb(255, 100, 100) : color.rgb(150, 100, 100)
+        
+        // چاپ در جدول
+        table.cell(prob_table, 0, row, str.tostring(math.round(lvl, 5)), bgcolor=bg_c, text_color=text_c)
+        table.cell(prob_table, 1, row, status_text, bgcolor=bg_c, text_color=text_c)
+        table.cell(prob_table, 2, row, str.tostring(math.round(final_bull_prob, 1)) + "%", bgcolor=color.rgb(15, 35, 15), text_color=text_bull)
+        table.cell(prob_table, 3, row, str.tostring(math.round(final_bear_prob, 1)) + "%", bgcolor=color.rgb(35, 15, 15), text_color=text_bear)
+        
+        row += 1

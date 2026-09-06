@@ -1,0 +1,109 @@
+//@version=5
+indicator("Symmetric Candles Both Modes {Morindok}", overlay=true)
+
+// ÏÑíÇÝÊ æÑæÏíåÇ
+p1 = input.price(0, "ÓØÍ Çæá (ÈÇáÇ/Çííä)", confirm=true)
+p2 = input.price(0, "ÓØÍ Ïæã (ÈÇáÇ/Çííä)", confirm=true)
+p3 = input.price(0, "ÓØÍ æÓØ", confirm=true)
+
+grp_adj = "ÊäÙíã ÝÇÕáå ãÏá Ïæã"
+adj_mid     = input.bool(false, "ÈÑ ÇÓÇÓ ÓØÍ æÓØ", group=grp_adj)
+adj_high    = input.bool(false, "ÈÑ ÇÓÇÓ ÓØÍ ÈÇáÇ", group=grp_adj)
+adj_low     = input.bool(false, "ÈÑ ÇÓÇÓ ÓØÍ Çííä", group=grp_adj)
+adj_between = input.bool(false, "ÈÑ ÇÓÇÓ ÝÇÕáå Ïæ ãÏá äÓÈÊ Èå åã", group=grp_adj)
+adj_opp     = input.bool(false, "ÈÑ ÇÓÇÓ ÝÇÕáå ãÏá ? ÈÇ ãÏá ? ãÊÖÇÏ", group=grp_adj)
+
+// ÊÇÈÚ ãÍÇÓÈå ÊÞÇÑä
+reflect(src, pivot) => 2 * pivot - src
+
+// ÊÔÎíÕ ÓØæÍ
+high_lvl = math.max(p1, p2)
+low_lvl  = math.min(p1, p2)
+mid_lvl  = p3
+
+// ÊÚííä ÓØÍ ãÈäÇ ÈÑÇí ? ÍÇáÊ Çæá
+ref_lvl = adj_mid ? mid_lvl : (adj_high ? high_lvl : (adj_low ? low_lvl : na))
+
+// ==========================================
+// ãÏá Çæá: ÇÈÊÏÇ æÓØ¡ ÓÓ ÈÇáÇ æ Çííä
+// ==========================================
+m1_O = reflect(open, mid_lvl)
+m1_H = reflect(low, mid_lvl)
+m1_L = reflect(high, mid_lvl)
+m1_C = reflect(close, mid_lvl)
+
+m1_uO = reflect(m1_O, high_lvl)
+m1_uH = reflect(m1_L, high_lvl)
+m1_uL = reflect(m1_H, high_lvl)
+m1_uC = reflect(m1_C, high_lvl)
+
+m1_dO = reflect(m1_O, low_lvl)
+m1_dH = reflect(m1_L, low_lvl)
+m1_dL = reflect(m1_H, low_lvl)
+m1_dC = reflect(m1_C, low_lvl)
+
+// ==========================================
+// ãÏá Ïæã (ÎÇã): ÇÈÊÏÇ ÈÇáÇ æ Çííä¡ ÓÓ æÓØ
+// ==========================================
+m2_uO_tmp = reflect(open, high_lvl)
+m2_uH_tmp = reflect(low, high_lvl)
+m2_uL_tmp = reflect(high, high_lvl)
+m2_uC_tmp = reflect(close, high_lvl)
+
+m2_dO_tmp = reflect(open, low_lvl)
+m2_dH_tmp = reflect(low, low_lvl)
+m2_dL_tmp = reflect(high, low_lvl)
+m2_dC_tmp = reflect(close, low_lvl)
+
+m2_uO_raw = reflect(m2_uO_tmp, mid_lvl)
+m2_uH_raw = reflect(m2_uL_tmp, mid_lvl)
+m2_uL_raw = reflect(m2_uH_tmp, mid_lvl)
+m2_uC_raw = reflect(m2_uC_tmp, mid_lvl)
+
+m2_dO_raw = reflect(m2_dO_tmp, mid_lvl)
+m2_dH_raw = reflect(m2_dL_tmp, mid_lvl)
+m2_dL_raw = reflect(m2_dH_tmp, mid_lvl)
+m2_dC_raw = reflect(m2_dC_tmp, mid_lvl)
+
+// ==========================================
+// ÇÚãÇá ÔÑØ ÝÇÕáå
+// ==========================================
+is_lvl_adj = adj_mid or adj_high or adj_low
+
+// ÊæÇÈÚ ÈÑÇí ãÍÇÓÈå ÔíÝÊ äåÇíí ãÏá ?
+// ÇÑÇãÊÑ Óæã ÍÇáÇ ãÞÇÏíÑ ÎÇã ãÏá ? ÏÑ ÓãÊ ãÎÇáÝ ÇÓÊ
+calc_m2(m1_val, m2_raw, m2_opp_raw) =>
+    if is_lvl_adj
+        m1_val + (m1_val - ref_lvl) // ÊäÙíã ÈÑ ÇÓÇÓ ÓØæÍ ËÇÈÊ
+    else if adj_between
+        m1_val + (m1_val - m2_raw)  // ÊäÙíã ÈÑ ÇÓÇÓ ÝÇÕáå Ïæ ãÏá åãÌåÊ ÇÒ åã
+    else if adj_opp
+        m1_val + (m1_val - m2_opp_raw)  // ÊäÙíã ÈÑ ÇÓÇÓ ÝÇÕáå ãÏá ? æ ãÏá ? ÎÇã ÏÑ ÓãÊ ãÎÇáÝ
+    else
+        m2_raw // ÍÇáÊ íÔÝÑÖ (ÈÏæä ÔíÝÊ)
+
+// ÓãÊ ÈÇáÇ (ÝÇÕáå ãÏá ? ÈÇáÇ ÊÇ ãÏá ? ÎÇã Çííä)
+m2_uO = calc_m2(m1_uO, m2_uO_raw, m2_dO_raw)
+m2_uH = calc_m2(m1_uH, m2_uH_raw, m2_dH_raw)
+m2_uL = calc_m2(m1_uL, m2_uL_raw, m2_dL_raw)
+m2_uC = calc_m2(m1_uC, m2_uC_raw, m2_dC_raw)
+
+// ÓãÊ Çííä (ÝÇÕáå ãÏá ? Çííä ÊÇ ãÏá ? ÎÇã ÈÇáÇ)
+m2_dO = calc_m2(m1_dO, m2_dO_raw, m2_uO_raw)
+m2_dH = calc_m2(m1_dH, m2_dH_raw, m2_uH_raw)
+m2_dL = calc_m2(m1_dL, m2_dL_raw, m2_uL_raw)
+m2_dC = calc_m2(m1_dC, m2_dC_raw, m2_uC_raw)
+
+// ==========================================
+// ÑÓã ˜äÏáåÇ
+// ==========================================
+c_m1_U = color.new(color.blue, 20)
+c_m1_D = color.new(color.red, 20)
+c_m2_U = color.new(color.aqua, 20)
+c_m2_D = color.new(color.orange, 20)
+
+plotcandle(m1_uO, m1_uH, m1_uL, m1_uC, "Mode1: Mid -> High", color=c_m1_U, wickcolor=c_m1_U, bordercolor=c_m1_U)
+plotcandle(m1_dO, m1_dH, m1_dL, m1_dC, "Mode1: Mid -> Low",  color=c_m1_D, wickcolor=c_m1_D, bordercolor=c_m1_D)
+
+plotcandle(m2_uO, m2_uH, m2_uL, m2_uC, "Mode2: High -> Mid", color=c_m2_U, wickcolor=c_m2_U, bordercolor=c_m2_U)
+plotcandle(m2_dO, m2_dH, m2_dL, m2_dC, "Mode2: Low -> Mid",  color=c_m2_D, wickcolor=c_m2_D, bordercolor=c_m2_D)

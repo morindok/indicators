@@ -1,0 +1,256 @@
+//@version=5
+indicator("Atomic Tick Predictor ó Statistical Next-Candle Engine", overlay=true, max_labels_count=500)
+
+// ??????????? Ê—ÊœÌùÂ« ???????????
+grpM = "?? „œ· ¬„«—Ì"
+kNN      = input.int(21,    "K ó  ⁄œ«œ Â„”«ÌÂ (KNN)",   minval=3,  group=grpM)
+maxHist  = input.int(500,   "⁄„ﬁ Õ«›ŸÂ ¬„«—Ì",           minval=50, group=grpM)
+wKnn     = input.float(0.55,"Ê“‰ Å«ÌÂ „œ·  «—ÌŒÌ (KNN)",  minval=0, maxval=1, step=0.05, group=grpM)
+wLive    = input.float(0.45,"Ê“‰ Å«ÌÂ ›‘«— ·ÕŸÂù«Ì",       minval=0, maxval=1, step=0.05, group=grpM)
+thSig    = input.float(0.57,"¬” «‰Â «ÿ„Ì‰«‰ ”Ìê‰«·",      minval=0.5, maxval=0.95, step=0.01, group=grpM)
+accWin   = input.float(0.97,"‰—Œ ›—«„Ê‘Ì œﬁ  (Forgetting)",minval=0.90, maxval=1.0, step=0.005, group=grpM)
+showLbl  = input.bool(true, "‰„«Ì‘ ·Ì»·  ÌòùÂ«")
+
+// ??????????? ‘„«—‰œÂùÂ«Ì ·ÕŸÂù«Ì (varip) ???????????
+varip float lastPrice = na
+varip float lastVol   = 0.0
+varip int   upTicks   = 0
+varip int   downTicks = 0
+varip float upVol     = 0.0
+varip float dnVol     = 0.0
+varip float upH       = 0.0
+varip float dnH       = 0.0
+varip float lateUp    = 0.0
+varip float lateDn    = 0.0
+
+// ??????????? Õ«›ŸÂ ¬„«—Ì ???????????
+var float[] hTick = array.new_float()
+var float[] hVol  = array.new_float()
+var float[] hHgt  = array.new_float()
+var float[] hLate = array.new_float()
+var int[]   hOut  = array.new_int()
+
+// „ —ÌòùÂ«Ì „⁄·ﬁ
+varip float pTick = na
+varip float pVol  = na
+varip float pHgt  = na
+varip float pLate = na
+
+// —œÌ«»Ì œﬁ  ÅÌ‘ù»Ì‰Ì  —òÌ»Ì
+varip int pendPred  = -1
+varip int predWins  = 0
+varip int predTotal = 0
+
+// ??????????? Õ«·  Ê“‰ùœÂÌ  ÿ»ÌﬁÌ ???????????
+varip float knnWin  = 0.0, knnTot  = 0.0    // »—œ/ò· ·€“«‰ „œ· KNN
+varip float liveWin = 0.0, liveTot = 0.0    // »—œ/ò· ·€“«‰ „œ· Live
+varip float pKnnPrev  = na                  // ÅÌ‘ù»Ì‰Ì ﬁÿ⁄Ì ﬁ»·Ì KNN
+varip float pLivePrev = na                  // ÅÌ‘ù»Ì‰Ì ﬁÿ⁄Ì ﬁ»·Ì Live
+
+// ·Ì»·ùÂ«
+var label[] history_labels = array.new_label()
+var label live_label = label.new(na, na, "", color=color.new(color.blue, 70), textcolor=color.white, style=label.style_label_down)
+
+// ???????????  Ê«»⁄ ò„òÌ ???????????
+ratio(a, b) => a + b > 0 ? (a - b) / (a + b) : 0.0
+
+knnPredict(t, v, h, l) =>
+    n = array.size(hOut)
+    prob = 0.5
+    if n >= kNN
+        dists = array.new_float()
+        for i = 0 to n - 1
+            dt = t - array.get(hTick, i)
+            dv = v - array.get(hVol,  i)
+            dh = h - array.get(hHgt,  i)
+            dl = l - array.get(hLate, i)
+            array.push(dists, math.sqrt(dt*dt + dv*dv + dh*dh + dl*dl))
+        srt = array.copy(dists)
+        array.sort(srt, order.ascending)
+        thr = array.get(srt, kNN - 1)
+        wSum = 0.0
+        gSum = 0.0
+        cnt  = 0
+        for i = 0 to n - 1
+            d = array.get(dists, i)
+            if d <= thr and cnt < kNN
+                w = 1.0 / (d + 0.05)
+                wSum += w
+                gSum += w * array.get(hOut, i)
+                cnt  += 1
+        prob := wSum > 0 ? gSum / wSum : 0.5
+    [prob, n]
+
+// ??????????? —Ì”  œ— «Ê·Ì‰  Ìò ò‰œ· ÃœÌœ ???????????
+if barstate.isnew
+    upTicks   := 0
+    downTicks := 0
+    upVol     := 0.0
+    dnVol     := 0.0
+    upH       := 0.0
+    dnH       := 0.0
+    lateUp    := 0.0
+    lateDn    := 0.0
+    lastVol   := 0.0
+    lastPrice := open
+
+// ??????????? „Ê Ê— ·«ÌÊ ???????????
+float finalProb = 0.5
+float knnP      = 0.5
+float liveP     = 0.5
+int   samples   = 0
+float wKnnDyn   = wKnn
+float wLiveDyn  = wLive
+float accKnn    = 0.5
+float accLive   = 0.5
+float thAdapt   = thSig
+
+if barstate.isrealtime
+    // ?? Ã„⁄ù¬Ê—Ì „Ìò—Ê”«Œ «— ??
+    dv   = math.max(volume - lastVol, 0.0)
+    prog = math.min(math.max((timenow - time) / math.max(time_close - time, 1), 0.0), 1.0)
+    lw   = prog * prog
+    if not na(lastPrice)
+        dp = close - lastPrice
+        if dp > 0
+            upTicks += 1
+            upVol   += dv
+            upH     += dp
+            lateUp  += lw
+        else if dp < 0
+            downTicks += 1
+            dnVol     += dv
+            dnH       += -dp
+            lateDn    += lw
+    lastPrice := close
+    lastVol   := volume
+
+    // ?? çÂ«— „ —Ìò ‰—„«·ù‘œÂ ??
+    avgUpH  = upTicks   > 0 ? upH / upTicks   : 0.0
+    avgDnH  = downTicks > 0 ? dnH / downTicks : 0.0
+    mTick = ratio(upTicks, downTicks)
+    mVol  = ratio(upVol, dnVol)
+    mHgt  = ratio(avgUpH, avgDnH)
+    mLate = ratio(lateUp, lateDn)
+
+    // ?? —√Ì Ãœ«ê«‰Â? Â— „œ· ??
+    [knnRaw, n] = knnPredict(mTick, mVol, mHgt, mLate)
+    knnP    := knnRaw
+    samples := n
+    liveScore = 0.30 * mTick + 0.30 * mVol + 0.25 * mHgt + 0.15 * mLate
+    liveP    := 0.5 + 0.5 * liveScore
+
+    // ?? œﬁ  «ŒÌ— Â— „œ· (Â„Ê«—”«“Ì ·«Å·«”) ??
+    accKnn  := (knnWin  + 1.0) / (knnTot  + 2.0)
+    accLive := (liveWin + 1.0) / (liveTot + 2.0)
+
+    // ?? Ê“‰ ÅÊÌ« »— «”«” ´„Â«— ˆ »«·«Ì  ’«œ›ª ??
+    skillKnn  = math.max(accKnn  - 0.5, 0.0)
+    skillLive = math.max(accLive - 0.5, 0.0)
+    totSkill  = skillKnn + skillLive
+    wKnnDyn  := totSkill > 0 ? skillKnn  / totSkill : wKnn
+    wLiveDyn := totSkill > 0 ? skillLive / totSkill : wLive
+
+    // ??  —òÌ» ‰Â«ÌÌ ??
+    finalProb := (wKnnDyn * knnP + wLiveDyn * liveP) / math.max(wKnnDyn + wLiveDyn, 0.0001)
+
+    // ?? ¬” «‰Â?  ÿ»ÌﬁÌ (”› ù — Êﬁ Ì »Â —Ì‰ „œ· ÷⁄Ì› «” ) ??
+    bestAcc = math.max(accKnn, accLive)
+    thAdapt := bestAcc < 0.55 ? math.min(thSig + 0.05, 0.95) : thSig
+
+    // ?? ·Ì»· „ Õ—ò ??
+    if showLbl
+        label.set_xy(live_label, bar_index, high + ta.tr * 0.5)
+        label.set_text(live_label, "?" + str.tostring(upTicks) + " ?" + str.tostring(downTicks) + "\nP(”»“)=" + str.tostring(finalProb * 100, "#.#") + "%")
+
+    // ??? À»  ﬁÿ⁄Ì œ— ¬Œ—Ì‰  Ìò ò‰œ· ???
+    if barstate.isconfirmed
+        actual   = close >= open ? 1 : 0
+        prevPred = pendPred
+
+        // ?) œﬁ  ÅÌ‘ù»Ì‰Ì  —òÌ»Ì ﬁ»·Ì
+        if prevPred != -1
+            predTotal += 1
+            predWins  += prevPred == actual ? 1 : 0
+
+        // ?) œﬁ  ·€“«‰ „œ· KNN (›ﬁÿ —√Ì ﬁÿ⁄Ì ﬁ»·Ì)
+        if not na(pKnnPrev)
+            okK   = (pKnnPrev >= 0.5 ? 1 : 0) == actual
+            knnTot := knnTot * accWin + 1.0
+            knnWin := knnWin * accWin + (okK ? 1.0 : 0.0)
+
+        // ?) œﬁ  ·€“«‰ „œ· Live
+        if not na(pLivePrev)
+            okL   = (pLivePrev >= 0.5 ? 1 : 0) == actual
+            liveTot := liveTot * accWin + 1.0
+            liveWin := liveWin * accWin + (okL ? 1.0 : 0.0)
+
+        // ?)  ò„Ì· “ÊÃ œ— Õ«›ŸÂ („ —Ìò ò‰œ· ﬁ»· ? —‰ê «Ì‰ ò‰œ·)
+        if not na(pTick)
+            array.push(hTick, pTick)
+            array.push(hVol,  pVol)
+            array.push(hHgt,  pHgt)
+            array.push(hLate, pLate)
+            array.push(hOut,  actual)
+            if array.size(hOut) > maxHist
+                array.shift(hTick)
+                array.shift(hVol)
+                array.shift(hHgt)
+                array.shift(hLate)
+                array.shift(hOut)
+
+        // ?) „ —Ìò ‰Â«ÌÌ «Ì‰ ò‰œ· ? „⁄·ﬁ »—«Ì ò‰œ· »⁄œ
+        pTick := mTick
+        pVol  := mVol
+        pHgt  := mHgt
+        pLate := mLate
+
+        // ?) ﬁ›· ÅÌ‘ù»Ì‰Ì  —òÌ»Ì »—«Ì ”‰Ã‘ œ— ò‰œ· »⁄œ
+        pendPred := finalProb >= thAdapt ? 1 : finalProb <= 1 - thAdapt ? 0 : -1
+
+        // ?) –ŒÌ—Â? —√Ì ﬁÿ⁄Ìˆ Â— „œ· »—«Ì «—“Ì«»Ì œÊ— »⁄œ
+        pKnnPrev  := (knnP  >= thAdapt or knnP  <= 1 - thAdapt) ? knnP  : na
+        pLivePrev := (liveP >= thAdapt or liveP <= 1 - thAdapt) ? liveP : na
+
+        // ?) ·Ì»· œ«∆„Ì + ‰ ÌÃÂ ÅÌ‘ù»Ì‰Ì
+        if showLbl
+            resTxt = prevPred == -1 ? "∑" : (prevPred == 1 ? "g" : "r") + (prevPred == actual ? " ?" : " ?")
+            resCol = prevPred == -1 ? color.new(color.gray, 20) : prevPred == actual ? color.new(color.green, 20) : color.new(color.red, 20)
+            saved_lbl = label.new(bar_index, high, "?" + str.tostring(upTicks) + " ?" + str.tostring(downTicks) + "\n" + resTxt, color=resCol, textcolor=color.white, style=label.style_label_down)
+            array.push(history_labels, saved_lbl)
+            if array.size(history_labels) > 480
+                label.delete(array.shift(history_labels))
+
+// ??????????? ÃœÊ· ÅÌ‘ù»Ì‰Ì ???????????
+var table t = table.new(position.top_right, 2, 11, bgcolor=color.new(#1e222d, 10), border_width=1, border_color=color.new(color.gray, 60))
+
+if barstate.isrealtime
+    learning = samples < kNN
+    isGreen  = finalProb >= thAdapt
+    isRed    = finalProb <= 1 - thAdapt
+    predTxt  = learning ? "? œ— Õ«· Ì«œêÌ—Ì" : isGreen ? "?? ”»“" : isRed ? "?? ﬁ—„“" : "?‰ÀÌ"
+    predCol  = learning ? color.new(color.gray, 40) : isGreen ? color.new(color.green, 15) : isRed ? color.new(color.red, 15) : color.new(color.gray, 40)
+    acc      = predTotal > 0 ? 100.0 * predWins / predTotal : na
+
+    table.cell(t, 0, 0,  "?? ò‰œ· »⁄œÌ", text_color=color.white, bgcolor=color.new(color.blue, 4))
+    table.cell(t, 1, 0,  predTxt, text_color=color.white, bgcolor=predCol, text_size=size.large)
+    table.cell(t, 0, 1,  "«Õ „«· ”»“", text_color=color.silver)
+    table.cell(t, 1, 1,  str.tostring(finalProb * 100, "#.#") + "%", text_color=color.white, bgcolor=color.from_gradient(finalProb, 0, 1, color.new(color.red, 60), color.new(color.green, 60)))
+    table.cell(t, 0, 2,  " Ìò ? / ?", text_color=color.silver)
+    table.cell(t, 1, 2,  str.tostring(upTicks) + " / " + str.tostring(downTicks), text_color=color.white)
+    table.cell(t, 0, 3,  "œ· «Ì ÕÃ„", text_color=color.silver)
+    table.cell(t, 1, 3,  str.tostring(upVol - dnVol, "#.##"), text_color=upVol >= dnVol ? color.lime : color.red)
+    table.cell(t, 0, 4,  "«— ›«⁄/ Ìò ? / ?", text_color=color.silver)
+    table.cell(t, 1, 4,  str.tostring(upTicks > 0 ? upH / upTicks : 0, "#.#####") + " / " + str.tostring(downTicks > 0 ? dnH / downTicks : 0, "#.#####"), text_color=color.white)
+    table.cell(t, 0, 5,  "›‘«— «‰ Â«Ì ò‰œ·", text_color=color.silver)
+    table.cell(t, 1, 5,  str.tostring(ratio(lateUp, lateDn), "#.##"), text_color=lateUp >= lateDn ? color.lime : color.red)
+    table.cell(t, 0, 6,  "Ê“‰ KNN / Live", text_color=color.silver)
+    table.cell(t, 1, 6,  str.tostring(wKnnDyn, "#.00") + " / " + str.tostring(wLiveDyn, "#.00"), text_color=color.aqua)
+    table.cell(t, 0, 7,  "œﬁ  KNN / Live", text_color=color.silver)
+    table.cell(t, 1, 7,  str.tostring(accKnn * 100, "#.0") + "% / " + str.tostring(accLive * 100, "#.0") + "%", text_color=color.white)
+    table.cell(t, 0, 8,  "‰„Ê‰ÂùÂ«Ì ¬„«—Ì", text_color=color.silver)
+    table.cell(t, 1, 8,  str.tostring(samples) + " / " + str.tostring(maxHist), text_color=color.white)
+    table.cell(t, 0, 9,  "œﬁ  „œ·  —òÌ»Ì", text_color=color.silver)
+    table.cell(t, 1, 9,  na(acc) ? "ó" : str.tostring(acc, "#.#") + "%  (" + str.tostring(predWins) + "/" + str.tostring(predTotal) + ")", text_color=na(acc) ? color.gray : acc >= 55 ? color.lime : color.orange)
+    table.cell(t, 0, 10, "K / ¬” «‰Â ›⁄«·", text_color=color.silver)
+    table.cell(t, 1, 10, str.tostring(kNN) + " / " + str.tostring(thAdapt * 100, "#") + "%", text_color=color.white)

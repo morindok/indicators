@@ -1,0 +1,360 @@
+# ============================================================
+# ?? BITCOIN SOLAR SYSTEM - DYNAMICS BASED PREDICTION
+# ============================================================
+
+import dash
+from dash import dcc, html, Input, Output, State
+import plotly.graph_objects as go
+import yfinance as yf
+import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
+
+BG_COLOR = "#0a0a1a"
+CARD_BG = "#12122a"
+TEXT_COLOR = "#e0e0ff"
+GOLD = "#FFD700"
+ACCENT = "#00d4ff"
+PURPLE = "#a855f7"
+
+PLANETS = [
+    {"name": "⁄ÿ«—œ", "color": "#b5b5b5", "size": 6, "base_radius": 1.5, "speed": 4.1},
+    {"name": "“Â—Â", "color": "#e8cda0", "size": 9, "base_radius": 2.2, "speed": 3.2},
+    {"name": "“„Ì‰", "color": "#4b9cd3", "size": 10, "base_radius": 3.0, "speed": 2.6},
+    {"name": "„—ÌŒ", "color": "#c1440e", "size": 8, "base_radius": 3.8, "speed": 2.1},
+    {"name": "„‘ —Ì", "color": "#c88b3a", "size": 18, "base_radius": 5.5, "speed": 1.3},
+    {"name": "“Õ·", "color": "#ead6b8", "size": 16, "base_radius": 7.0, "speed": 0.97},
+    {"name": "«Ê—«‰Ê”", "color": "#7de8e8", "size": 13, "base_radius": 8.5, "speed": 0.68},
+    {"name": "‰Å Ê‰", "color": "#3f54ba", "size": 12, "base_radius": 10.0, "speed": 0.54},
+]
+
+
+def fetch_btc_data():
+    try:
+        btc = yf.download("BTC-USD", period="5d", interval="5m")
+        if btc.empty: raise ValueError("œ«œÂù«Ì œ—Ì«›  ‰‘œ")
+        btc = btc.dropna(subset=['Close'])
+        btc.index = btc.index.tz_localize(None)
+        return btc
+    except Exception as e:
+        dates = pd.date_range(end=datetime.now(), periods=500, freq='5min')
+        np.random.seed(42)
+        prices = 67000 + np.cumsum(np.random.randn(500) * 150)
+        return pd.DataFrame({
+            'Open': prices, 'High': prices + np.random.rand(500) * 200,
+            'Low': prices - np.random.rand(500) * 200,
+            'Close': prices, 'Volume': np.random.randint(100, 5000, 500)
+        }, index=dates)
+
+
+# ?????????????????????????????????????????????
+# ?? «·êÊ—Ì „ ÅÌ‘ù»Ì‰Ì »— «”«” œÌ‰«„Ìò „‰ŸÊ„Â
+# ?????????????????????????????????????????????
+def predict_btc_from_system(df, steps=6):
+    """
+    ÅÌ‘ù»Ì‰Ì »— «”«” „Ê«“‰Â «‰—éÌ Ê „Êﬁ⁄Ì  „œ«—Ì ”Ì«—«  „‰ŸÊ„Â
+    """
+    close = df['Close'].values
+    min_p, max_p = close.min(), close.max()
+    current_frame = len(close) - 1
+
+    # „Õ«”»Â „Ì«‰êÌ‰ Ê“‰ùœ«— ›«’·Â „œ«—Ì ”Ì«—«  œ— ›—Ì„ „‘Œ’
+    def get_system_energy(frame_idx):
+        normalized_p = (close[frame_idx % len(close)] - min_p) / (max_p - min_p) if max_p != min_p else 0.5
+        total_orbital_phase = 0
+
+        for i, p in enumerate(PLANETS):
+            r = p["base_radius"] * (0.75 + 0.5 * normalized_p)
+            angle = frame_idx * p["speed"] * 0.08
+            # „Ê·›Â Z Ê Â„ù—«” «ÌÌ ›«“ ”Ì«—«  »Â ⁄‰Ê«‰ Å «‰”Ì· „‰ŸÊ„Â
+            z_component = np.sin(angle * 0.7 + i * 0.5)
+            total_orbital_phase += np.cos(angle) * r + z_component
+
+        return total_orbital_phase
+
+    # „Õ«”»Â —Ê‰œ ‰Ê”«‰Ì ›«“ „‰ŸÊ„Â
+    energy_now = get_system_energy(current_frame)
+
+    future_times = [df.index[-1] + timedelta(minutes=5 * i) for i in range(1, steps + 1)]
+    future_prices = []
+
+    last_price = close[-1]
+
+    for i in range(1, steps + 1):
+        future_frame = current_frame + i
+        energy_future = get_system_energy(future_frame)
+
+        #  €ÌÌ—«  Å «‰”Ì· „‰ŸÊ„Â „ ‰«Ÿ— »«  €ÌÌ—«  ﬁÌ„ 
+        delta_energy = (energy_future - energy_now) / len(PLANETS)
+
+        # ‰ê«‘   €ÌÌ—«  »Â œ«„‰Â ‰Ê”«‰ Ê«ﬁ⁄Ì ﬁÌ„  »Ì ùòÊÌ‰
+        price_step = delta_energy * (close.std() * 0.1)
+        next_price = last_price + price_step
+        future_prices.append(next_price)
+        last_price = next_price
+
+    #  ⁄ÌÌ‰ ”Ìê‰«· »— «”«” »—œ«— »—¬Ì‰œ „‰ŸÊ„Â
+    price_diff = future_prices[-1] - close[-1]
+    if price_diff > (close.std() * 0.05):
+        signal = "?? ’⁄Êœ „œ«—Ì (Orbital Expansion)"
+        color = "#00ff88"
+    elif price_diff < -(close.std() * 0.05):
+        signal = "?? «‰ﬁ»«÷ „œ«—Ì (Orbital Contraction)"
+        color = "#ff4444"
+    else:
+        signal = "??  ⁄«œ· „œ«—Ì (Orbital Equilibrium)"
+        color = GOLD
+
+    return future_times, future_prices, signal, color
+
+
+def calculate_stats(df):
+    close = df['Close']
+    current = close.iloc[-1]
+    prev = close.iloc[-2] if len(close) > 1 else current
+
+    future_times, future_prices, signal, trend_color = predict_btc_from_system(df)
+
+    return {
+        "current_price": current,
+        "change": current - prev,
+        "change_pct": ((current - prev) / prev) * 100 if prev != 0 else 0,
+        "high_5d": close.max(),
+        "low_5d": close.min(),
+        "pred_price": future_prices[-1],
+        "pred_signal": signal,
+        "pred_color": trend_color,
+    }
+
+
+def build_3d_scene(df, frame=0):
+    close = df['Close'].values
+    min_p, max_p = close.min(), close.max()
+    normalized = (close - min_p) / (max_p - min_p) if max_p != min_p else np.ones_like(close)
+
+    current_price = close[frame % len(close)]
+    price_factor = normalized[frame % len(close)]
+
+    fig = go.Figure()
+
+    # ŒÊ—‘Ìœ »Ì ùòÊÌ‰
+    btc_size = 15 + (current_price / max_p) * 35
+    fig.add_trace(go.Scatter3d(
+        x=[0], y=[0], z=[0],
+        mode='markers',
+        marker=dict(size=btc_size, color=[GOLD], opacity=0.95, symbol='diamond'),
+        text=[f'? BTC<br>${current_price:,.0f}'],
+        hoverinfo='text',
+        name='? »Ì ùòÊÌ‰',
+    ))
+
+    # ”Ì«—« 
+    for i, planet in enumerate(PLANETS):
+        base_r = planet["base_radius"]
+        r = base_r * (0.75 + 0.5 * price_factor)
+        angle = frame * planet["speed"] * 0.08
+
+        x = r * np.cos(angle)
+        y = r * np.sin(angle)
+        z = 0.4 * r * np.sin(angle * 0.7 + i * 0.5)
+
+        fig.add_trace(go.Scatter3d(
+            x=[x], y=[y], z=[z],
+            mode='markers',
+            marker=dict(size=planet["size"], color=[planet["color"]], opacity=0.9),
+            hoverinfo='text',
+            hovertext=f'{planet["name"]}',
+            name=planet["name"],
+        ))
+
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-13, 13]),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-13, 13]),
+            zaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-6, 6]),
+            bgcolor='rgba(0,0,0,0)',
+            camera=dict(eye=dict(x=1.8, y=1.8, z=1.2)),
+        ),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=0, r=0, t=40, b=0),
+        font=dict(color=TEXT_COLOR, family='Vazirmatn, Tahoma'),
+        showlegend=False,
+        title=dict(text=f'?? „‰ŸÊ„Â »Ì ùòÊÌ‰ | ${current_price:,.0f}', font=dict(size=18, color=GOLD), x=0.5),
+    )
+    return fig
+
+
+def build_price_chart(df):
+    close = df['Close']
+    future_times, future_prices, _, _ = predict_btc_from_system(df)
+
+    fig = go.Figure()
+
+    # Œÿ ﬁÌ„  Ê«ﬁ⁄Ì
+    fig.add_trace(go.Scatter(
+        x=df.index, y=close,
+        mode='lines',
+        line=dict(color=GOLD, width=2),
+        name='ﬁÌ„  Ê«ﬁ⁄Ì',
+        fill='tozeroy',
+        fillcolor='rgba(255,215,0,0.05)',
+    ))
+
+    # ÅÌ‘ù»Ì‰Ì »— «”«” œÌ‰«„Ìò „‰ŸÊ„Â
+    pred_x = [df.index[-1]] + future_times
+    pred_y = [close.iloc[-1]] + future_prices
+
+    fig.add_trace(go.Scatter(
+        x=pred_x, y=pred_y,
+        mode='lines+markers',
+        line=dict(color='#00ff88', width=2.5, dash='dot'),
+        marker=dict(size=6, color='#00ff88'),
+        name='ÅÌ‘ù»Ì‰Ì „‰ŸÊ„Âù«Ì (?? œﬁÌﬁÂ ¬Ì‰œÂ)',
+    ))
+
+    fig.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color=TEXT_COLOR, size=11),
+        margin=dict(l=50, r=20, t=30, b=30),
+        height=260,
+        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)'),
+        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', tickformat='$,.0f'),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, font=dict(size=9)),
+    )
+
+    return fig
+
+
+# ?????????????????????????????????????????????
+# ??? Dash App Layout
+# ?????????????????????????????????????????????
+app = dash.Dash(__name__, suppress_callback_exceptions=True)
+app.title = "?? ÅÌ‘ù»Ì‰Ì „‰ŸÊ„Âù«Ì »Ì ùòÊÌ‰"
+
+app.layout = html.Div([
+    html.Div([
+        html.H1("?? ÅÌ‘ù»Ì‰Ì ﬁÌ„  »— «”«” œÌ‰«„Ìò „‰ŸÊ„Â »Ì ùòÊÌ‰",
+                style={"color": GOLD, "textAlign": "center", "fontSize": "24px", "margin": "10px 0"}),
+    ], style={"background": f"linear-gradient(180deg, {CARD_BG}, {BG_COLOR})"}),
+
+    html.Div(id='stats-cards', style={"display": "flex", "flexWrap": "wrap", "justifyContent": "center", "gap": "10px",
+                                      "padding": "10px"}),
+
+    html.Div([
+        html.Div([
+            html.Div([
+                html.H3("?? ‰„Êœ«— ﬁÌ„  + „”Ì— ÅÌ‘ù»Ì‰Ì „‰ŸÊ„Âù«Ì",
+                        style={"color": GOLD, "fontSize": "13px", "margin": "5px 10px"}),
+                dcc.Graph(id='price-chart', config={'displayModeBar': False}),
+            ], style={"background": CARD_BG, "borderRadius": "12px", "border": "1px solid rgba(255,215,0,0.15)",
+                      "margin": "6px"}),
+        ], style={"width": "40%", "minWidth": "350px"}),
+
+        html.Div([
+            dcc.Graph(id='scene-3d', config={'displayModeBar': True}, style={"height": "550px"}),
+
+            html.Div([
+                html.Button("?? ‘—Ê⁄ /  Êﬁ›", id='btn-toggle', n_clicks=0,
+                            style={"background": GOLD, "color": "#000", "border": "none", "borderRadius": "8px",
+                                   "padding": "8px 16px", "cursor": "pointer"}),
+                html.Button("?? »—Ê“—”«‰Ì œ«œÂ", id='btn-refresh', n_clicks=0,
+                            style={"background": ACCENT, "color": "#000", "border": "none", "borderRadius": "8px",
+                                   "padding": "8px 16px", "cursor": "pointer", "marginLeft": "10px"}),
+                html.Span(id='status-text', style={"color": TEXT_COLOR, "fontSize": "12px", "marginLeft": "15px"}),
+            ], style={"textAlign": "center", "padding": "10px", "display": "flex", "justifyContent": "center",
+                      "alignItems": "center"}),
+
+            dcc.Interval(id='interval-3d', interval=200, n_intervals=0),
+            dcc.Interval(id='interval-data', interval=30000, n_intervals=0),
+            dcc.Store(id='store-data'),
+            dcc.Store(id='store-frame', data=0),
+            dcc.Store(id='store-running', data=True),
+        ], style={"width": "60%", "minWidth": "500px"}),
+    ], style={"display": "flex", "flexWrap": "wrap", "padding": "0 10px"}),
+])
+
+
+@app.callback(
+    [Output('stats-cards', 'children'),
+     Output('price-chart', 'figure'),
+     Output('store-data', 'data')],
+    [Input('btn-refresh', 'n_clicks'),
+     Input('interval-data', 'n_intervals')]
+)
+def update_data(n_clicks, n_intervals):
+    df = fetch_btc_data()
+    stats = calculate_stats(df)
+
+    change_color = "#00ff88" if stats["change"] >= 0 else "#ff4444"
+
+    cards = [
+        html.Div([
+            html.Div("?? ﬁÌ„  ›⁄·Ì", style={"color": "rgba(255,255,255,0.5)", "fontSize": "11px"}),
+            html.Div(f"${stats['current_price']:,.0f}",
+                     style={"color": GOLD, "fontSize": "20px", "fontWeight": "bold"}),
+        ], style=card_style(GOLD)),
+
+        html.Div([
+            html.Div("?? ÅÌ‘ù»Ì‰Ì „‰ŸÊ„Âù«Ì (?? œﬁÌﬁÂ »⁄œ)",
+                     style={"color": "rgba(255,255,255,0.5)", "fontSize": "11px"}),
+            html.Div(f"${stats['pred_price']:,.0f}",
+                     style={"color": stats['pred_color'], "fontSize": "20px", "fontWeight": "bold"}),
+        ], style=card_style(stats['pred_color'])),
+
+        html.Div([
+            html.Div("?? Ê÷⁄Ì  ›«“ „‰ŸÊ„Â", style={"color": "rgba(255,255,255,0.5)", "fontSize": "11px"}),
+            html.Div(f"{stats['pred_signal']}",
+                     style={"color": stats['pred_color'], "fontSize": "14px", "fontWeight": "bold"}),
+        ], style=card_style(stats['pred_color'])),
+    ]
+
+    return cards, build_price_chart(df), df.to_json(date_format='iso')
+
+
+@app.callback(
+    [Output('scene-3d', 'figure'),
+     Output('store-frame', 'data'),
+     Output('status-text', 'children'),
+     Output('interval-3d', 'disabled')],
+    [Input('interval-3d', 'n_intervals'),
+     Input('btn-toggle', 'n_clicks')],
+    [State('store-frame', 'data'),
+     State('store-running', 'data'),
+     State('store-data', 'data')]
+)
+def animate_scene(n_intervals, btn_clicks, current_frame, is_running, data_json):
+    if data_json is None:
+        df = fetch_btc_data()
+    else:
+        df = pd.read_json(data_json)
+        df.index = pd.to_datetime(df.index)
+
+    running = is_running
+    if btn_clicks and btn_clicks % 2 == 1:
+        running = not is_running
+
+    if not running:
+        return build_3d_scene(df, current_frame), current_frame, "?? „ Êﬁ›", True
+
+    frame = (current_frame + 1) % max(len(df), 1)
+    price = df['Close'].iloc[frame % len(df)]
+    return build_3d_scene(df, frame), frame, f"?? ›—Ì„ {frame} | ${price:,.0f}", False
+
+
+def card_style(border_color):
+    return {
+        "background": CARD_BG,
+        "borderRadius": "12px",
+        "border": f"1px solid {border_color}33",
+        "borderRight": f"4px solid {border_color}",
+        "padding": "10px 14px",
+        "minWidth": "160px",
+        "flex": "1",
+        "boxShadow": "0 4px 12px rgba(0,0,0,0.3)",
+    }
+
+
+if __name__ == '__main__':
+    app.run(debug=True, port=8050, host='0.0.0.0')

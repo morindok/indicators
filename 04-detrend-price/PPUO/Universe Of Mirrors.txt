@@ -1,0 +1,60 @@
+//@version=5
+indicator("Universe Of Mirrors{Morindok}", shorttitle="PU Collision", overlay=true)
+
+// Inputs
+src     = input.source(close, "Source")
+baseLen = input.int(144, "Main MA Length", minval=1)
+maType  = input.string("EMA", "MA Type", options=["SMA", "EMA", "WMA", "RMA"])
+
+// MA selector
+f_ma(_src, _len, _type) =>
+    _type == "SMA" ? ta.sma(_src, _len) :
+     _type == "EMA" ? ta.ema(_src, _len) :
+     _type == "WMA" ? ta.wma(_src, _len) :
+     ta.rma(_src, _len)
+
+// Derived lengths
+lenSlow = math.max(1, math.round(baseLen * 1.618))
+lenFast = math.max(1, math.round(baseLen * 0.618))
+
+// Base moving averages
+maSlow = f_ma(src, lenSlow, maType)
+maFast = f_ma(src, lenFast, maType)
+
+// Price deviations from each universe axis
+detSlow = src - maSlow
+detFast = src - maFast
+
+// Parallel universes
+uA     = maSlow + detFast
+uAInv  = maSlow - detFast
+
+uB     = maFast + detSlow
+uBInv  = maFast - detSlow
+
+// Collision logic
+collisionA     = ta.cross(uA, uAInv)
+collisionB     = ta.cross(uB, uBInv)
+collisionABInv = ta.cross(uAInv, uBInv)
+collisionAB    = ta.cross(uA, uB)
+
+// Plots
+pUA    = plot(uA, title="Universe A", color=color.new(color.lime, 10), linewidth=2)
+pUAInv = plot(uAInv, title="Universe A Inverse", color=color.new(color.red, 10), linewidth=2)
+
+pUB    = plot(uB, title="Universe B", color=color.new(color.aqua, 10), linewidth=2)
+pUBInv = plot(uBInv, title="Universe B Inverse", color=color.new(color.orange, 10), linewidth=2)
+
+// Bands
+fill(pUA, pUAInv, color=color.new(color.purple, 90), title="Universe A Band")
+fill(pUB, pUBInv, color=color.new(color.blue, 90), title="Universe B Band")
+
+// Reference axes
+plot(maSlow, title="Slow MA Axis", color=color.new(color.white, 55), linewidth=1)
+plot(maFast, title="Fast MA Axis", color=color.new(color.gray, 55), linewidth=1)
+
+// Collision markers placed on the actual collision lines
+plotshape(collisionA ? uA : na, title="A Internal Collision", style=shape.circle, location=location.absolute, color=color.yellow, size=size.tiny)
+plotshape(collisionB ? uB : na, title="B Internal Collision", style=shape.circle, location=location.absolute, color=color.orange, size=size.tiny)
+plotshape(collisionABInv ? uAInv : na, title="Inverse Universe Collision", style=shape.diamond, location=location.absolute, color=color.white, size=size.small)
+plotshape(collisionAB ? uA : na, title="Direct Universe Collision", style=shape.diamond, location=location.absolute, color=color.fuchsia, size=size.small)

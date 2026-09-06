@@ -1,0 +1,208 @@
+//@version=5
+indicator("Time Machine{Morindok}", overlay=true, max_bars_back=5000)
+max_bars_back(close, 5000)
+max_bars_back(high, 5000)
+max_bars_back(low, 5000)
+max_bars_back(open, 5000)
+
+group_main = "Main Settings"
+calcMethod      = input.string("SMA", title="Calculation Basis", options=["SMA", "HH/LL"], group=group_main)
+autoSlopeHHLL   = input.bool(false, title="Auto HH/LL based on Slope", group=group_main, tooltip="If checked, automatically sets Start/End basis to HH/LL for negative slope and LL/HH for positive slope.")
+invertHHLL      = input.bool(false, title="Invert HH/LL Manually", group=group_main, tooltip="If Auto Slope is off, this manually sets Start to HH and End to LL.")
+startPriceLevel = input.price(0.0, "Start Line Center Price", confirm=true, group=group_main)
+endPriceLevel   = input.price(0.0, "End Line Center Price", confirm=true, group=group_main)
+
+group_time = "Time Range"
+startTime       = input.time(timestamp("2026-06-01 00:00:00"), "Start Time", confirm=true, group=group_time)
+endTime         = input.time(timestamp("2026-06-15 00:00:00"), "End Time", confirm=true, group=group_time)
+
+var int   fixed_N             = 0
+var float fixed_L_green_start = na
+var float fixed_L_red_start   = na
+var float fixed_L_green       = na
+var float fixed_L_red         = na
+var float startBase           = na
+var float endBase             = na
+var bool  calcComplete        = false
+var bool  finalInvertDecision = false
+
+var line startBaseHoriz = na
+var line startRedHoriz  = na
+var line endBaseHoriz   = na
+var line endRedHoriz    = na
+
+inRange = time >= startTime and time <= endTime
+var int startBarIdx = na
+var int endBarIdx   = na
+var int actualStartTimeMs = na
+var int actualEndTimeMs   = na
+
+if inRange
+    if na(startBarIdx)
+        startBarIdx := bar_index
+        actualStartTimeMs := time
+    endBarIdx := bar_index
+    actualEndTimeMs := time
+
+if not calcComplete and not na(endBarIdx) and ((inRange[1] and not inRange) or (barstate.islast and inRange))
+    fixed_N := endBarIdx - startBarIdx + 1
+    
+    float sumGreenDist_start = 0.0
+    float sumRedDist_start   = 0.0
+    float sumGreenDist_end   = 0.0
+    float sumRedDist_end     = 0.0
+    int   greenCount         = 0
+    int   redCount           = 0
+
+    int loop_limit = math.min(fixed_N, 2400) 
+
+    for i = 0 to loop_limit - 1
+        int idx = bar_index - endBarIdx + i
+        
+        float valRef_start = 0.0
+        float valRef_end   = 0.0
+        
+        if calcMethod == "SMA"
+            float sumMA = 0.0
+            for j = 0 to loop_limit - 1
+                sumMA += close[idx + j]
+            float valMA = sumMA / loop_limit
+            valRef_start := valMA
+            valRef_end   := valMA
+        else
+            float maxH = high[idx]
+            float minL = low[idx]
+            for j = 0 to loop_limit - 1
+                maxH := math.max(maxH, high[idx + j])
+                minL := math.min(minL, low[idx + j])
+                
+            bool shouldInvert = false
+            if autoSlopeHHLL
+                float startRangeClose = close[bar_index - startBarIdx]
+                float endRangeClose   = close[bar_index - endBarIdx]
+                if (endRangeClose < startRangeClose)
+                    shouldInvert := true
+            else
+                shouldInvert := invertHHLL
+            
+            finalInvertDecision := shouldInvert
+
+            if shouldInvert
+                valRef_start := maxH
+                valRef_end   := minL
+            else
+                valRef_start := minL
+                valRef_end   := maxH
+        
+        float dist_start = math.abs(close[idx] - valRef_start)
+        float dist_end   = math.abs(close[idx] - valRef_end)
+        
+        if close[idx] > open[idx]
+            sumGreenDist_start += dist_start
+            sumGreenDist_end   += dist_end
+            greenCount         += 1
+        else if close[idx] < open[idx]
+            sumRedDist_start   += dist_start
+            sumRedDist_end     += dist_end
+            redCount           += 1
+
+    float finalGreenDist_start = greenCount > 0 ? (sumGreenDist_start / greenCount) : 0.0
+    float finalRedDist_start   = redCount > 0   ? (sumRedDist_start / redCount) : 0.0
+    float totalDist_start      = finalGreenDist_start + finalRedDist_start
+
+    float finalGreenDist_end   = greenCount > 0 ? (sumGreenDist_end / greenCount) : 0.0
+    float finalRedDist_end     = redCount > 0   ? (sumRedDist_end / redCount) : 0.0
+    float totalDist_end        = finalGreenDist_end + finalRedDist_end
+    
+    startBase := startPriceLevel - (totalDist_start / 2)
+    fixed_L_green_start := startBase + finalGreenDist_start
+    fixed_L_red_start   := fixed_L_green_start + finalRedDist_start
+
+    endBase := endPriceLevel - (totalDist_end / 2)
+    fixed_L_green  := endBase + finalGreenDist_end
+    fixed_L_red    := fixed_L_green + finalRedDist_end
+    
+    calcComplete := true
+
+    line.new(startBarIdx, startBase, startBarIdx, fixed_L_green_start, color=color.green, width=4)
+    line.new(startBarIdx, fixed_L_green_start, startBarIdx, fixed_L_red_start, color=color.red, width=4)
+    line.new(endBarIdx, endBase, endBarIdx, fixed_L_green, color=color.green, width=4)
+    line.new(endBarIdx, fixed_L_green, endBarIdx, fixed_L_red, color=color.red, width=4)
+    startBaseHoriz := line.new(startBarIdx, startBase, bar_index, startBase, color=color.blue, width=2, style=line.style_dashed)
+    endBaseHoriz   := line.new(endBarIdx, endBase, bar_index, endBase, color=color.blue, width=2, style=line.style_dashed)
+    startRedHoriz  := line.new(startBarIdx, fixed_L_red_start, bar_index, fixed_L_red_start, color=color.red, width=2, style=line.style_dashed)
+    endRedHoriz    := line.new(endBarIdx, fixed_L_red, bar_index, fixed_L_red, color=color.red, width=2, style=line.style_dashed)
+    
+    float startDiff = fixed_L_red_start - startBase
+    line.new(startBarIdx, startBase + (startDiff * 1.618), startBarIdx + 1, startBase + (startDiff * 1.618), color=color.fuchsia, width=1, style=line.style_solid, extend=extend.both)
+    label.new(startBarIdx, startBase + (startDiff * 1.618), "1.618", style=label.style_none, textcolor=color.fuchsia)
+    line.new(startBarIdx, startBase + (startDiff * 0.618), startBarIdx + 1, startBase + (startDiff * 0.618), color=color.fuchsia, width=1, style=line.style_solid, extend=extend.both)
+    label.new(startBarIdx, startBase + (startDiff * 0.618), "0.618", style=label.style_none, textcolor=color.fuchsia)
+    line.new(startBarIdx, startBase + (startDiff * 0.382), startBarIdx + 1, startBase + (startDiff * 0.382), color=color.fuchsia, width=1, style=line.style_solid, extend=extend.both)
+    label.new(startBarIdx, startBase + (startDiff * 0.382), "0.382", style=label.style_none, textcolor=color.fuchsia)
+    line.new(startBarIdx, startBase + (startDiff * -0.618), startBarIdx + 1, startBase + (startDiff * -0.618), color=color.fuchsia, width=1, style=line.style_solid, extend=extend.both)
+    label.new(startBarIdx, startBase + (startDiff * -0.618), "-0.618", style=label.style_none, textcolor=color.fuchsia)
+    
+    float endDiff = fixed_L_red - endBase
+    line.new(endBarIdx, endBase + (endDiff * 1.618), endBarIdx + 1, endBase + (endDiff * 1.618), color=color.orange, width=1, style=line.style_solid, extend=extend.both)
+    label.new(endBarIdx, endBase + (endDiff * 1.618), "1.618", style=label.style_none, textcolor=color.orange)
+    line.new(endBarIdx, endBase + (endDiff * 0.618), endBarIdx + 1, endBase + (endDiff * 0.618), color=color.orange, width=1, style=line.style_solid, extend=extend.both)
+    label.new(endBarIdx, endBase + (endDiff * 0.618), "0.618", style=label.style_none, textcolor=color.orange)
+    line.new(endBarIdx, endBase + (endDiff * 0.382), endBarIdx + 1, endBase + (endDiff * 0.382), color=color.orange, width=1, style=line.style_solid, extend=extend.both)
+    label.new(endBarIdx, endBase + (endDiff * 0.382), "0.382", style=label.style_none, textcolor=color.orange)
+    line.new(endBarIdx, endBase + (endDiff * -0.618), endBarIdx + 1, endBase + (endDiff * -0.618), color=color.orange, width=1, style=line.style_solid, extend=extend.both)
+    label.new(endBarIdx, endBase + (endDiff * -0.618), "-0.618", style=label.style_none, textcolor=color.orange)
+    
+    int timeDiffMs = actualEndTimeMs - actualStartTimeMs
+    if timeDiffMs > 0
+        float labelYPos = (startBase + endBase) / 2
+        
+        int fibTime1618 = actualStartTimeMs + int(math.round(timeDiffMs * 1.618))
+        line.new(fibTime1618, labelYPos, fibTime1618, labelYPos + 1, xloc=xloc.bar_time, extend=extend.both, color=color.teal, width=1, style=line.style_dashed)
+        label.new(fibTime1618, labelYPos, "T: 1.618", xloc=xloc.bar_time, style=label.style_none, textcolor=color.teal)
+        
+        int fibTime0618 = actualStartTimeMs + int(math.round(timeDiffMs * 0.618))
+        line.new(fibTime0618, labelYPos, fibTime0618, labelYPos + 1, xloc=xloc.bar_time, extend=extend.both, color=color.teal, width=1, style=line.style_dashed)
+        label.new(fibTime0618, labelYPos, "T: 0.618", xloc=xloc.bar_time, style=label.style_none, textcolor=color.teal)
+        
+        int fibTime0382 = actualStartTimeMs + int(math.round(timeDiffMs * 0.382))
+        line.new(fibTime0382, labelYPos, fibTime0382, labelYPos + 1, xloc=xloc.bar_time, extend=extend.both, color=color.teal, width=1, style=line.style_dashed)
+        label.new(fibTime0382, labelYPos, "T: 0.382", xloc=xloc.bar_time, style=label.style_none, textcolor=color.teal)
+        
+        int fibTimeNeg618 = actualStartTimeMs + int(math.round(timeDiffMs * -0.618))
+        line.new(fibTimeNeg618, labelYPos, fibTimeNeg618, labelYPos + 1, xloc=xloc.bar_time, extend=extend.both, color=color.teal, width=1, style=line.style_dashed)
+        label.new(fibTimeNeg618, labelYPos, "T: -0.618", xloc=xloc.bar_time, style=label.style_none, textcolor=color.teal)
+
+if calcComplete
+    line.set_x2(startBaseHoriz, bar_index)
+    line.set_x2(startRedHoriz, bar_index)
+    line.set_x2(endBaseHoriz, bar_index)
+    line.set_x2(endRedHoriz, bar_index)
+
+// ==========================================
+// ÈÎÔ ãÍÇÓÈÇÊ æ ÑÓã ÎØæØ ÏÇíäÇãí˜
+// ==========================================
+// ÈÑÇí ÌáæíÑí ÇÒ ÎØÇ ÏÑ ÊæÇÈÚ ta.* ãÞÏÇÑ ma_length ÑÇ ÍÏÇÞá 1 ÏÑ äÙÑ ãííÑíã
+ma_length = math.max(nz(fixed_N, 1), 1)
+
+sma_val = ta.sma(close, ma_length)
+val_ll  = ta.lowest(low, ma_length)
+val_hh  = ta.highest(high, ma_length)
+
+float purple_line = na
+float orange_line = na
+float center_price = na
+
+// ÔÑØ äãÇíÔ: ÝÞØ ÇÑ ãÍÇÓÈå ˜Çãá ÔÏå æ ˜äÏá ÝÚáí ÈÚÏ ÇÒ ÇÊãÇã ÈÇÒå ÒãÇäí ÈÇÔÏ
+if calcComplete and time > endTime
+    center_price := (startPriceLevel + endPriceLevel) / 2
+    
+    float purple_ref = finalInvertDecision ? val_hh : val_ll
+    float orange_ref = finalInvertDecision ? val_ll : val_hh
+    
+    purple_line := calcMethod == "SMA" ? ((2 * center_price) - sma_val) : ((2 * center_price) - purple_ref)
+    orange_line := calcMethod == "SMA" ? sma_val : ((2 * center_price) - orange_ref)
+    
+plot(orange_line, color=color.orange, title="Dynamic Line 2 (Orange)", linewidth=2)
+plot(purple_line, color=color.purple, title="Dynamic Line 1 (Purple)", linewidth=2)
+plot(center_price, color=color.new(color.gray, 50), title="Center Line", style=plot.style_cross)

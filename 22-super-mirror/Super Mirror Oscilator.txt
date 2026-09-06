@@ -1,0 +1,68 @@
+//@version=5
+indicator("Mirror Oscillator Pro", shorttitle="MOP", overlay=false, precision=2)
+tf_input = input.timeframe("", "Timeframe")
+src_input = input.source(close, "Source")
+leftLen = input.int(7, "Pivot Left Length")
+rightLen = input.int(7, "Pivot Right Length")
+smoothLen = input.int(5, "Smoothing Length")
+dynLen = input.int(50, "Dynamic Range Lookback")
+obLevel = input.float(80.0, "Overbought Level")
+osLevel = input.float(20.0, "Oversold Level")
+src_price = request.security(syminfo.tickerid, tf_input, src_input)
+high_price = request.security(syminfo.tickerid, tf_input, high)
+low_price = request.security(syminfo.tickerid, tf_input, low)
+ph = ta.pivothigh(high_price, leftLen, rightLen)
+pl = ta.pivotlow(low_price, leftLen, rightLen)
+var float pivotHigh = na
+var float pivotLow = na
+pivotHigh := not na(ph) ? ph : pivotHigh
+pivotLow := not na(pl) ? pl : pivotLow
+pivotHigh := na(pivotHigh) ? high_price : pivotHigh
+pivotLow := na(pivotLow) ? low_price : pivotLow
+hh = ta.highest(high_price, 50)
+ll = ta.lowest(low_price, 50)
+mid = (hh + ll) / 2
+rng = hh - ll
+gRng = rng / 1.618
+upperBand = mid + gRng / 2
+lowerBand = mid - gRng / 2
+tr = math.max(high_price - low_price, math.max(math.abs(high_price - src_price[1]), math.abs(low_price - src_price[1])))
+atr_val = ta.rma(tr, 14)
+atrUpper = mid + atr_val
+atrLower = mid - atr_val
+[bb_mid, bb_upper, bb_lower] = ta.bb(src_price, 20, 2.0)
+tenkan = math.avg(ta.highest(high_price, 9), ta.lowest(low_price, 9))
+kijun = math.avg(ta.highest(high_price, 26), ta.lowest(low_price, 26))
+senA = math.avg(tenkan, kijun)
+senB = math.avg(ta.highest(high_price, 52), ta.lowest(low_price, 52))
+ichUp = math.max(senA, senB)
+ichLow = math.min(senA, senB)
+rsi_val = ta.rsi(src_price, 14)
+rsiMap = ll + (rsi_val / 100) * rng
+cci_val = ta.cci(src_price, 20)
+cciRatio = (cci_val - ta.lowest(cci_val, 20)) / math.max(ta.highest(cci_val, 20) - ta.lowest(cci_val, 20), 1e-10)
+cciMap = ll + cciRatio * rng
+[macd_line, _, _] = ta.macd(src_price, 12, 26, 9)
+macdRatio = (macd_line - ta.lowest(macd_line, 26)) / math.max(ta.highest(macd_line, 26) - ta.lowest(macd_line, 26), 1e-10)
+macdMap = ll + macdRatio * rng
+bt = input.string("Golden Cloud", "Baseline", options=["Golden Cloud", "HH/LL", "ATR", "BB", "Ichimoku", "RSI", "CCI", "MACD"])
+actUp = bt == "HH/LL" ? hh : bt == "ATR" ? atrUpper : bt == "BB" ? bb_upper : bt == "Ichimoku" ? ichUp : bt == "RSI" ? rsiMap : bt == "CCI" ? cciMap : bt == "MACD" ? macdMap : upperBand
+actLow = bt == "HH/LL" ? ll : bt == "ATR" ? atrLower : bt == "BB" ? bb_lower : bt == "Ichimoku" ? ichLow : bt == "RSI" ? rsiMap : bt == "CCI" ? cciMap : bt == "MACD" ? macdMap : lowerBand
+ref1H = 2 * pivotHigh - src_price
+ref1L = 2 * pivotLow - src_price
+ref2H = 2 * actUp - ref1H
+ref2L = 2 * actLow - ref1L
+mirrorVal = (ref2H + ref2L) / 2
+rawPos = 100 * (mirrorVal - actLow) / math.max(actUp - actLow, 1e-10)
+dynLow = ta.lowest(rawPos, dynLen)
+dynHigh = ta.highest(rawPos, dynLen)
+normPos = 100 * (rawPos - dynLow) / math.max(dynHigh - dynLow, 1e-10)
+osc = ta.ema(math.max(0, math.min(100, normPos)), smoothLen)
+sig = ta.ema(osc, smoothLen)
+oscColor = osc > obLevel ? color.new(color.red, 0) : osc < osLevel ? color.new(color.green, 0) : osc > sig ? color.new(color.blue, 0) : color.new(color.orange, 0)
+plot(osc, "Oscillator", color=oscColor, linewidth=2)
+plot(sig, "Signal", color=color.new(color.gray, 60), linewidth=1)
+hline(obLevel, "OB", color=color.new(color.red, 30), linestyle=hline.style_dashed)
+hline(osLevel, "OS", color=color.new(color.green, 30), linestyle=hline.style_dashed)
+hline(50, "Mid", color=color.new(color.gray, 80), linestyle=hline.style_dotted)
+bgcolor(osc > obLevel and osc < osc[1] ? color.new(color.red, 85) : osc < osLevel and osc > osc[1] ? color.new(color.green, 85) : na)

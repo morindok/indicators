@@ -1,0 +1,55 @@
+//@version=5
+indicator("ÇäÏí˜ÇÊæÑ ÏíäÇãí˜ ÊŞÇÑä ãÊäÇæÈ", overlay=true)
+
+// --- æÑæÏíåÇí ÇäÏí˜ÇÊæÑ ---
+length = input.int(50, title="Øæá ÏæÑå ÈÑÇí ÓØæÍ ÏíäÇãí˜ (äÌÑå ÊŞÇÑä)")
+lagPeriod = input.int(5, title="ÊÃÎíÑ ÒãÇäí ÈÑÇí ãÍÇÓÈå ÊŞÇÑä (Lag)")
+useBollinger = input.bool(true, title="ÇÓÊİÇÏå ÇÒ ÈÇäÏåÇí ÈæáíäÑ (ÏÑ ÛíÑ Çíä ÕæÑÊ ˜ÇäÇá ÏæäíÇä)")
+bbMult = input.float(2.0, title="ÖÑíÈ ÈÇäÏåÇí ÈæáíäÑ")
+
+// --- ãÍÇÓÈå ÓØæÍ ÏíäÇãí˜ ---
+float upperLevel = na
+float lowerLevel = na
+float centerLevel = na
+
+if (useBollinger)
+    basis = ta.sma(close, length)
+    dev = bbMult * ta.stdev(close, length)
+    upperLevel := basis + dev
+    lowerLevel := basis - dev
+    centerLevel := basis
+else
+    upperLevel := ta.highest(high, length)
+    lowerLevel := ta.lowest(low, length)
+    centerLevel := (upperLevel + lowerLevel) / 2
+
+
+// --- ãÍÇÓÈå ÎØæØ ÊŞÇÑä ÏíäÇãí˜ ---
+float symUp = 2 * upperLevel - close[lagPeriod]
+float symDown = 2 * lowerLevel - close[lagPeriod]
+
+
+// --- ÊÔÎíÕ ÊŞÇØÚåÇ (ÈÑÎæÑÏ ÊŞÇÑä ÈÇ ŞíãÊ Èå ÚäæÇä ÓíäÇá ÈÇÒÔÊí) ---
+bool crossDown = ta.crossunder(close, symUp)
+bool crossUp = ta.crossover(close, symDown)
+
+// --- ãÏíÑíÊ æÖÚíÊ ÈÑÇí ÓíäÇáåÇí í˜í ÏÑ ãíÇä (ãÊäÇæÈ) ---
+// 0: ÈÏæä ÓíäÇá¡ 1: ÂÎÑíä ÓíäÇá ÎÑíÏ¡ -1: ÂÎÑíä ÓíäÇá İÑæÔ
+var int lastSignal = 0 
+
+// ÔÑØ ÓíäÇá ÎÑíÏ: ÊŞÇØÚ Ñæ Èå ÈÇáÇ ÈÇ ÊŞÇÑä Çííä¡ æ ÂÎÑíä ÓíäÇá ÎÑíÏ äÈÇÔÏ
+bool buySignal = crossUp and lastSignal != 1
+
+// ÔÑØ ÓíäÇá İÑæÔ: ÊŞÇØÚ Ñæ Èå Çííä ÈÇ ÊŞÇÑä ÈÇáÇ¡ æ ÂÎÑíä ÓíäÇá İÑæÔ äÈÇÔÏ
+bool sellSignal = crossDown and lastSignal != -1
+
+// ÂÏíÊ ˜ÑÏä æÖÚíÊ ÓíäÇá
+if (buySignal)
+    lastSignal := 1 
+
+if (sellSignal)
+    lastSignal := -1 
+
+// --- ÑÓã ÓíäÇáåÇ Ñæí ÇÑÊ ---
+plotshape(buySignal, title="ÓíäÇá ÎÑíÏ", location=location.belowbar, color=color.green, style=shape.labelup, text="BUY", size=size.small)
+plotshape(sellSignal, title="ÓíäÇá İÑæÔ", location=location.abovebar, color=color.red, style=shape.labeldown, text="SELL", size=size.small)

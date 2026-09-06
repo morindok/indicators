@@ -1,0 +1,87 @@
+//@version=5
+indicator("Staircase Trend – Peaks & Troughs (MTF Table) {Morindok}", overlay=true)
+
+//================ INPUTS =================
+length = input.int(10,  "Lookback (Øæá áå)")
+useHL  = input.bool(true, "ÇÓÊİÇÏå ÇÒ High/Low ˜äÏáåÇ")
+
+// ÇäÊÎÇÈ ÊÇíã İÑíãåÇ ÈÑÇí ÌÏæá
+tf1 = input.timeframe("15",  "ÊÇíã İÑíã 1")
+tf2 = input.timeframe("60",  "ÊÇíã İÑíã 2")
+tf3 = input.timeframe("240", "ÊÇíã İÑíã 3 (4H)")
+tf4 = input.timeframe("D",   "ÊÇíã İÑíã 4 (ÑæÒÇäå)")
+tf5 = input.timeframe("W",   "ÊÇíã İÑíã 5 (åİÊí)")
+
+//================ CALC FUNCTION =================
+// ÊÈÏíá ˜ÏåÇí ãÍÇÓÈå Èå í˜ ÊÇÈÚ ÊÇ ÈÊæÇäíã ÏÑ ÊÇíã İÑíãåÇí ãÎÊáİ İÑÇÎæÇäí ˜äíã
+f_getStaircase(len, use_hl) =>
+    src_h = use_hl ? high : close
+    src_l = use_hl ? low  : close
+
+    hh = ta.highest(src_h, len)
+    ll = ta.lowest(src_l,  len)
+
+    var int   trend = 1
+    var float stair = na
+
+    if na(stair)
+        stair := close
+
+    if close > stair and trend < 0
+        trend := 1
+        stair := ll
+    else if close < stair and trend > 0
+        trend := -1
+        stair := hh
+
+    if trend > 0
+        stair := math.max(stair, ll)
+    else
+        stair := math.min(stair, hh)
+    
+    // ÎÑæÌí ÊÇÈÚ: ÑæäÏ æ ÚÏÏ ÎØ
+    [trend, stair]
+
+//================ CURRENT TF CALC & PLOT =================
+[curr_trend, curr_stair] = f_getStaircase(length, useHL)
+
+plot(curr_stair, "Staircase",
+     color = curr_trend > 0 ? color.new(color.green, 0) : color.new(color.red, 0),
+     linewidth = 2,
+     style = plot.style_stepline)
+
+//================ MTF REQUESTS =================
+// ÏÑíÇİÊ ÑæäÏ ÈÑÇí åÑ ÊÇíã İÑíã
+[t1_trend, _] = request.security(syminfo.tickerid, tf1, f_getStaircase(length, useHL))
+[t2_trend, _] = request.security(syminfo.tickerid, tf2, f_getStaircase(length, useHL))
+[t3_trend, _] = request.security(syminfo.tickerid, tf3, f_getStaircase(length, useHL))
+[t4_trend, _] = request.security(syminfo.tickerid, tf4, f_getStaircase(length, useHL))
+[t5_trend, _] = request.security(syminfo.tickerid, tf5, f_getStaircase(length, useHL))
+
+//================ TABLE =================
+var table trendTable = table.new(position.top_right, 2, 6, bgcolor=color.new(color.black, 70), border_color=color.gray, border_width=1)
+
+if barstate.islast
+    // åÏÑåÇí ÌÏæá
+    table.cell(trendTable, 0, 0, "Timeframe", text_color=color.white, bgcolor=color.new(color.gray, 50))
+    table.cell(trendTable, 1, 0, "Color / Trend", text_color=color.white, bgcolor=color.new(color.gray, 50))
+
+    // ÑÏíİ 1
+    table.cell(trendTable, 0, 1, tf1 == "" ? "Chart" : tf1, text_color=color.white)
+    table.cell(trendTable, 1, 1, t1_trend > 0 ? "Green (Up)" : "Red (Down)", text_color=color.white, bgcolor = t1_trend > 0 ? color.green : color.red)
+
+    // ÑÏíİ 2
+    table.cell(trendTable, 0, 2, tf2, text_color=color.white)
+    table.cell(trendTable, 1, 2, t2_trend > 0 ? "Green (Up)" : "Red (Down)", text_color=color.white, bgcolor = t2_trend > 0 ? color.green : color.red)
+
+    // ÑÏíİ 3
+    table.cell(trendTable, 0, 3, tf3, text_color=color.white)
+    table.cell(trendTable, 1, 3, t3_trend > 0 ? "Green (Up)" : "Red (Down)", text_color=color.white, bgcolor = t3_trend > 0 ? color.green : color.red)
+
+    // ÑÏíİ 4
+    table.cell(trendTable, 0, 4, tf4, text_color=color.white)
+    table.cell(trendTable, 1, 4, t4_trend > 0 ? "Green (Up)" : "Red (Down)", text_color=color.white, bgcolor = t4_trend > 0 ? color.green : color.red)
+
+    // ÑÏíİ 5
+    table.cell(trendTable, 0, 5, tf5, text_color=color.white)
+    table.cell(trendTable, 1, 5, t5_trend > 0 ? "Green (Up)" : "Red (Down)", text_color=color.white, bgcolor = t5_trend > 0 ? color.green : color.red)

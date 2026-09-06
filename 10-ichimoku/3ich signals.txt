@@ -1,0 +1,187 @@
+//@version=5
+indicator("Triple Ichimoku Clouds + Accurate Wick Signal", overlay=true, max_lines_count=200)
+
+// === Inputs ===
+t1 = input.time(timestamp("2024-01-01 09:00 +0000"), "Time 1", confirm=true)
+t2 = input.time(timestamp("2024-01-02 09:00 +0000"), "Time 2", confirm=true)
+
+// === Find selected bars ===
+var int bar1 = na
+var int bar2 = na
+
+if time >= t1 and time[1] < t1
+    bar1 := bar_index
+
+if time >= t2 and time[1] < t2
+    bar2 := bar_index
+
+barsRangeRaw = (not na(bar1) and not na(bar2)) ? math.abs(bar2 - bar1) : na
+barsRange = na(barsRangeRaw) ? na : math.max(barsRangeRaw, 1)
+
+rangeEndBar = (not na(bar1) and not na(bar2)) ? math.max(bar1, bar2) : na
+
+// === Ichimoku calculations ===
+factorConv = 9.0 / 26.0
+factorSpan = 52.0 / 26.0
+
+donchianMid(len) =>
+    (ta.highest(high, len) + ta.lowest(low, len)) / 2.0
+
+calcCloud(baseRange) =>
+    convLen = na(baseRange) ? na : math.max(1, math.round(baseRange * factorConv))
+    spanBLen = na(baseRange) ? na : math.max(1, math.round(baseRange * factorSpan))
+    tenkan = not na(convLen) ? donchianMid(convLen) : na
+    kijun = not na(baseRange) ? donchianMid(baseRange) : na
+    spanA = (tenkan + kijun) / 2.0
+    spanB = not na(spanBLen) ? donchianMid(spanBLen) : na
+    [spanA, spanB, convLen, baseRange, spanBLen]
+
+// === Clouds ===
+[spanA1000, spanB1000, c1000, b1000, s1000] = calcCloud(barsRange)
+[spanA1618, spanB1618, c1618, b1618, s1618] = calcCloud(na(barsRange) ? na : math.max(1, math.round(barsRange * 1.618)))
+[spanA0618, spanB0618, c0618, b0618, s0618] = calcCloud(na(barsRange) ? na : math.max(1, math.round(barsRange * 0.618)))
+
+// === Plotting Clouds ===
+pA1000 = plot(spanA1000, color=color.new(color.white, 0), linewidth=2, offset=b1000)
+pB1000 = plot(spanB1000, color=color.new(color.gray, 0), linewidth=2, offset=b1000)
+fill(pA1000, pB1000, color=spanA1000 >= spanB1000 ? color.new(color.silver, 80) : color.new(color.gray, 85))
+
+pA1618 = plot(spanA1618, color=color.new(color.blue, 0), linewidth=2, offset=b1618)
+pB1618 = plot(spanB1618, color=color.new(color.navy, 0), linewidth=2, offset=b1618)
+fill(pA1618, pB1618, color=spanA1618 >= spanB1618 ? color.new(color.green, 85) : color.new(color.red, 85))
+
+pA0618 = plot(spanA0618, color=color.new(color.orange, 0), linewidth=2, offset=b0618)
+pB0618 = plot(spanB0618, color=color.new(color.purple, 0), linewidth=2, offset=b0618)
+fill(pA0618, pB0618, color=spanA0618 >= spanB0618 ? color.new(color.teal, 85) : color.new(color.maroon, 85))
+
+// === Logic for Points and Lines ===
+upperWhiteNow = math.max(spanA1000[b1000], spanB1000[b1000])
+lowerWhiteNow = math.min(spanA1000[b1000], spanB1000[b1000])
+
+upperCloudTop = math.max(spanA1618[b1618], spanB1618[b1618])
+upperCloudBot = math.min(spanA1618[b1618], spanB1618[b1618])
+lowerCloudTop = math.max(spanA0618[b0618], spanB0618[b0618])
+lowerCloudBot = math.min(spanA0618[b0618], spanB0618[b0618])
+
+searchActive = not na(rangeEndBar) and bar_index > rangeEndBar
+inUpper = searchActive and upperWhiteNow <= upperCloudTop and upperWhiteNow >= upperCloudBot
+inLower = searchActive and lowerWhiteNow <= lowerCloudTop and lowerWhiteNow >= lowerCloudBot
+
+var float p1Price = na, var int p1Bar = na
+var float p2Price = na, var int p2Bar = na
+var bool lineDrawn = false
+var float midPrice = na
+var int midBar = na
+
+var bool trackU = false, var float uMax = na, var int uMaxB = na
+var bool trackL = false, var float lMin = na, var int lMinB = na
+
+if not lineDrawn and searchActive
+    if na(p1Bar)
+        if inUpper and not inUpper[1]
+            trackU := true
+            uMax := upperWhiteNow
+            uMaxB := bar_index
+        if trackU and inUpper
+            if upperWhiteNow > uMax
+                uMax := upperWhiteNow
+                uMaxB := bar_index
+        if trackU and not inUpper
+            p1Price := uMax
+            p1Bar := uMaxB
+            trackU := false
+    
+    else if na(p2Bar)
+        if inLower and not inLower[1]
+            trackL := true
+            lMin := lowerWhiteNow
+            lMinB := bar_index
+        if trackL and inLower
+            if lowerWhiteNow < lMin
+                lMin := lowerWhiteNow
+                lMinB := bar_index
+        if trackL and not inLower
+            p2Price := lMin
+            p2Bar := lMinB
+            trackL := false
+
+    if not na(p1Bar) and not na(p2Bar)
+        line.new(p1Bar, p1Price, p2Bar, p2Price, color=color.yellow, width=2)
+        midPrice := (p1Price + p2Price) / 2
+        midBar := int(math.round((p1Bar + p2Bar) / 2))
+        line.new(midBar, midPrice, midBar + 1, midPrice, extend=extend.right, color=color.aqua, width=2)
+        lineDrawn := true
+
+/// === SIGNAL LOGIC (ONE SHOT, STATE BASED + RETROACTIVE CHECK) ===
+var bool signalFired = false
+var int priceState = 0
+var bool pastChecked = false
+
+buySignal = false
+sellSignal = false
+
+// »Â „Õ÷ ”«Œ Â ‘œ‰ Œÿ° ê–‘ Â —« «“ ‰ﬁÿÂ Ê”ÿ  « ò‰œ· ›⁄·Ì çò „Ìùò‰Ì„
+if lineDrawn and not pastChecked
+    pastChecked := true
+    offsetMid = bar_index - midBar
+    
+    if offsetMid >= 0
+        // Ê÷⁄Ì  «Ê·ÌÂ œ— “„«‰ ‰ﬁÿÂ Ê”ÿ
+        priceState := close[offsetMid] > midPrice ? 1 : -1
+        
+        // ·ÊÅ “œ‰ —ÊÌ  „«„ ò‰œ·ùÂ«ÌÌ òÂ «“ ‰ﬁÿÂ Ê”ÿ  « «·«‰  ‘òÌ· ‘œÂù«‰œ
+        start_i = offsetMid - 1
+        if start_i >= 0
+            for i = 0 to start_i
+                check_offset = start_i - i // ŒÊ«‰œ‰ «“ ò‰œ· ﬁœÌ„Ì  — »Â ÃœÌœ —
+                if priceState == 1
+                    if low[check_offset] <= midPrice
+                        label.new(bar_index - check_offset, low[check_offset], "BUY", style=label.style_label_up, color=color.lime, textcolor=color.black, size=size.small)
+                        signalFired := true
+                        break
+                else if priceState == -1
+                    if high[check_offset] >= midPrice
+                        label.new(bar_index - check_offset, high[check_offset], "SELL", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+                        signalFired := true
+                        break
+    else
+        priceState := close > midPrice ? 1 : -1
+
+// »——”Ì ·ÕŸÂù«Ì »—«Ì ò‰œ·ùÂ«Ì ¬Ì‰œÂ («ê— œ— ê–‘ Â ”Ìê‰«·Ì ÅÌœ« ‰‘œ)
+if lineDrawn and pastChecked and not signalFired
+    if priceState == 1 and low <= midPrice
+        buySignal := true
+        signalFired := true
+    else if priceState == -1 and high >= midPrice
+        sellSignal := true
+        signalFired := true
+
+// —”„ ”Ìê‰«· ·ÕŸÂù«Ì (œ— ¬Ì‰œÂ)
+plotshape(buySignal, "Buy", shape.labelup, location.belowbar, color=color.lime, text="BUY", textcolor=color.black, size=size.small)
+plotshape(sellSignal, "Sell", shape.labeldown, location.abovebar, color=color.red, text="SELL", textcolor=color.white, size=size.small)
+
+alertcondition(buySignal, "Buy Alert", "Price Touched Mid-Line from Above")
+alertcondition(sellSignal, "Sell Alert", "Price Touched Mid-Line from Below")
+
+// === Table ===
+var table t = table.new(position.top_right, 5, 4, border_width=1)
+if barstate.islast
+    table.cell(t, 0, 0, "Cloud", bgcolor=color.black, text_color=color.white)
+    table.cell(t, 1, 0, "Tenkan", bgcolor=color.black, text_color=color.white)
+    table.cell(t, 2, 0, "Kijun", bgcolor=color.black, text_color=color.white)
+    table.cell(t, 3, 0, "Span B", bgcolor=color.black, text_color=color.white)
+    
+    table.cell(t, 0, 1, "1.000x")
+    table.cell(t, 1, 1, str.tostring(c1000))
+    table.cell(t, 2, 1, str.tostring(b1000))
+    table.cell(t, 3, 1, str.tostring(s1000))
+    
+    table.cell(t, 0, 2, "1.618x")
+    table.cell(t, 1, 2, str.tostring(c1618))
+    table.cell(t, 2, 2, str.tostring(b1618))
+    table.cell(t, 3, 2, str.tostring(s1618))
+    
+    table.cell(t, 0, 3, "0.618x")
+    table.cell(t, 1, 3, str.tostring(c0618))
+    table.cell(t, 2, 3, str.tostring(b0618))
+    table.cell(t, 3, 3, str.tostring(s0618))

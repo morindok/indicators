@@ -1,0 +1,87 @@
+//@version=5
+indicator("Symmetric Candles + Zone Boxes", overlay=true, max_boxes_count=500)
+
+len = input.int(20, "MA Length")
+ma = ta.sma(close, len)
+
+crossed = ta.cross(close, ma)
+
+prevGreenHigh = ta.valuewhen(close[1] > open[1], high[1], 0)
+prevRedLow    = ta.valuewhen(close[1] < open[1], low[1],  0)
+
+isRedAboveGreenHigh = close < open and high > prevGreenHigh
+isGreenBelowRedLow  = close > open and low  < prevRedLow
+
+symRedHigh   = ma + (ma - low)
+symRedOpen   = ma + (ma - close)
+symRedClose  = ma + (ma - open)
+symRedLow    = ma + (ma - high)
+
+symGreenHigh  = ma + (ma - low)
+symGreenOpen  = ma + (ma - close)
+symGreenClose = ma + (ma - open)
+symGreenLow   = ma + (ma - high)
+
+symRedAboveMA   = isRedAboveGreenHigh and close < ma
+symRedBelowMA   = isRedAboveGreenHigh and close > ma
+symGreenAboveMA = isGreenBelowRedLow  and close < ma
+symGreenBelowMA = isGreenBelowRedLow  and close > ma
+
+var float zoneHighestSymRed   = na
+var float zoneHighestSymGreen = na
+var float zoneLowestSymRed    = na
+var float zoneLowestSymGreen  = na
+var int   zoneStart           = na
+var bool  aboveMA             = na
+
+// ÂÑÇíåÇí ÈÑÇí äåÏÇÑí ÈÇ˜ÓåÇí ÝÚÇá
+var box[] activeBoxes = array.new_box()
+
+currentlyAbove = close > ma
+
+// ˜ ÈÑÎæÑÏ ÞíãÊ ÈÇ ÈÇ˜ÓåÇí ÝÚÇá
+if array.size(activeBoxes) > 0
+    for i = array.size(activeBoxes) - 1 to 0
+        b = array.get(activeBoxes, i)
+        bTop    = box.get_top(b)
+        bBottom = box.get_bottom(b)
+        if high >= bBottom and low <= bTop
+            box.set_extend(b, extend.none)
+            box.set_right(b, bar_index)
+            array.remove(activeBoxes, i)
+
+if crossed
+    if not na(zoneStart)
+        if not na(zoneHighestSymRed)
+            b = box.new(zoneStart, zoneHighestSymRed, bar_index, zoneHighestSymRed - (zoneHighestSymRed * 0.0001), border_color=color.new(color.red, 20), bgcolor=color.new(color.red, 80), extend=extend.right)
+            array.push(activeBoxes, b)
+        if not na(zoneHighestSymGreen)
+            b = box.new(zoneStart, zoneHighestSymGreen, bar_index, zoneHighestSymGreen - (zoneHighestSymGreen * 0.0001), border_color=color.new(color.green, 20), bgcolor=color.new(color.green, 80), extend=extend.right)
+            array.push(activeBoxes, b)
+        if not na(zoneLowestSymRed)
+            b = box.new(zoneStart, zoneLowestSymRed + (zoneLowestSymRed * 0.0001), bar_index, zoneLowestSymRed, border_color=color.new(color.red, 20), bgcolor=color.new(color.red, 80), extend=extend.right)
+            array.push(activeBoxes, b)
+        if not na(zoneLowestSymGreen)
+            b = box.new(zoneStart, zoneLowestSymGreen + (zoneLowestSymGreen * 0.0001), bar_index, zoneLowestSymGreen, border_color=color.new(color.green, 20), bgcolor=color.new(color.green, 80), extend=extend.right)
+            array.push(activeBoxes, b)
+
+    zoneStart           := bar_index
+    aboveMA             := currentlyAbove
+    zoneHighestSymRed   := na
+    zoneHighestSymGreen := na
+    zoneLowestSymRed    := na
+    zoneLowestSymGreen  := na
+
+if not na(zoneStart)
+    if symRedAboveMA
+        zoneHighestSymRed := na(zoneHighestSymRed) ? symRedHigh : math.max(zoneHighestSymRed, symRedHigh)
+    if symRedBelowMA
+        zoneLowestSymRed  := na(zoneLowestSymRed)  ? symRedLow  : math.min(zoneLowestSymRed,  symRedLow)
+    if symGreenAboveMA
+        zoneHighestSymGreen := na(zoneHighestSymGreen) ? symGreenHigh : math.max(zoneHighestSymGreen, symGreenHigh)
+    if symGreenBelowMA
+        zoneLowestSymGreen  := na(zoneLowestSymGreen)  ? symGreenLow  : math.min(zoneLowestSymGreen,  symGreenLow)
+
+plot(ma, "MA", color.blue, 2)
+plotcandle(isRedAboveGreenHigh ? symRedOpen : na, isRedAboveGreenHigh ? symRedHigh : na, isRedAboveGreenHigh ? symRedLow : na, isRedAboveGreenHigh ? symRedClose : na, "Sym Red", color.new(color.red, 40), color.new(color.red, 40))
+plotcandle(isGreenBelowRedLow ? symGreenOpen : na, isGreenBelowRedLow ? symGreenHigh : na, isGreenBelowRedLow ? symGreenLow : na, isGreenBelowRedLow ? symGreenClose : na, "Sym Green", color.new(color.green, 40), color.new(color.green, 40))

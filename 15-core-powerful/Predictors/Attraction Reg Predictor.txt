@@ -1,0 +1,412 @@
+//@version=6
+indicator(
+     "Symmetric Price Band Attraction",
+     shorttitle = "Symmetric Attraction",
+     overlay = true,
+     max_lines_count = 500) // «›“«Ì‘  ⁄œ«œ ŒÿÊÿ »—«Ì „«‰œê«—Ì ÅÌ‘êÊÌÌùÂ« —ÊÌ ç«— 
+
+//????????????????????????????????????
+// Inputs
+//????????????????????????????????????
+length = input.int(
+     100,
+     "Regression Length",
+     minval = 10,
+     maxval = 2000)
+
+source = input.source(
+     hlc3,
+     "Regression Source")
+
+useLog = input.bool(
+     true,
+     "Logarithmic Symmetry",
+     tooltip = "»—«Ì »«“«—Â«Ì œ«—«Ì Õ—ò  œ—’œÌ »“—ê „‰«”»ù — «” .")
+
+channelMultiplier = input.float(
+     2.0,
+     "Channel Multiplier",
+     minval = 0.1,
+     step = 0.1)
+
+showMirror = input.bool(
+     true,
+     "Show Mirrored Candles")
+
+showChannel = input.bool(
+     true,
+     "Show Regression Channel")
+
+showEventLines = input.bool(
+     true,
+     "Show Pivot Symmetry Lines")
+
+showConnector = input.bool(
+     true,
+     "Connect Two Event Lines")
+
+bullColor = input.color(
+     color.new(color.aqua, 20),
+     "Mirror Bull Color")
+
+bearColor = input.color(
+     color.new(color.fuchsia, 20),
+     "Mirror Bear Color")
+
+basisColor = input.color(
+     color.orange,
+     "Optimal Line Color")
+
+originalLineColor = input.color(
+     color.blue,
+     "Original Price Event Line")
+
+mirrorLineColor = input.color(
+     color.fuchsia,
+     "Mirrored Price Event Line")
+
+connectorColor = input.color(
+     color.white,
+     "Connector Color")
+
+attractionColor = input.color(
+     color.lime,
+     "Prediction Line Color")
+
+//????????????????????????????????????
+// Regression
+//????????????????????????????????????
+safeSource = math.max(source, syminfo.mintick)
+
+regressionSource = useLog
+     ? math.log(safeSource)
+     : safeSource
+
+fitNowRaw = ta.linreg(
+     regressionSource,
+     length,
+     0)
+
+basis = useLog
+     ? math.exp(fitNowRaw)
+     : fitNowRaw
+
+enoughData = not na(basis)
+
+//????????????????????????????????????
+// Mathematical Helpers
+//????????????????????????????????????
+mirrorAroundBasis(float price) =>
+    safePrice = math.max(price, syminfo.mintick)
+    reflected = useLog
+         ? (basis * basis) / safePrice
+         : (2.0 * basis) - safePrice
+    math.max(reflected, syminfo.mintick)
+
+midpointPrice(float price1, float price2) =>
+    safePrice1 = math.max(price1, syminfo.mintick)
+    safePrice2 = math.max(price2, syminfo.mintick)
+    useLog
+         ? math.sqrt(safePrice1 * safePrice2)
+         : (safePrice1 + safePrice2) / 2.0
+
+reflectForward(float startPrice, float midPrice) =>
+    safeStart = math.max(startPrice, syminfo.mintick)
+    safeMid = math.max(midPrice, syminfo.mintick)
+    reflected = useLog 
+         ? (safeMid * safeMid) / safeStart 
+         : (2.0 * safeMid) - safeStart
+    math.max(reflected, syminfo.mintick)
+
+//????????????????????????????????????
+// Mirrored OHLC
+//????????????????????????????????????
+mirrorOpen = enoughData ? mirrorAroundBasis(open) : na
+mirrorHigh = enoughData ? mirrorAroundBasis(low) : na
+mirrorLow = enoughData ? mirrorAroundBasis(high) : na
+mirrorClose = enoughData ? mirrorAroundBasis(close) : na
+
+mirrorBull = mirrorClose >= mirrorOpen
+mirrorCandleColor = mirrorBull ? bullColor : bearColor
+
+plotcandle(
+     showMirror ? mirrorOpen : na,
+     showMirror ? mirrorHigh : na,
+     showMirror ? mirrorLow : na,
+     showMirror ? mirrorClose : na,
+     title = "Mirrored OHLC",
+     color = mirrorCandleColor,
+     wickcolor = mirrorCandleColor,
+     bordercolor = mirrorCandleColor)
+
+//????????????????????????????????????
+// Orange regression line
+//????????????????????????????????????
+plot(
+     basis,
+     title = "Optimal Regression Line",
+     color = basisColor,
+     linewidth = 2)
+
+//????????????????????????????????????
+// Regression channel
+//????????????????????????????????????
+residual = useLog
+     ? math.log(safeSource / basis)
+     : safeSource - basis
+
+deviation = ta.stdev(residual, length)
+
+upperChannel = useLog
+     ? basis * math.exp(channelMultiplier * deviation)
+     : basis + channelMultiplier * deviation
+
+lowerChannel = useLog
+     ? basis * math.exp(-channelMultiplier * deviation)
+     : basis - channelMultiplier * deviation
+
+upperPlot = plot(showChannel ? upperChannel : na, title = "Upper Band", color = color.new(basisColor, 45), linewidth = 1)
+lowerPlot = plot(showChannel ? lowerChannel : na, title = "Lower Band", color = color.new(basisColor, 45), linewidth = 1)
+fill(upperPlot, lowerPlot, title = "Regression Channel", color = showChannel ? color.new(basisColor, 92) : na)
+
+//????????????????????????????????????
+// Original-price excursion state
+//????????????????????????????????????
+var int originalState = 0
+var float originalPivotPrice = na
+var int originalPivotTime = na
+var float originalBasisAtPivot = na
+
+var int originalEndTime = na
+var float originalEndPrice = na
+var bool originalEventReady = false
+var line originalEventLine = na
+
+// Detect original-price excursion
+if enoughData and originalState == 0
+    if close > upperChannel
+        originalState := 1
+        originalPivotPrice := high
+        originalPivotTime := time
+        originalBasisAtPivot := basis
+
+    else if close < lowerChannel
+        originalState := -1
+        originalPivotPrice := low
+        originalPivotTime := time
+        originalBasisAtPivot := basis
+
+// »——”Ì «ò” —Ì„ »«·«Ì »«‰œ
+else if enoughData and originalState == 1
+    // «» œ« ÅÌÊÊ  (»«·« —Ì‰ ‰ﬁÿÂ) ¬ÅœÌ  „Ìù‘Êœ
+    if high > originalPivotPrice
+        originalPivotPrice := high
+        originalPivotTime := time
+        originalBasisAtPivot := basis
+
+    // »——”Ì »—ŒÊ—œ »«“ê‘ Ì
+    if low <= upperChannel 
+        reEntryTime = time
+        reEntryPrice = upperChannel
+        
+        startX = originalPivotTime
+        startY = originalBasisAtPivot
+        midX = reEntryTime
+        midY = reEntryPrice
+        
+        originalEndTime := midX + (midX - startX)
+        originalEndPrice := reflectForward(startY, midY)
+        
+        if showEventLines
+            originalEventLine := line.new(
+                 x1 = startX,
+                 y1 = startY,
+                 x2 = originalEndTime,
+                 y2 = originalEndPrice,
+                 xloc = xloc.bar_time,
+                 color = originalLineColor,
+                 width = 2)
+
+        originalEventReady := true
+        originalState := 0
+
+// »——”Ì «ò” —Ì„ Å«ÌÌ‰ »«‰œ
+else if enoughData and originalState == -1
+    // «» œ« ÅÌÊÊ  (Å«ÌÌ‰ù —Ì‰ ‰ﬁÿÂ) ¬ÅœÌ  „Ìù‘Êœ
+    if low < originalPivotPrice
+        originalPivotPrice := low
+        originalPivotTime := time
+        originalBasisAtPivot := basis
+
+    // »——”Ì »—ŒÊ—œ »«“ê‘ Ì
+    if high >= lowerChannel 
+        reEntryTime = time
+        reEntryPrice = lowerChannel
+        
+        startX = originalPivotTime
+        startY = originalBasisAtPivot
+        midX = reEntryTime
+        midY = reEntryPrice
+        
+        originalEndTime := midX + (midX - startX)
+        originalEndPrice := reflectForward(startY, midY)
+        
+        if showEventLines
+            originalEventLine := line.new(
+                 x1 = startX,
+                 y1 = startY,
+                 x2 = originalEndTime,
+                 y2 = originalEndPrice,
+                 xloc = xloc.bar_time,
+                 color = originalLineColor,
+                 width = 2)
+
+        originalEventReady := true
+        originalState := 0
+
+//????????????????????????????????????
+// Mirrored-price excursion state
+//????????????????????????????????????
+var int mirrorState = 0
+var float mirrorPivotPrice = na
+var int mirrorPivotTime = na
+var float mirrorBasisAtPivot = na
+
+var int mirrorEndTime = na
+var float mirrorEndPrice = na
+var bool mirrorEventReady = false
+var line mirrorEventLine = na
+
+// Detect mirrored-price excursion
+if enoughData and mirrorState == 0
+    if mirrorClose > upperChannel
+        mirrorState := 1
+        mirrorPivotPrice := mirrorHigh
+        mirrorPivotTime := time
+        mirrorBasisAtPivot := basis
+
+    else if mirrorClose < lowerChannel
+        mirrorState := -1
+        mirrorPivotPrice := mirrorLow
+        mirrorPivotTime := time
+        mirrorBasisAtPivot := basis
+
+// ﬁÌ„  „ ﬁ«—‰ »«·«Ì »«‰œ
+else if enoughData and mirrorState == 1
+    if mirrorHigh > mirrorPivotPrice
+        mirrorPivotPrice := mirrorHigh
+        mirrorPivotTime := time
+        mirrorBasisAtPivot := basis
+
+    if mirrorLow <= upperChannel 
+        reEntryTime = time
+        reEntryPrice = upperChannel
+        
+        startX = mirrorPivotTime
+        startY = mirrorBasisAtPivot
+        midX = reEntryTime
+        midY = reEntryPrice
+        
+        mirrorEndTime := midX + (midX - startX)
+        mirrorEndPrice := reflectForward(startY, midY)
+        
+        if showEventLines
+            mirrorEventLine := line.new(
+                 x1 = startX,
+                 y1 = startY,
+                 x2 = mirrorEndTime,
+                 y2 = mirrorEndPrice,
+                 xloc = xloc.bar_time,
+                 color = mirrorLineColor,
+                 width = 2)
+
+        mirrorEventReady := true
+        mirrorState := 0
+
+// ﬁÌ„  „ ﬁ«—‰ Å«ÌÌ‰ »«‰œ
+else if enoughData and mirrorState == -1
+    if mirrorLow < mirrorPivotPrice
+        mirrorPivotPrice := mirrorLow
+        mirrorPivotTime := time
+        mirrorBasisAtPivot := basis
+
+    if mirrorHigh >= lowerChannel 
+        reEntryTime = time
+        reEntryPrice = lowerChannel
+        
+        startX = mirrorPivotTime
+        startY = mirrorBasisAtPivot
+        midX = reEntryTime
+        midY = reEntryPrice
+        
+        mirrorEndTime := midX + (midX - startX)
+        mirrorEndPrice := reflectForward(startY, midY)
+        
+        if showEventLines
+            mirrorEventLine := line.new(
+                 x1 = startX,
+                 y1 = startY,
+                 x2 = mirrorEndTime,
+                 y2 = mirrorEndPrice,
+                 xloc = xloc.bar_time,
+                 color = mirrorLineColor,
+                 width = 2)
+
+        mirrorEventReady := true
+        mirrorState := 0
+
+//????????????????????????????????????
+// Predict the Future Attraction Path
+//????????????????????????????????????
+newAttractionTarget = (originalEventReady and mirrorEventReady and not na(originalEndTime) and not na(mirrorEndTime))
+
+if newAttractionTarget
+    // 1. —”„ Œÿ „ ’·ùò‰‰œÂ («‰ Œ«»Ì)
+    if showConnector
+        line.new(
+             x1 = originalEndTime,
+             y1 = originalEndPrice,
+             x2 = mirrorEndTime,
+             y2 = mirrorEndPrice,
+             xloc = xloc.bar_time,
+             extend = extend.none,
+             color = connectorColor,
+             style = line.style_dashed,
+             width = 2)
+
+    // 2. „Õ«”»Â „Œ ’«  œﬁÌﬁ ÅÌ‘êÊÌÌ
+    targetTime = int(math.round((originalEndTime + mirrorEndTime) / 2.0))
+    targetPrice = midpointPrice(originalEndPrice, mirrorEndPrice)
+
+    // 3. —”„ Œÿ ÅÌ‘êÊÌ ò«„·« À«»  œ— ç«—  (»œÊ‰  €ÌÌ— »« ﬁÌ„ )
+    line.new(
+         x1 = time,
+         y1 = basis,
+         x2 = targetTime,
+         y2 = targetPrice,
+         xloc = xloc.bar_time,
+         color = attractionColor,
+         width = 3)
+         
+    // 4. —”„ ·Ê“Ì Âœ› œ— ‰ﬁÿÂ ¬Ì‰œÂ
+    label.new(
+         x = targetTime,
+         y = targetPrice,
+         text = "?? Target",
+         style = label.style_label_down,
+         color = color.new(attractionColor, 80),
+         textcolor = attractionColor,
+         size = size.small,
+         xloc = xloc.bar_time)
+
+    // —Ì”  —ÊÌœ«œÂ« »—«Ì «·êÊÂ«Ì »⁄œÌ
+    originalEventReady := false
+    mirrorEventReady := false
+
+//????????????????????????????????????
+// Alerts
+//????????????????????????????????????
+alertcondition(
+     newAttractionTarget,
+     title = "New attraction target",
+     message = "A new FIXED future prediction line has been drawn.")

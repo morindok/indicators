@@ -1,0 +1,53 @@
+//@version=5
+indicator("Price Rotation Around Level", overlay=true)
+
+//  ‰ŸÌ„«  Ê—ÊœÌ
+useMa = input.bool(false, "Use Moving Average as Center")
+maLength = input.int(20, "MA Length", minval=1)
+maType = input.string("SMA", "MA Type", options=["SMA", "EMA"])
+centerPrice = input.price(0, "Center Level", confirm=true)
+pivotTime = input.time(timestamp("01 Jan 2024 00:00 +0000"), "Pivot Time", confirm=true)
+slopePercent = input.float(0, "Slope (% per bar)", minval=-10, maxval=10, step=0.1)
+
+// „Õ«”»Â „Ì«‰êÌ‰ „ Õ—ò
+ma = maType == "SMA" ? ta.sma(close, maLength) : ta.ema(close, maLength)
+
+// «‰ Œ«» ”ÿÕ „—ò“Ì
+center = useMa ? ma : centerPrice
+
+// „Õ«”»Â ‘Ì»
+barsSincePivot = (time - pivotTime) / (time - time[1])
+slopeOffset = (slopePercent / 100) * center * barsSincePivot
+
+// „Õ«”»Â ¬›”  ﬁÌ„ ùÂ«Ì Ê«ﬁ⁄Ì ‰”»  »Â „—ò“
+openOffset = open - center
+highOffset = high - center
+lowOffset = low - center
+closeOffset = close - center
+
+// ﬁÌ„ ùÂ«Ì ç—Œ‘ Ì«› Â
+rotatedOpen = center + slopeOffset + openOffset
+rotatedHigh = center + slopeOffset + highOffset
+rotatedLow = center + slopeOffset + lowOffset
+rotatedClose = center + slopeOffset + closeOffset
+
+// ﬁÌ„ ùÂ«Ì „⁄òÊ”
+invertedOpen = center + slopeOffset - openOffset
+invertedHigh = center + slopeOffset - highOffset
+invertedLow = center + slopeOffset - lowOffset
+invertedClose = center + slopeOffset - closeOffset
+
+// —”„ ò‰œ·ùÂ«Ì ç—Œ‘ Ì«› Â
+plotcandle(rotatedOpen, rotatedHigh, rotatedLow, rotatedClose, "Rotated Price", 
+           color=rotatedClose >= rotatedOpen ? color.green : color.red, 
+           wickcolor=rotatedClose >= rotatedOpen ? color.green : color.red, 
+           bordercolor=rotatedClose >= rotatedOpen ? color.green : color.red)
+
+// —”„ ò‰œ·ùÂ«Ì „⁄òÊ”
+plotcandle(invertedOpen, math.max(invertedHigh, invertedLow), math.min(invertedHigh, invertedLow), invertedClose, "Inverted Price", 
+           color=invertedClose >= invertedOpen ? color.blue : color.orange, 
+           wickcolor=invertedClose >= invertedOpen ? color.blue : color.orange, 
+           bordercolor=invertedClose >= invertedOpen ? color.blue : color.orange)
+
+// —”„ Œÿ „—ò“Ì ‘Ì»ùœ«—
+plot(center + slopeOffset, "Sloped Center", color=color.gray, linewidth=1, style=plot.style_line)

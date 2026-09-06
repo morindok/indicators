@@ -1,0 +1,101 @@
+//@version=6
+indicator("MTF Symmetrical Gap Volume Colored", overlay=true)
+length = input.int(20, "Lookback Length")
+max_lookback = input.int(500, "Max History Lookback")
+tf1 = input.timeframe("15", "Timeframe 1")
+tf2 = input.timeframe("60", "Timeframe 2")
+tf3 = input.timeframe("240", "Timeframe 3")
+tf4 = input.timeframe("1D", "Timeframe 4")
+
+calc_gap_volume() =>
+    float hh = ta.highest(high, length)
+    float ll = ta.lowest(low, length)
+    float dist_hh = math.abs(hh - close)
+    float mirrored_hh = hh + dist_hh
+    float dist_ll = math.abs(close - ll)
+    float mirrored_ll = ll - dist_ll
+    float upper_vol = 0.0
+    float lower_vol = 0.0
+    bool upper_filled = false
+    bool lower_filled = false
+    int actual_lookback = math.min(max_lookback, bar_index)
+    for i = 1 to actual_lookback
+        float h = high[i]
+        float l = low[i]
+        float v = nz(volume[i])
+        if not upper_filled and h > hh and l < mirrored_hh
+            float overlap_up = math.min(h, mirrored_hh) - math.max(l, hh)
+            float range_up = h - l
+            upper_vol := upper_vol + (range_up > 0 ? (overlap_up / range_up) * v : 0.0)
+            if h >= mirrored_hh
+                upper_filled := true
+        if not lower_filled and h > mirrored_ll and l < ll
+            float overlap_dn = math.min(h, ll) - math.max(l, mirrored_ll)
+            float range_dn = h - l
+            lower_vol := lower_vol + (range_dn > 0 ? (overlap_dn / range_dn) * v : 0.0)
+            if l <= mirrored_ll
+                lower_filled := true
+    [upper_vol, lower_vol, hh, ll, mirrored_hh, mirrored_ll]
+
+[curr_up, curr_dn, curr_hh, curr_ll, curr_m_hh, curr_m_ll] = calc_gap_volume()
+[tf1_up, tf1_dn, tf1_hh, tf1_ll, tf1_m_hh, tf1_m_ll] = request.security(syminfo.tickerid, tf1, calc_gap_volume())
+[tf2_up, tf2_dn, tf2_hh, tf2_ll, tf2_m_hh, tf2_m_ll] = request.security(syminfo.tickerid, tf2, calc_gap_volume())
+[tf3_up, tf3_dn, tf3_hh, tf3_ll, tf3_m_hh, tf3_m_ll] = request.security(syminfo.tickerid, tf3, calc_gap_volume())
+[tf4_up, tf4_dn, tf4_hh, tf4_ll, tf4_m_hh, tf4_m_ll] = request.security(syminfo.tickerid, tf4, calc_gap_volume())
+
+plot(curr_hh, title="Highest High", color=color.green, linewidth=2)
+plot(curr_ll, title="Lowest Low", color=color.red, linewidth=2)
+plot(curr_m_hh, title="Mirrored HH", color=color.blue, linewidth=1)
+plot(curr_m_ll, title="Mirrored LL", color=color.orange, linewidth=1)
+
+// --- جلوگیری از تکرار تایم‌فریم‌های یکسان در جدول ---
+var string[] tf_labels = array.new_string()
+var float[]  tf_ups    = array.new_float()
+var float[]  tf_dns    = array.new_float()
+
+if barstate.islast
+    array.clear(tf_labels)
+    array.clear(tf_ups)
+    array.clear(tf_dns)
+
+    if array.indexof(tf_labels, timeframe.period) < 0
+        array.push(tf_labels, timeframe.period)
+        array.push(tf_ups, curr_up)
+        array.push(tf_dns, curr_dn)
+    if array.indexof(tf_labels, tf1) < 0
+        array.push(tf_labels, tf1)
+        array.push(tf_ups, tf1_up)
+        array.push(tf_dns, tf1_dn)
+    if array.indexof(tf_labels, tf2) < 0
+        array.push(tf_labels, tf2)
+        array.push(tf_ups, tf2_up)
+        array.push(tf_dns, tf2_dn)
+    if array.indexof(tf_labels, tf3) < 0
+        array.push(tf_labels, tf3)
+        array.push(tf_ups, tf3_up)
+        array.push(tf_dns, tf3_dn)
+    if array.indexof(tf_labels, tf4) < 0
+        array.push(tf_labels, tf4)
+        array.push(tf_ups, tf4_up)
+        array.push(tf_dns, tf4_dn)
+
+    int rows = array.size(tf_labels) + 1
+    table vol_table = table.new(position.top_right, 4, rows, border_width=1)
+
+    table.cell(vol_table, 0, 0, "تایم‌فریم", bgcolor=color.gray, text_color=color.white)
+    table.cell(vol_table, 1, 0, "حجم بالا", bgcolor=color.new(color.red, 70), text_color=color.white)
+    table.cell(vol_table, 2, 0, "حجم پایین", bgcolor=color.new(color.green, 70), text_color=color.white)
+    table.cell(vol_table, 3, 0, "روند", bgcolor=color.gray, text_color=color.white)
+
+    for i = 0 to array.size(tf_labels) - 1
+        string lbl = array.get(tf_labels, i)
+        float u = array.get(tf_ups, i)
+        float d = array.get(tf_dns, i)
+        bool bullish = d > u
+        string trend_txt = bullish ? "صعودی" : "نزولی"
+        color trend_bg = bullish ? color.new(color.green, 70) : color.new(color.red, 70)
+
+        table.cell(vol_table, 0, i + 1, lbl, bgcolor=color.gray, text_color=color.white)
+        table.cell(vol_table, 1, i + 1, str.tostring(u, format.volume), bgcolor=color.new(color.red, 70), text_color=color.white)
+        table.cell(vol_table, 2, i + 1, str.tostring(d, format.volume), bgcolor=color.new(color.green, 70), text_color=color.white)
+        table.cell(vol_table, 3, i + 1, trend_txt, bgcolor=trend_bg, text_color=color.white)

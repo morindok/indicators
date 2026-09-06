@@ -1,0 +1,549 @@
+// ============================================================
+// Morindok Gannzilla ó Square of 9 | Polar Angles | Pivot Table
+// ‰”ŒÂ: v1.0 | Å«Ì‰ «”ò—ÌÅ  v5
+// ÿ—«ÕÌ: ”Ì” „ ê‰“Ì·« »« “«ÊÌÂùÂ«Ì ﬁÿ»Ì Ê ÃœÊ· Õ—›Âù«Ì
+// ============================================================
+//@version=5
+indicator("Morindok Gannzilla Sq9 {Morindok}", shorttitle="MRD-GSq9", overlay=false, max_lines_count=100, max_labels_count=50)
+
+// ?????????????????????????????????????????????
+// Ê—ÊœÌùÂ«Ì ê—ÊÂ ?:  ‰ŸÌ„«  ÅÌÊÊ 
+// ?????????????????????????????????????????????
+g1 = "??  ‰ŸÌ„«  ÅÌÊÊ "
+i_pivotLen      = input.int(5, "ÿÊ· ÅÌÊÊ  (çÅ/—«” )", minval=1, maxval=20, group=g1)
+i_pivotCount    = input.int(3, " ⁄œ«œ ÅÌÊÊ ùÂ«Ì ‰„«Ì‘Ì", minval=1, maxval=5, group=g1)
+i_anchorMode    = input.string("¬Œ—Ì‰ ÅÌÊÊ ", "‰ﬁÿÂùÌ ·‰ê— „Õ«”»Â",
+     options=["¬Œ—Ì‰ ÅÌÊÊ ", "¬Œ—Ì‰ High", "¬Œ—Ì‰ Low", "œ” Ì"], group=g1)
+i_manualAnchor  = input.float(0.0, "ﬁÌ„  œ” Ì («ê— Õ«·  œ” Ì)", group=g1)
+
+// ?????????????????????????????????????????????
+// Ê—ÊœÌùÂ«Ì ê—ÊÂ ?:  ‰ŸÌ„«  “«ÊÌÂùÂ«Ì ê‰“Ì·«
+// ?????????????????????????????????????????????
+g2 = "?? “«ÊÌÂùÂ«Ì ﬁÿ»Ì ê‰“Ì·«"
+i_showCardinal  = input.bool(true, "‰„«Ì‘ Cardinal (90∞,180∞,270∞,360∞)", group=g2)
+i_showOrdinal   = input.bool(true, "‰„«Ì‘ Ordinal (45∞,135∞,225∞,315∞)", group=g2)
+i_revolutionUp  = input.int(2, " ⁄œ«œ œÊ— »Â »«·« („ﬁ«Ê„ )", minval=1, maxval=5, group=g2)
+i_revolutionDn  = input.int(2, " ⁄œ«œ œÊ— »Â Å«ÌÌ‰ (Õ„«Ì )", minval=1, maxval=5, group=g2)
+i_showLines     = input.bool(true, "‰„«Ì‘ ŒÿÊÿ —ÊÌ ç«— ", group=g2)
+i_extendLines   = input.bool(false, "ŒÿÊÿ «„ œ«œœ«—", group=g2)
+
+// ?????????????????????????????????????????????
+// Ê—ÊœÌùÂ«Ì ê—ÊÂ ?:  ‰ŸÌ„«  Ÿ«Â—Ì
+// ?????????????????????????????????????????????
+g3 = "?? —‰ê Ê Ÿ«Â—"
+i_colCardR      = input.color(color.new(#FF4444, 0),  "Cardinal „ﬁ«Ê„ ", group=g3)
+i_colCardS      = input.color(color.new(#00E676, 0),  "Cardinal Õ„«Ì ",  group=g3)
+i_colOrdR       = input.color(color.new(#FF9800, 60), "Ordinal „ﬁ«Ê„ ",  group=g3)
+i_colOrdS       = input.color(color.new(#4CAF50, 60), "Ordinal Õ„«Ì ",   group=g3)
+i_colPivot      = input.color(color.new(#B0BEC5, 0),  "—‰ê ÅÌÊÊ ùÂ«",    group=g3)
+i_tablePos      = input.string("Å«ÌÌ‰ —«” ", "„Êﬁ⁄Ì  ÃœÊ·",
+     options=["»«·« —«” ", "»«·« çÅ", "Å«ÌÌ‰ —«” ", "Å«ÌÌ‰ çÅ", "Ê”ÿ —«” "], group=g3)
+
+// ?????????????????????????????????????????????
+// Ê—ÊœÌùÂ«Ì ê—ÊÂ ?: ›Ì· — ¬„«—Ì
+// ?????????????????????????????????????????????
+g4 = "?? ›Ì· — ¬„«—Ì"
+i_atrLen        = input.int(14, "ÿÊ· ATR ( ‘ŒÌ’ ﬁœ—  ‰«ÕÌÂ)", minval=5, maxval=50, group=g4)
+i_minDist       = input.float(0.3, "Õœ«ﬁ· ›«’·Â «“ ﬁÌ„  (% ATR)", minval=0.0, maxval=5.0, step=0.1, group=g4)
+
+// ?????????????????????????????????????????????
+//  »œÌ· „Êﬁ⁄Ì  ÃœÊ·
+// ?????????????????????????????????????????????
+f_tablePos() =>
+    switch i_tablePos
+        "»«·« —«” "   => position.top_right
+        "»«·« çÅ"    => position.top_left
+        "Å«ÌÌ‰ çÅ"   => position.bottom_left
+        "Ê”ÿ —«” "   => position.middle_right
+        =>               position.bottom_right
+
+// ?????????????????????????????????????????????
+// „Õ«”»«  Å«ÌÂ
+// ?????????????????????????????????????????????
+atrVal = ta.atr(i_atrLen)
+
+// ?????????????????????????????????????????????
+//  ‘ŒÌ’ ÅÌÊÊ ùÂ« (Williams Fractal style)
+// ?????????????????????????????????????????????
+pivHigh = ta.pivothigh(high, i_pivotLen, i_pivotLen)
+pivLow  = ta.pivotlow(low,  i_pivotLen, i_pivotLen)
+
+// –ŒÌ—ÂùÌ ¬Œ—Ì‰ ÅÌÊÊ ùÂ« œ— ¬—«ÌÂ
+var float[] ph_price = array.new_float(0)
+var int[]   ph_bar   = array.new_int(0)
+var float[] pl_price = array.new_float(0)
+var int[]   pl_bar   = array.new_int(0)
+
+if not na(pivHigh)
+    array.unshift(ph_price, pivHigh)
+    array.unshift(ph_bar,   bar_index - i_pivotLen)
+    if array.size(ph_price) > i_pivotCount
+        array.pop(ph_price)
+        array.pop(ph_bar)
+
+if not na(pivLow)
+    array.unshift(pl_price, pivLow)
+    array.unshift(pl_bar,   bar_index - i_pivotLen)
+    if array.size(pl_price) > i_pivotCount
+        array.pop(pl_price)
+        array.pop(pl_bar)
+
+// ?????????????????????????????????????????????
+// «‰ Œ«» ·‰ê— „Õ«”»Â
+// ?????????????????????????????????????????????
+f_anchor() =>
+    float anch = na
+    if i_anchorMode == "œ” Ì"
+        anch := i_manualAnchor
+    else if i_anchorMode == "¬Œ—Ì‰ High"
+        anch := array.size(ph_price) > 0 ? array.get(ph_price, 0) : na
+    else if i_anchorMode == "¬Œ—Ì‰ Low"
+        anch := array.size(pl_price) > 0 ? array.get(pl_price, 0) : na
+    else  // ¬Œ—Ì‰ ÅÌÊÊ 
+        float lastH = array.size(ph_price) > 0 ? array.get(ph_price, 0) : na
+        float lastL = array.size(pl_price) > 0 ? array.get(pl_price, 0) : na
+        int   barH  = array.size(ph_bar)   > 0 ? array.get(ph_bar, 0)   : 0
+        int   barL  = array.size(pl_bar)   > 0 ? array.get(pl_bar, 0)   : 0
+        if na(lastH) and na(lastL)
+            anch := na
+        else if na(lastH)
+            anch := lastL
+        else if na(lastL)
+            anch := lastH
+        else
+            anch := barH >= barL ? lastH : lastL
+    anch
+
+float anchorPrice = f_anchor()
+
+// ?????????????????????????????????????????????
+// ›—„Ê· ê‰“Ì·« Square of 9
+// Â— 0.25 = 45 œ—ÃÂ  |  Â— 0.5 = 90∞  |  Â— 1.0 = 180∞  |  Â— 2.0 = 360∞
+// Resistance: (?P + n◊0.25)≤
+// Support:    (?P - n◊0.25)≤
+// ?????????????????????????????????????????????
+f_sq9(price, steps) =>
+    sqrtP = math.sqrt(price)
+    math.pow(sqrtP + steps * 0.25, 2)
+
+f_sq9dn(price, steps) =>
+    sqrtP = math.sqrt(price)
+    val   = sqrtP - steps * 0.25
+    val > 0 ? math.pow(val, 2) : na
+
+// ?????????????????????????????????????????????
+// ”«Œ «—Â«Ì –ŒÌ—ÂùÌ ”ÿÊÕ ê‰“Ì·«
+// ?????????????????????????????????????????????
+// “«ÊÌÂùÂ«Ì ﬁÿ»Ì: 45∞=1, 90∞=2, 135∞=3, 180∞=4, 225∞=5, 270∞=6, 315∞=7, 360∞=8
+// œ— Â— œÊ—: ? ﬁœ„ ◊ 0.25 = ?.? ò«„·
+// ?????????????????????????????????????????????
+
+//  ⁄œ«œ ò· ”ÿÊÕ: revolutionUp ◊ 8 + revolutionDn ◊ 8
+int totalR = i_revolutionUp * 8
+int totalS = i_revolutionDn * 8
+
+// ¬—«ÌÂùÌ ”ÿÊÕ
+var float[] rLevels    = array.new_float(0)
+var float[] sLevels    = array.new_float(0)
+var int[]   rAngles    = array.new_int(0)   // 1-8 (45  « 360)
+var int[]   sAngles    = array.new_int(0)
+var bool[]  rCardinal  = array.new_bool(0)  // true=Cardinal, false=Ordinal
+var bool[]  sCardinal  = array.new_bool(0)
+
+// »«“”«“Ì ¬—«ÌÂùÂ« Â— »«— òÂ ·‰ê—  €ÌÌ— „Ìùò‰œ
+if barstate.islast and not na(anchorPrice) and anchorPrice > 0
+    array.clear(rLevels)
+    array.clear(sLevels)
+    array.clear(rAngles)
+    array.clear(sAngles)
+    array.clear(rCardinal)
+    array.clear(sCardinal)
+
+    for step = 1 to totalR
+        lvl   = f_sq9(anchorPrice, step)
+        ang   = step % 8 == 0 ? 8 : step % 8   // 1=45∞, 2=90∞...8=360∞
+        isCard = ang == 2 or ang == 4 or ang == 6 or ang == 8  // 90,180,270,360
+        if isCard and i_showCardinal
+            array.push(rLevels,   lvl)
+            array.push(rAngles,   ang)
+            array.push(rCardinal, true)
+        else if (not isCard) and i_showOrdinal
+            array.push(rLevels,   lvl)
+            array.push(rAngles,   ang)
+            array.push(rCardinal, false)
+
+    for step = 1 to totalS
+        lvl   = f_sq9dn(anchorPrice, step)
+        ang   = step % 8 == 0 ? 8 : step % 8
+        isCard = ang == 2 or ang == 4 or ang == 6 or ang == 8
+        if not na(lvl)
+            if isCard and i_showCardinal
+                array.push(sLevels,   lvl)
+                array.push(sAngles,   ang)
+                array.push(sCardinal, true)
+            else if (not isCard) and i_showOrdinal
+                array.push(sLevels,   lvl)
+                array.push(sAngles,   ang)
+                array.push(sCardinal, false)
+
+// ?????????????????????????????????????????????
+// —”„ ŒÿÊÿ —ÊÌ ç«— 
+// ?????????????????????????????????????????????
+var line[] gannLines = array.new_line(0)
+
+if barstate.islast and i_showLines and not na(anchorPrice)
+    // Å«ò ò—œ‰ ŒÿÊÿ ﬁ»·Ì
+    for ln in gannLines
+        line.delete(ln)
+    array.clear(gannLines)
+
+    extMode = i_extendLines ? extend.right : extend.none
+
+    // —”„ „ﬁ«Ê„ ùÂ«
+    for i = 0 to array.size(rLevels) - 1
+        lvl  = array.get(rLevels, i)
+        isC  = array.get(rCardinal, i)
+        col  = isC ? i_colCardR : i_colOrdR
+        wid  = isC ? 2 : 1
+        sty  = isC ? line.style_solid : line.style_dashed
+        ln   = line.new(bar_index - 50, lvl, bar_index, lvl,
+             color=col, width=wid, style=sty, extend=extMode)
+        array.push(gannLines, ln)
+
+    // —”„ Õ„«Ì ùÂ«
+    for i = 0 to array.size(sLevels) - 1
+        lvl  = array.get(sLevels, i)
+        isC  = array.get(sCardinal, i)
+        col  = isC ? i_colCardS : i_colOrdS
+        wid  = isC ? 2 : 1
+        sty  = isC ? line.style_solid : line.style_dashed
+        ln   = line.new(bar_index - 50, lvl, bar_index, lvl,
+             color=col, width=wid, style=sty, extend=extMode)
+        array.push(gannLines, ln)
+
+// ?????????????????????????????????????????????
+// ‰„«Ì‘ ÅÌÊÊ ùÂ« —ÊÌ ç«— 
+// ?????????????????????????????????????????????
+plotshape(not na(pivHigh) and barstate.isconfirmed, "Pivot High",
+     shape.triangledown, location.abovebar, i_colPivot, size=size.tiny)
+plotshape(not na(pivLow)  and barstate.isconfirmed, "Pivot Low",
+     shape.triangleup,   location.belowbar, i_colPivot, size=size.tiny)
+
+// ?????????????????????????????????????????????
+//  Ê«»⁄ ò„òÌ »—«Ì ÃœÊ·
+// ?????????????????????????????????????????????
+f_angleLabel(ang) =>
+    switch ang
+        1 => "45∞"
+        2 => "90∞"
+        3 => "135∞"
+        4 => "180∞"
+        5 => "225∞"
+        6 => "270∞"
+        7 => "315∞"
+        8 => "360∞"
+        => "ó"
+
+f_angleType(isCard) =>
+    isCard ? "Cardinal" : "Ordinal"
+
+f_strength(isCard, ang) =>
+    if isCard
+        ang == 8 or ang == 4 ? "?????" :
+         ang == 2 or ang == 6 ? "?????" : "?????"
+    else
+        ang == 1 or ang == 7 ? "?????" : "?????"
+
+f_priceStr(p) =>
+    p >= 1000 ? str.tostring(p, "#,##0.00") : str.tostring(p, "#.####")
+
+f_distPct(lvl, cp) =>
+    pct = (lvl - cp) / cp * 100.0
+    str.tostring(pct, "+#.##") + "%"
+
+// ?????????????????????????????????????????????
+// ??? ”«Œ  ÃœÊ· Õ—›Âù«Ì ê‰“Ì·« ???
+// ?????????????????????????????????????????????
+var table gannTable = na
+
+// —‰êùÂ«Ì ÃœÊ·
+color COL_BG       = color.new(#0D0D0D, 5)
+color COL_HDR_TOP  = color.new(#1A237E, 10)   // ”—” Ê‰ «’·Ì - ¬»Ì  Ì—Â
+color COL_HDR_R    = color.new(#B71C1C, 15)   // ”—” Ê‰ „ﬁ«Ê„  - ﬁ—„“  Ì—Â
+color COL_HDR_S    = color.new(#1B5E20, 15)   // ”—” Ê‰ Õ„«Ì  - ”»“  Ì—Â
+color COL_CARD_R   = color.new(#FF1744, 25)   // ”ÿ— Cardinal „ﬁ«Ê„ 
+color COL_ORD_R    = color.new(#FF6D00, 30)   // ”ÿ— Ordinal „ﬁ«Ê„ 
+color COL_CARD_S   = color.new(#00C853, 25)   // ”ÿ— Cardinal Õ„«Ì 
+color COL_ORD_S    = color.new(#558B2F, 30)   // ”ÿ— Ordinal Õ„«Ì 
+color COL_PIVOT    = color.new(#263238, 20)   // ”ÿ— ÅÌÊÊ 
+color COL_ANCHOR   = color.new(#4A148C, 20)   // ”ÿ— ·‰ê—
+color COL_TXT_W    = color.white
+color COL_TXT_DIM  = color.new(#B0BEC5, 0)
+color COL_SEP      = color.new(#37474F, 0)
+
+if barstate.islast
+    if not na(gannTable)
+        table.delete(gannTable)
+
+    // ??? «»⁄«œ ÃœÊ· ?????????????????????????????
+    // »Œ‘ ?: Âœ— «’·Ì           ? ? ”ÿ—
+    // »Œ‘ ?: «ÿ·«⁄«  ·‰ê—        ? ? ”ÿ—
+    // »Œ‘ ?: Âœ— ÅÌÊÊ ùÂ«        ? ? ”ÿ—
+    // »Œ‘ ?: ÅÌÊÊ ùÂ«Ì High       ? i_pivotCount ”ÿ—
+    // »Œ‘ ?: ÅÌÊÊ ùÂ«Ì Low        ? i_pivotCount ”ÿ—
+    // »Œ‘ ?: Œÿ Ãœ«ò‰‰œÂ         ? ? ”ÿ—
+    // »Œ‘ ?: Âœ— ”ÿÊÕ ê‰“Ì·«     ? ? ”ÿ—
+    // »Œ‘ ?: Âœ— ” Ê‰ùÂ«         ? ? ”ÿ—
+    // »Œ‘ ?: ”ÿÊÕ „ﬁ«Ê„  + Õ„«Ì  ? „ €Ì—
+    // ???????????????????????????????????????????
+
+    int rCount = array.size(rLevels)
+    int sCount = array.size(sLevels)
+    int maxRows = math.max(rCount, sCount)
+
+    // „Õ«”»ÂùÌ ò· ”ÿ—Â«Ì ÃœÊ·
+    int totalRows = 1 + 1 + 1 + i_pivotCount + i_pivotCount + 1 + 1 + 1 + maxRows + 1
+    int nCols = 8  // ” Ê‰ùÂ«
+
+    gannTable := table.new(f_tablePos(), nCols, totalRows,
+         bgcolor=COL_BG, border_color=COL_SEP, border_width=1,
+         frame_color=color.new(#7C4DFF, 0), frame_width=2)
+
+    // ??? ”ÿ— ?: ⁄‰Ê«‰ «’·Ì ?????????????????????
+    table.cell(gannTable, 0, 0, "??  MORINDOK  GANNZILLA  SQUARE OF 9  ??",
+         text_color=color.new(#E040FB, 0), text_size=size.normal,
+         bgcolor=COL_HDR_TOP, text_halign=text.align_center)
+
+    // ??? ”ÿ— ?: «ÿ·«⁄«  ·‰ê— ????????????????????
+    float cp = close
+    string anchorTxt = na(anchorPrice) ? "N/A" : f_priceStr(anchorPrice)
+    string sqrtTxt   = na(anchorPrice) ? "N/A" : str.tostring(math.sqrt(anchorPrice), "#.####")
+
+    table.cell(gannTable, 0, 1, "? ·‰ê—",
+         text_color=color.new(#CE93D8, 0), bgcolor=COL_ANCHOR,
+         text_halign=text.align_center, text_size=size.small)
+    table.cell(gannTable, 1, 1, anchorTxt,
+         text_color=COL_TXT_W, bgcolor=COL_ANCHOR,
+         text_halign=text.align_center, text_size=size.small)
+    table.cell(gannTable, 2, 1, "?P",
+         text_color=color.new(#CE93D8, 0), bgcolor=COL_ANCHOR,
+         text_halign=text.align_center, text_size=size.small)
+    table.cell(gannTable, 3, 1, sqrtTxt,
+         text_color=COL_TXT_W, bgcolor=COL_ANCHOR,
+         text_halign=text.align_center, text_size=size.small)
+    table.cell(gannTable, 4, 1, "Close",
+         text_color=color.new(#CE93D8, 0), bgcolor=COL_ANCHOR,
+         text_halign=text.align_center, text_size=size.small)
+    table.cell(gannTable, 5, 1, f_priceStr(cp),
+         text_color=COL_TXT_W, bgcolor=COL_ANCHOR,
+         text_halign=text.align_center, text_size=size.small)
+    table.cell(gannTable, 6, 1, "ATR(" + str.tostring(i_atrLen) + ")",
+         text_color=color.new(#CE93D8, 0), bgcolor=COL_ANCHOR,
+         text_halign=text.align_center, text_size=size.small)
+    table.cell(gannTable, 7, 1, str.tostring(atrVal, "#.##"),
+         text_color=COL_TXT_W, bgcolor=COL_ANCHOR,
+         text_halign=text.align_center, text_size=size.small)
+
+    // ??? ”ÿ— ?: Âœ— ÅÌÊÊ ùÂ« ????????????????????
+    color COL_PHDR = color.new(#37474F, 10)
+    table.cell(gannTable, 0, 2, "??  ÅÌÊÊ ùÂ«Ì «ŒÌ—",
+         text_color=color.new(#80DEEA, 0), bgcolor=COL_PHDR,
+         text_halign=text.align_center, text_size=size.small)
+    table.cell(gannTable, 2, 2, "ﬁÌ„ ",
+         text_color=COL_TXT_DIM, bgcolor=COL_PHDR, text_halign=text.align_center, text_size=size.small)
+    table.cell(gannTable, 3, 2, "?ﬁÌ„ ",
+         text_color=COL_TXT_DIM, bgcolor=COL_PHDR, text_halign=text.align_center, text_size=size.small)
+    table.cell(gannTable, 4, 2, "? «“ Close",
+         text_color=COL_TXT_DIM, bgcolor=COL_PHDR, text_halign=text.align_center, text_size=size.small)
+    table.cell(gannTable, 5, 2, "?%",
+         text_color=COL_TXT_DIM, bgcolor=COL_PHDR, text_halign=text.align_center, text_size=size.small)
+    table.cell(gannTable, 6, 2, "‰Ê⁄",
+         text_color=COL_TXT_DIM, bgcolor=COL_PHDR, text_halign=text.align_center, text_size=size.small)
+    table.cell(gannTable, 7, 2, "›«’·Â ATR",
+         text_color=COL_TXT_DIM, bgcolor=COL_PHDR, text_halign=text.align_center, text_size=size.small)
+
+    // ??? ”ÿ—Â«Ì ÅÌÊÊ  High ??????????????????????
+    int rowOff = 3
+    for i = 0 to i_pivotCount - 1
+        bool hasH = i < array.size(ph_price)
+        float ph  = hasH ? array.get(ph_price, i) : na
+        color rc  = color.new(#FF5252, 20)
+        string phStr  = hasH ? f_priceStr(ph) : "ó"
+        string phSqrt = hasH ? str.tostring(math.sqrt(ph), "#.####") : "ó"
+        string phDelta = hasH ? str.tostring(ph - cp, "+#.##") : "ó"
+        string phPct  = hasH ? f_distPct(ph, cp) : "ó"
+        float  phAtr  = hasH ? math.abs(ph - cp) / atrVal : na
+        string phAtrS = hasH ? str.tostring(phAtr, "#.##") + "◊" : "ó"
+
+        table.cell(gannTable, 0, rowOff + i, "H" + str.tostring(i + 1),
+             text_color=color.new(#FF8A80, 0), bgcolor=rc,
+             text_halign=text.align_center, text_size=size.small)
+        table.cell(gannTable, 1, rowOff + i, "? Pivot High",
+             text_color=color.new(#FF8A80, 0), bgcolor=rc,
+             text_halign=text.align_left, text_size=size.tiny)
+        table.cell(gannTable, 2, rowOff + i, phStr,
+             text_color=COL_TXT_W, bgcolor=rc, text_halign=text.align_center, text_size=size.small)
+        table.cell(gannTable, 3, rowOff + i, phSqrt,
+             text_color=COL_TXT_DIM, bgcolor=rc, text_halign=text.align_center, text_size=size.tiny)
+        table.cell(gannTable, 4, rowOff + i, phDelta,
+             text_color=COL_TXT_W, bgcolor=rc, text_halign=text.align_center, text_size=size.small)
+        table.cell(gannTable, 5, rowOff + i, phPct,
+             text_color=color.new(#FF5252, 0), bgcolor=rc, text_halign=text.align_center, text_size=size.small)
+        table.cell(gannTable, 6, rowOff + i, "High",
+             text_color=color.new(#FF8A80, 0), bgcolor=rc, text_halign=text.align_center, text_size=size.tiny)
+        table.cell(gannTable, 7, rowOff + i, phAtrS,
+             text_color=COL_TXT_DIM, bgcolor=rc, text_halign=text.align_center, text_size=size.tiny)
+
+    // ??? ”ÿ—Â«Ì ÅÌÊÊ  Low ???????????????????????
+    int rowOff2 = rowOff + i_pivotCount
+    for i = 0 to i_pivotCount - 1
+        bool hasL = i < array.size(pl_price)
+        float pl  = hasL ? array.get(pl_price, i) : na
+        color sc  = color.new(#69F0AE, 25)
+        string plStr  = hasL ? f_priceStr(pl) : "ó"
+        string plSqrt = hasL ? str.tostring(math.sqrt(pl), "#.####") : "ó"
+        string plDelta = hasL ? str.tostring(pl - cp, "+#.##") : "ó"
+        string plPct  = hasL ? f_distPct(pl, cp) : "ó"
+        float  plAtr  = hasL ? math.abs(pl - cp) / atrVal : na
+        string plAtrS = hasL ? str.tostring(plAtr, "#.##") + "◊" : "ó"
+
+        table.cell(gannTable, 0, rowOff2 + i, "L" + str.tostring(i + 1),
+             text_color=color.new(#1B5E20, 0), bgcolor=sc,
+             text_halign=text.align_center, text_size=size.small)
+        table.cell(gannTable, 1, rowOff2 + i, "? Pivot Low",
+             text_color=color.new(#1B5E20, 0), bgcolor=sc,
+             text_halign=text.align_left, text_size=size.tiny)
+        table.cell(gannTable, 2, rowOff2 + i, plStr,
+             text_color=color.new(#1B5E20, 0), bgcolor=sc, text_halign=text.align_center, text_size=size.small)
+        table.cell(gannTable, 3, rowOff2 + i, plSqrt,
+             text_color=color.new(#1B5E20, 0), bgcolor=sc, text_halign=text.align_center, text_size=size.tiny)
+        table.cell(gannTable, 4, rowOff2 + i, plDelta,
+             text_color=color.new(#1B5E20, 0), bgcolor=sc, text_halign=text.align_center, text_size=size.small)
+        table.cell(gannTable, 5, rowOff2 + i, plPct,
+             text_color=color.new(#2E7D32, 0), bgcolor=sc, text_halign=text.align_center, text_size=size.small)
+        table.cell(gannTable, 6, rowOff2 + i, "Low",
+             text_color=color.new(#1B5E20, 0), bgcolor=sc, text_halign=text.align_center, text_size=size.tiny)
+        table.cell(gannTable, 7, rowOff2 + i, plAtrS,
+             text_color=color.new(#1B5E20, 0), bgcolor=sc, text_halign=text.align_center, text_size=size.tiny)
+
+    // ??? ”ÿ— Ãœ«ò‰‰œÂ ???????????????????????????
+    int sepRow = rowOff2 + i_pivotCount
+    table.cell(gannTable, 0, sepRow, "??????????????????????????????????????",
+         text_color=color.new(#7C4DFF, 0), bgcolor=color.new(#1A1A2E, 5),
+         text_halign=text.align_center, text_size=size.tiny)
+
+    // ??? ”ÿ— Âœ— ”ÿÊÕ ê‰“Ì·« ????????????????????
+    int ganHdr = sepRow + 1
+    table.cell(gannTable, 0, ganHdr, "?  GANNZILLA  SQUARE OF 9  ó  ”ÿÊÕ „ﬁ«Ê„  Ê Õ„«Ì ",
+         text_color=color.new(#FFEB3B, 0), bgcolor=color.new(#0D1B3E, 10),
+         text_halign=text.align_center, text_size=size.small)
+
+    // ??? ”ÿ— Âœ— ” Ê‰ùÂ«Ì ê‰“Ì·« ????????????????
+    int colHdr = ganHdr + 1
+    color CH = color.new(#1A237E, 5)
+    table.cell(gannTable, 0, colHdr, "“«ÊÌÂ ∞",
+         text_color=color.new(#7986CB, 0), bgcolor=CH, text_halign=text.align_center, text_size=size.tiny)
+    table.cell(gannTable, 1, colHdr, "R ó „ﬁ«Ê„ ",
+         text_color=COL_TXT_W, bgcolor=color.new(#B71C1C, 10), text_halign=text.align_center, text_size=size.tiny)
+    table.cell(gannTable, 2, colHdr, "‰Ê⁄ R",
+         text_color=COL_TXT_DIM, bgcolor=CH, text_halign=text.align_center, text_size=size.tiny)
+    table.cell(gannTable, 3, colHdr, "?% R",
+         text_color=COL_TXT_DIM, bgcolor=CH, text_halign=text.align_center, text_size=size.tiny)
+    table.cell(gannTable, 4, colHdr, "ﬁœ— ",
+         text_color=color.new(#FFEB3B, 0), bgcolor=CH, text_halign=text.align_center, text_size=size.tiny)
+    table.cell(gannTable, 5, colHdr, "S ó Õ„«Ì ",
+         text_color=COL_TXT_W, bgcolor=color.new(#1B5E20, 10), text_halign=text.align_center, text_size=size.tiny)
+    table.cell(gannTable, 6, colHdr, "‰Ê⁄ S",
+         text_color=COL_TXT_DIM, bgcolor=CH, text_halign=text.align_center, text_size=size.tiny)
+    table.cell(gannTable, 7, colHdr, "?% S",
+         text_color=COL_TXT_DIM, bgcolor=CH, text_halign=text.align_center, text_size=size.tiny)
+
+    // ??? ”ÿ—Â«Ì ”ÿÊÕ ê‰“Ì·« ?????????????????????
+    int baseRow = colHdr + 1
+
+    for i = 0 to maxRows - 1
+        bool hasR = i < rCount
+        bool hasS = i < sCount
+
+        float rLvl  = hasR ? array.get(rLevels, i) : na
+        int   rAng  = hasR ? array.get(rAngles, i) : 0
+        bool  rCard = hasR ? array.get(rCardinal, i) : false
+
+        float sLvl  = hasS ? array.get(sLevels, i) : na
+        int   sAng  = hasS ? array.get(sAngles, i) : 0
+        bool  sCard = hasS ? array.get(sCardinal, i) : false
+
+        // «‰ Œ«» —‰ê ”ÿ—
+        color rowBgR = hasR ? (rCard ? COL_CARD_R : COL_ORD_R) : COL_BG
+        color rowBgS = hasS ? (sCard ? COL_CARD_S : COL_ORD_S) : COL_BG
+        color rowBgA = color.new(#263238, 20)
+
+        // ›«’·ÂùÌ ATR
+        float rAtrMult = hasR ? (rLvl - cp) / atrVal : na
+        float sAtrMult = hasS ? (cp - sLvl) / atrVal : na
+
+        // ‰„«Ì‘ “«ÊÌÂ ( —òÌ» R Ê S)
+        string angStr = hasR ? f_angleLabel(rAng) : (hasS ? f_angleLabel(sAng) : "ó")
+
+        // —‰ê “«ÊÌÂ (Cardinal = “—œ° Ordinal = ”›Ìœ)
+        bool anyCard = (hasR and rCard) or (hasS and sCard)
+        color angCol = anyCard ? color.new(#FFEB3B, 0) : COL_TXT_DIM
+
+        // œ” Ê— ATR ›Ì· —: ”ÿÊÕ ŒÌ·Ì ‰“œÌò —« ò„ù—‰ê „Ìùò‰œ
+        float minAtrDist = i_minDist
+        bool rClose = hasR and rAtrMult < minAtrDist
+        bool sClose = hasS and sAtrMult < minAtrDist
+
+        table.cell(gannTable, 0, baseRow + i, angStr,
+             text_color=angCol, bgcolor=rowBgA, text_halign=text.align_center, text_size=size.small)
+
+        // R ﬁÌ„ 
+        table.cell(gannTable, 1, baseRow + i,
+             hasR ? f_priceStr(rLvl) : "ó",
+             text_color=rClose ? color.new(#FF5252, 60) : COL_TXT_W,
+             bgcolor=rowBgR, text_halign=text.align_center, text_size=size.small)
+
+        // R ‰Ê⁄
+        table.cell(gannTable, 2, baseRow + i,
+             hasR ? f_angleType(rCard) : "ó",
+             text_color=rCard ? color.new(#FF8A80, 0) : color.new(#FFAB40, 0),
+             bgcolor=rowBgR, text_halign=text.align_center, text_size=size.tiny)
+
+        // R ?%
+        table.cell(gannTable, 3, baseRow + i,
+             hasR ? f_distPct(rLvl, cp) : "ó",
+             text_color=rClose ? color.new(#FF5252, 50) : color.new(#FF5252, 0),
+             bgcolor=rowBgR, text_halign=text.align_center, text_size=size.small)
+
+        // ﬁœ—  („‘ —ò ó »— «”«” “«ÊÌÂ R «ê— Â”  Êê—‰Â S)
+        string strengthStr = hasR ? f_strength(rCard, rAng) :
+             (hasS ? f_strength(sCard, sAng) : "ó")
+        color strengthCol = anyCard ? color.new(#FFEB3B, 0) : color.new(#FFAB40, 0)
+        table.cell(gannTable, 4, baseRow + i, strengthStr,
+             text_color=strengthCol, bgcolor=rowBgA,
+             text_halign=text.align_center, text_size=size.tiny)
+
+        // S ﬁÌ„ 
+        table.cell(gannTable, 5, baseRow + i,
+             hasS ? f_priceStr(sLvl) : "ó",
+             text_color=sClose ? color.new(#69F0AE, 60) : COL_TXT_W,
+             bgcolor=rowBgS, text_halign=text.align_center, text_size=size.small)
+
+        // S ‰Ê⁄
+        table.cell(gannTable, 6, baseRow + i,
+             hasS ? f_angleType(sCard) : "ó",
+             text_color=sCard ? color.new(#A5D6A7, 0) : color.new(#C8E6C9, 0),
+             bgcolor=rowBgS, text_halign=text.align_center, text_size=size.tiny)
+
+        // S ?%
+        table.cell(gannTable, 7, baseRow + i,
+             hasS ? f_distPct(sLvl, cp) : "ó",
+             text_color=sClose ? color.new(#69F0AE, 50) : color.new(#00C853, 0),
+             bgcolor=rowBgS, text_halign=text.align_center, text_size=size.small)
+
+    // ??? ”ÿ— Å«Ê—ﬁÌ ?????????????????????????????
+    int footRow = baseRow + maxRows
+    table.cell(gannTable, 0, footRow,
+         "›—„Ê·: R=(?P + n◊0.25)≤  |  S=(?P - n◊0.25)≤  |  Â— ?.?? = ??∞",
+         text_color=color.new(#546E7A, 0), bgcolor=color.new(#0D0D0D, 0),
+         text_halign=text.align_center, text_size=size.tiny)

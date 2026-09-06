@@ -1,0 +1,184 @@
+//@version=5
+indicator("Custom Candlestick Spirals - Auto Forward & Signals", overlay = true, max_polylines_count = 100, max_lines_count = 100, max_labels_count = 100)
+
+// --- Ê—ÊœÌùÂ«Ì ò«—»— ---
+p1 = input.price(0, "Price Level 1", confirm = true)
+p2 = input.price(0, "Price Level 2", confirm = true)
+t1 = input.time(0, "Start Time", confirm = true)
+t2 = input.time(0, "End Time", confirm = true)
+opt_symmetrize = input.bool(false, "Symmetrize Prices from ALL Spiral Ends")
+opt_angle_rotation = input.bool(true, "Rotate Spiral by Range Angle per HH/LL Step")
+
+opt_use_ma = input.bool(true, "Use MA Distance for Spirals & Paths", group = "Moving Average Settings")
+ma_type = input.string("SMA", "MA Type", options=["SMA", "EMA", "RMA", "WMA"], group = "Moving Average Settings")
+
+var float range_hh = na
+var float range_ll = na
+var int hh_step_count = 0
+var int ll_step_count = 0
+
+var int[] all_t = array.new_int()
+var float[] all_c = array.new_float()
+var float[] all_o = array.new_float()
+var float[] all_h = array.new_float()
+var float[] all_l = array.new_float()
+
+array.push(all_t, time)
+array.push(all_c, close)
+array.push(all_o, open)
+array.push(all_h, high)
+array.push(all_l, low)
+
+int start_t = math.min(t1, t2)
+int end_t = math.max(t1, t2)
+
+// ---  Ê«»⁄ —”„ ---
+draw_spiral(float target_len, float dir_mult, float angle_offset, color line_col, int st_t, float st_p, float dt, float dp, float a, float b_coeff, int w) =>
+    pts = array.new<chart.point>()
+    array.push(pts, chart.point.from_time(st_t, st_p))
+    float acc_len = 0.0
+    float prev_t = st_t
+    float prev_p = st_p
+    float max_p = st_p 
+    
+    for i = 1 to 5000 
+        float theta = i * 0.1
+        float r = a * math.exp(b_coeff * theta)
+        float angle = (theta * dir_mult) + angle_offset 
+        float curr_t = st_t + r * dt * math.cos(angle)
+        float curr_p = st_p + r * dp * math.sin(angle)
+        float seg = math.sqrt(math.pow(((curr_t - prev_t) / dt) * dp, 2) + math.pow(curr_p - prev_p, 2))
+        
+        if curr_p > max_p
+            max_p := curr_p
+            
+        if acc_len <= target_len
+            array.push(pts, chart.point.from_time(int(math.round(curr_t)), curr_p))
+            acc_len += seg
+            prev_t := curr_t
+            prev_p := curr_p
+        else
+            break
+            
+    polyline.new(pts, xloc = xloc.bar_time, line_color = line_col, line_width = w)
+    [array.get(pts, array.size(pts) - 1), max_p]
+
+get_spiral_end(float target_len, float dir_mult, float angle_offset, int st_t, float st_p, float dt, float dp, float a, float b_coeff) =>
+    float acc_len = 0.0
+    float prev_t = st_t
+    float prev_p = st_p
+    int final_t = st_t
+    float final_p = st_p
+
+    if target_len > 0
+        for i = 1 to 2000 
+            float theta = i * 0.1
+            float r = a * math.exp(b_coeff * theta)
+            float angle = (theta * dir_mult) + angle_offset 
+            float curr_t = st_t + r * dt * math.cos(angle)
+            float curr_p = st_p + r * dp * math.sin(angle)
+            float seg = math.sqrt(math.pow(((curr_t - prev_t) / dt) * dp, 2) + math.pow(curr_p - prev_p, 2))
+            
+            if acc_len + seg <= target_len
+                acc_len += seg
+                prev_t := curr_t
+                prev_p := curr_p
+                final_t := int(math.round(curr_t))
+                final_p := curr_p
+            else
+                float ratio = (target_len - acc_len) / math.max(seg, 0.000001)
+                final_t := int(math.round(prev_t + ratio * (curr_t - prev_t)))
+                final_p := prev_p + ratio * (curr_p - prev_p)
+                break
+    chart.point.from_time(final_t, final_p)
+
+// ---  ‘ŒÌ’ »«“Â Å«ÌÂ ---
+if time >= start_t and time <= end_t
+    if na(range_hh) or high > range_hh
+        range_hh := high
+        hh_step_count += 1
+    if na(range_ll) or low < range_ll
+        range_ll := low
+        ll_step_count += 1
+
+// --- „Õ«”»«  —ÊÌ ò‰œ· ¬Œ— ---
+if barstate.islast
+    int total_bars = array.size(all_t)
+    int start_idx = na
+    int end_idx = na
+    
+    // ÅÌœ« ò—œ‰ «‰œÌ”ùÂ«Ì »«“Â
+    for i = 0 to total_bars - 1
+        int t = array.get(all_t, i)
+        if t >= start_t and na(start_idx)
+            start_idx := i
+        if t <= end_t
+            end_idx := i
+
+    if not na(start_idx) and not na(end_idx)
+        int N_range = end_idx - start_idx + 1
+        
+        float[] full_ma = array.new_float(total_bars, 0.0)
+        if opt_use_ma
+            if ma_type == "SMA"
+                for j = 0 to total_bars - 1
+                    float sum = 0.0
+                    int count = 0
+                    for k = 0 to N_range - 1
+                        if j - k >= 0
+                            sum += array.get(all_c, j - k)
+                            count += 1
+                    array.set(full_ma, j, sum / math.max(1, count))
+                    
+        float dt = timeframe.in_seconds("") * 1000.0 * N_range
+        float dp = math.abs(p2 - p1) == 0 ? 1.0 : math.abs(p2 - p1)
+        float b_coeff = math.log(1.618) / (math.pi / 2)
+        float a = 0.02
+        
+        float center_p = na(range_hh) or na(range_ll) ? 0.0 : (range_hh + range_ll) / 2
+        if opt_use_ma 
+            center_p := array.get(full_ma, end_idx)
+        
+        float hh_total_base = 0.0
+        float first_open = array.get(all_o, start_idx)
+        float last_close = array.get(all_c, end_idx)
+
+        // „Õ«”»Â ò· ›Ê«’· ›ﬁÿ »—«Ì »«“Â [t1, t2] ÃÂ  —”„ «”ÅÌ—«· «’·Ì
+        for i = start_idx to end_idx
+            float c = array.get(all_c, i)
+            float r_ma = opt_use_ma ? array.get(full_ma, i) : center_p
+            float dist_hh = opt_use_ma ? math.max(0, c - r_ma) : range_hh - c
+            hh_total_base += dist_hh
+                
+        float range_angle = (N_range > 0 and dp != 0) ? math.atan((last_close - first_open) / dp) : 0.0
+        float hh_offset = opt_angle_rotation ? (hh_step_count * range_angle) : 0.0
+
+        // —”„ «”ÅÌ—«· œ— t2 Ê œ—Ì«›  »«·« —Ì‰ ‰ﬁÿÂ
+        float hh_max_p = na
+        if hh_total_base > 0
+            [pt, max_p] = draw_spiral(hh_total_base, 1, hh_offset, color.orange, end_t, center_p, dt, dp, a, b_coeff, 3)
+            hh_max_p := max_p
+
+        // „Õ«”»Â „”Ì— ÅÌÊ” Â Ê ÅÊÌ‘ «“ t1  « “„«‰ Õ«·
+        pts_path_hh = array.new<chart.point>()
+        float cur_hh_tot = 0.0
+
+        for i = start_idx to total_bars - 1
+            float c = array.get(all_c, i)
+            float r_ma = opt_use_ma ? array.get(full_ma, i) : center_p
+            int t_i = array.get(all_t, i)
+            
+            float d_hh = opt_use_ma ? math.max(0, c - r_ma) : range_hh - c
+            cur_hh_tot += d_hh
+            
+            if cur_hh_tot > 0
+                chart.point path_pt = get_spiral_end(cur_hh_tot, 1, hh_offset, t_i, r_ma, dt, dp, a, b_coeff)
+                array.push(pts_path_hh, path_pt)
+                
+                // ’œÊ— ”Ìê‰«· „„«” ‘œ‰ ›ﬁÿ »—«Ì “„«‰ùÂ«Ì »⁄œ «“ t2 (‘—Ê⁄ ÅÊÌ‘)
+                if t_i > end_t and not na(hh_max_p)
+                    if math.abs(path_pt.price - hh_max_p) < (syminfo.mintick * 5)
+                        label.new(path_pt.time, path_pt.price, "Tangent Signal", xloc=xloc.bar_time, color=color.yellow, style=label.style_label_down, textcolor=color.black)
+
+        if array.size(pts_path_hh) > 1
+            polyline.new(pts_path_hh, xloc = xloc.bar_time, line_color = color.new(color.orange, 20), line_style = line.style_dashed)

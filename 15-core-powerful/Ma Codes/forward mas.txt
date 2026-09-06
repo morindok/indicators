@@ -1,0 +1,107 @@
+//@version=5
+indicator("Dynamic Shifted Curve & Crossover Symmetry", overlay=true)
+
+// ?. ÊäÙíãÇÊ æ ÑİÊä äŞÇØ ÇÒ ˜ÇÑÈÑ
+calc_mode = input.string("MA (Close)", "äæÚ ãÍÇÓÈå (ãäæí ˜Ôæíí)", options=["MA (Close)", "Highest High (HH)", "Lowest Low (LL)"])
+
+t1 = input.time(0, "äŞØå ÔÑæÚ ÈÇÒå (˜áí˜ Çæá)", confirm=true)
+t2 = input.time(0, "äŞØå ÇíÇä ÈÇÒå (˜áí˜ Ïæã)", confirm=true)
+
+var int bar_t1 = na
+var int bar_t2 = na
+
+if time == t1
+    bar_t1 := bar_index
+if time == t2
+    bar_t2 := bar_index
+
+// ãÍÇÓÈå Øæá ÈÇÒå
+var int shift_len = 0
+if not na(bar_t1) and not na(bar_t2) and shift_len == 0
+    shift_len := math.abs(bar_t2 - bar_t1)
+
+// ÂÑÇíååÇí ÊÇÑíÎå ÈÑÇí Close, High, Low
+var float[] close_history = array.new_float(0)
+var float[] high_history  = array.new_float(0)
+var float[] low_history   = array.new_float(0)
+var float[] base_history  = array.new_float(0) // ÊÇÑíÎå ãäÍäí Çíå
+
+array.unshift(close_history, close)
+array.unshift(high_history, high)
+array.unshift(low_history, low)
+
+if array.size(close_history) > 5000
+    array.pop(close_history)
+    array.pop(high_history)
+    array.pop(low_history)
+
+// ==========================================
+// ?. ãÍÇÓÈÇÊ ÎØ Çíå (MA íÇ HH íÇ LL)
+// ==========================================
+float base_curve = na
+float shifted_base_fwd = na
+
+if shift_len > 0 and bar_index >= bar_t2
+    // ãÍÇÓÈå æÖÚíÊ İÚáí
+    if array.size(close_history) >= shift_len
+        if calc_mode == "MA (Close)"
+            base_curve := array.sum(array.slice(close_history, 0, shift_len)) / shift_len
+        else if calc_mode == "Highest High (HH)"
+            base_curve := array.max(array.slice(high_history, 0, shift_len))
+        else if calc_mode == "Lowest Low (LL)"
+            base_curve := array.min(array.slice(low_history, 0, shift_len))
+            
+    // ãÍÇÓÈå ÔíİÊ Èå Ìáæ (ÇÒ ÏíÊÇí ĞÔÊå)
+    if array.size(close_history) >= shift_len * 2
+        if calc_mode == "MA (Close)"
+            shifted_base_fwd := array.sum(array.slice(close_history, shift_len, shift_len * 2)) / shift_len
+        else if calc_mode == "Highest High (HH)"
+            shifted_base_fwd := array.max(array.slice(high_history, shift_len, shift_len * 2))
+        else if calc_mode == "Lowest Low (LL)"
+            shifted_base_fwd := array.min(array.slice(low_history, shift_len, shift_len * 2))
+
+// ĞÎíÑå ãäÍäí ÏÑ ÊÇÑíÎå
+if not na(base_curve)
+    array.unshift(base_history, base_curve)
+    if array.size(base_history) > 5000
+        array.pop(base_history)
+
+// ŞíãÊ ãÊŞÇÑä ÈÑ ÇÓÇÓ ãäÍäí ÔíİÊ ÏÇÏå ÔÏå
+float sym_price_fwd = na(shifted_base_fwd) ? na : (2 * shifted_base_fwd) - close
+
+// ==========================================
+// ?. íÏÇ ˜ÑÏä Çæáíä ÈÑÎæÑÏ æ ãÍÇÓÈå İÇÕáå
+// ==========================================
+var bool cross_found = false
+var int cross_distance = na
+
+if shift_len > 0 and bar_index >= bar_t2 and not cross_found
+    if ta.cross(sym_price_fwd, shifted_base_fwd)
+        cross_found := true
+        cross_distance := bar_index - bar_t1
+
+// ==========================================
+// ?. ÑÓã ÎØæØ Ñæí ÇÑÊ
+// ==========================================
+plot(base_curve, "ãäÍäí ÇÕáí", color=color.new(color.blue, 70), linewidth=2)
+plot(shifted_base_fwd, "ÔíİÊ Èå Ìáæ (ÒÑÏ)", color=color.yellow, linewidth=2)
+plot(sym_price_fwd, "ŞíãÊ ãÊŞÇÑä Ìáæ (ŞÑãÒ)", color=color.red, linewidth=2)
+
+// ãäÍäí äÇÑäÌí (ÈÇ Offset Èå Ìáæ ÑÇäÏå ãíÔæÏ)
+float new_shifted_base = cross_found ? base_curve : na
+plot(new_shifted_base, "ÔíİÊ ÔÏå (äÇÑäÌí)", color=color.orange, linewidth=2, offset=nz(cross_distance, 0))
+
+// ãÍÇÓÈå ŞíãÊ ãÊŞÇÑä äÓÈÊ Èå æÖÚíÊ ÍÇÖÑ (ÈÏæä Offset)
+float delayed_base = na
+if cross_found and array.size(base_history) > cross_distance
+    delayed_base := array.get(base_history, cross_distance)
+
+float sym_price_current_state = na(delayed_base) ? na : (2 * delayed_base) - close
+
+plot(sym_price_current_state, "ãÊŞÇÑä äÓÈÊ Èå ÇáÇä (ÈäİÔ)", color=color.purple, linewidth=2)
+
+// ==========================================
+// ?. ÑÓã ÎØ ÚãæÏí ÏÑ ÊŞÇØÚ ÈäİÔ æ ŞÑãÒ
+// ==========================================
+if ta.cross(sym_price_current_state, sym_price_fwd)
+    line.new(x1=bar_index, y1=low, x2=bar_index, y2=high, extend=extend.both, color=color.new(color.white, 30), width=1, style=line.style_dashed)

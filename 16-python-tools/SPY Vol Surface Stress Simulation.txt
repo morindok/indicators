@@ -1,0 +1,685 @@
+# ============================================================
+# 📊 SPY Vol Surface Stress Simulation - Fixed / Optimized
+# ============================================================
+# pip install dash plotly yfinance numpy pandas scipy
+#
+# تغییرات نسبت به نسخه قبلی:
+#  1) SVI حالا واقعاً term-structure-aware است (ATM vol با decay
+#     بین کوتاه‌مدت/بلندمدت) -> دیگر IV در سررسیدهای نزدیک منفجر
+#     نمی‌شود و رفتار calendar به‌شکل واقع‌گرایانه‌تری درمی‌آید.
+#  2) generate_surface() کاملاً وکتوریزه شد (بدون nested loop).
+#  3) مومنتوم قیمت واقعی از تاریخچه قیمت (نه مقدار ثابت صفر).
+#  4) یک فراخوانی شبکه به‌جای دو فراخوانی جدا برای قیمت/تاریخچه.
+#  5) هشدار صریح در کد: این داشبورد هنوز از option chain واقعی
+#     کالیبره نشده -> سیگنال‌ها هنوز "دمو رژیم" هستند نه سیگنال
+#     آماری معتبر. تابع calibrate_from_market() به‌عنوان نقطه
+#     شروع برای کالیبراسیون واقعی اضافه شده (نیاز به
+#     walk-forward/permutation test قبل از تصمیم معاملاتی دارد).
+# ============================================================
+
+import dash
+from dash import dcc, html
+from dash.dependencies import Input, Output, State
+import plotly.graph_objects as go
+import yfinance as yf
+import numpy as np
+import pandas as pd
+from datetime import datetime
+from collections import deque
+import time
+from scipy.stats import norm
+
+
+# ============================================================
+# 1. 📐 SVI Model با Term Structure واقعی
+# ============================================================
+
+class SVIModel:
+    """
+    به‌جای یک "a,b" ثابت که در همه سررسیدها تکرار می‌شد (باگ اصلی
+    نسخه قبل که IV سررسیدهای نزدیک را منفجر می‌کرد)، اینجا واریانس
+    کل ATM به‌صورت تابعی از T ساخته می‌شود:
+
+        sigma_atm(T) = sigma_long + (sigma_short - sigma_long) * exp(-T/tau)
+        theta(T)     = sigma_atm(T)^2 * T          # واریانس کل ATM
+
+    و بعد شکل اسمایل (skew/کرتوز) با b_t که نسبت به theta(T) مقیاس
+    می‌شود، روی این پایه اضافه می‌شود:
+
+        w(k,T) = theta(T) + b_t * [rho*(k-m) + sqrt((k-m)^2+sigma^2) - shape_atm]
+
+    که shape_atm طوری تنظیم شده که w(0,T) دقیقاً برابر theta(T) شود
+    (یعنی نقطه ATM با منحنی term structure سازگار بماند).
+    """
+
+    def __init__(self):
+        # رژیم CALM (پیش‌فرض)
+        self.sigma_short = 0.15   # نوسان ضمنی کوتاه‌مدت (نزدیک به DTE~5)
+        self.sigma_long = 0.135   # نوسان ضمنی بلندمدت (DTE~365)
+        self.tau = 0.30           # ثابت decay (سال)
+        self.b0 = 0.04            # شدت skew در سررسید مرجع
+        self.rho = -0.30
+        self.m = -0.01
+        self.sigma = 0.25
+        self.regime = "CALM"
+        self.T_ref = 30 / 365.0
+        self.theta_ref = self._atm_total_variance(self.T_ref)
+
+    # ---- term structure ATM ----
+    def _atm_vol(self, T):
+        return self.sigma_long + (self.sigma_short - self.sigma_long) * np.exp(-T / self.tau)
+
+    def _atm_total_variance(self, T):
+        return self._atm_vol(T) ** 2 * T
+
+    def _smile_shape(self, k):
+        return self.rho * (k - self.m) + np.sqrt((k - self.m) ** 2 + self.sigma ** 2)
+
+    def svi_smile(self, k, T):
+        """واریانس کل w(k,T) - کاملاً وکتوریزه (k و T می‌توانند آرایه باشند)."""
+        T = np.maximum(T, 1e-6)
+        theta = self._atm_total_variance(T)
+        theta_ref = max(self.theta_ref, 1e-8)
+        b_t = self.b0 * (theta / theta_ref)
+
+        shape = self._smile_shape(k)
+        shape_atm = self._smile_shape(0.0)
+
+        w = theta + b_t * (shape - shape_atm)
+        return np.maximum(w, 1e-6)
+
+    def implied_vol(self, k, T):
+        T = np.maximum(T, 1e-6)
+        w = self.svi_smile(k, T)
+        return np.sqrt(w / T)
+
+    def set_regime(self, regime):
+        if regime == "CALM":
+            p = dict(sigma_short=0.15, sigma_long=0.135, tau=0.30,
+                      b0=0.04, rho=-0.30, m=-0.01, sigma=0.25)
+        elif regime == "STRESS":
+            p = dict(sigma_short=0.42, sigma_long=0.24, tau=0.12,
+                      b0=0.14, rho=-0.70, m=-0.06, sigma=0.30)
+        else:
+            return
+        for k_, v_ in p.items():
+            setattr(self, k_, v_)
+        self.regime = regime
+        self.theta_ref = self._atm_total_variance(self.T_ref)
+
+    def interpolate_regime(self, calm_params, stress_params, alpha):
+        for key in calm_params:
+            val = calm_params[key] * (1 - alpha) + stress_params[key] * alpha
+            setattr(self, key, val)
+        self.theta_ref = self._atm_total_variance(self.T_ref)
+
+    # ------------------------------------------------------------
+    # نقطه شروع برای کالیبراسیون واقعی از option chain (اختیاری).
+    # این فقط یک تقریب سریع (moment matching خطی) است، جایگزین
+    # کالیبراسیون کامل (least-squares روی همه strikeها) نیست.
+    # قبل از استفاده در تصمیم معاملاتی، حتماً طبق روش خودت
+    # (walk-forward + permutation test) اعتبارسنجی شود.
+    # ------------------------------------------------------------
+    def calibrate_from_market(self, ticker="SPY"):
+        try:
+            tk = yf.Ticker(ticker)
+            exps = tk.options
+            if not exps:
+                return False
+            spot = tk.history(period="1d")["Close"].iloc[-1]
+
+            near_exp = exps[0]
+            chain = tk.option_chain(near_exp)
+            calls, puts = chain.calls, chain.puts
+
+            calls = calls[(calls['impliedVolatility'] > 0) & (calls['strike'] > 0)]
+            puts = puts[(puts['impliedVolatility'] > 0) & (puts['strike'] > 0)]
+
+            atm_call_iv = calls.iloc[(calls['strike'] - spot).abs().argsort()[:1]]['impliedVolatility'].values
+            atm_put_iv = puts.iloc[(puts['strike'] - spot).abs().argsort()[:1]]['impliedVolatility'].values
+            if len(atm_call_iv) == 0 or len(atm_put_iv) == 0:
+                return False
+
+            self.sigma_short = float((atm_call_iv[0] + atm_put_iv[0]) / 2)
+            # sigma_long را تغییر نمی‌دهیم مگر سررسید دورتر هم بخوانیم؛
+            # اینجا صرفاً short anchor را از بازار واقعی می‌گیریم.
+            self.theta_ref = self._atm_total_variance(self.T_ref)
+            return True
+        except Exception as e:
+            print(f"Market calibration failed: {e}")
+            return False
+
+
+# ============================================================
+# 2. 🌊 Volatility Surface Generator (وکتوریزه - بدون حلقه)
+# ============================================================
+
+class VolSurface:
+    def __init__(self, svi_model):
+        self.svi = svi_model
+
+    def generate_surface(self, spot_price=737.62,
+                          moneyness_range=(0.80, 1.20),
+                          term_range=(5, 365)):
+        moneyness = np.linspace(moneyness_range[0], moneyness_range[1], 50)
+        terms = np.linspace(term_range[0], term_range[1], 30)
+
+        K_grid, T_grid = np.meshgrid(moneyness, terms)
+        k = np.log(K_grid)
+        T_years = np.maximum(T_grid / 365.0, 1e-6)
+
+        # کاملاً وکتوریزه - بدون nested for loop
+        IV_surface = self.svi.implied_vol(k, T_years)
+        return moneyness, terms, IV_surface
+
+    def get_atm_iv(self, spot_price=737.62, dte=32):
+        T = dte / 365.0
+        return float(self.svi.implied_vol(0.0, T) * 100)
+
+    def get_skew(self, spot_price=737.62, dte=30):
+        T = dte / 365.0
+        iv_put = self.svi.implied_vol(np.log(0.95), T) * 100
+        iv_call = self.svi.implied_vol(np.log(1.05), T) * 100
+        return float(iv_put - iv_call)
+
+    def get_otm_put_price(self, spot_price=737.62, strike_ratio=0.95, dte=30, iv_override=None):
+        K = spot_price * strike_ratio
+        T = dte / 365.0
+        iv = self.svi.implied_vol(np.log(strike_ratio), T) if iv_override is None else iv_override
+        return self._black_scholes_put(spot_price, K, T, float(iv))
+
+    def get_otm_call_price(self, spot_price=737.62, strike_ratio=1.05, dte=30, iv_override=None):
+        K = spot_price * strike_ratio
+        T = dte / 365.0
+        iv = self.svi.implied_vol(np.log(strike_ratio), T) if iv_override is None else iv_override
+        return self._black_scholes_call(spot_price, K, T, float(iv))
+
+    def _black_scholes_call(self, S, K, T, sigma, r=0.05):
+        d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        return S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+
+    def _black_scholes_put(self, S, K, T, sigma, r=0.05):
+        d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        return K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+
+
+# ============================================================
+# 3. 🚦 Trading Signal Generator
+#     ⚠️ هشدار صریح: این امتیازدهی (score) کاملاً heuristic و
+#     کالیبره‌نشده است. آستانه‌ها (5, -0.1, 100, ...) دلخواه هستند
+#     و پشتشان هیچ آزمون آماری (permutation test / walk-forward)
+#     نیست. طبق روش کاری خودت روی سیستم‌های دیگر (Donchian و...)،
+#     این بخش را نباید به‌عنوان سیگنال معاملاتی واقعی در نظر گرفت
+#     مگر بعد از بک‌تست خارج از نمونه با داده واقعی option chain.
+# ============================================================
+
+class TradingSignals:
+    @staticmethod
+    def generate_signals(iv_change, skew_change, put_change,
+                          spot_price, spot_change_pct, regime):
+        signals = []
+        score = 0
+
+        if regime == "STRESS" and iv_change > 5:
+            signals.append("🚨 IV SPIKE detected - High fear regime")
+            score -= 3
+        elif regime == "CALM" and iv_change < -2:
+            signals.append("🧊 IV Compression - Low volatility environment")
+            score += 2
+
+        if skew_change < -0.1:
+            signals.append("⚠️ Skew steepening - Put demand increasing")
+            score -= 2
+        elif skew_change > 0.05:
+            signals.append("✅ Skew flattening - Risk appetite improving")
+            score += 1
+
+        if put_change > 100:
+            signals.append("🛡️ OTM Puts expensive - Hedging demand surge")
+            score -= 2
+        elif put_change < -50:
+            signals.append("💰 OTM Puts cheap - Low hedging demand")
+            score += 1
+
+        if spot_change_pct < -2:
+            signals.append("🔻 Price dropping significantly")
+            score -= 2
+        elif spot_change_pct > 1:
+            signals.append("🔺 Price rising")
+            score += 1
+
+        if score <= -4:
+            recommendation, rec_color = "STRONG SELL / BUY PUTS", "#ff4444"
+            action = "Consider buying protective puts or selling calls"
+        elif score <= -2:
+            recommendation, rec_color = "SELL / CAUTIOUS", "#ff8844"
+            action = "Reduce exposure, consider hedging"
+        elif score <= 0:
+            recommendation, rec_color = "HOLD / NEUTRAL", "#ffaa44"
+            action = "Maintain current positions"
+        elif score <= 3:
+            recommendation, rec_color = "BUY / OPPORTUNITY", "#44ff88"
+            action = "Consider adding long positions"
+        else:
+            recommendation, rec_color = "STRONG BUY", "#00ff66"
+            action = "Favorable risk/reward - Add exposure"
+
+        return {
+            'signals': signals, 'score': score,
+            'recommendation': recommendation, 'rec_color': rec_color,
+            'action': action
+        }
+
+
+# ============================================================
+# 4. ⚡ Data Fetcher (یک فراخوانی شبکه به‌جای دو فراخوانی جدا)
+# ============================================================
+
+class DataFetcher:
+    _cached_df_5m = None
+    _last_fetch_5m = 0
+    _cached_price = 737.62
+    _price_history = deque(maxlen=30)   # برای مومنتوم واقعی
+
+    @classmethod
+    def get_spy_data(cls):
+        """داده ۵ دقیقه‌ای با کش ۶۰ ثانیه. قیمت لحظه‌ای هم از همین
+        دیتافریم گرفته می‌شود -> دیگر فراخوانی جدا برای قیمت لازم نیست."""
+        now = time.time()
+        if cls._cached_df_5m is not None and (now - cls._last_fetch_5m) < 60:
+            return cls._cached_df_5m
+
+        try:
+            spy = yf.Ticker("SPY")
+            df = spy.history(period="5d", interval="5m")
+            if not df.empty:
+                cls._cached_df_5m = df
+                cls._last_fetch_5m = now
+                new_price = float(df['Close'].iloc[-1])
+                cls._cached_price = new_price
+                cls._price_history.append(new_price)
+            return cls._cached_df_5m
+        except Exception as e:
+            print(f"Error fetching historical data: {e}")
+            return cls._cached_df_5m
+
+    @classmethod
+    def get_spy_live_price(cls):
+        """دیگر فراخوانی شبکه جدا ندارد - از کش get_spy_data استفاده می‌کند."""
+        cls.get_spy_data()
+        return cls._cached_price
+
+    @classmethod
+    def get_price_change_pct(cls):
+        """مومنتوم واقعی: تغییر درصدی روی تاریخچه کش‌شده (نه مقدار ثابت صفر)."""
+        if len(cls._price_history) < 2:
+            return 0.0
+        first, last = cls._price_history[0], cls._price_history[-1]
+        if first == 0:
+            return 0.0
+        return (last / first - 1.0) * 100.0
+
+
+# ============================================================
+# 5. 🖥️ Dash Application
+# ============================================================
+
+svi_model = SVIModel()
+vol_surface = VolSurface(svi_model)
+trading_signals = TradingSignals()
+data_fetcher = DataFetcher()
+
+calm_params = dict(sigma_short=0.15, sigma_long=0.135, tau=0.30,
+                    b0=0.04, rho=-0.30, m=-0.01, sigma=0.25)
+stress_params = dict(sigma_short=0.42, sigma_long=0.24, tau=0.12,
+                      b0=0.14, rho=-0.70, m=-0.06, sigma=0.30)
+
+app = dash.Dash(__name__,
+                 title="SPY Vol Surface Stress Simulation",
+                 external_stylesheets=[
+                     'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap'
+                 ])
+
+app.layout = html.Div([
+    html.Div([
+        html.H1("📊 SPY Vol Surface Stress Simulation",
+                style={'color': 'white', 'textAlign': 'center',
+                       'fontFamily': 'JetBrains Mono', 'margin': '10px 0'}),
+        html.Div(id='header-info',
+                 style={'color': '#888888', 'textAlign': 'center',
+                        'fontFamily': 'JetBrains Mono', 'fontSize': '12px'}),
+    ], style={'backgroundColor': '#0a0a0a', 'padding': '10px'}),
+
+    html.Div([
+        html.Div(id='regime-banner',
+                 style={'padding': '8px', 'textAlign': 'center',
+                        'fontFamily': 'JetBrains Mono', 'fontSize': '14px',
+                        'fontWeight': 'bold', 'borderRadius': '5px', 'margin': '5px'}),
+    ], style={'display': 'flex', 'justifyContent': 'center'}),
+
+    html.Div([
+        html.Div([
+            html.Div("Implied Volatility", style={'color': '#888', 'fontSize': '11px', 'fontFamily': 'JetBrains Mono'}),
+            html.Div(id='metric-iv', style={'color': '#00ff88', 'fontSize': '20px', 'fontWeight': 'bold', 'fontFamily': 'JetBrains Mono'}),
+        ], style={'flex': 1, 'textAlign': 'center', 'padding': '10px', 'border': '1px solid #333', 'borderRadius': '5px', 'margin': '5px'}),
+
+        html.Div([
+            html.Div("Skew ⚖️", style={'color': '#888', 'fontSize': '11px', 'fontFamily': 'JetBrains Mono'}),
+            html.Div(id='metric-skew', style={'color': '#00aaff', 'fontSize': '20px', 'fontWeight': 'bold', 'fontFamily': 'JetBrains Mono'}),
+        ], style={'flex': 1, 'textAlign': 'center', 'padding': '10px', 'border': '1px solid #333', 'borderRadius': '5px', 'margin': '5px'}),
+
+        html.Div([
+            html.Div("OTM Put 30d", style={'color': '#888', 'fontSize': '11px', 'fontFamily': 'JetBrains Mono'}),
+            html.Div(id='metric-put', style={'color': '#ff4488', 'fontSize': '20px', 'fontWeight': 'bold', 'fontFamily': 'JetBrains Mono'}),
+        ], style={'flex': 1, 'textAlign': 'center', 'padding': '10px', 'border': '1px solid #333', 'borderRadius': '5px', 'margin': '5px'}),
+
+        html.Div([
+            html.Div("OTM Call 30d", style={'color': '#888', 'fontSize': '11px', 'fontFamily': 'JetBrains Mono'}),
+            html.Div(id='metric-call', style={'color': '#ff8800', 'fontSize': '20px', 'fontWeight': 'bold', 'fontFamily': 'JetBrains Mono'}),
+        ], style={'flex': 1, 'textAlign': 'center', 'padding': '10px', 'border': '1px solid #333', 'borderRadius': '5px', 'margin': '5px'}),
+    ], style={'display': 'flex', 'backgroundColor': '#0a0a0a'}),
+
+    html.Div([
+        html.Div("Live simulation · term-structure-aware SVI",
+                 style={'color': '#aaa', 'fontSize': '12px', 'textAlign': 'center', 'fontFamily': 'JetBrains Mono'}),
+        html.Div(id='svi-formula', style={'color': '#ddd', 'fontSize': '13px', 'textAlign': 'center', 'fontFamily': 'JetBrains Mono', 'margin': '5px'}),
+    ], style={'backgroundColor': '#0a0a0a', 'padding': '5px'}),
+
+    html.Div([
+        html.Div([dcc.Graph(id='vol-surface-3d', style={'height': '450px'})], style={'flex': 1.5, 'padding': '5px'}),
+        html.Div([
+            html.Div([
+                html.H3("Trading Recommendation", style={'color': 'white', 'fontFamily': 'JetBrains Mono', 'fontSize': '14px', 'margin': '5px 0'}),
+                html.Div(id='trading-recommendation', style={'padding': '10px', 'borderRadius': '5px', 'fontFamily': 'JetBrains Mono', 'fontSize': '16px', 'fontWeight': 'bold', 'textAlign': 'center', 'margin': '5px 0'}),
+                html.Div(id='trading-action', style={'color': '#aaa', 'fontSize': '11px', 'fontFamily': 'JetBrains Mono', 'textAlign': 'center'}),
+                html.Div("⚠️ سیگنال هیوریستیک - کالیبره‌نشده. قبل از استفاده معاملاتی بک‌تست کن.",
+                         style={'color': '#665', 'fontSize': '9px', 'fontFamily': 'JetBrains Mono', 'textAlign': 'center', 'marginTop': '5px'}),
+            ], style={'border': '1px solid #333', 'borderRadius': '5px', 'padding': '10px', 'margin': '5px', 'backgroundColor': '#111'}),
+
+            html.Div([
+                html.H3("Active Signals", style={'color': 'white', 'fontFamily': 'JetBrains Mono', 'fontSize': '12px', 'margin': '5px 0'}),
+                html.Div(id='signal-list', style={'fontFamily': 'JetBrains Mono', 'fontSize': '11px', 'color': '#ccc', 'padding': '5px'}),
+            ], style={'border': '1px solid #333', 'borderRadius': '5px', 'padding': '10px', 'margin': '5px', 'backgroundColor': '#111'}),
+
+            html.Div([
+                html.H3("Simulation Controls", style={'color': 'white', 'fontFamily': 'JetBrains Mono', 'fontSize': '12px', 'margin': '5px 0'}),
+                dcc.Slider(id='stress-slider', min=0, max=100, value=0, step=1,
+                           marks={0: 'Calm', 50: 'Mixed', 100: 'Stress'},
+                           tooltip={"placement": "bottom", "always_visible": True}),
+                html.Div(id='slider-value', style={'color': '#aaa', 'fontSize': '11px', 'fontFamily': 'JetBrains Mono', 'textAlign': 'center'}),
+            ], style={'border': '1px solid #333', 'borderRadius': '5px', 'padding': '10px', 'margin': '5px', 'backgroundColor': '#111'}),
+        ], style={'flex': 1, 'padding': '5px'}),
+    ], style={'display': 'flex', 'backgroundColor': '#0a0a0a'}),
+
+    html.Div([
+        html.Div([dcc.Graph(id='atm-iv-chart', style={'height': '150px'})], style={'flex': 1, 'padding': '3px'}),
+        html.Div([dcc.Graph(id='skew-chart', style={'height': '150px'})], style={'flex': 1, 'padding': '3px'}),
+        html.Div([dcc.Graph(id='otm-put-chart', style={'height': '150px'})], style={'flex': 1, 'padding': '3px'}),
+        html.Div([dcc.Graph(id='otm-call-chart', style={'height': '150px'})], style={'flex': 1, 'padding': '3px'}),
+    ], style={'display': 'flex', 'backgroundColor': '#0a0a0a'}),
+
+    html.Div([
+        html.H3("SPY Live Price (5min)", style={'color': 'white', 'fontFamily': 'JetBrains Mono', 'fontSize': '14px', 'textAlign': 'center', 'margin': '5px'}),
+        dcc.Graph(id='live-price-chart', style={'height': '250px'}),
+    ], style={'backgroundColor': '#0a0a0a', 'padding': '5px'}),
+
+    dcc.Interval(id='interval-component', interval=30000, n_intervals=0),
+
+    dcc.Store(id='simulation-history', data={
+        'iv_history': [], 'skew_history': [], 'put_history': [],
+        'call_history': [], 'price_history': [], 'time_history': []
+    }),
+], style={'backgroundColor': '#0a0a0a', 'fontFamily': 'JetBrains Mono'})
+
+
+# ============================================================
+# 6. 🔄 Callbacks
+# ============================================================
+
+@app.callback(
+    [Output('vol-surface-3d', 'figure'),
+     Output('regime-banner', 'children'),
+     Output('regime-banner', 'style'),
+     Output('metric-iv', 'children'),
+     Output('metric-skew', 'children'),
+     Output('metric-put', 'children'),
+     Output('metric-call', 'children'),
+     Output('svi-formula', 'children'),
+     Output('trading-recommendation', 'children'),
+     Output('trading-recommendation', 'style'),
+     Output('trading-action', 'children'),
+     Output('signal-list', 'children'),
+     Output('slider-value', 'children'),
+     Output('header-info', 'children')],
+    [Input('stress-slider', 'value'),
+     Input('interval-component', 'n_intervals')]
+)
+def update_dashboard(stress_level, n_intervals):
+    alpha = stress_level / 100.0
+    svi_model.interpolate_regime(calm_params, stress_params, alpha)
+
+    if alpha < 0.3:
+        regime, regime_text, regime_color = "CALM", "🟢 CALM REGIME: IV COMPRESSES · SKEW FLATTENS · PUTS CHEAPEN", "#00aaff"
+    elif alpha < 0.7:
+        regime, regime_text, regime_color = "TRANSITION", "🟡 TRANSITION REGIME: MIXED SIGNALS", "#ffaa00"
+    else:
+        regime, regime_text, regime_color = "STRESS", "🔴 STRESS REGIME: IV SPIKES · SKEW STEEPENS · PUTS BID UP", "#ff4444"
+
+    moneyness, terms, IV_surface = vol_surface.generate_surface()
+
+    fig_surface = go.Figure()
+    colorscale = [[0, '#000033'], [0.2, '#0066ff'], [0.4, '#00ff88'],
+                  [0.6, '#ffff00'], [0.8, '#ff8800'], [1.0, '#ff0000']]
+
+    fig_surface.add_trace(go.Surface(
+        x=moneyness * 100, y=terms, z=IV_surface * 100,
+        colorscale=colorscale, colorbar=dict(title='IV (%)', tickfont=dict(color='white')),
+        showscale=True, opacity=0.85,
+        lighting=dict(ambient=0.3, diffuse=0.8, specular=0.2, roughness=0.5),
+        lightposition=dict(x=100, y=100, z=200),
+    ))
+
+    atm_terms = terms
+    T_arr = atm_terms / 365.0
+    atm_iv_line = svi_model.implied_vol(np.zeros_like(T_arr), T_arr) * 100
+    fig_surface.add_trace(go.Scatter3d(
+        x=np.full_like(atm_terms, 100), y=atm_terms, z=atm_iv_line,
+        mode='lines', line=dict(color='white', width=6), name='ATM (K/S=100%)', showlegend=False
+    ))
+
+    fig_surface.update_layout(
+        title=dict(text='Implied Volatility Surface', font=dict(color='white', size=14)),
+        scene=dict(
+            xaxis=dict(title='Moneyness K/S (%)', color='white', gridcolor='#333', tickfont=dict(color='#aaa')),
+            yaxis=dict(title='Term (days)', color='white', gridcolor='#333', tickfont=dict(color='#aaa')),
+            zaxis=dict(title='IV (%)', color='white', gridcolor='#333', tickfont=dict(color='#aaa')),
+            bgcolor='#0a0a0a', camera=dict(eye=dict(x=1.5, y=1.5, z=1.2)),
+        ),
+        paper_bgcolor='#0a0a0a', plot_bgcolor='#0a0a0a', font=dict(color='white'),
+        margin=dict(l=0, r=0, t=30, b=0),
+    )
+
+    spot_price = data_fetcher.get_spy_live_price()
+
+    atm_iv = vol_surface.get_atm_iv(spot_price)
+    skew = vol_surface.get_skew(spot_price)
+    otm_put = vol_surface.get_otm_put_price(spot_price)
+    otm_call = vol_surface.get_otm_call_price(spot_price)
+
+    # baseline صریحاً "سینتتیک" - فقط برای نمایش تفاوت با CALM، نه سیگنال بازار واقعی
+    saved_state = dict(sigma_short=svi_model.sigma_short, sigma_long=svi_model.sigma_long,
+                        tau=svi_model.tau, b0=svi_model.b0, rho=svi_model.rho,
+                        m=svi_model.m, sigma=svi_model.sigma, theta_ref=svi_model.theta_ref)
+    svi_model.set_regime("CALM")
+    base_iv = vol_surface.get_atm_iv(spot_price)
+    base_skew = vol_surface.get_skew(spot_price)
+    base_put = vol_surface.get_otm_put_price(spot_price)
+    base_call = vol_surface.get_otm_call_price(spot_price)
+    for k_, v_ in saved_state.items():
+        setattr(svi_model, k_, v_)
+
+    iv_change = atm_iv - base_iv
+    skew_change = skew - base_skew
+    put_change_pct = ((otm_put - base_put) / max(base_put, 0.01)) * 100
+    call_change_pct = ((otm_call - base_call) / max(base_call, 0.01)) * 100
+
+    iv_color = "#ff4444" if iv_change > 0 else "#00ff88"
+    skew_color = "#ff4444" if skew_change < -0.05 else "#00ff88"
+    put_color = "#ff4444" if put_change_pct > 0 else "#00ff88"
+    call_color = "#ff4444" if call_change_pct < 0 else "#00ff88"
+
+    iv_text = f"{'🔺' if iv_change > 0 else '🔻'} {abs(iv_change):.1f}"
+    skew_text = f"{'🔺' if skew_change > 0 else '🔻'} {abs(skew_change):.3f}"
+    put_text = f"{'🔺' if put_change_pct > 0 else '🔻'} {abs(put_change_pct):.1f}%"
+    call_text = f"{'🔺' if call_change_pct > 0 else '🔻'} {abs(call_change_pct):.1f}%"
+
+    formula = (f"θ(T)=σ_atm(T)²·T · σ_atm={svi_model.sigma_short:.3f}→{svi_model.sigma_long:.3f} "
+               f"(τ={svi_model.tau:.2f}) · b0={svi_model.b0:.3f} · ρ={svi_model.rho:.2f}")
+
+    spot_change = data_fetcher.get_price_change_pct()  # مومنتوم واقعی به‌جای ۰ ثابت
+    signals = trading_signals.generate_signals(iv_change, skew_change, put_change_pct,
+                                                spot_price, spot_change, regime)
+
+    if signals['signals']:
+        signal_children = [html.Div(sig, style={'margin': '3px 0'}) for sig in signals['signals']]
+    else:
+        signal_children = [html.Div("No strong signals", style={'color': '#666'})]
+    signal_container = html.Div(signal_children)
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    header = f"close ${spot_price:.2f} · {now} · momentum {spot_change:+.2f}% · 31-DTE ATM IV {atm_iv:.1f}%"
+
+    return (
+        fig_surface, regime_text,
+        {'backgroundColor': regime_color + '22', 'color': regime_color, 'border': f'1px solid {regime_color}',
+         'padding': '8px', 'textAlign': 'center', 'fontFamily': 'JetBrains Mono', 'fontSize': '13px',
+         'fontWeight': 'bold', 'borderRadius': '5px', 'margin': '5px'},
+        html.Span([html.Span(iv_text, style={'color': iv_color})]),
+        html.Span([html.Span(skew_text, style={'color': skew_color})]),
+        html.Span([html.Span(put_text, style={'color': put_color})]),
+        html.Span([html.Span(call_text, style={'color': call_color})]),
+        formula,
+        signals['recommendation'],
+        {'backgroundColor': signals['rec_color'] + '22', 'color': signals['rec_color'],
+         'border': f'2px solid {signals["rec_color"]}', 'padding': '10px', 'borderRadius': '5px',
+         'fontFamily': 'JetBrains Mono', 'fontSize': '16px', 'fontWeight': 'bold', 'textAlign': 'center'},
+        signals['action'], signal_container,
+        f"Stress Level: {stress_level}% (🎛️ = {alpha:.2f})", header
+    )
+
+
+@app.callback(
+    [Output('atm-iv-chart', 'figure'),
+     Output('skew-chart', 'figure'),
+     Output('otm-put-chart', 'figure'),
+     Output('otm-call-chart', 'figure'),
+     Output('live-price-chart', 'figure'),
+     Output('simulation-history', 'data')],
+    [Input('stress-slider', 'value'),
+     Input('interval-component', 'n_intervals'),
+     State('simulation-history', 'data')]
+)
+def update_charts(stress_level, n_intervals, history):
+    alpha = stress_level / 100.0
+    svi_model.interpolate_regime(calm_params, stress_params, alpha)
+
+    spot_price = data_fetcher.get_spy_live_price()
+    atm_iv = vol_surface.get_atm_iv(spot_price)
+    skew = vol_surface.get_skew(spot_price)
+    otm_put = vol_surface.get_otm_put_price(spot_price)
+    otm_call = vol_surface.get_otm_call_price(spot_price)
+
+    now = datetime.now().strftime("%H:%M:%S")
+    if history is None:
+        history = {'iv_history': [], 'skew_history': [], 'put_history': [],
+                    'call_history': [], 'price_history': [], 'time_history': []}
+
+    history['iv_history'].append(atm_iv)
+    history['skew_history'].append(skew)
+    history['put_history'].append(otm_put)
+    history['call_history'].append(otm_call)
+    history['price_history'].append(spot_price)
+    history['time_history'].append(now)
+
+    max_points = 50
+    for key in history:
+        history[key] = history[key][-max_points:]
+
+    times = history['time_history']
+
+    fig_iv = go.Figure()
+    fig_iv.add_trace(go.Scatter(x=times, y=history['iv_history'], mode='lines+markers',
+                                 line=dict(color='#ffcc00', width=2), marker=dict(size=6, color='#ffcc00')))
+    fig_iv.add_hline(y=14.19, line_dash="dash", line_color="#555", annotation_text="Start: 14.2%")
+    fig_iv.update_layout(title=dict(text='ATM IV (32d) %', font=dict(color='white', size=11)),
+                          xaxis=dict(showticklabels=False, gridcolor='#222'),
+                          yaxis=dict(gridcolor='#222', tickfont=dict(color='#aaa')),
+                          paper_bgcolor='#111', plot_bgcolor='#111', font=dict(color='white'),
+                          margin=dict(l=40, r=10, t=25, b=5), showlegend=False)
+
+    fig_skew = go.Figure()
+    fig_skew.add_trace(go.Scatter(x=times, y=history['skew_history'], mode='lines+markers',
+                                   line=dict(color='#00aaff', width=2), marker=dict(size=6, color='#00aaff')))
+    fig_skew.update_layout(title=dict(text='Skew ⚖️', font=dict(color='white', size=11)),
+                            xaxis=dict(showticklabels=False, gridcolor='#222'),
+                            yaxis=dict(gridcolor='#222', tickfont=dict(color='#aaa')),
+                            paper_bgcolor='#111', plot_bgcolor='#111', font=dict(color='white'),
+                            margin=dict(l=40, r=10, t=25, b=5), showlegend=False)
+
+    fig_put = go.Figure()
+    fig_put.add_trace(go.Scatter(x=times, y=history['put_history'], mode='lines+markers',
+                                  line=dict(color='#ff4488', width=2), marker=dict(size=6, color='#ff4488')))
+    fig_put.update_layout(title=dict(text='OTM Put 30d (K=0.95·S) $', font=dict(color='white', size=11)),
+                           xaxis=dict(showticklabels=False, gridcolor='#222'),
+                           yaxis=dict(gridcolor='#222', tickfont=dict(color='#aaa')),
+                           paper_bgcolor='#111', plot_bgcolor='#111', font=dict(color='white'),
+                           margin=dict(l=40, r=10, t=25, b=5), showlegend=False)
+
+    fig_call = go.Figure()
+    fig_call.add_trace(go.Scatter(x=times, y=history['call_history'], mode='lines+markers',
+                                   line=dict(color='#ff8800', width=2), marker=dict(size=6, color='#ff8800')))
+    fig_call.update_layout(title=dict(text='OTM Call 30d (K=1.05·S) $', font=dict(color='white', size=11)),
+                            xaxis=dict(showticklabels=False, gridcolor='#222'),
+                            yaxis=dict(gridcolor='#222', tickfont=dict(color='#aaa')),
+                            paper_bgcolor='#111', plot_bgcolor='#111', font=dict(color='white'),
+                            margin=dict(l=40, r=10, t=25, b=5), showlegend=False)
+
+    df = data_fetcher.get_spy_data()
+    fig_price = go.Figure()
+    if df is not None and not df.empty:
+        fig_price.add_trace(go.Candlestick(
+            x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
+            increasing_line_color='#00ff88', decreasing_line_color='#ff4444', name='SPY 5min'
+        ))
+        fig_price.add_trace(go.Bar(x=df.index, y=df['Volume'], opacity=0.3, name='Volume',
+                                    yaxis='y2', marker_color='#555555'))
+        if len(df) > 20:
+            df = df.copy()
+            df['SMA20'] = df['Close'].rolling(20).mean()
+            fig_price.add_trace(go.Scatter(x=df.index, y=df['SMA20'], mode='lines',
+                                            line=dict(color='#ffcc00', width=1.5), name='SMA 20'))
+
+    fig_price.update_layout(
+        title=dict(text='SPY Live Price (5min Candles)', font=dict(color='white', size=13)),
+        xaxis=dict(gridcolor='#222', tickfont=dict(color='#aaa'), rangeslider=dict(visible=False)),
+        yaxis=dict(title='Price ($)', gridcolor='#222', tickfont=dict(color='#aaa'), side='right'),
+        yaxis2=dict(title='Volume', overlaying='y', side='left', showgrid=False, tickfont=dict(color='#555')),
+        paper_bgcolor='#111', plot_bgcolor='#111', font=dict(color='white'),
+        margin=dict(l=50, r=50, t=30, b=30), showlegend=True,
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, font=dict(color='#aaa', size=10)),
+    )
+
+    return fig_iv, fig_skew, fig_put, fig_call, fig_price, history
+
+
+# ============================================================
+# 7. ▶️ Run
+# ============================================================
+
+if __name__ == '__main__':
+    print("=" * 60)
+    print("📊 SPY Vol Surface Stress Simulation (fixed/optimized)")
+    print("=" * 60)
+    app.run(debug=True)

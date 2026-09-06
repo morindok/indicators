@@ -1,0 +1,95 @@
+//@version=5
+indicator("Fibonacci Box", overlay=true, max_lines_count=500)
+
+price1 = input.price(defval=0, title="ÞíãÊ Çæá", confirm=true)
+price2 = input.price(defval=0, title="ÞíãÊ Ïæã", confirm=true)
+time1 = input.time(defval=0, title="ÒãÇä Çæá", confirm=true)
+time2 = input.time(defval=0, title="ÒãÇä Ïæã", confirm=true)
+enableAngle = input.bool(false, "ÊäÙíã ÔíÈ ÓØÍ æÓØ ÈÇ ÔíÈ ˜áí ÞíãÊ")
+
+boxColor = input.color(color.blue, "Ñä ÈÇ˜Ó")
+boxWidth = input.int(2, "ÖÎÇãÊ ÈÇ˜Ó", minval=1, maxval=5)
+fibWidth = input.int(1, "ÖÎÇãÊ ÎØæØ ÝíÈæäÇí", minval=1, maxval=3)
+manualAngleDegrees = input.float(0, "ÒÇæíå ÏÓÊí (ÏÑÌå)", minval=-180, maxval=180, step=0.1)
+
+var line[] allLines = array.new_line()
+
+for l in allLines
+    line.delete(l)
+array.clear(allLines)
+
+priceRange = price2 - price1
+timeRange = time2 - time1
+centerTime = (time1 + time2) / 2
+centerPrice = (price1 + price2) / 2
+
+timeScale = 1.0
+priceScale = math.abs(priceRange / timeRange)
+
+priceRangeNormalized = priceRange / priceScale
+timeRangeNormalized = timeRange * timeScale
+requiredAngleDegrees = math.atan(priceRangeNormalized / timeRangeNormalized) * 180 / math.pi
+
+angleDegrees = enableAngle ? requiredAngleDegrees : manualAngleDegrees
+angleRad = angleDegrees * math.pi / 180
+
+rotatePoint(t, p, ct, cp, angle, tScale, pScale) => 
+    tn = (t - ct) * tScale
+    pn = (p - cp) / pScale
+    tnr = tn * math.cos(angle) - pn * math.sin(angle)
+    pnr = tn * math.sin(angle) + pn * math.cos(angle)
+    [ct + tnr / tScale, cp + pnr * pScale]
+
+corners = array.new<float>(8)
+array.set(corners, 0, time1)
+array.set(corners, 1, price1)
+array.set(corners, 2, time2)
+array.set(corners, 3, price1)
+array.set(corners, 4, time2)
+array.set(corners, 5, price2)
+array.set(corners, 6, time1)
+array.set(corners, 7, price2)
+
+if enableAngle or manualAngleDegrees != 0
+    for i = 0 to 3
+        [rt, rp] = rotatePoint(array.get(corners, i*2), array.get(corners, i*2+1), centerTime, centerPrice, angleRad, timeScale, priceScale)
+        array.set(corners, i*2, rt)
+        array.set(corners, i*2+1, rp)
+
+array.push(allLines, line.new(x1=math.round(array.get(corners, 0)), y1=array.get(corners, 1), x2=math.round(array.get(corners, 2)), y2=array.get(corners, 3), xloc=xloc.bar_time, color=boxColor, width=boxWidth))
+array.push(allLines, line.new(x1=math.round(array.get(corners, 2)), y1=array.get(corners, 3), x2=math.round(array.get(corners, 4)), y2=array.get(corners, 5), xloc=xloc.bar_time, color=boxColor, width=boxWidth))
+array.push(allLines, line.new(x1=math.round(array.get(corners, 4)), y1=array.get(corners, 5), x2=math.round(array.get(corners, 6)), y2=array.get(corners, 7), xloc=xloc.bar_time, color=boxColor, width=boxWidth))
+array.push(allLines, line.new(x1=math.round(array.get(corners, 6)), y1=array.get(corners, 7), x2=math.round(array.get(corners, 0)), y2=array.get(corners, 1), xloc=xloc.bar_time, color=boxColor, width=boxWidth))
+
+levels = array.from(0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0)
+levelColors = array.from(color.red, color.orange, color.yellow, color.green, color.aqua, color.blue, color.purple)
+
+for i = 0 to array.size(levels) - 1
+    level = array.get(levels, i)
+    levelColor = array.get(levelColors, i)
+    p = price1 + priceRange * level
+    t1_temp = time1
+    t2_temp = time2
+    p1_temp = p
+    p2_temp = p
+    if enableAngle or manualAngleDegrees != 0
+        [t1r, p1r] = rotatePoint(t1_temp, p1_temp, centerTime, centerPrice, angleRad, timeScale, priceScale)
+        [t2r, p2r] = rotatePoint(t2_temp, p2_temp, centerTime, centerPrice, angleRad, timeScale, priceScale)
+        array.push(allLines, line.new(x1=math.round(t1r), y1=p1r, x2=math.round(t2r), y2=p2r, xloc=xloc.bar_time, color=levelColor, width=fibWidth))
+    else
+        array.push(allLines, line.new(x1=t1_temp, y1=p1_temp, x2=t2_temp, y2=p2_temp, xloc=xloc.bar_time, color=levelColor, width=fibWidth))
+
+for i = 0 to array.size(levels) - 1
+    level = array.get(levels, i)
+    levelColor = array.get(levelColors, i)
+    t = int(time1 + timeRange * level)
+    p1_temp = price1
+    p2_temp = price2
+    t1_temp = t
+    t2_temp = t
+    if enableAngle or manualAngleDegrees != 0
+        [t1r, p1r] = rotatePoint(t1_temp, p1_temp, centerTime, centerPrice, angleRad, timeScale, priceScale)
+        [t2r, p2r] = rotatePoint(t2_temp, p2_temp, centerTime, centerPrice, angleRad, timeScale, priceScale)
+        array.push(allLines, line.new(x1=math.round(t1r), y1=p1r, x2=math.round(t2r), y2=p2r, xloc=xloc.bar_time, color=levelColor, width=fibWidth))
+    else
+        array.push(allLines, line.new(x1=t1_temp, y1=p1_temp, x2=t2_temp, y2=p2_temp, xloc=xloc.bar_time, color=levelColor, width=fibWidth))

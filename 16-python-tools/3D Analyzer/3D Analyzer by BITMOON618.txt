@@ -1,0 +1,129 @@
+import dash
+from dash import dcc, html, Input, Output
+import plotly.graph_objs as go
+from plotly.subplots import make_subplots
+import yfinance as yf
+import pandas as pd
+import numpy as np
+
+# ÏÑíÇÝÊ ÏÇÏååÇí ? ÏÞíÞåÇí
+btc_ticker = yf.Ticker("BTC-USD")
+df = btc_ticker.history(period="5d", interval="5m")
+df.reset_index(inplace=True)
+
+app = dash.Dash(__name__)
+
+app.layout = html.Div([
+    html.H2("ÊÍáíá Ô˜ÓÊ ÓÇÎÊÇÑ ÝÖÇíí (ÑÏíÑí ããÇÓ ÎÇÑÌí ãÇÑí)",
+            style={'textAlign': 'center', 'fontFamily': 'Tahoma', 'color': 'white'}),
+
+    html.Div([
+        html.Div([
+            html.Label("ÏæÑå MA ÓÑíÚ (ãÍæÑ X):", style={'color': 'white'}),
+            dcc.Slider(id='ma1-slider', min=5, max=50, step=5, value=14, marks={i: str(i) for i in range(10, 51, 10)})
+        ], style={'width': '30%', 'display': 'inline-block'}),
+
+        html.Div([
+            html.Label("ÏæÑå MA ˜äÏ (ãÍæÑ Y):", style={'color': 'white'}),
+            dcc.Slider(id='ma2-slider', min=10, max=100, step=10, value=34,
+                       marks={i: str(i) for i in range(20, 101, 20)})
+        ], style={'width': '30%', 'display': 'inline-block'}),
+
+        html.Div([
+            html.Label("ÏæÑå Ô˜áíÑí ãÇÑí (ÝÑÇ˜ÊÇá):", style={'color': 'white'}),
+            dcc.Slider(id='spiral-slider', min=5, max=50, step=5, value=20,
+                       marks={i: str(i) for i in range(10, 51, 10)})
+        ], style={'width': '30%', 'display': 'inline-block'})
+    ], style={'padding': '20px', 'direction': 'rtl'}),
+
+    dcc.Graph(id='advanced-2d-system', style={'height': '85vh'})
+], style={'backgroundColor': '#111111', 'minHeight': '100vh', 'padding': '10px'})
+
+
+@app.callback(
+    Output('advanced-2d-system', 'figure'),
+    [Input('ma1-slider', 'value'),
+     Input('ma2-slider', 'value'),
+     Input('spiral-slider', 'value')]
+)
+def update_advanced_system(ma1, ma2, spiral_window):
+    data = df.copy()
+
+    # ãÍæÑåÇí ÝÖÇí ? ÈÚÏí
+    data['X'] = data['Close'].rolling(window=ma1).mean()
+    data['Y'] = data['Close'].rolling(window=ma2).mean()
+    data['Z'] = data['Close']
+    data.dropna(inplace=True)
+    data.reset_index(drop=True, inplace=True)
+
+    # ---------------- ãÍÇÓÈÇÊ åäÏÓí ÝÖÇí ÝÇÒ ----------------
+    # ãÍÇÓÈå ÈÑÏÇÑ ÔÚÇÚ ÝÖÇíí (R)
+    data['R_3D'] = np.sqrt((data['Z'] - data['X']) ** 2 + (data['Z'] - data['Y']) ** 2)
+
+    # ã˜ÇäíÓã ÑÏíÑí ÊÛííÑ ÓØÍ: íÏÇ ˜ÑÏä ÎÇÑÌí ÊÑíä ããÇÓ ÈÇ ÔíÝÊ Èå ÐÔÊå ÈÑÇí ÌáæíÑí ÇÒ ÑííäÊ
+    data['Outer_Tangent_Level'] = data['R_3D'].rolling(window=spiral_window).max().shift(1)
+
+    # ÊÔÎíÕ ÌÇÈÌÇíí áå (ÊÛííÑ ÓØÍ)
+    data['Level_Shifted'] = data['Outer_Tangent_Level'] != data['Outer_Tangent_Level'].shift(1)
+
+    data['Buy_Signal'] = np.nan
+    data['Sell_Signal'] = np.nan
+
+    for i in range(2, len(data)):
+        current_R = data['R_3D'].iloc[i]
+        outer_level = data['Outer_Tangent_Level'].iloc[i]
+
+        # ÔÑØ Ô˜ÓÊ: ÈÑÏÇÑ ÝÖÇíí¡ ããÇÓ ÎÇÑÌí ÍÌã ÞÈáí ÎæÏ ÑÇ ÈÔ˜ÇÝÏ
+        geometric_breakout = current_R > outer_level
+
+        # ÊÔÎíÕ ÌåÊ æ ÑÇäÔ (ÂíÇ ÞíãÊ ÏÑ ÈÇáÇí ÕÝÍå ÊÚÇÏá ÇÓÊ íÇ Çííä Âä¿)
+        bullish_gravity = (data['Z'].iloc[i] > data['X'].iloc[i]) and (data['Z'].iloc[i] > data['Y'].iloc[i])
+        bearish_gravity = (data['Z'].iloc[i] < data['X'].iloc[i]) and (data['Z'].iloc[i] < data['Y'].iloc[i])
+
+        # ÕÏæÑ ÓíäÇá åãÒãÇä ÈÇ ÊÛííÑ ÓØÍ æ ÇäÈÓÇØ ãÇÑí
+        if geometric_breakout and data['Level_Shifted'].iloc[i]:
+            if bullish_gravity:
+                data.at[data.index[i], 'Buy_Signal'] = data['Low'].iloc[i] * 0.998
+            elif bearish_gravity:
+                data.at[data.index[i], 'Sell_Signal'] = data['High'].iloc[i] * 1.002
+
+    # ---------------- ÑÓã äãæÏÇÑ ÈÇ Ïæ ÓÇÈáÇÊ ----------------
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                        row_heights=[0.7, 0.3], vertical_spacing=0.05,
+                        subplot_titles=('äãæÏÇÑ ÞíãÊ æ ÓíäÇáåÇí åäÏÓí', 'ÑÏíÇÈ ããÇÓ ÝÖÇíí ? ÈÚÏí (ÔÚÇÚ ÇÞáíÏÓí)'))
+
+    # ?. ÇÑÊ ÈÇáÇ: ÞíãÊ æ ÓíäÇá åÇ
+    fig.add_trace(
+        go.Candlestick(x=data['Datetime'], open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'],
+                       name='ÞíãÊ'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=data['Datetime'], y=data['Buy_Signal'], mode='markers',
+                             marker=dict(symbol='triangle-up', size=16, color='#00ff00', line=dict(width=1)),
+                             name='Buy (ÇäÝÌÇÑ ãÇÑí Ñæ Èå ÈÇáÇ)'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=data['Datetime'], y=data['Sell_Signal'], mode='markers',
+                             marker=dict(symbol='triangle-down', size=16, color='#ff0000', line=dict(width=1)),
+                             name='Sell (ÇäÝÌÇÑ ãÇÑí Ñæ Èå Çííä)'), row=1, col=1)
+
+    # ?. ÇÑÊ Çííä: ÇÓíáÇÊæÑ ÈÑÏÇÑ ÝÖÇíí
+    fig.add_trace(
+        go.Bar(x=data['Datetime'], y=data['R_3D'], marker_color='rgba(0, 200, 255, 0.5)', name='ÔÚÇÚ ÝÖÇíí ÝÚáí'),
+        row=2, col=1)
+    # ÑÓã ÎØ áåÇí ÑÏíÑí ããÇÓ ÎÇÑÌí
+    fig.add_trace(go.Scatter(x=data['Datetime'], y=data['Outer_Tangent_Level'], mode='lines',
+                             line=dict(color='yellow', width=2, shape='hv'), name='ÓØÍ ããÇÓ ÎÇÑÌí (ÑÏíÇÈ)'), row=2,
+                  col=1)
+
+    fig.update_layout(
+        template='plotly_dark',
+        xaxis_rangeslider_visible=False,
+        plot_bgcolor='#111111', paper_bgcolor='#111111',
+        margin=dict(l=40, r=40, b=40, t=60)
+    )
+
+    # ãÎÝí ˜ÑÏä ÇÓáÇíÏÑ ÇÑÊ Çííä åã
+    fig.update_xaxes(rangeslider_visible=False, row=2, col=1)
+
+    return fig
+
+
+if __name__ == '__main__':
+    app.run(debug=True)

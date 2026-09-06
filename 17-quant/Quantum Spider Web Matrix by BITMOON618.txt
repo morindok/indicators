@@ -1,0 +1,295 @@
+//@version=5
+indicator("Quantum Spider Web Matrix {Morindok} by BITMOON618", overlay=true, max_lines_count=500, max_boxes_count=500)
+
+// =====================================================================
+// 1. تنظیمات ورودی
+// =====================================================================
+int n_lines = input.int(30, "تعداد سطوح افقی شبکه", minval=10, maxval=100, group="شبکه عنکبوتی")
+float step_mult = input.float(1.618, "ضریب گام (فیبوناچی)", step=0.1, group="شبکه عنکبوتی")
+int time_window = input.int(10, "عرض پنجره زمانی (کندل)", minval=5, group="شبکه عنکبوتی")
+int hist_lookback = input.int(200, "عمق تحلیل تاریخی", minval=50, group="تحلیل ماتریسی")
+
+// تنظیمات فیلتر رنج
+int adx_len = input.int(14, "طول ADX", group="فیلتر رنج")
+float adx_threshold = input.float(20.0, "آستانه ADX", step=1.0, group="فیلتر رنج")
+
+var float fixed_anchor = na
+var float static_step = na
+var bool sys_init = false
+var array<line> perm_lines = array.new_line()
+var array<box> cell_boxes = array.new_box()
+
+safe_h = high[1]
+safe_l = low[1]
+safe_c = close[1]
+
+macro_center = (ta.highest(safe_h, 144) + ta.lowest(safe_l, 144)) / 2.0
+base_atr = nz(ta.atr(21)[1], syminfo.mintick * 100)
+
+// =====================================================================
+// 2. رسم شبکه عنکبوتی و ایجاد ماتریس سلول‌ها
+// =====================================================================
+if barstate.islast and not sys_init
+    fixed_anchor := macro_center
+    static_step := base_atr * step_mult
+    static_step := static_step == 0 ? syminfo.mintick * 10 : static_step 
+    
+    int half = int(n_lines / 2)
+    
+    // رسم خطوط افقی
+    for i = -half to (n_lines - half)
+        float lvl = fixed_anchor + (i * static_step)
+        color c = (i == 0) ? color.new(color.yellow, 0) : color.new(color.gray, 70)
+        string st = (i % 5 == 0) ? line.style_solid : line.style_dotted
+        line l = line.new(bar_index, lvl, bar_index + 200, lvl, color=c, width=(i==0?2:1), style=st, extend=extend.right)
+        array.push(perm_lines, l)
+    
+    // ایجاد سلول‌های ماتریسی (باکس‌ها)
+    int num_time_cells = 20
+    for i = -half to (n_lines - half) - 1
+        float top_lvl = fixed_anchor + (i * static_step)
+        float bot_lvl = fixed_anchor + ((i + 1) * static_step)
+        
+        for j = 0 to num_time_cells - 1
+            int x1 = bar_index - (j * time_window)
+            int x2 = x1 - time_window
+            
+            // محاسبه چگالی تاریخی این سلول
+            float cell_density = 0.0
+            int cell_visits = 0
+            
+            for k = 1 to hist_lookback
+                float hist_price = close[k]
+                if hist_price >= bot_lvl and hist_price <= top_lvl and bar_index - k >= x2 and bar_index - k <= x1
+                    cell_density += 1.0
+                    cell_visits += 1
+            
+            // رنگ سلول بر اساس چگالی
+            color cell_color = na
+            if cell_visits > 0
+                float intensity = math.min(cell_density / 10.0, 1.0)
+                cell_color := color.new(color.blue, 100 - (intensity * 80))
+            
+            box b = box.new(x2, top_lvl, x1, bot_lvl, border_color=color.new(color.gray, 80), bgcolor=cell_color, border_width=1)
+            array.push(cell_boxes, b)
+    
+    sys_init := true
+
+// =====================================================================
+// 3. تحلیل عمیق سلول‌ها و ارتباطات
+// =====================================================================
+// محاسبه سلول فعلی قیمت
+int current_row = 0
+int current_col = 0
+
+if sys_init and not na(fixed_anchor) and static_step != 0
+    current_row := int((safe_c - fixed_anchor) / static_step)
+    current_col := int((bar_index % (20 * time_window)) / time_window)
+
+// محاسبه چگالی سلول‌های اطراف (3x3 neighborhood)
+float neighborhood_density = 0.0
+int neighborhood_visits = 0
+
+for i = -1 to 1
+    for j = -1 to 1
+        int check_row = current_row + i
+        int check_col = current_col + j
+        
+        float top_lvl = fixed_anchor + (check_row * static_step)
+        float bot_lvl = fixed_anchor + ((check_row + 1) * static_step)
+        
+        int visits = 0
+        for k = 1 to hist_lookback
+            float hist_price = close[k]
+            int hist_col = int(((bar_index - k) % (20 * time_window)) / time_window)
+            
+            if hist_price >= bot_lvl and hist_price <= top_lvl and hist_col == check_col
+                visits += 1
+        
+        neighborhood_density += visits
+        neighborhood_visits += 1
+
+avg_neighborhood = neighborhood_density / 9.0
+
+// =====================================================================
+// 4. تحلیل جریان بین سلول‌ها (Cell Flow Analysis)
+// =====================================================================
+// محاسبه جهت حرکت قیمت در شبکه
+float flow_up = 0.0
+float flow_down = 0.0
+float flow_horizontal = 0.0
+
+for i = 1 to math.min(50, hist_lookback)
+    int prev_row = int((close[i] - fixed_anchor) / static_step)
+    int curr_row = int((close[i-1] - fixed_anchor) / static_step)
+    
+    if curr_row > prev_row
+        flow_up += 1.0
+    else if curr_row < prev_row
+        flow_down += 1.0
+    else
+        flow_horizontal += 1.0
+
+total_flow = flow_up + flow_down + flow_horizontal
+flow_up_ratio = total_flow > 0 ? flow_up / total_flow : 0.5
+flow_down_ratio = total_flow > 0 ? flow_down / total_flow : 0.5
+
+// =====================================================================
+// 5. شناسایی گره‌های بحرانی (Critical Nodes)
+// =====================================================================
+// سلول‌هایی که بیشترین تراکم تاریخی را دارند
+float critical_node_score = 0.0
+
+if sys_init and not na(fixed_anchor) and static_step != 0
+    // محاسبه فاصله تا نزدیک‌ترین گره بحرانی
+    float min_dist = 999999.0
+    
+    for i = -10 to 10
+        float test_lvl = fixed_anchor + (i * static_step)
+        float dist = math.abs(safe_c - test_lvl)
+        
+        // بررسی چگالی این سطح
+        int level_visits = 0
+        for k = 1 to hist_lookback
+            if math.abs(close[k] - test_lvl) < static_step * 0.2
+                level_visits += 1
+        
+        if level_visits > 15 and dist < min_dist
+            min_dist := dist
+            critical_node_score := level_visits / 20.0
+
+// =====================================================================
+// 6. موتور ایجنت‌های پیشرفته
+// =====================================================================
+v1 = safe_c - close[2]
+v2 = close[2] - close[3]
+a1 = math.max(math.min((v1 - v2) / nz(base_atr, 1), 3.0), -3.0)
+
+bb_m = ta.sma(safe_c, 20)
+bb_d = nz(ta.stdev(safe_c, 20), 1)
+a2 = math.max(math.min((safe_c - bb_m) / bb_d, 3.0), -3.0)
+
+mf = nz(ta.mfi(hlc3[1], 14), 50)
+a3 = (mf - 50) / 25.0
+
+r_f = ta.roc(safe_c, 5)
+r_s = ta.roc(safe_c, 21)
+a4 = math.max(math.min(((r_f * 0.7) + (r_s * 0.3)) / 2.0, 3.0), -3.0)
+
+float seg_f = 0.0
+int seg_i = 0
+float dist_n = 0.5
+if sys_init and not na(fixed_anchor) and static_step != 0
+    seg_f := (safe_c - fixed_anchor) / static_step
+    seg_i := int(math.round(seg_f))
+    dist_n := math.abs(seg_f - seg_i)
+
+a5 = (dist_n < 0.12) ? (safe_c > (fixed_anchor + (seg_i * static_step)) ? -2.5 : 2.5) : 0.0
+
+r_s2 = safe_h - safe_l == 0 ? 1 : safe_h - safe_l
+a6 = (((safe_c - safe_l) / r_s2) - 0.5) * 4.0
+
+// ایجنت 7: تحلیل ماتریسی سلول‌ها
+a7_matrix = (flow_up_ratio - flow_down_ratio) * 3.0
+
+// ایجنت 8: چگالی همسایگی
+a8_neighborhood = (avg_neighborhood > 5.0) ? (flow_up_ratio - flow_down_ratio) * 2.0 : 0.0
+
+// ایجنت 9: گره‌های بحرانی
+a9_critical = (critical_node_score > 0.5) ? -2.0 : 0.0
+
+// فیلتر رنج
+[diplus, diminus, adx_val] = ta.dmi(14, 14)
+is_trending = adx_val > adx_threshold
+is_ranging = adx_val <= adx_threshold
+
+// امتیاز نهایی با وزن‌دهی بهینه
+live_score = (0.20*a1) + (0.12*a2) + (0.10*a3) + (0.15*a4) + (0.13*a5) + (0.08*a6) + (0.12*a7_matrix) + (0.06*a8_neighborhood) + (0.04*a9_critical)
+live_score := nz(live_score, 0)
+
+// فیلتر رنج
+if is_ranging
+    live_score := live_score * 0.5
+
+// =====================================================================
+// 7. مسیر عملیاتی
+// =====================================================================
+quantum_path = ta.ema(safe_c, 14) + (live_score * base_atr * 0.3)
+
+plot(quantum_path, color=color.new(color.aqua, 0), linewidth=3, title="مسیر عملیاتی")
+plot(safe_c, color=color.new(color.white, 50), linewidth=1, title="قیمت واقعی")
+
+// =====================================================================
+// 8. داشبورد ماتریسی
+// =====================================================================
+var table dash = table.new(position.bottom_right, 3, 10, border_width=2, border_color=color.yellow, frame_width=3, frame_color=color.black)
+
+if barstate.islast
+    bool is_bull = live_score > 0.3
+    bool is_bear = live_score < -0.3
+    bool strong_bull = live_score >= 1.0 and is_trending
+    bool strong_bear = live_score <= -1.0 and is_trending
+    
+    color bg_bull = strong_bull ? color.new(color.green, 10) : color.new(color.gray, 60)
+    color bg_bear = strong_bear ? color.new(color.red, 10) : color.new(color.gray, 60)
+    
+    color txt_bull = strong_bull ? color.white : color.green
+    color txt_bear = strong_bear ? color.white : color.red
+    
+    string status = is_bull ? "▲ صعودی (ماتریس تایید)" : is_bear ? "▼ نزولی (ماتریس تایید)" : "◆ خنثی"
+    color st_bg = is_bull ? color.new(color.green, 0) : is_bear ? color.new(color.red, 0) : color.new(color.gray, 20)
+    color st_txt = color.white
+
+    // هدر
+    table.cell(dash, 0, 0, "تحلیل ماتریسی", text_color=color.yellow, text_size=size.normal, bgcolor=color.black)
+    table.cell(dash, 1, 0, "مقدار", text_color=color.yellow, text_size=size.normal, text_halign=text.align_center, bgcolor=color.black)
+    table.cell(dash, 2, 0, "وضعیت", text_color=color.yellow, text_size=size.normal, text_halign=text.align_center, bgcolor=color.black)
+
+    // سلول فعلی
+    table.cell(dash, 0, 1, "سلول فعلی شبکه", text_color=color.white, text_size=size.normal, bgcolor=color.rgb(30, 30, 50))
+    table.cell(dash, 1, 1, "Row: " + str.tostring(nz(current_row, 0)) + " Col: " + str.tostring(nz(current_col, 0)), text_color=color.aqua, text_size=size.small, text_halign=text.align_center, bgcolor=color.rgb(30, 30, 50))
+    table.cell(dash, 2, 1, "Segment: " + str.tostring(nz(seg_i, 0)), text_color=color.gray, text_size=size.small, text_halign=text.align_center, bgcolor=color.rgb(30, 30, 50))
+
+    // جریان سلولی
+    table.cell(dash, 0, 2, "جریان صعودی سلولی", text_color=color.white, text_size=size.normal, bgcolor=color.rgb(40, 40, 40))
+    table.cell(dash, 1, 2, str.tostring(nz(flow_up_ratio * 100, 50), "#.#") + " %", text_color=color.green, text_size=size.large, text_halign=text.align_center, bgcolor=color.rgb(40, 40, 40))
+    table.cell(dash, 2, 2, "از " + str.tostring(nz(total_flow, 0), "#") + " حرکت", text_color=color.gray, text_size=size.small, text_halign=text.align_center, bgcolor=color.rgb(40, 40, 40))
+
+    table.cell(dash, 0, 3, "جریان نزولی سلولی", text_color=color.white, text_size=size.normal, bgcolor=color.rgb(40, 40, 40))
+    table.cell(dash, 1, 3, str.tostring(nz(flow_down_ratio * 100, 50), "#.#") + " %", text_color=color.red, text_size=size.large, text_halign=text.align_center, bgcolor=color.rgb(40, 40, 40))
+    table.cell(dash, 2, 3, "چگالی: " + str.tostring(nz(avg_neighborhood, 0), "#.#"), text_color=color.gray, text_size=size.small, text_halign=text.align_center, bgcolor=color.rgb(40, 40, 40))
+
+    // امتیاز ماتریسی
+    color sc_bg = live_score > 0 ? color.new(color.green, 70) : color.new(color.red, 70)
+    color sc_txt = live_score > 0 ? color.green : color.red
+    table.cell(dash, 0, 4, "امتیاز ماتریسی (9 ایجنت)", text_color=color.white, text_size=size.normal, bgcolor=color.rgb(40, 40, 40))
+    table.cell(dash, 1, 4, str.tostring(nz(live_score, 0), "#.##"), text_color=sc_txt, text_size=size.large, text_halign=text.align_center, bgcolor=sc_bg)
+    table.cell(dash, 2, 4, is_trending ? "روند قوی" : "رنج", text_color=sc_txt, text_size=size.normal, text_halign=text.align_center, bgcolor=sc_bg)
+
+    // گره بحرانی
+    color crit_bg = critical_node_score > 0.5 ? color.new(color.orange, 60) : color.new(color.gray, 80)
+    table.cell(dash, 0, 5, "گره بحرانی نزدیک", text_color=color.white, text_size=size.normal, bgcolor=crit_bg)
+    table.cell(dash, 1, 5, str.tostring(nz(critical_node_score, 0), "#.##"), text_color=critical_node_score > 0.5 ? color.orange : color.gray, text_size=size.large, text_halign=text.align_center, bgcolor=crit_bg)
+    table.cell(dash, 2, 5, critical_node_score > 0.5 ? "⚠️ مقاومت" : "✅ آزاد", text_color=critical_node_score > 0.5 ? color.orange : color.green, text_size=size.normal, text_halign=text.align_center, bgcolor=crit_bg)
+
+    // احتمال صعود
+    float p_up = 100 / (1 + math.exp(-live_score * 1.8))
+    table.cell(dash, 0, 6, "احتمال صعود", text_color=color.white, text_size=size.normal, bgcolor=bg_bull)
+    table.cell(dash, 1, 6, str.tostring(nz(p_up, 50), "#.#") + " %", text_color=txt_bull, text_size=size.large, text_halign=text.align_center, bgcolor=bg_bull)
+    table.cell(dash, 2, 6, strong_bull ? "قوی ✓" : "عادی", text_color=txt_bull, text_size=size.normal, text_halign=text.align_center, bgcolor=bg_bull)
+
+    // احتمال نزول
+    float p_dn = 100 - p_up
+    table.cell(dash, 0, 7, "احتمال نزول", text_color=color.white, text_size=size.normal, bgcolor=bg_bear)
+    table.cell(dash, 1, 7, str.tostring(nz(p_dn, 50), "#.#") + " %", text_color=txt_bear, text_size=size.large, text_halign=text.align_center, bgcolor=bg_bear)
+    table.cell(dash, 2, 7, strong_bear ? "قوی ✓" : "عادی", text_color=txt_bear, text_size=size.normal, text_halign=text.align_center, bgcolor=bg_bear)
+
+    // ADX
+    table.cell(dash, 0, 8, "قدرت روند (ADX)", text_color=color.white, text_size=size.normal, bgcolor=color.rgb(40, 40, 40))
+    table.cell(dash, 1, 8, str.tostring(nz(adx_val, 0), "#.#"), text_color=adx_val > adx_threshold ? color.green : color.orange, text_size=size.large, text_halign=text.align_center, bgcolor=color.rgb(40, 40, 40))
+    table.cell(dash, 2, 8, adx_val > adx_threshold ? "روند" : "رنج", text_color=adx_val > adx_threshold ? color.green : color.orange, text_size=size.normal, text_halign=text.align_center, bgcolor=color.rgb(40, 40, 40))
+
+    // سیگنال نهایی
+    table.cell(dash, 0, 9, "سیگنال نهایی", text_color=color.white, text_size=size.normal, bgcolor=color.rgb(20, 20, 20))
+    table.cell(dash, 1, 9, status, text_color=st_txt, text_size=size.large, text_halign=text.align_center, bgcolor=st_bg)
+    table.cell(dash, 2, 9, dist_n < 0.12 ? "⚠️ گره بحرانی" : "✅ مسیر باز", text_color=dist_n < 0.12 ? color.orange : color.green, text_size=size.normal, text_halign=text.align_center, bgcolor=color.rgb(20, 20, 20))

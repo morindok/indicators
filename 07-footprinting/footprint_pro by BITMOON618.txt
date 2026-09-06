@@ -1,0 +1,323 @@
+﻿// © Morindok
+//@version=5
+indicator("Footprint Pro{Morindok} by BITMOON618", overlay=false, max_boxes_count=500, max_lines_count=500)
+
+// ─────────────────────────────────────────────
+// گروه‌بندی ورودی‌ها
+// ─────────────────────────────────────────────
+var string GRP_FP   = "📊 Footprint Settings"
+var string GRP_VOL  = "🕯 Volume Candle"
+var string GRP_IMB  = "⚡ Imbalance"
+var string GRP_DSP  = "🎨 Display"
+
+// ── تعداد سطوح قیمتی در هر کندل ──
+BINS        = input.int(8,    "تعداد سطوح (Bins)",   minval=4, maxval=12, group=GRP_FP)
+BARS_SHOW   = input.int(5,    "تعداد کندل‌های نمایش", minval=1, maxval=8,  group=GRP_FP)
+
+// ── آستانه imbalance ──
+IMB_RATIO   = input.float(3.0,"آستانه Imbalance (نسبت)", minval=1.5, maxval=10.0, step=0.5, group=GRP_IMB)
+SHOW_IMB    = input.bool(true, "نمایش ناحیه Imbalance روی چارت",  group=GRP_IMB)
+
+// ── Volume Candle (از کد m.kavand) ──
+USE_VOLCVOL = input.bool(true, "محاسبه Delta بر اساس Volume Candle",  group=GRP_VOL)
+
+// ── رنگ‌ها ──
+COL_BUY     = input.color(color.new(color.lime,  60), "رنگ خرید",  inline="c", group=GRP_DSP)
+COL_SELL    = input.color(color.new(color.red,   60), "رنگ فروش",  inline="c", group=GRP_DSP)
+COL_HVN     = input.color(color.new(color.yellow,40), "رنگ HVN",   inline="c2",group=GRP_DSP)
+COL_IMB_B   = input.color(color.new(color.lime,  75), "Imbalance خرید",  inline="c3",group=GRP_DSP)
+COL_IMB_S   = input.color(color.new(color.red,   75), "Imbalance فروش",  inline="c3",group=GRP_DSP)
+
+// ─────────────────────────────────────────────
+// Volume Candle Logic  (منطق m.kavand)
+// close_ = cumulative signed volume → معیار واقعی‌تر برای delta
+// ─────────────────────────────────────────────
+shadow_up  = high - math.max(close, open)
+shadow_dn  = math.min(close, open) - low
+hl_range   = high - low
+
+// close_ : حجم تجمیعی جهت‌دار — پایه Volume Candle
+close_vc   = ta.cum(math.sign(ta.change(close)) * volume)
+open_vc    = close_vc[1]
+
+// نسبت سایه به محدوده = توزیع volume در ویک
+shadow_ratio_up = hl_range > 0 ? shadow_up / hl_range : 0.0
+shadow_ratio_dn = hl_range > 0 ? shadow_dn / hl_range : 0.0
+
+// ─────────────────────────────────────────────
+// تابع تخمین delta یک bin (صادقانه‌ترین روش بدون tick data)
+//
+// روش:
+// 1) volume کل bin را بر اساس موقعیت نسبت به body توزیع می‌کنیم
+// 2) درصد buy با منطق volume candle تصحیح می‌شه:
+//    - اگر کندل صعودی: سایه پایین → فشار فروش بیشتر (wick rejection خرید)
+//    - اگر کندل نزولی: سایه بالا  → فشار خرید بیشتر (wick rejection فروش)
+// 3) delta = buy_vol - sell_vol
+// ─────────────────────────────────────────────
+f_bin_vols(bar_v, bar_o, bar_c, bar_h, bar_l, level_lo, level_hi) =>
+    bar_range = bar_h - bar_l
+    body_lo   = math.min(bar_o, bar_c)
+    body_hi   = math.max(bar_o, bar_c)
+    is_bull   = bar_c >= bar_o
+
+    // وزن bin: چقدر از محدوده قیمتی کندل را پوشش می‌دهد
+    overlap_lo = math.max(level_lo, bar_l)
+    overlap_hi = math.min(level_hi, bar_h)
+    overlap    = math.max(0.0, overlap_hi - overlap_lo)
+    weight     = bar_range > 0 ? overlap / bar_range : (1.0 / 8.0)
+
+    // آیا bin داخل body است؟
+    in_body = (level_hi >= body_lo) and (level_lo <= body_hi)
+    // آیا bin داخل upper wick است؟
+    in_uwk  = level_lo >= body_hi
+    // آیا bin داخل lower wick است؟
+    in_lwk  = level_hi <= body_lo
+
+    // توزیع volume bin با وزن‌دهی body
+    body_mult = in_body ? 1.4 : 0.75
+    bin_vol   = bar_v * weight * body_mult
+
+    // تخمین نسبت buy با در نظر گرفتن منطق Volume Candle
+    // بر اساس تئوری: در upper wick خرید جذب می‌شه (seller absorption)
+    // در lower wick فروش جذب می‌شه (buyer absorption)
+    buy_ratio = is_bull ? 0.62 : 0.38
+    if in_body
+        buy_ratio := is_bull ? 0.70 : 0.30
+    if in_uwk
+        // بالای کندل صعودی: خریداران ضعیف شدند، فروشندگان واکنش دادند
+        // بالای کندل نزولی: فروشندگان کنترل دارند
+        buy_ratio := is_bull ? 0.45 : 0.25
+    if in_lwk
+        // پایین کندل نزولی: خریداران ضعیف
+        // پایین کندل صعودی: فروشندگان جذب شدند
+        buy_ratio := is_bull ? 0.75 : 0.55
+
+    buy_v  = bin_vol * buy_ratio
+    sell_v = bin_vol * (1.0 - buy_ratio)
+    [buy_v, sell_v]
+
+// ─────────────────────────────────────────────
+// جدول‌های اصلی
+// ─────────────────────────────────────────────
+var table fpTable  = table.new(position.middle_center, BARS_SHOW + 1, 13,
+     bgcolor=color.new(color.black, 88),
+     border_width=1, border_color=color.new(color.gray, 60))
+
+var table infoTbl  = table.new(position.bottom_right, 2, 7,
+     bgcolor=color.new(color.black, 85),
+     border_width=1, border_color=color.new(color.white, 60))
+
+// آرایه باکس‌های imbalance روی چارت اصلی
+var box[] imbBoxes = array.new_box()
+
+// ─────────────────────────────────────────────
+// اجرای اصلی فقط روی barstate.islast
+// ─────────────────────────────────────────────
+if barstate.islast
+
+    // پاک کردن باکس‌های قدیمی
+    if array.size(imbBoxes) > 0
+        for _i = 0 to array.size(imbBoxes) - 1
+            box.delete(array.get(imbBoxes, _i))
+        array.clear(imbBoxes)
+
+    // ── متغیرهای آماری کلی ──
+    float sum_delta      = 0.0
+    float sum_vol        = 0.0
+    float sum_buy_total  = 0.0
+    float sum_sell_total = 0.0
+    int   bull_count     = 0
+    int   bear_count     = 0
+    float max_bin_vol    = 0.0  // برای تشخیص HVN
+
+    // ── آرایه برای ذخیره max vol هر ردیف (HVN detection) ──
+    float[] row_max_vol  = array.new_float(BINS, 0.0)
+
+    // ── هدر ستون‌ها ──
+    table.cell(fpTable, 0, 0, text="Price",
+         text_color=color.yellow, text_size=size.small,
+         bgcolor=color.new(color.navy, 50))
+
+    for ci = 0 to BARS_SHOW - 1
+        col_idx    = ci + 1
+        lbl        = ci == 0 ? "LIVE" : "T-" + str.tostring(ci)
+        hdr_bg     = ci == 0 ? color.new(color.blue, 55) : color.new(color.navy, 70)
+        table.cell(fpTable, col_idx, 0, text=lbl,
+             text_color=color.yellow, text_size=size.small, bgcolor=hdr_bg)
+
+    // ── رسم ردیف‌های قیمتی ──
+    // محاسبه محدوده قیمتی کل برای ردیف‌های قیمتی
+    float price_lo = 999999999.0
+    float price_hi = 0.0
+    for ci = 0 to BARS_SHOW - 1
+        price_lo := math.min(price_lo, low[ci])
+        price_hi := math.max(price_hi, high[ci])
+
+    float global_step = price_hi == price_lo ? 0.0001 : (price_hi - price_lo) / BINS
+
+    // نمایش برچسب قیمت در ستون صفر
+    for ri = 0 to BINS - 1
+        row_idx    = BINS - ri  // ردیف بالا = قیمت بالاتر
+        lv_lo      = price_lo + ri * global_step
+        lv_hi      = lv_lo + global_step
+        price_lbl  = str.tostring(math.round_to_mintick((lv_lo + lv_hi) / 2))
+        table.cell(fpTable, 0, row_idx, text=price_lbl,
+             text_color=color.new(color.white, 30), text_size=size.tiny,
+             bgcolor=color.new(color.black, 80))
+
+    // ── پردازش هر کندل ──
+    for ci = 0 to BARS_SHOW - 1
+        col_idx = ci + 1
+        bh = high[ci],  bl = low[ci]
+        bc = close[ci], bo = open[ci], bv = volume[ci]
+        is_bull_bar = bc >= bo
+
+        if bc > bo
+            bull_count += 1
+        else if bc < bo
+            bear_count += 1
+
+        sum_vol += bv
+        float bar_delta = 0.0
+        float bar_buy   = 0.0
+        float bar_sell  = 0.0
+
+        // ── Volume Candle delta برای این کندل ──
+        // تغییر در close_vc = signed volume این کندل
+        float vc_delta = USE_VOLCVOL ? (close_vc[ci] - close_vc[ci + 1]) : 0.0
+
+        for ri = 0 to BINS - 1
+            row_idx  = BINS - ri
+            lv_lo    = price_lo + ri * global_step
+            lv_hi    = lv_lo + global_step
+
+            [bv_b, bv_s] = f_bin_vols(bv, bo, bc, bh, bl, lv_lo, lv_hi)
+
+            // اگر Volume Candle فعال است، delta کل کندل را تصحیح می‌کنیم
+            // با استفاده از نسبت بین buy و sell، مقیاس می‌کنیم
+            float adj_buy  = bv_b
+            float adj_sell = bv_s
+
+            bar_buy   += adj_buy
+            bar_sell  += adj_sell
+            bar_delta += (adj_buy - adj_sell)
+
+            // بروزرسانی row_max_vol برای HVN
+            float row_vol_now = array.get(row_max_vol, ri)
+            if (adj_buy + adj_sell) > row_vol_now
+                array.set(row_max_vol, ri, adj_buy + adj_sell)
+                max_bin_vol := math.max(max_bin_vol, adj_buy + adj_sell)
+
+            // متن سلول
+            cell_txt = str.tostring(math.round(adj_sell)) + "×" + str.tostring(math.round(adj_buy))
+
+            // بررسی Imbalance
+            is_buy_imb  = adj_buy  > adj_sell * IMB_RATIO
+            is_sell_imb = adj_sell > adj_buy  * IMB_RATIO
+
+            cell_bg = color.new(color.gray, 85)
+            if is_buy_imb
+                cell_bg := COL_BUY
+            else if is_sell_imb
+                cell_bg := COL_SELL
+            else if adj_buy > adj_sell
+                cell_bg := color.new(color.green, 82)
+            else
+                cell_bg := color.new(color.red, 82)
+
+            table.cell(fpTable, col_idx, row_idx, text=cell_txt,
+                 text_color=color.white, text_size=size.tiny, bgcolor=cell_bg)
+
+            // رسم باکس imbalance روی چارت اصلی
+            if SHOW_IMB and ci <= 2
+                bar_left  = bar_index[ci]
+                bar_right = ci == 0 ? bar_index + 1 : bar_index[ci - 1]
+                if is_buy_imb
+                    b = box.new(left=bar_left, top=lv_hi, right=bar_right, bottom=lv_lo,
+                         border_color=color.lime, bgcolor=COL_IMB_B,
+                         force_overlay=true, border_width=1)
+                    array.push(imbBoxes, b)
+                else if is_sell_imb
+                    b = box.new(left=bar_left, top=lv_hi, right=bar_right, bottom=lv_lo,
+                         border_color=color.red, bgcolor=COL_IMB_S,
+                         force_overlay=true, border_width=1)
+                    array.push(imbBoxes, b)
+
+        // ── اصلاح delta با Volume Candle ──
+        // اگر USE_VOLCVOL فعال است: delta کل کندل را با signed volume تنظیم می‌کنیم
+        float display_delta = bar_delta
+        if USE_VOLCVOL
+            // vc_delta جهت واقعی را نشان می‌دهد، bar_delta مقدار تخمینی است
+            // بهترین تخمین: مقدار تخمینی را با جهت vc_delta تراز می‌کنیم
+            if (vc_delta > 0 and bar_delta < 0) or (vc_delta < 0 and bar_delta > 0)
+                display_delta := -bar_delta * 0.5  // جهت مخالف → نیمه اطمینان
+
+        sum_delta      += display_delta
+        sum_buy_total  += bar_buy
+        sum_sell_total += bar_sell
+
+        delta_col = display_delta > 0 ? color.lime : color.red
+        delta_txt = (display_delta > 0 ? "▲ Δ " : "▼ Δ ") + str.tostring(math.round(display_delta))
+        table.cell(fpTable, col_idx, BINS + 1, text=delta_txt,
+             text_color=delta_col, text_size=size.tiny)
+
+    // ── HVN بزرگترین node را highlight می‌کنیم ──
+    for ri = 0 to BINS - 1
+        row_idx     = BINS - ri
+        rv          = array.get(row_max_vol, ri)
+        if max_bin_vol > 0 and rv > max_bin_vol * 0.75
+            // این ردیف HVN است — هدر قیمت آن را زرد می‌کنیم
+            lv_lo   = price_lo + ri * global_step
+            lv_hi   = lv_lo + global_step
+            hvn_lbl = "★ " + str.tostring(math.round_to_mintick((lv_lo + lv_hi) / 2))
+            table.cell(fpTable, 0, row_idx, text=hvn_lbl,
+                 text_color=color.yellow, text_size=size.tiny,
+                 bgcolor=color.new(color.orange, 72))
+
+    // ─────────────────────────────────────────────
+    // جدول تحلیل پیشرفته (سمت راست پایین)
+    // ─────────────────────────────────────────────
+    float buy_pct_total = sum_buy_total + sum_sell_total > 0 ?
+         (sum_buy_total / (sum_buy_total + sum_sell_total)) * 100 : 50.0
+    float sell_pct_total = 100.0 - buy_pct_total
+
+    // شاخص‌های ترکیبی
+    bool  is_strong   = math.abs(sum_delta) > sum_vol * 0.15
+    bool  buy_dominant = sum_buy_total > sum_sell_total
+    string control    = buy_dominant ? "Buyers (" + str.tostring(math.round(buy_pct_total)) + "%)"
+                                     : "Sellers (" + str.tostring(math.round(sell_pct_total)) + "%)"
+    string strength   = is_strong ? "Strong" : "Weak / Ranging"
+    color  ctrl_col   = buy_dominant ? color.lime : color.red
+    color  str_col    = is_strong ? color.orange : color.gray
+
+    // vc_delta کل برای نمایش
+    float vc_d_total  = close_vc[0] - close_vc[BARS_SHOW]
+
+    // هدر جدول تحلیل
+    table.cell(infoTbl, 0, 0, text="⚡ Pro Analysis",
+         text_color=color.yellow, text_size=size.small,
+         bgcolor=color.new(color.navy, 55))
+    table.cell(infoTbl, 1, 0, text="Value",
+         text_color=color.yellow, text_size=size.small,
+         bgcolor=color.new(color.navy, 55))
+
+    table.cell(infoTbl, 0, 1, text="Net Delta (Est.)",    text_color=color.white, text_size=size.tiny)
+    table.cell(infoTbl, 1, 1, text=str.tostring(math.round(sum_delta)),
+         text_color=sum_delta > 0 ? color.lime : color.red, text_size=size.tiny)
+
+    table.cell(infoTbl, 0, 2, text="VC Delta (Real Dir.)", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTbl, 1, 2, text=str.tostring(math.round(vc_d_total)),
+         text_color=vc_d_total > 0 ? color.lime : color.red, text_size=size.tiny)
+
+    table.cell(infoTbl, 0, 3, text="Buy %",     text_color=color.white, text_size=size.tiny)
+    table.cell(infoTbl, 1, 3, text=str.tostring(math.round(buy_pct_total)) + "%",
+         text_color=color.lime, text_size=size.tiny)
+
+    table.cell(infoTbl, 0, 4, text="Control",   text_color=color.white, text_size=size.tiny)
+    table.cell(infoTbl, 1, 4, text=control,      text_color=ctrl_col, text_size=size.tiny)
+
+    table.cell(infoTbl, 0, 5, text="Trend Str.", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTbl, 1, 5, text=strength,     text_color=str_col, text_size=size.tiny)
+
+    table.cell(infoTbl, 0, 6, text="⚠ Estimated (No Tick)", text_color=color.gray, text_size=size.tiny)
+    table.cell(infoTbl, 1, 6, text="± ~30% error",           text_color=color.gray, text_size=size.tiny)

@@ -1,0 +1,244 @@
+//@version=5
+indicator("Reflection Line - Immediate Bounce", overlay=true)
+
+// Ê—ÊœÌùÂ«
+level1 = input.price(0, "Level 1 (Bottom)", confirm=true)
+level2 = input.price(0, "Level 2 (Top)", confirm=true)
+period = input.timeframe("D", "Period", confirm=true)
+angle = input.float(137.5, "Angle (degrees)", minval=0, maxval=180, confirm=true)
+startTime = input.time(timestamp("2024-01-01 00:00"), "Start Time", confirm=true)
+
+// ÷—Ì»  €ÌÌ— ﬁœ„ Å” «“ Â— »—ŒÊ—œ
+stepChangeRate = input.float(1.1, "Step Change Rate (Multiplier)", minval=0.1, step=0.1, confirm=true)
+
+useMA = input.bool(false, "Use Moving Average", confirm=true)
+maLength = input.int(20, "MA Length", minval=1, confirm=true)
+maType = input.string("SMA", "MA Type", options=["SMA", "EMA", "WMA"], confirm=true)
+
+useHHLL = input.bool(false, "Use HH/LL Reflection", confirm=true)
+hhllLength = input.int(20, "HH/LL Length", minval=1, confirm=true)
+
+usePrice = input.bool(false, "Use Price Reflection", confirm=true)
+priceSource = input.source(close, "Price Source", confirm=true)
+
+// „ €Ì—Â«
+var float currentY_top = na
+var int direction_top = -1
+var float stepMultiplier_top = 1.0
+
+var float currentY_bottom = na
+var int direction_bottom = 1
+var float stepMultiplier_bottom = 1.0
+
+var float currentY_ma = na
+var int direction_ma = 1
+var float stepMultiplier_ma = 1.0
+
+var float currentY_hh = na
+var int direction_hh = -1
+var float stepMultiplier_hh = 1.0
+
+var float currentY_ll = na
+var int direction_ll = 1
+var float stepMultiplier_ll = 1.0
+
+var float currentY_price = na
+var int direction_price = 1
+var float stepMultiplier_price = 1.0
+
+var bool started = false
+var float prevMA = na
+var float prevHH = na
+var float prevLL = na
+var float prevPrice = na
+var int barCount = 0
+var int totalBars = 0
+
+// „Õ«”»Â  ⁄œ«œ ò‰œ·ùÂ« œ— œÊ—Â
+if started
+    periodChanged = ta.change(time(period))
+    if periodChanged
+        barCount += 1
+
+if barCount > 0
+    totalBars := barCount
+
+timeRange = totalBars > 0 ? totalBars : 1
+priceRange = math.abs(level2 - level1)
+
+// „Õ«”»Â ‘Ì»
+angleRad = angle * math.pi / 180
+baseSlope = math.tan(angleRad)
+
+// „Õ«”»Â „Ì«‰êÌ‰ „ Õ—ò
+ma = maType == "SMA" ? ta.sma(close, maLength) : maType == "EMA" ? ta.ema(close, maLength) : ta.wma(close, maLength)
+
+// „Õ«”»Â HH Ê LL
+hh = ta.highest(high, hhllLength)
+ll = ta.lowest(low, hhllLength)
+
+// „ﬁœ«—œÂÌ «Ê·ÌÂ
+if time >= startTime and not started
+    currentY_top := level2
+    direction_top := -1
+    stepMultiplier_top := 1.0
+
+    currentY_bottom := level1
+    direction_bottom := 1
+    stepMultiplier_bottom := 1.0
+
+    currentY_ma := ma
+    direction_ma := 1
+    stepMultiplier_ma := 1.0
+
+    currentY_hh := hh
+    direction_hh := -1
+    stepMultiplier_hh := 1.0
+
+    currentY_ll := ll
+    direction_ll := 1
+    stepMultiplier_ll := 1.0
+
+    currentY_price := priceSource
+    direction_price := 1
+    stepMultiplier_price := 1.0
+
+    prevMA := ma
+    prevHH := hh
+    prevLL := ll
+    prevPrice := priceSource
+    started := true
+
+//  «»⁄ ò„òÌ »—«Ì »«“ «» »·«›«’·Â (»œÊ‰  Ã„⁄) Ê  €ÌÌ— ÷—Ì»
+calcReflection(current, dir, step, low, high, stepM) =>
+    float target = current + dir * step * stepM
+    float result = target
+    int newDir = dir
+    float newStepM = stepM
+
+    if dir == 1 and target >= high
+        float distToBoundary = high - current
+        float overshoot = step * stepM - distToBoundary
+        result := high - overshoot
+        newDir := -1
+        newStepM := stepM * stepChangeRate
+    else if dir == -1 and target <= low
+        float distToBoundary = current - low
+        float overshoot = step * stepM - distToBoundary
+        result := low + overshoot
+        newDir := 1
+        newStepM := stepM * stepChangeRate
+
+    [result, newDir, newStepM]
+
+periodChanged = ta.change(time(period))
+
+// »Âù—Ê“—”«‰Ì ŒÿÊÿ À«»  œ—  €ÌÌ— œÊ—Â
+if started and periodChanged
+    deltaY = math.abs(baseSlope) * (priceRange / timeRange)
+
+    // Œÿ »«·« - ‘—Ê⁄ «“ ”ﬁ› Ê Õ—ò  »Â ”„  Å«ÌÌ‰
+    [newTop, newTopDir, newStepMultiplier_top] = calcReflection(currentY_top, direction_top, deltaY, level1, level2, stepMultiplier_top)
+    currentY_top := newTop
+    direction_top := newTopDir
+    stepMultiplier_top := newStepMultiplier_top
+
+    // Œÿ Å«ÌÌ‰ - ‘—Ê⁄ «“ ò› Ê Õ—ò  »Â ”„  »«·«
+    [newBottom, newBottomDir, newStepMultiplier_bottom] = calcReflection(currentY_bottom, direction_bottom, deltaY, level1, level2, stepMultiplier_bottom)
+    currentY_bottom := newBottom
+    direction_bottom := newBottomDir
+    stepMultiplier_bottom := newStepMultiplier_bottom
+
+// „‰ÿﬁ »«“ «» MA - Â— ò‰œ· »Âù—Ê“ „Ìù‘Êœ
+if started and useMA
+    deltaY = math.abs(baseSlope) * (priceRange / timeRange)
+    maChange = ma - prevMA
+    float totalStep = deltaY + maChange
+    int intendedDir = totalStep >= 0 ? 1 : -1
+    float absStep = math.abs(totalStep)
+
+    [newMA, newMADir, newStepMultiplier_ma] = calcReflection(currentY_ma, direction_ma, absStep, level1, level2, stepMultiplier_ma)
+    currentY_ma := newMA
+    direction_ma := newMADir
+    stepMultiplier_ma := newStepMultiplier_ma
+    prevMA := ma
+
+// „‰ÿﬁ »«“ «» HH - Â— ò‰œ· »Âù—Ê“ „Ìù‘Êœ
+if started and useHHLL
+    deltaY = math.abs(baseSlope) * (priceRange / timeRange)
+    hhChange = hh - prevHH
+    float totalStep = deltaY + hhChange
+    float absStep = math.abs(totalStep)
+
+    [newHH, newHHDir, newStepMultiplier_hh] = calcReflection(currentY_hh, direction_hh, absStep, level1, level2, stepMultiplier_hh)
+    currentY_hh := newHH
+    direction_hh := newHHDir
+    stepMultiplier_hh := newStepMultiplier_hh
+    prevHH := hh
+
+// „‰ÿﬁ »«“ «» LL - Â— ò‰œ· »Âù—Ê“ „Ìù‘Êœ
+if started and useHHLL
+    deltaY = math.abs(baseSlope) * (priceRange / timeRange)
+    llChange = ll - prevLL
+    float totalStep = deltaY + llChange
+    float absStep = math.abs(totalStep)
+
+    [newLL, newLLDir, newStepMultiplier_ll] = calcReflection(currentY_ll, direction_ll, absStep, level1, level2, stepMultiplier_ll)
+    currentY_ll := newLL
+    direction_ll := newLLDir
+    stepMultiplier_ll := newStepMultiplier_ll
+    prevLL := ll
+
+// „‰ÿﬁ »«“ «» ﬁÌ„  - Â— ò‰œ· »Âù—Ê“ „Ìù‘Êœ
+if started and usePrice
+    deltaY = math.abs(baseSlope) * (priceRange / timeRange)
+    priceChange = priceSource - prevPrice
+    float totalStep = deltaY + priceChange
+    float absStep = math.abs(totalStep)
+
+    [newPrice, newPriceDir, newStepMultiplier_price] = calcReflection(currentY_price, direction_price, absStep, level1, level2, stepMultiplier_price)
+    currentY_price := newPrice
+    direction_price := newPriceDir
+    stepMultiplier_price := newStepMultiplier_price
+    prevPrice := priceSource
+
+// „Õ«”»Â „—ò“ œÊ ·Ê·
+centerLevel = (level1 + level2) / 2
+
+// —”„ ‰„Êœ«— MA
+maReflected = started and useMA ? currentY_ma : na
+plot(maReflected, color=color.yellow, linewidth=2, title="MA Reflection Line")
+
+// „ÊÌ‰ê „ ﬁ«—‰ “—œ ‰”»  »Â „—ò“
+maReflectedSymmetric = started and useMA and not na(maReflected) ? 2 * centerLevel - maReflected : na
+plot(maReflectedSymmetric, color=color.yellow, linewidth=2, style=plot.style_circles, title="MA Reflection Symmetric")
+
+// —”„ ‰„Êœ«— HH
+hhReflected = started and useHHLL ? currentY_hh : na
+plot(hhReflected, color=color.green, linewidth=2, title="HH Reflection Line")
+
+// HH „ ﬁ«—‰ ‰”»  »Â „—ò“
+hhReflectedSymmetric = started and useHHLL and not na(hhReflected) ? 2 * centerLevel - hhReflected : na
+plot(hhReflectedSymmetric, color=color.green, linewidth=2, style=plot.style_circles, title="HH Reflection Symmetric")
+
+// —”„ ‰„Êœ«— LL
+llReflected = started and useHHLL ? currentY_ll : na
+plot(llReflected, color=color.red, linewidth=2, title="LL Reflection Line")
+
+// LL „ ﬁ«—‰ ‰”»  »Â „—ò“
+llReflectedSymmetric = started and useHHLL and not na(llReflected) ? 2 * centerLevel - llReflected : na
+plot(llReflectedSymmetric, color=color.red, linewidth=2, style=plot.style_circles, title="LL Reflection Symmetric")
+
+// —”„ ‰„Êœ«— ﬁÌ„ 
+priceReflected = started and usePrice ? currentY_price : na
+plot(priceReflected, color=color.aqua, linewidth=2, title="Price Reflection Line")
+
+// ﬁÌ„  „ ﬁ«—‰ ‰”»  »Â „—ò“
+priceReflectedSymmetric = started and usePrice and not na(priceReflected) ? 2 * centerLevel - priceReflected : na
+plot(priceReflectedSymmetric, color=color.aqua, linewidth=2, style=plot.style_circles, title="Price Reflection Symmetric")
+
+plot(started and not useMA ? currentY_top : na, color=color.orange, linewidth=2, title="Top Line")
+plot(started and not useMA ? currentY_bottom : na, color=color.blue, linewidth=2, title="Bottom Line")
+
+hline(level1, color=color.gray, linestyle=hline.style_dashed)
+hline(level2, color=color.gray, linestyle=hline.style_dashed)

@@ -1,0 +1,108 @@
+//@version=5
+indicator("Live Tick Counter{Morindok} by @BITMOON618 V2", overlay=true, max_labels_count=500)
+
+// --- Inputs ---
+int   lookback = input.int(50, "Lookback Bars (History)", minval=1, maxval=480)
+float wTick    = input.float(0.4, "Tick Count Weight", minval=0.0, maxval=1.0, step=0.05)
+float wVol     = input.float(0.6, "Volume Weight",     minval=0.0, maxval=1.0, step=0.05)
+
+// --- Live (per-tick) variables ---
+varip float lastPrice = na
+varip float lastVol   = 0.0
+varip int   upTicks   = 0
+varip int   downTicks = 0
+varip float upVol     = 0.0
+varip float downVol   = 0.0
+
+// --- Persistent history ---
+var label[] history_labels = array.new_label()
+var float[] hUpTicks = array.new_float()
+var float[] hDnTicks = array.new_float()
+var float[] hUpVol   = array.new_float()
+var float[] hDnVol   = array.new_float()
+
+// Moving label for the live bar
+var label live_label = label.new(na, na, "", color=color.new(color.blue, 70), textcolor=color.white, style=label.style_label_down)
+
+// --- Cumulative probability (history + current live bar) ---
+f_probUp() =>
+    float sUpT = float(upTicks)
+    float sDnT = float(downTicks)
+    float sUpV = upVol
+    float sDnV = downVol
+    int sz = array.size(hUpTicks)
+    int nStart = math.max(0, sz - lookback)
+    if sz > 0
+        for i = nStart to sz - 1
+            sUpT += array.get(hUpTicks, i)
+            sDnT += array.get(hDnTicks, i)
+            sUpV += array.get(hUpVol, i)
+            sDnV += array.get(hDnVol, i)
+    float totT = sUpT + sDnT
+    float totV = sUpV + sDnV
+    float rT = totT > 0 ? sUpT / totT : 0.5
+    float rV = totV > 0 ? sUpV / totV : 0.5
+    float wSum = wTick + wVol
+    wSum > 0 ? ((wTick * rT + wVol * rV) / wSum) * 100.0 : 50.0
+
+// --- Reset on the first tick of a new bar ---
+if barstate.isnew
+    upTicks   := 0
+    downTicks := 0
+    upVol     := 0.0
+    downVol   := 0.0
+    lastPrice := open
+    lastVol   := 0.0
+
+// --- Live market only ---
+if barstate.isrealtime
+    // Volume delivered by this tick
+    float dVol = math.max(volume - lastVol, 0.0)
+
+    if not na(lastPrice)
+        if close > lastPrice
+            upTicks += 1
+            upVol   += dVol
+        else if close < lastPrice
+            downTicks += 1
+            downVol   += dVol
+    lastPrice := close
+    lastVol   := volume
+
+    // Cumulative probability
+    float pUp = f_probUp()
+    float pDn = 100.0 - pUp
+
+    // Label color based on dominant side
+    color lblCol = pUp > 55 ? color.new(color.green, 60) : pUp < 45 ? color.new(color.red, 60) : color.new(color.blue, 70)
+
+    string txt = "Up Ticks: "   + str.tostring(upTicks)   + " | Vol: " + str.tostring(upVol,   format.volume) +
+             "\nDown Ticks: "   + str.tostring(downTicks) + " | Vol: " + str.tostring(downVol, format.volume) +
+             "\nUP Prob: "      + str.tostring(pUp, "#.#") + "%" +
+             "\nDOWN Prob: "    + str.tostring(pDn, "#.#") + "%"
+
+    label.set_xy(live_label, bar_index, high + ta.tr * 0.5)
+    label.set_text(live_label, txt)
+    label.set_color(live_label, lblCol)
+    // Commit data when the bar closes
+    if barstate.isconfirmed
+        // Store this bar's data into history
+        array.push(hUpTicks, float(upTicks))
+        array.push(hDnTicks, float(downTicks))
+        array.push(hUpVol,   upVol)
+        array.push(hDnVol,   downVol)
+
+        // Saved-label color follows the probability (same logic as the live label)
+        color savedCol = pUp > 55 ? color.new(color.green, 40) : pUp < 45 ? color.new(color.red, 40) : color.new(color.gray, 20)
+
+        label saved_lbl = label.new(bar_index, high, txt, color=savedCol, textcolor=color.white, style=label.style_label_down)
+        array.push(history_labels, saved_lbl)
+
+        // Memory management
+        if array.size(history_labels) > 490
+            label.delete(array.shift(history_labels))
+        if array.size(hUpTicks) > 490
+            array.shift(hUpTicks)
+            array.shift(hDnTicks)
+            array.shift(hUpVol)
+            array.shift(hDnVol)

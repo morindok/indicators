@@ -1,0 +1,88 @@
+//@version=5
+indicator("Tangent Circles & Mirrored Price (Candle Weighted)", overlay=true, max_polylines_count=10)
+
+t1 = input.time(0, title="Point 1", confirm=true, inline="p1")
+p1 = input.price(0, title="", confirm=true, inline="p1")
+t2 = input.time(0, title="Point 2", confirm=true, inline="p2")
+p2 = input.price(0, title="", confirm=true, inline="p2")
+
+// --- „Õ«”»Â »œ‰Â ò‰œ·ùÂ«Ì „—»Êÿ »Â ‰ﬁÿÂ 1 Ê 2 ---
+var float body_t1 = 0.0
+var float body_t2 = 0.0
+
+if time == t1
+    body_t1 := math.abs(close - open)
+if time == t2
+    body_t2 := math.abs(close - open)
+
+// --- —”„ ò‰œ·ùÂ«Ì ﬁ—Ì‰Â œ— ”—«”— ç«—  ---
+o_p1 = 2 * p1 - open
+h_p1 = 2 * p1 - low
+l_p1 = 2 * p1 - high
+c_p1 = 2 * p1 - close
+col_p1 = c_p1 >= o_p1 ? color.new(color.teal, 60) : color.new(color.orange, 60)
+plotcandle(o_p1, h_p1, l_p1, c_p1, title="Mirrored over p1", color=col_p1, bordercolor=col_p1, wickcolor=col_p1)
+
+o_p2 = 2 * p2 - open
+h_p2 = 2 * p2 - low
+l_p2 = 2 * p2 - high
+c_p2 = 2 * p2 - close
+col_p2 = c_p2 >= o_p2 ? color.new(color.green, 60) : color.new(color.red, 60)
+plotcandle(o_p2, h_p2, l_p2, c_p2, title="Mirrored over p2", color=col_p2, bordercolor=col_p2, wickcolor=col_p2)
+
+// ---  «»⁄ —”„ œ«Ì—ÂùÂ« »« ÷—Ì» „ﬁÌ«” „”«Õ  ---
+draw_tangent_circles(t_start, p_start, t_end, p_end, col1, col2, m1, m2) =>
+    float dt = float(t_end - t_start)
+    float dp = p_end - p_start
+
+    float ux = dt == 0 ? 1 : dt / math.abs(dt)
+    float uy = dp == 0 ? 1 : dp / math.abs(dp)
+    float nx = -uy
+    float ny = ux
+
+    float r_t = math.abs(dt) / 4.0
+    float r_p = math.abs(dp) / 4.0
+
+    float c1t = float(t_start) + dt * 0.25
+    float c1p = p_start + dp * 0.25
+    float c2t = float(t_start) + dt * 0.75
+    float c2p = p_start + dp * 0.75
+
+    int N = 120
+    pts1 = array.new<chart.point>()
+    pts2 = array.new<chart.point>()
+
+    for i = 0 to N - 1
+        float angle = 2.0 * math.pi * i / N
+        float ca = math.cos(angle)
+        float sa = math.sin(angle)
+
+        array.push(pts1, chart.point.from_time(int(c1t + (r_t * m1) * (ca * ux + sa * nx)), c1p + (r_p * m1) * (ca * uy + sa * ny)))
+        array.push(pts2, chart.point.from_time(int(c2t + (r_t * m2) * (ca * ux + sa * nx)), c2p + (r_p * m2) * (ca * uy + sa * ny)))
+
+    polyline.new(pts1, closed=true, xloc=xloc.bar_time, line_color=col1, line_width=2)
+    polyline.new(pts2, closed=true, xloc=xloc.bar_time, line_color=col2, line_width=2)
+
+if barstate.islastconfirmedhistory
+    // „Õ«›Ÿ  œ— »—«»— „Ã„Ê⁄ ’›—
+    float total_body = body_t1 + body_t2
+    total_body := total_body == 0 ? 1 : total_body
+
+    // „Õ«”»Â ÷—«Ì» („”«Õ  „ ‰«”» »« »«œÌ ò‰œ· Â„«‰ ‰ﬁÿÂ)
+    float m1 = math.sqrt(2 * (body_t1 / total_body))
+    float m2 = math.sqrt(2 * (body_t2 / total_body))
+
+    // —‰êùÂ« »Â ¬»Ì Ê ﬁ—„“ »—ê—œ«‰œÂ ‘œ (Ì« Â— —‰ê œ·ŒÊ«Â)
+    color col1 = color.blue
+    color col2 = color.red
+
+    // Õ«·  «’·Ì
+    draw_tangent_circles(t1, p1, t2, p2, col1, col2, m1, m2)
+    
+    //  ﬁ«—‰ ‰”»  »Â p1
+    float p2_mirrored_p1 = 2 * p1 - p2
+    draw_tangent_circles(t1, p1, t2, p2_mirrored_p1, color.new(col1, 50), color.new(col2, 50), m1, m2)
+    
+    //  ﬁ«—‰ ‰”»  »Â p2
+    float p1_mirrored_p2 = 2 * p2 - p1
+    draw_tangent_circles(t1, p1_mirrored_p2, t2, p2, color.new(col1, 50), color.new(col2, 50), m1, m2)

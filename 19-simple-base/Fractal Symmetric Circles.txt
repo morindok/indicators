@@ -1,0 +1,160 @@
+//@version=6
+indicator("Fractals + Mirror Signal + Circles", overlay=true, max_polylines_count=100)
+
+n = input.int(100, title="Periods", minval=2)
+mirrorLevel = input.price(0, title="Mirror Level", confirm=true)
+selectedTime = input.time(0, title="Reference Time", confirm=true)
+showCircles = input.bool(true, title="Show Circles")
+n_circles = input.int(1, title="Circles After Time", minval=1, maxval=50)
+showMirrorCircles = input.bool(true, title="Show Mirror Circles")
+
+mOpen  = float(2.0 * mirrorLevel - open)
+mHigh  = float(2.0 * mirrorLevel - low)
+mLow   = float(2.0 * mirrorLevel - high)
+mClose = float(2.0 * mirrorLevel - close)
+
+plotcandle(mOpen, mHigh, mLow, mClose, title="Mirror", color=color.new(color.purple, 40), wickcolor=color.new(color.purple, 40), bordercolor=color.new(color.purple, 40))
+
+bool u_dn = true
+bool u_u0 = true
+bool u_u1 = true
+bool u_u2 = true
+bool u_u3 = true
+bool u_u4 = true
+for i = 1 to n
+    u_dn := u_dn and (high[n-i] < high[n])
+    u_u0 := u_u0 and (high[n+i] < high[n])
+    u_u1 := u_u1 and (high[n+1] <= high[n] and high[n+i+1] < high[n])
+    u_u2 := u_u2 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i+2] < high[n])
+    u_u3 := u_u3 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i+3] < high[n])
+    u_u4 := u_u4 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i+4] < high[n])
+flagUp    = u_u0 or u_u1 or u_u2 or u_u3 or u_u4
+upFractal = u_dn and flagUp and time[n] < selectedTime
+
+bool d_dn = true
+bool d_u0 = true
+bool d_u1 = true
+bool d_u2 = true
+bool d_u3 = true
+bool d_u4 = true
+for i = 1 to n
+    d_dn := d_dn and (low[n-i] > low[n])
+    d_u0 := d_u0 and (low[n+i] > low[n])
+    d_u1 := d_u1 and (low[n+1] >= low[n] and low[n+i+1] > low[n])
+    d_u2 := d_u2 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i+2] > low[n])
+    d_u3 := d_u3 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i+3] > low[n])
+    d_u4 := d_u4 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i+4] > low[n])
+flagDn      = d_u0 or d_u1 or d_u2 or d_u3 or d_u4
+downFractal = d_dn and flagDn and time[n] < selectedTime
+
+plotshape(upFractal,   style=shape.triangleup,   location=location.abovebar, offset=-n, color=color.new(color.teal,   0), size=size.small)
+plotshape(downFractal, style=shape.triangledown, location=location.belowbar, offset=-n, color=color.new(color.orange, 0), size=size.small)
+
+var upTimes  = array.new_int(0)
+var upPrices = array.new_float(0)
+var dnTimes  = array.new_int(0)
+var dnPrices = array.new_float(0)
+
+if upFractal
+    array.push(upTimes,  int(time[n]))
+    array.push(upPrices, float(high[n]))
+
+if downFractal
+    array.push(dnTimes,  int(time[n]))
+    array.push(dnPrices, float(low[n]))
+
+bool  isUpMirror    = false
+bool  isDnMirror    = false
+float upMirrorPrice = na
+float dnMirrorPrice = na
+
+if array.size(upTimes) > 0
+    for j = 0 to array.size(upTimes) - 1
+        mirroredTime = 2 * selectedTime - array.get(upTimes, j)
+        if time == mirroredTime
+            isUpMirror    := true
+            upMirrorPrice := float(2.0 * mirrorLevel - array.get(upPrices, j))
+
+if array.size(dnTimes) > 0
+    for j = 0 to array.size(dnTimes) - 1
+        mirroredTime = 2 * selectedTime - array.get(dnTimes, j)
+        if time == mirroredTime
+            isDnMirror    := true
+            dnMirrorPrice := float(2.0 * mirrorLevel - array.get(dnPrices, j))
+
+plotshape(isUpMirror ? upMirrorPrice : na, style=shape.triangleup,   location=location.absolute, color=color.new(color.teal,   0), size=size.small)
+plotshape(isDnMirror ? dnMirrorPrice : na, style=shape.triangledown, location=location.absolute, color=color.new(color.orange, 0), size=size.small)
+
+drawCircle(float ct, float cp, float r_t, float r_p, float ux, float uy, float nx, float ny, color col) =>
+    int N = 80
+    pts = array.new<chart.point>()
+    for i = 0 to N - 1
+        float angle = 2.0 * math.pi * i / N
+        float ca = math.cos(angle)
+        float sa = math.sin(angle)
+        array.push(pts, chart.point.from_time(int(ct + r_t * (ca * ux + sa * nx)), cp + r_p * (ca * uy + sa * ny)))
+    polyline.new(pts, closed=true, xloc=xloc.bar_time, line_color=col, line_width=1)
+
+drawCirclePair(float t1, float p1, float t2, float p2, color col, color mcol, bool doMirror, float ml) =>
+    float dt  = t2 - t1
+    float dp  = p2 - p1
+    float adt = math.abs(dt) < 1e-10 ? 1e-10 : math.abs(dt)
+    float adp = math.abs(dp) < 1e-10 ? 1e-10 : math.abs(dp)
+    float ux  = dt / adt
+    float uy  = dp / adp
+    float nx  = -uy
+    float ny  = ux
+    float r_t = adt / 4.0
+    float r_p = adp / 4.0
+    float c1t = t1 + dt * 0.25
+    float c1p = p1 + dp * 0.25
+    float c2t = t1 + dt * 0.75
+    float c2p = p1 + dp * 0.75
+    drawCircle(c1t, c1p, r_t, r_p, ux, uy, nx, ny, col)
+    drawCircle(c2t, c2p, r_t, r_p, ux, uy, nx, ny, col)
+    if doMirror
+        float mc1p = 2.0 * ml - c1p
+        float mc2p = 2.0 * ml - c2p
+        float muy  = -uy
+        float mny  = -ny
+        drawCircle(c1t, mc1p, r_t, r_p, ux, muy, nx, mny, mcol)
+        drawCircle(c2t, mc2p, r_t, r_p, ux, muy, nx, mny, mcol)
+
+// helper: sort two parallel arrays by time descending
+sortDesc(int[] t, float[] p) =>
+    int sz = array.size(t)
+    if sz >= 2  // ? FIXED: guard against size < 2
+        for a = 0 to sz - 2
+            for b = 0 to sz - 2 - a
+                if array.get(t, b) < array.get(t, b + 1)
+                    tSwap = array.get(t, b)
+                    pSwap = array.get(p, b)
+                    array.set(t, b,     array.get(t, b + 1))
+                    array.set(p, b,     array.get(p, b + 1))
+                    array.set(t, b + 1, tSwap)
+                    array.set(p, b + 1, pSwap)
+
+if barstate.islastconfirmedhistory and showCircles
+    int upCount = math.min(n_circles, array.size(upTimes))
+    if upCount > 0
+        tmpT = array.copy(upTimes)
+        tmpP = array.copy(upPrices)
+        sortDesc(tmpT, tmpP)
+        for j = 0 to upCount - 1
+            float ft1 = float(array.get(tmpT, j))
+            float fp1 = array.get(tmpP, j)
+            float ft2 = 2.0 * float(selectedTime) - ft1
+            float fp2 = 2.0 * mirrorLevel - fp1
+            drawCirclePair(ft1, fp1, ft2, fp2, color.new(color.teal, 30), color.new(color.lime, 30), showMirrorCircles, mirrorLevel)
+
+    int dnCount = math.min(n_circles, array.size(dnTimes))
+    if dnCount > 0
+        tmpT = array.copy(dnTimes)
+        tmpP = array.copy(dnPrices)
+        sortDesc(tmpT, tmpP)
+        for j = 0 to dnCount - 1
+            float ft1 = float(array.get(tmpT, j))
+            float fp1 = array.get(tmpP, j)
+            float ft2 = 2.0 * float(selectedTime) - ft1
+            float fp2 = 2.0 * mirrorLevel - fp1
+            drawCirclePair(ft1, fp1, ft2, fp2, color.new(color.orange, 30), color.new(color.yellow, 30), showMirrorCircles, mirrorLevel)

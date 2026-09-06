@@ -1,0 +1,250 @@
+//@version=5
+indicator("Custom Candlestick Spirals - Centered", overlay = true, max_polylines_count = 100, max_lines_count = 100)
+
+// --- æÑæÏíåÇí ˜ÇÑÈÑ ---
+p1 = input.price(0, "Price Level 1", confirm = true)
+p2 = input.price(0, "Price Level 2", confirm = true)
+t1 = input.time(0, "Start Time", confirm = true)
+t2 = input.time(0, "End Time", confirm = true)
+opt_symmetrize = input.bool(false, "Symmetrize Prices from Total Spiral Ends")
+opt_angle_rotation = input.bool(false, "Rotate Spiral by Range Angle per HH/LL Step")
+
+// --- ÒíäååÇí ÌÏíÏ ÈÑÇí ÇäÏÇÒåíÑí ãäØÞí æ ÊØÈíÞí ---
+opt_adaptive_sizing = input.bool(false, "Adaptive Spiral Sizing (Based on Range Candles & Volatility)", group = "Spiral Settings")
+adaptive_mult = input.float(1.0, "Adaptive Size Multiplier", minval=0.1, step=0.1, group = "Spiral Settings")
+
+// ÐÎíÑå ãÞÇÏíÑ ˜áíÏí
+var float range_hh = na
+var float range_ll = na
+var int range_end_t = na
+
+// ÔãÇÑÔ áååÇí HH æ LL
+var int hh_step_count = 0
+var int ll_step_count = 0
+
+// ÐÎíÑå ãÞÇÏíÑ ˜á ÇÑÊ
+var int[] all_t = array.new_int()
+var float[] all_c = array.new_float()
+var float[] all_h = array.new_float()
+var float[] all_l = array.new_float()
+
+// ÐÎíÑå ãÞÇÏíÑ ÈÇÒå
+var float[] range_c = array.new_float()
+var float[] range_o = array.new_float()
+var float[] range_h = array.new_float()
+var float[] range_l = array.new_float()
+
+array.push(all_t, time)
+array.push(all_c, close)
+array.push(all_h, high)
+array.push(all_l, low)
+
+// --- ÊÇÈÚ ÑÓã ÎØæØ ãÊÞÇÑä ---
+draw_symmetrical_lines(int end_time, float end_price, color base_color) =>
+    if not na(end_time) and not na(end_price)
+        int total_bars = array.size(all_t)
+        int start_idx = math.max(0, total_bars - 9999)  
+        
+        pts_c = array.new<chart.point>()
+        pts_h = array.new<chart.point>()
+        pts_l = array.new<chart.point>()
+        
+        for i = start_idx to total_bars - 1
+            int t_i = array.get(all_t, i)
+            array.push(pts_c, chart.point.from_time(t_i, 2 * end_price - array.get(all_c, i)))
+            array.push(pts_h, chart.point.from_time(t_i, 2 * end_price - array.get(all_l, i)))  
+            array.push(pts_l, chart.point.from_time(t_i, 2 * end_price - array.get(all_h, i)))  
+        
+        polyline.new(pts_c, xloc = xloc.bar_time, line_color = color.new(base_color, 30), line_width = 1)
+        polyline.new(pts_h, xloc = xloc.bar_time, line_color = color.new(base_color, 60), line_width = 1)
+        polyline.new(pts_l, xloc = xloc.bar_time, line_color = color.new(base_color, 60), line_width = 1)
+
+// --- ÊÇÈÚ ÑÓã ÇÓíÑÇá ---
+draw_spiral(float target_len, float dir_mult, float angle_offset, color line_col, int start_t, float start_p, float dt, float dp, float a, float b_coeff, int w) =>
+    pts = array.new<chart.point>()
+    array.push(pts, chart.point.from_time(start_t, start_p))
+    
+    float acc_len = 0.0
+    float prev_t = start_t
+    float prev_p = start_p
+    
+    for i = 1 to 5000 
+        float theta = i * 0.1
+        float r = a * math.exp(b_coeff * theta)
+        
+        float angle = (theta * dir_mult) + angle_offset 
+        
+        int curr_t = int(math.round(start_t + r * dt * math.cos(angle)))
+        float curr_p = start_p + r * dp * math.sin(angle)
+        
+        float seg = math.sqrt(math.pow(((curr_t - prev_t) / dt) * dp, 2) + math.pow(curr_p - prev_p, 2))
+        
+        if acc_len <= target_len
+            array.push(pts, chart.point.from_time(curr_t, curr_p))
+            acc_len += seg
+        else
+            break
+            
+        prev_t := curr_t
+        prev_p := curr_p
+        
+    polyline.new(pts, xloc = xloc.bar_time, line_color = line_col, line_width = w)
+    array.get(pts, array.size(pts) - 1)
+
+// --- ÊÔÎíÕ ÈÇÒå ÇäÊÎÇÈí æ ãÍÇÓÈå HH, LL ---
+start_t = math.min(t1, t2)
+end_t = math.max(t1, t2)
+in_range = time >= start_t and time <= end_t
+
+if in_range
+    array.push(range_c, close)
+    array.push(range_o, open)
+    array.push(range_h, high)
+    array.push(range_l, low)
+    
+    range_end_t := time 
+    
+    if na(range_hh) or high > range_hh
+        range_hh := high
+        hh_step_count += 1
+        
+    if na(range_ll) or low < range_ll
+        range_ll := low
+        ll_step_count += 1
+
+// --- ãÍÇÓÈÇÊ æ ÑÓã ÏÑ ÂÎÑíä ˜äÏá ---
+if barstate.islast
+    
+    float dt = float(math.abs(t2 - t1))
+    float dp = math.abs(p2 - p1)
+    
+    if dt == 0
+        dt := timeframe.in_seconds("") * 1000.0
+    if dp == 0
+        dp := 1.0
+
+    float b_coeff = math.log(1.618) / (math.pi / 2)
+    float a = 0.02
+    
+    float center_p = na(range_hh) or na(range_ll) ? 0.0 : (range_hh + range_ll) / 2
+    
+    float ll_total = 0.0
+    float ll_green = 0.0
+    float ll_red = 0.0
+    
+    float hh_total = 0.0
+    float hh_green = 0.0
+    float hh_red = 0.0
+    
+    float first_open = 0.0
+    float last_close = 0.0
+
+    if array.size(range_c) > 0
+        first_open := array.get(range_o, 0)
+        last_close := array.get(range_c, array.size(range_c) - 1)
+        
+        for i = 0 to array.size(range_c) - 1
+            float c = array.get(range_c, i)
+            float o = array.get(range_o, i)
+            
+            float dist_ll = c - range_ll
+            float dist_hh = range_hh - c
+            
+            ll_total += dist_ll
+            hh_total += dist_hh
+            
+            if c >= o 
+                ll_green += dist_ll
+                hh_green += dist_hh
+            else 
+                ll_red += dist_ll
+                hh_red += dist_hh
+                
+    // --- ãÍÇÓÈå Øæá ãäØÞí ÇÓíÑÇá æ ÊäÙíã dt æ dp ---
+    float logical_len_price = 0.0
+    float t_ll_total = ll_total
+    float t_ll_green = ll_green
+    float t_ll_red = ll_red
+    
+    float t_hh_total = hh_total
+    float t_hh_green = hh_green
+    float t_hh_red = hh_red
+    
+    if opt_adaptive_sizing
+        int N = array.size(range_c)
+        
+        // ãÍÇÓÈå ATR æÇÞÚí ÝÞØ ÇÒ Ñæí ÏÇÏååÇí ÈÇÒå ÇäÊÎÇÈí
+        float range_atr = 0.0
+        if N > 1
+            float sum_tr = 0.0
+            for i = 1 to N - 1
+                float h_i = array.get(range_h, i)
+                float l_i = array.get(range_l, i)
+                float prev_c = array.get(range_c, i - 1)
+                
+                float tr = math.max(h_i - l_i, math.max(math.abs(h_i - prev_c), math.abs(l_i - prev_c)))
+                sum_tr += tr
+            
+            range_atr := sum_tr / (N - 1)
+        else
+            range_atr := syminfo.mintick * 10
+        
+        if range_atr == 0
+            range_atr := syminfo.mintick * 10
+            
+        float range_size = na(range_hh) or na(range_ll) ? 0.0 : range_hh - range_ll
+        if range_size <= 0
+            range_size := range_atr
+            
+        // ÝÑãæá ãÍÇÓÈå Øæá ãäØÞí ÈÑ ÇÓÇÓ ÊÚÏÇÏ ˜äÏá æ äæÓÇäÇÊ ÈÇÒå
+        float logical_len = math.sqrt(math.pow(N, 2) + math.pow(range_size / range_atr, 2)) * adaptive_mult
+        
+        // ÊÈÏíá Èå æÇÍÏåÇí ÞíãÊ ÈÑÇí åãÇåäí ÈÇ ãÍÇÓÈå Øæá ÞæÓ ÇÓíÑÇá
+        logical_len_price := logical_len * range_atr
+        
+        // ÈÇÒäæíÓí dt æ dp ÈÑ ÇÓÇÓ ãÇåíÊ ÈÇÒå (ÒãÇä í˜ ˜äÏá æ ATR ÈÇÒå)
+        dt := N > 0 ? float(math.abs(t2 - t1)) / N : timeframe.in_seconds("") * 1000.0
+        dp := range_atr
+        
+        // ãÞíÇÓÈäÏí Øæá ÇÓíÑÇáåÇ ÈÑÇí ÍÝÙ ÊäÇÓÈ æ äÓÈÊ ÑäåÇ
+        float scale_factor_ll = ll_total > 0 ? logical_len_price / ll_total : 1.0
+        t_ll_total := ll_total * scale_factor_ll
+        t_ll_green := ll_green * scale_factor_ll
+        t_ll_red   := ll_red * scale_factor_ll
+        
+        float scale_factor_hh = hh_total > 0 ? logical_len_price / hh_total : 1.0
+        t_hh_total := hh_total * scale_factor_hh
+        t_hh_green := hh_green * scale_factor_hh
+        t_hh_red   := hh_red * scale_factor_hh
+
+    // ãÍÇÓÈå ÒÇæíå ÈÇÒå (ÈÇ ÇÓÊÝÇÏå ÇÒ dp ÌÏíÏ ˜å ÏÑ ÍÇáÊ ÊØÈíÞí ÇÕáÇÍ ÔÏå ÇÓÊ)
+    float range_angle = 0.0
+    if array.size(range_c) > 0 and dp != 0
+        range_angle := math.atan((last_close - first_open) / dp)
+
+    float hh_offset = opt_angle_rotation ? (hh_step_count * range_angle) : 0.0
+    float ll_offset = opt_angle_rotation ? (ll_step_count * range_angle) : 0.0
+        
+    var chart.point end_ll_total = na
+    var chart.point end_hh_total = na
+    
+    if not na(range_end_t)
+        if t_ll_total > 0
+            end_ll_total := draw_spiral(t_ll_total, -1, ll_offset, color.aqua, range_end_t, center_p, dt, dp, a, b_coeff, 3)
+        if t_ll_green > 0
+            draw_spiral(t_ll_green, -1, ll_offset, color.green, range_end_t, center_p, dt, dp, a, b_coeff, 2)
+        if t_ll_red > 0
+            draw_spiral(t_ll_red, -1, ll_offset, color.red, range_end_t, center_p, dt, dp, a, b_coeff, 2)
+
+        if t_hh_total > 0
+            end_hh_total := draw_spiral(t_hh_total, 1, hh_offset, color.orange, range_end_t, center_p, dt, dp, a, b_coeff, 3)
+        if t_hh_green > 0
+            draw_spiral(t_hh_green, 1, hh_offset, color.green, range_end_t, center_p, dt, dp, a, b_coeff, 2)
+        if t_hh_red > 0
+            draw_spiral(t_hh_red, 1, hh_offset, color.red, range_end_t, center_p, dt, dp, a, b_coeff, 2)
+
+    if opt_symmetrize
+        if not na(end_ll_total)
+            draw_symmetrical_lines(end_ll_total.time, end_ll_total.price, color.aqua)
+        if not na(end_hh_total)
+            draw_symmetrical_lines(end_hh_total.time, end_hh_total.price, color.orange)

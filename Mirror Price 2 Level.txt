@@ -1,0 +1,21 @@
+//@version=5
+indicator("Mirror Price", overlay=false)
+
+level1 = input.price(50000, "Level 1", confirm=true)
+level2 = input.price(60000, "Level 2", confirm=true)
+
+mirror1Open = 2 * level1 - open
+mirror1High = 2 * level1 - high
+mirror1Low = 2 * level1 - low
+mirror1Close = 2 * level1 - close
+
+mirror2Open = 2 * level2 - open
+mirror2High = 2 * level2 - high
+mirror2Low = 2 * level2 - low
+mirror2Close = 2 * level2 - close
+
+plotcandle(mirror1Open, mirror1High, mirror1Low, mirror1Close, "Mirror Level 1", color.blue, color.blue, bordercolor=color.blue)
+plotcandle(mirror2Open, mirror2High, mirror2Low, mirror2Close, "Mirror Level 2", color.orange, color.orange, bordercolor=color.orange)
+
+hline(level1, "Level 1", color.blue, hline.style_dashed)
+hline(level2, "Level 2", color.orange, hline.style_dashed)

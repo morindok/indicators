@@ -1,0 +1,190 @@
+//@version=5
+indicator("Super Mirror {Morindok} by BITMOON618 (Spiral Symmetry)", overlay=true, max_polylines_count=100)
+
+// ==========================================
+// œ—Ì«›  œÊ ‰ﬁÿÂ «“ —ÊÌ ç«— 
+// ==========================================
+time1  = input.time(0, title="Point 1 (Start)", confirm=true, inline="p1")
+price1 = input.price(0, title="", confirm=true, inline="p1")
+
+time2  = input.time(0, title="Point 2 (End)", confirm=true, inline="p2")
+price2 = input.price(0, title="", confirm=true, inline="p2")
+
+// »——”Ì ‘Ì» „‰›Ì »—«Ì „⁄òÊ” ò—œ‰ ”Ì” „
+is_inverted = price2 < price1
+
+// ==========================================
+//  ‰ŸÌ„«  «”ÅÌ—«· Ê  ﬁ«—‰
+// ==========================================
+ratio1 = input.float(1, title="Ratio Level 1", step=0.001, group="Reflection Settings")
+ratio2 = input.float(1, title="Ratio Level 2", step=0.001, group="Reflection Settings")
+
+multUp   = input.float(title="÷—Ì» ÿÊ· «”ÅÌ—«· »«·«", defval=1.0, step=0.1, group="Spiral Settings")
+multDown = input.float(title="÷—Ì» ÿÊ· «”ÅÌ—«· Å«ÌÌ‰", defval=1.0, step=0.1, group="Spiral Settings")
+reverseDir = input.bool(title="„⁄òÊ” ò—œ‰ ÃÂ  ê—œ‘ «”ÅÌ—«·ùÂ«", defval=false, group="Spiral Settings")
+
+src_input = input.source(close, title="Source")
+tf_input = input.timeframe("", title="Timeframe")
+
+src_price = request.security(syminfo.tickerid, tf_input, src_input)
+time_val = request.security(syminfo.tickerid, tf_input, time)
+bar_idx = request.security(syminfo.tickerid, tf_input, bar_index)
+
+// ==========================================
+// „ €Ì—Â«Ì “„«‰Ì Ê Ã„⁄ ¬Ê—Ì œ«œÂ
+// ==========================================
+var int start_bar = na
+start_bar := na(start_bar) and time_val >= time1 ? bar_idx : start_bar
+var int end_bar = na
+end_bar := na(end_bar) and time_val >= time2 ? bar_idx : end_bar
+
+var float max_p = na
+var float min_p = na
+var float totalDistanceUp = 0.0
+var float totalDistanceDown = 0.0
+var int totalBarCount = 0
+
+time_start = math.min(time1, time2)
+time_end   = math.max(time1, time2)
+in_range   = time_val >= time_start and time_val <= time_end
+
+if in_range
+    totalBarCount += 1
+    max_p := na(max_p) ? high : math.max(max_p, high)
+    min_p := na(min_p) ? low : math.min(min_p, low)
+    
+    centerLevel = (price1 + price2) / 2.0
+    m_center = 2 * centerLevel - close
+    m_up_base   = 2 * math.max(price1, price2) - m_center
+    m_down_base = 2 * math.min(price1, price2) - m_center
+    
+    totalDistanceUp   += math.abs(m_up_base - close)
+    totalDistanceDown += math.abs(m_down_base - close)
+
+// ==========================================
+// „Õ«”»Â «‰ Â«Ì «”ÅÌ—«· œ— “„«‰ —”Ìœ‰ »Â ‰ﬁÿÂ 2
+// ==========================================
+var float final_p_up = na
+var float final_p_down = na
+
+if not na(end_bar) and bar_idx == end_bar
+    float dt = math.abs(time2 - time1)
+    float dp = math.abs(max_p - min_p)
+    if dt == 0
+        dt := timeframe.in_seconds("") * 1000.0
+    if dp == 0
+        dp := 1.0
+
+    float baseLenUp   = totalBarCount > 0 ? totalDistanceUp / totalBarCount : totalDistanceUp
+    float baseLenDown = totalBarCount > 0 ? totalDistanceDown / totalBarCount : totalDistanceDown
+    
+    float targetLenUp   = baseLenUp * multUp
+    float targetLenDown = baseLenDown * multDown
+
+    float b_coeff = math.log(1.6180339887) / (math.pi / 2)
+    float a = 0.02
+    int dir = reverseDir ? -1 : 1
+    
+    // ÅÌ‘ù›—÷
+    final_p_up   := price2
+    final_p_down := price1
+
+    // „Õ«”»Â ›—÷Ì «‰ Â«Ì «”ÅÌ—«· »«·«
+    if targetLenUp > 0
+        float acc_len_up = 0.0
+        float prev_t_up = time2
+        float prev_p_up = price2
+        for i = 1 to 2000
+            float theta = i * 0.1
+            float r = a * math.exp(b_coeff * theta)
+            int curr_t = math.round(time2 + r * dt * math.cos(theta))
+            float curr_p = price2 + (dir * r * dp * math.sin(theta))
+            float seg = math.sqrt(math.pow(((curr_t - prev_t_up) / dt) * dp, 2) + math.pow(curr_p - prev_p_up, 2))
+            if acc_len_up <= targetLenUp
+                acc_len_up   += seg
+                final_p_up   := curr_p
+                prev_t_up    := curr_t
+                prev_p_up    := curr_p
+            else
+                break
+
+    // „Õ«”»Â ›—÷Ì «‰ Â«Ì «”ÅÌ—«· Å«ÌÌ‰
+    if targetLenDown > 0
+        float acc_len_down = 0.0
+        float prev_t_down = time1
+        float prev_p_down = price1
+        for i = 1 to 2000
+            float theta = i * 0.1
+            float r = a * math.exp(b_coeff * theta)
+            int curr_t = math.round(time1 + r * dt * math.cos(theta))
+            float curr_p = price1 - (dir * r * dp * math.sin(theta))
+            float seg = math.sqrt(math.pow(((curr_t - prev_t_down) / dt) * dp, 2) + math.pow(curr_p - prev_p_down, 2))
+            if acc_len_down <= targetLenDown
+                acc_len_down  += seg
+                final_p_down  := curr_p
+                prev_t_down   := curr_t
+                prev_p_down   := curr_p
+            else
+                break
+
+// —”„ ŒÿÊÿ «‰ Â«Ì «”ÅÌ—«· »—«Ì „‘«ÂœÂ
+plot(time_val >= time2 ? final_p_up : na, "Spiral End Up", color=color.fuchsia, style=plot.style_linebr)
+plot(time_val >= time2 ? final_p_down : na, "Spiral End Down", color=color.yellow, style=plot.style_linebr)
+
+// ==========================================
+//  ﬁ«—‰ ﬁÌ„  (Reflection) ‰”»  »Â «‰ Â«Ì «”ÅÌ—«·ùÂ«
+// ==========================================
+price_ref1_lvl1 = price1 + (price1 - src_price) * ratio1
+price_ref1_lvl2 = price2 + (price2 - src_price) * ratio2
+
+// ***  €ÌÌ— «’·Ì œ— «Ì‰ »Œ‘ ***
+// «” ›«œÂ «“ final_p_up Ê final_p_down »Â Ã«Ì actual_upper Ê actual_lower
+price_ref2_lvl1 = na(final_p_up) ? na : (2 * final_p_up - price_ref1_lvl1)
+price_ref2_lvl2 = na(final_p_down) ? na : (2 * final_p_down - price_ref1_lvl2)
+
+plot(price_ref2_lvl1, title="Reflected on Spiral Up", color=color.new(color.green, 50), display=display.none)
+plot(price_ref2_lvl2, title="Reflected on Spiral Down", color=color.new(color.orange, 50), display=display.none)
+
+// ==========================================
+// „‰ÿﬁ ”Ìê‰«·ùœÂÌ
+// ==========================================
+is_after = not na(end_bar) and bar_idx > end_bar
+
+var float lowest_green = na
+var bool has_collided_1 = false
+var bool signal_fired_1 = false
+
+if is_after and not has_collided_1 and not na(price_ref2_lvl1)
+    lowest_green := na(lowest_green) ? price_ref2_lvl1 : math.min(lowest_green, price_ref2_lvl1)
+
+is_hit_1 = is_after and not na(lowest_green) and not has_collided_1 and not na(price_ref2_lvl2) and (ta.cross(price_ref2_lvl2, lowest_green) or price_ref2_lvl2 == lowest_green)
+logic_signal_1 = is_hit_1 and not signal_fired_1
+
+if is_hit_1
+    has_collided_1 := true
+if logic_signal_1
+    signal_fired_1 := true
+
+var float highest_purple = na
+var bool has_collided_2 = false
+var bool signal_fired_2 = false
+
+if is_after and not has_collided_2 and not na(price_ref2_lvl2)
+    highest_purple := na(highest_purple) ? price_ref2_lvl2 : math.max(highest_purple, price_ref2_lvl2)
+
+is_hit_2 = is_after and not na(highest_purple) and not has_collided_2 and not na(price_ref2_lvl1) and (ta.cross(price_ref2_lvl1, highest_purple) or price_ref2_lvl1 == highest_purple)
+logic_signal_2 = is_hit_2 and not signal_fired_2
+
+if is_hit_2
+    has_collided_2 := true
+if logic_signal_2
+    signal_fired_2 := true
+
+// ==========================================
+// ‰„«Ì‘ ”Ìê‰«·ùÂ«
+// ==========================================
+final_sell = is_inverted ? logic_signal_2 : logic_signal_1
+final_buy  = is_inverted ? logic_signal_1 : logic_signal_2
+
+plotshape(final_sell, title="Sell Signal", text="SELL", style=shape.labeldown, location=location.abovebar, color=color.red, textcolor=color.white, size=size.small)
+plotshape(final_buy, title="Buy Signal", text="BUY", style=shape.labelup, location=location.belowbar, color=color.green, textcolor=color.white, size=size.small)

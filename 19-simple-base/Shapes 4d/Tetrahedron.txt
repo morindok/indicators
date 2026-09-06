@@ -1,0 +1,161 @@
+//@version=5
+indicator("Icosahedron", overlay=true, max_polylines_count=100)
+
+t1 = input.time(0, title="Point 1", confirm=true, inline="p1")
+p1 = input.price(0, title="", confirm=true, inline="p1")
+t2 = input.time(0, title="Point 2", confirm=true, inline="p2")
+p2 = input.price(0, title="", confirm=true, inline="p2")
+
+if barstate.islastconfirmedhistory
+    dt = t2 - t1
+    dp = p2 - p1
+
+    arr0 = array.new<chart.point>()
+    arr0.push(chart.point.from_time(t1 + int(0.31752 * dt), p1 + 0.91828 * dp))
+    arr0.push(chart.point.from_time(t1 + int(0.83479 * dt), p1 + 0.91828 * dp))
+    polyline.new(arr0, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr1 = array.new<chart.point>()
+    arr1.push(chart.point.from_time(t1 + int(0.31752 * dt), p1 + 0.91828 * dp))
+    arr1.push(chart.point.from_time(t1 + int(0.67897 * dt), p1 + 0.51702 * dp))
+    polyline.new(arr1, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr2 = array.new<chart.point>()
+    arr2.push(chart.point.from_time(t1 + int(0.31752 * dt), p1 + 0.91828 * dp))
+    arr2.push(chart.point.from_time(t1 + int(0.41516 * dt), p1 + 1.00000 * dp))
+    polyline.new(arr2, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr3 = array.new<chart.point>()
+    arr3.push(chart.point.from_time(t1 + int(0.31752 * dt), p1 + 0.91828 * dp))
+    arr3.push(chart.point.from_time(t1 + int(0.00000 * dt), p1 + 0.64925 * dp))
+    polyline.new(arr3, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr4 = array.new<chart.point>()
+    arr4.push(chart.point.from_time(t1 + int(0.31752 * dt), p1 + 0.91828 * dp))
+    arr4.push(chart.point.from_time(t1 + int(0.16305 * dt), p1 + 0.35075 * dp))
+    polyline.new(arr4, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr5 = array.new<chart.point>()
+    arr5.push(chart.point.from_time(t1 + int(0.83479 * dt), p1 + 0.91828 * dp))
+    arr5.push(chart.point.from_time(t1 + int(0.67897 * dt), p1 + 0.51702 * dp))
+    polyline.new(arr5, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr6 = array.new<chart.point>()
+    arr6.push(chart.point.from_time(t1 + int(0.83479 * dt), p1 + 0.91828 * dp))
+    arr6.push(chart.point.from_time(t1 + int(0.41516 * dt), p1 + 1.00000 * dp))
+    polyline.new(arr6, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr7 = array.new<chart.point>()
+    arr7.push(chart.point.from_time(t1 + int(0.83479 * dt), p1 + 0.91828 * dp))
+    arr7.push(chart.point.from_time(t1 + int(0.83695 * dt), p1 + 0.64925 * dp))
+    polyline.new(arr7, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr8 = array.new<chart.point>()
+    arr8.push(chart.point.from_time(t1 + int(0.83479 * dt), p1 + 0.91828 * dp))
+    arr8.push(chart.point.from_time(t1 + int(1.00000 * dt), p1 + 0.35075 * dp))
+    polyline.new(arr8, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr9 = array.new<chart.point>()
+    arr9.push(chart.point.from_time(t1 + int(0.16521 * dt), p1 + 0.08172 * dp))
+    arr9.push(chart.point.from_time(t1 + int(0.68248 * dt), p1 + 0.08172 * dp))
+    polyline.new(arr9, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr10 = array.new<chart.point>()
+    arr10.push(chart.point.from_time(t1 + int(0.16521 * dt), p1 + 0.08172 * dp))
+    arr10.push(chart.point.from_time(t1 + int(0.58484 * dt), p1 + 0.00000 * dp))
+    polyline.new(arr10, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr11 = array.new<chart.point>()
+    arr11.push(chart.point.from_time(t1 + int(0.16521 * dt), p1 + 0.08172 * dp))
+    arr11.push(chart.point.from_time(t1 + int(0.32103 * dt), p1 + 0.48298 * dp))
+    polyline.new(arr11, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr12 = array.new<chart.point>()
+    arr12.push(chart.point.from_time(t1 + int(0.16521 * dt), p1 + 0.08172 * dp))
+    arr12.push(chart.point.from_time(t1 + int(0.00000 * dt), p1 + 0.64925 * dp))
+    polyline.new(arr12, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr13 = array.new<chart.point>()
+    arr13.push(chart.point.from_time(t1 + int(0.16521 * dt), p1 + 0.08172 * dp))
+    arr13.push(chart.point.from_time(t1 + int(0.16305 * dt), p1 + 0.35075 * dp))
+    polyline.new(arr13, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr14 = array.new<chart.point>()
+    arr14.push(chart.point.from_time(t1 + int(0.68248 * dt), p1 + 0.08172 * dp))
+    arr14.push(chart.point.from_time(t1 + int(0.58484 * dt), p1 + 0.00000 * dp))
+    polyline.new(arr14, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr15 = array.new<chart.point>()
+    arr15.push(chart.point.from_time(t1 + int(0.68248 * dt), p1 + 0.08172 * dp))
+    arr15.push(chart.point.from_time(t1 + int(0.32103 * dt), p1 + 0.48298 * dp))
+    polyline.new(arr15, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr16 = array.new<chart.point>()
+    arr16.push(chart.point.from_time(t1 + int(0.68248 * dt), p1 + 0.08172 * dp))
+    arr16.push(chart.point.from_time(t1 + int(0.83695 * dt), p1 + 0.64925 * dp))
+    polyline.new(arr16, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr17 = array.new<chart.point>()
+    arr17.push(chart.point.from_time(t1 + int(0.68248 * dt), p1 + 0.08172 * dp))
+    arr17.push(chart.point.from_time(t1 + int(1.00000 * dt), p1 + 0.35075 * dp))
+    polyline.new(arr17, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr18 = array.new<chart.point>()
+    arr18.push(chart.point.from_time(t1 + int(0.58484 * dt), p1 + 0.00000 * dp))
+    arr18.push(chart.point.from_time(t1 + int(0.67897 * dt), p1 + 0.51702 * dp))
+    polyline.new(arr18, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr19 = array.new<chart.point>()
+    arr19.push(chart.point.from_time(t1 + int(0.58484 * dt), p1 + 0.00000 * dp))
+    arr19.push(chart.point.from_time(t1 + int(1.00000 * dt), p1 + 0.35075 * dp))
+    polyline.new(arr19, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr20 = array.new<chart.point>()
+    arr20.push(chart.point.from_time(t1 + int(0.58484 * dt), p1 + 0.00000 * dp))
+    arr20.push(chart.point.from_time(t1 + int(0.16305 * dt), p1 + 0.35075 * dp))
+    polyline.new(arr20, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr21 = array.new<chart.point>()
+    arr21.push(chart.point.from_time(t1 + int(0.67897 * dt), p1 + 0.51702 * dp))
+    arr21.push(chart.point.from_time(t1 + int(1.00000 * dt), p1 + 0.35075 * dp))
+    polyline.new(arr21, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr22 = array.new<chart.point>()
+    arr22.push(chart.point.from_time(t1 + int(0.32103 * dt), p1 + 0.48298 * dp))
+    arr22.push(chart.point.from_time(t1 + int(0.41516 * dt), p1 + 1.00000 * dp))
+    polyline.new(arr22, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr23 = array.new<chart.point>()
+    arr23.push(chart.point.from_time(t1 + int(0.32103 * dt), p1 + 0.48298 * dp))
+    arr23.push(chart.point.from_time(t1 + int(0.83695 * dt), p1 + 0.64925 * dp))
+    polyline.new(arr23, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr24 = array.new<chart.point>()
+    arr24.push(chart.point.from_time(t1 + int(0.32103 * dt), p1 + 0.48298 * dp))
+    arr24.push(chart.point.from_time(t1 + int(0.00000 * dt), p1 + 0.64925 * dp))
+    polyline.new(arr24, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr25 = array.new<chart.point>()
+    arr25.push(chart.point.from_time(t1 + int(0.41516 * dt), p1 + 1.00000 * dp))
+    arr25.push(chart.point.from_time(t1 + int(0.83695 * dt), p1 + 0.64925 * dp))
+    polyline.new(arr25, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr26 = array.new<chart.point>()
+    arr26.push(chart.point.from_time(t1 + int(0.41516 * dt), p1 + 1.00000 * dp))
+    arr26.push(chart.point.from_time(t1 + int(0.00000 * dt), p1 + 0.64925 * dp))
+    polyline.new(arr26, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr27 = array.new<chart.point>()
+    arr27.push(chart.point.from_time(t1 + int(0.83695 * dt), p1 + 0.64925 * dp))
+    arr27.push(chart.point.from_time(t1 + int(1.00000 * dt), p1 + 0.35075 * dp))
+    polyline.new(arr27, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr28 = array.new<chart.point>()
+    arr28.push(chart.point.from_time(t1 + int(0.00000 * dt), p1 + 0.64925 * dp))
+    arr28.push(chart.point.from_time(t1 + int(0.16305 * dt), p1 + 0.35075 * dp))
+    polyline.new(arr28, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)
+
+    arr29 = array.new<chart.point>()
+    arr29.push(chart.point.from_time(t1 + int(0.68248 * dt), p1 + 0.08172 * dp))
+    arr29.push(chart.point.from_time(t1 + int(0.16305 * dt), p1 + 0.35075 * dp))
+    polyline.new(arr29, curved=false, closed=false, line_color=color.new(color.blue, 30), line_width=1, xloc=xloc.bar_time)

@@ -1,0 +1,13 @@
+//@version=5
+indicator("Zero-Lag Fractal KdV Smoothing", overlay=true)
+c_val = input.float(1.0, title="C Parameter")
+alpha = input.float(0.5, title="Alpha (Fractal Dimension)")
+price_diff = close - nz(close[1], close)
+lambda_frac = math.pow(math.abs(price_diff), alpha)
+wave_arg = 0.5 * math.sqrt(c_val) * lambda_frac
+cosh_val = (math.exp(wave_arg) + math.exp(-wave_arg)) / 2.0
+sech_val = 1.0 / cosh_val
+wave_weight = math.pow(sech_val, 2)
+var float filtered = na
+filtered := (wave_weight * close) + ((1.0 - wave_weight) * nz(filtered[1], close))
+plot(filtered, color=color.orange, linewidth=2, title="Smooth Line")

@@ -1,0 +1,368 @@
+# -*- coding: utf-8 -*-
+"""
+Bybit Multi-Timeframe Spiral Mechanics Chart (Dash + Plotly)
+----------------------------------------------------------------------
+"""
+
+import json
+import threading
+import time
+from collections import deque
+from datetime import timezone
+
+import numpy as np
+import pandas as pd
+import requests
+import websocket
+import dash
+from dash import dcc, html, Input, Output, State
+import dash_bootstrap_components as dbc
+import plotly.graph_objects as go
+
+# ==============================================================================
+# 1) اتصال پایدار به API و Websocket بایبیت
+# ==============================================================================
+REST_CANDIDATES = ["https://api.bybit.com", "https://api.bytick.com", "https://api.bybit.kz"]
+WS_CANDIDATES = ["wss://stream.bybit.com", "wss://stream.bytick.com"]
+
+SESSION = requests.Session()
+SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
+})
+
+_ACTIVE_REST_BASE = {"url": None}
+STALE_SEC = 25
+WATCHDOG_INTERVAL = 5
+
+def bybit_get(path, params, timeout=10):
+    candidates = [_ACTIVE_REST_BASE["url"]] if _ACTIVE_REST_BASE["url"] else []
+    candidates += [b for b in REST_CANDIDATES if b != _ACTIVE_REST_BASE["url"]]
+    for base in candidates:
+        try:
+            resp = SESSION.get(f"{base}{path}", params=params, timeout=timeout)
+            if resp.status_code in (403, 451):
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("retCode") == 0:
+                _ACTIVE_REST_BASE["url"] = base
+                return data
+        except Exception:
+            continue
+    return None
+
+# ==============================================================================
+# 2) تنظیمات و پیکربندی داده‌ها
+# ==============================================================================
+DEFAULT_SYMBOL = "BTCUSDT"
+DEFAULT_CATEGORY = "linear"
+TRADE_BUFFER_MAX = 50_000
+
+STATE_LOCK = threading.RLock()
+TRADES = deque(maxlen=TRADE_BUFFER_MAX)
+CONN_STATUS = {"connected": False, "symbol": DEFAULT_SYMBOL, "category": DEFAULT_CATEGORY, "ws_host": "-"}
+LAST_MSG_TS = {"t": 0.0}
+
+# ==============================================================================
+# 3) مدیریت داده‌های زنده و WebSocket
+# ==============================================================================
+def backfill_trades_rest(symbol, category, limit=1000):
+    data = bybit_get("/v5/market/recent-trade", {"category": category, "symbol": symbol, "limit": limit})
+    if not data:
+        return
+    items = (data.get("result") or {}).get("list") or []
+    rows = []
+    for t in items:
+        try:
+            rows.append({
+                "id": t.get("execId"),
+                "ts": pd.to_datetime(int(t["time"]), unit="ms", utc=True),
+                "price": float(t["price"]),
+                "amount": float(t["size"]),
+                "side": "buy" if t.get("side") == "Buy" else "sell",
+            })
+        except Exception:
+            continue
+    with STATE_LOCK:
+        TRADES.extend(rows)
+
+class BybitStream:
+    def __init__(self, symbol: str, category: str = "linear"):
+        self.symbol = symbol.upper()
+        self.category = category
+        self.ws = None
+        self.thread = None
+        self.stop_flag = threading.Event()
+        self.host_idx = 0
+
+    def _url(self) -> str:
+        host = WS_CANDIDATES[self.host_idx % len(WS_CANDIDATES)]
+        return f"{host}/v5/public/{self.category}"
+
+    def start(self):
+        self.stop_flag.clear()
+        self.thread = threading.Thread(target=self._run_forever, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self.stop_flag.set()
+        if self.ws:
+            try:
+                self.ws.close()
+            except Exception:
+                pass
+
+    def _run_forever(self):
+        while not self.stop_flag.is_set():
+            try:
+                with STATE_LOCK:
+                    CONN_STATUS["ws_host"] = self._url()
+                self.ws = websocket.WebSocketApp(
+                    self._url(),
+                    on_open=self._on_open,
+                    on_message=self._on_message,
+                    on_error=lambda w, e: None,
+                    on_close=lambda w, c, m: None,
+                )
+                self.ws.run_forever(ping_interval=20, ping_payload=json.dumps({"op": "ping"}))
+            except Exception:
+                pass
+            if self.stop_flag.is_set():
+                break
+            self.host_idx += 1
+            time.sleep(3)
+
+    def _on_open(self, ws):
+        sub = {"op": "subscribe", "args": [f"publicTrade.{self.symbol}"]}
+        ws.send(json.dumps(sub))
+        with STATE_LOCK:
+            CONN_STATUS["connected"] = True
+        LAST_MSG_TS["t"] = time.time()
+
+    def _on_message(self, ws, raw):
+        LAST_MSG_TS["t"] = time.time()
+        try:
+            msg = json.loads(raw)
+            if msg.get("topic", "").startswith("publicTrade."):
+                data = msg.get("data") or []
+                rows = []
+                for t in data:
+                    rows.append({
+                        "id": t.get("i"),
+                        "ts": pd.to_datetime(int(t["T"]), unit="ms", utc=True),
+                        "price": float(t["p"]),
+                        "amount": float(t["v"]),
+                        "side": "buy" if t.get("S") == "Buy" else "sell",
+                    })
+                with STATE_LOCK:
+                    TRADES.extend(rows)
+        except Exception:
+            pass
+
+CURRENT_STREAM = None
+
+def restart_stream(symbol: str, category: str):
+    global CURRENT_STREAM
+    if CURRENT_STREAM is not None:
+        CURRENT_STREAM.stop()
+    with STATE_LOCK:
+        TRADES.clear()
+    backfill_trades_rest(symbol, category)
+    CURRENT_STREAM = BybitStream(symbol, category)
+    CURRENT_STREAM.start()
+
+# ==============================================================================
+# 4) موتور محاسباتی هندسه اسپیرال فرکتالی
+# ==============================================================================
+def process_spiral_data(df, base_tf_sec=300, sub_tf_sec=60):
+    if df.empty:
+        return None, None
+
+    df = df.sort_values("ts").copy()
+    df["parent_bucket"] = df["ts"].dt.floor(f"{base_tf_sec}s")
+    df["sub_bucket"] = df["ts"].dt.floor(f"{sub_tf_sec}s")
+
+    parent_groups = df.groupby("parent_bucket")
+    spirals_data = []
+    
+    latest_point = None
+
+    for p_time, p_group in parent_groups:
+        if p_group.empty:
+            continue
+        
+        p_open = p_group["price"].iloc[0]
+        p_close = p_group["price"].iloc[-1]
+        p_high = p_group["price"].max()
+        p_low = p_group["price"].min()
+        
+        min_ts = p_group["ts"].min().timestamp()
+        max_ts = p_group["ts"].max().timestamp()
+        
+        sub_groups = p_group.groupby("sub_bucket")
+        sub_spirals = []
+
+        for s_time, s_group in sub_groups:
+            s_open = s_group["price"].iloc[0]
+            s_close = s_group["price"].iloc[-1]
+            s_delta = s_group[s_group["side"] == "buy"]["amount"].sum() - s_group[s_group["side"] == "sell"]["amount"].sum()
+
+            s_mid_ts = s_group["ts"].mean().timestamp()
+            progress = (s_mid_ts - min_ts) / max(base_tf_sec, 1.0)
+            theta = progress * 2 * np.pi
+            
+            base_radius = 10 + progress * 20
+            price_offset = (s_close - p_open) / (p_high - p_low + 1e-5) * 5
+            radius = base_radius + price_offset
+
+            center_x = radius * np.cos(theta)
+            center_y = radius * np.sin(theta)
+            center_z = (s_time.timestamp() % 86400) / 100 
+
+            sub_theta = np.linspace(0, 4 * np.pi, len(s_group))
+            sub_r = np.linspace(0.5, 4.0, len(s_group))
+            
+            sx = center_x + sub_r * np.cos(sub_theta)
+            sy = center_y + sub_r * np.sin(sub_theta)
+            sz = center_z + (s_group["price"].values - s_open) / (p_high - p_low + 1e-5) * 3
+
+            sub_spirals.append({
+                "x": sx, "y": sy, "z": sz,
+                "delta": s_delta,
+                "center": (center_x, center_y, center_z)
+            })
+            
+            latest_point = (sx[-1], sy[-1], sz[-1], s_group["price"].iloc[-1])
+
+        spirals_data.append({
+            "parent_time": p_time,
+            "sub_spirals": sub_spirals,
+            "is_bull": p_close >= p_open
+        })
+
+    return spirals_data, latest_point
+
+# ==============================================================================
+# 5) رندر بصری ۳ بعدی در دشبورد Dash
+# ==============================================================================
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.CYBORG])
+
+app.layout = dbc.Container([
+    dbc.Row([
+        dbc.Col([
+            html.H3("BYBIT FRACTAL SPIRAL ENGINE 3D", className="text-info mt-2 mb-0", style={"fontWeight": "bold", "textShadow": "0px 0px 10px #00e5ff"}),
+            html.P("نمایش متداخل کندل‌ها به عنوان اسپیرال‌های چندزمانی چرخان", className="text-light small")
+        ], width=8),
+        dbc.Col([
+            dbc.InputGroup([
+                dbc.Input(id="symbol-input", value="BTCUSDT", type="text", style={"backgroundColor": "#0d1117", "color": "#00e5ff", "borderColor": "#00e5ff"}),
+                dbc.Button("اتصال و بازنشانی", id="btn-connect", color="info", n_clicks=0, style={"boxShadow": "0px 0px 8px #00e5ff"})
+            ], className="mt-3")
+        ], width=4)
+    ]),
+    dbc.Row([
+        dbc.Col([
+            dcc.Graph(id="spiral-3d-graph", style={"height": "85vh"})
+        ], width=12)
+    ]),
+    # توجه: در اینجا از n_intervals استفاده شده است که خطای قبلی را برطرف می‌کند
+    dcc.Interval(id="update-interval", interval=2000, n_intervals=0)
+], fluid=True, style={"backgroundColor": "#05070a", "minHeight": "100vh"})
+
+
+@app.callback(
+    Output("spiral-3d-graph", "figure"),
+    [Input("update-interval", "n_intervals"), Input("btn-connect", "n_clicks")],
+    [State("symbol-input", "value")]
+)
+def update_spiral_chart(n_intervals, btn_clicks, symbol):
+    ctx = dash.callback_context
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
+
+    if trigger == "btn-connect" or CURRENT_STREAM is None:
+        restart_stream(symbol.strip().upper(), DEFAULT_CATEGORY)
+
+    with STATE_LOCK:
+        if not TRADES:
+            fig = go.Figure()
+            fig.update_layout(
+                template="plotly_dark",
+                paper_bgcolor="#05070a",
+                plot_bgcolor="#05070a",
+                annotations=[dict(text="در حال دریافت داده‌های زنده و ساخت اسپیرال...", showarrow=False, font=dict(color="#00e5ff", size=18))]
+            )
+            return fig
+        df = pd.DataFrame(list(TRADES))
+
+    spirals, latest_point = process_spiral_data(df, base_tf_sec=300, sub_tf_sec=60)
+    fig = go.Figure()
+
+    if spirals:
+        for p_idx, p_sp in enumerate(spirals):
+            # رنگ‌های نئونی برای تایم‌فریم اصلی
+            p_color = "#00ff88" if p_sp["is_bull"] else "#ff0055"
+            centers_x, centers_y, centers_z = [], [], []
+
+            for sub in p_sp["sub_spirals"]:
+                cx, cy, cz = sub["center"]
+                centers_x.append(cx)
+                centers_y.append(cy)
+                centers_z.append(cz)
+
+                # رنگ کندل‌های فرعی بر اساس دلتا حجم
+                sub_color = "#00e5ff" if sub["delta"] >= 0 else "#ffaa00"
+
+                fig.add_trace(go.Scatter3d(
+                    x=sub["x"], y=sub["y"], z=sub["z"],
+                    mode="lines",
+                    line=dict(color=sub_color, width=2.5),
+                    hoverinfo="none",
+                    showlegend=False
+                ))
+
+            if len(centers_x) > 1:
+                fig.add_trace(go.Scatter3d(
+                    x=centers_x, y=centers_y, z=centers_z,
+                    mode="lines+markers",
+                    line=dict(color=p_color, width=5, dash="solid"),
+                    marker=dict(size=4, color="#ffffff", line=dict(color=p_color, width=2)),
+                    name=f"Parent TF {p_idx+1}",
+                    showlegend=False
+                ))
+        
+        # نمایشگر درخشان آخرین قیمت زنده در انتهای اسپیرال
+        if latest_point:
+            lx, ly, lz, lprice = latest_point
+            fig.add_trace(go.Scatter3d(
+                x=[lx], y=[ly], z=[lz],
+                mode="markers+text",
+                marker=dict(size=10, color="#ffff00", symbol="diamond", line=dict(color="#ffffff", width=2)),
+                text=[f"Live: {lprice}"],
+                textposition="top center",
+                textfont=dict(color="#ffff00", size=14, family="Arial Black"),
+                showlegend=False,
+                name="Live Price"
+            ))
+
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="#05070a",
+        plot_bgcolor="#05070a",
+        margin=dict(l=0, r=0, b=0, t=20),
+        scene=dict(
+            xaxis=dict(title="Phase (Cos)", backgroundcolor="#05070a", gridcolor="#1a202c", showbackground=True, zerolinecolor="#333"),
+            yaxis=dict(title="Orbit (Sin)", backgroundcolor="#05070a", gridcolor="#1a202c", showbackground=True, zerolinecolor="#333"),
+            zaxis=dict(title="Time/Price Z-Axis", backgroundcolor="#05070a", gridcolor="#1a202c", showbackground=True, zerolinecolor="#333"),
+            camera=dict(eye=dict(x=1.6, y=1.4, z=1.0))
+        )
+    )
+
+    return fig
+
+# ==============================================================================
+# 6) اجرا
+# ==============================================================================
+if __name__ == "__main__":
+    restart_stream(DEFAULT_SYMBOL, DEFAULT_CATEGORY)
+    app.run_server(debug=False, port=8050)

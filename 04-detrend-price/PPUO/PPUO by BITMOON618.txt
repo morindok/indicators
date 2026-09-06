@@ -1,0 +1,66 @@
+//@version=5
+indicator("Parallel Price Universe Oscillator{Morindok} by BITMOON618", shorttitle="PPUO Sym", overlay=false, precision=2)
+
+// Inputs
+src       = input.source(close, "Source")
+baseLen   = input.int(144, "Main MA Length", minval=1)
+maType    = input.string("EMA", "MA Type", options=["SMA", "EMA", "WMA", "RMA"])
+angleLen  = input.int(8, "Angle Smoothing Length", minval=1)
+normLen   = input.int(144, "Symmetric Normalization Length", minval=10)
+signalLen = input.int(34, "Oscillator MA Length", minval=1)
+powerFast = input.float(0.618, "Fast Universe Weight", step=0.001)
+powerSlow = input.float(1.618, "Slow Universe Weight", step=0.001)
+
+// MA selector
+f_ma(_src, _len, _type) =>
+    _type == "SMA" ? ta.sma(_src, _len) :
+     _type == "EMA" ? ta.ema(_src, _len) :
+     _type == "WMA" ? ta.wma(_src, _len) :
+     ta.rma(_src, _len)
+
+// Derived lengths
+lenSlow = math.max(1, math.round(baseLen * 1.618))
+lenFast = math.max(1, math.round(baseLen * 0.618))
+
+// Detrending price against two derived moving averages
+maSlow = f_ma(src, lenSlow, maType)
+maFast = f_ma(src, lenFast, maType)
+
+detSlow = src - maSlow
+detFast = src - maFast
+
+// Extract variable angle from detrended slopes
+slopeSlow = ta.ema(detSlow - detSlow[1], angleLen)
+slopeFast = ta.ema(detFast - detFast[1], angleLen)
+
+angleSlow = math.atan(slopeSlow) * (180.0 / math.pi)
+angleFast = math.atan(slopeFast) * (180.0 / math.pi)
+
+// Aggregate both "parallel universes"
+rawUniverse    = angleSlow * powerSlow + angleFast * powerFast
+universeSmooth = ta.ema(rawUniverse, angleLen)
+
+// Normalize original line to 0..100
+origLo   = ta.lowest(universeSmooth, normLen)
+origHi   = ta.highest(universeSmooth, normLen)
+origSpan = origHi - origLo
+ppuRaw   = origSpan != 0 ? 100 * (universeSmooth - origLo) / origSpan : 50
+
+// Symmetrize around the oscillator moving average
+ppuMa  = f_ma(ppuRaw, signalLen, maType)
+dev    = ppuRaw - ppuMa
+absMax = ta.highest(math.abs(dev), normLen)
+
+ppuSym = absMax != 0 ? 50 + 50 * (dev / absMax) : 50
+ppuSymClamped = math.max(0, math.min(100, ppuSym))
+
+// Plots
+plot(ppuRaw, title="Original Parallel Universe Line", color=color.orange, linewidth=2)
+plot(ppuMa, title="Oscillator MA", color=color.gray, linewidth=1)
+plot(ppuSymClamped, title="Symmetric Line", color=color.aqua, linewidth=2)
+
+hline(50, "Center", color=color.new(color.gray, 40))
+hline(70, "Upper Zone", color=color.new(color.red, 60))
+hline(30, "Lower Zone", color=color.new(color.green, 60))
+
+bgcolor(ppuSymClamped > 70 ? color.new(color.red, 92) : ppuSymClamped < 30 ? color.new(color.green, 92) : na)

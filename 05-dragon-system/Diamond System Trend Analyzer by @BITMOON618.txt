@@ -1,0 +1,279 @@
+//@version=5
+indicator("Diamond System Trend Analyzer {Morindok} by @BITMOON618", overlay=true)
+
+// --- Settings ---
+show_combined = input.bool(true, "Show Combined Color MA Only", tooltip="äãÇíÔ ÝÞØ í˜ ÎØ ÈÇ ãíÇäíä Ñä ÊÇíãÝÑíãåÇí ÝÚÇá")
+
+grp_tf = "Timeframes & Visibility"
+show_htf2 = input.bool(false, "Show HTF 2", group=grp_tf)
+htf2_res  = input.timeframe("60", "HTF 2 Resolution", group=grp_tf)
+
+show_htf1 = input.bool(false, "Show HTF 1", group=grp_tf)
+htf1_res  = input.timeframe("15", "HTF 1 Resolution", group=grp_tf)
+
+show_main = input.bool(true, "Show Main TF", group=grp_tf)
+
+show_ltf1 = input.bool(true, "Show LTF 1", group=grp_tf)
+ltf1_res  = input.timeframe("3", "LTF 1 Resolution", group=grp_tf)
+
+show_ltf2 = input.bool(true, "Show LTF 2", group=grp_tf)
+ltf2_res  = input.timeframe("1", "LTF 2 Resolution", group=grp_tf)
+
+grp_logic = "Intensity Logic"
+use_candle_count = input.bool(false, "Intensity Based on Candle Count", group=grp_logic)
+use_slope = input.bool(true, "Intensity Based on Slope", group=grp_logic)
+use_volume = input.bool(true, "Intensity Based on Volume", group=grp_logic)
+
+grp_core = "Core Settings"
+source = input.source(close, "Source", group=grp_core)
+pivot_len = input.int(50, "Pivot Length", group=grp_core)
+amplitude = input.float(0, "Amplitude of Waves", group=grp_core)
+offset = input.float(0, "Offset of Waves", group=grp_core)
+ma_len = input.int(20, "MA Length", group=grp_core)
+close_percent = input.float(0.1, "Close Edges Distance (%)", step=0.05, group=grp_core)
+
+grp_tables = "Tables Settings"
+show_tables = input.bool(true, "Show Live Tables", group=grp_tables)
+
+golden_ratio = 1.618
+
+// ----------------------------------------------------
+// ãäØÞ íææÊ Çííä
+pivot_low_val = ta.pivotlow(low, pivot_len, pivot_len)
+var int last_low_idx = na
+var int prev_low_idx = na
+var float h_line_low = na
+var int num_candles_low = 100
+
+is_new_low = not na(pivot_low_val)
+prev_low_idx := is_new_low ? last_low_idx : prev_low_idx
+last_low_idx := is_new_low ? bar_index[pivot_len] : last_low_idx
+num_candles_low := is_new_low and not na(prev_low_idx) ? math.max(1, last_low_idx - prev_low_idx) : num_candles_low
+h_line_low := is_new_low ? pivot_low_val : h_line_low
+
+freq_low = 2 * math.pi / num_candles_low
+sine_low = h_line_low + amplitude * math.sin(freq_low * bar_index + offset)
+above_low = source > sine_low
+below_low = source <= sine_low
+var float flat_above_low = na
+var float flat_below_low = na
+flat_above_low := above_low ? source : (na(flat_above_low[1]) ? source : flat_above_low[1])
+flat_below_low := below_low ? source : (na(flat_below_low[1]) ? source : flat_below_low[1])
+dist_low = math.abs(flat_above_low - flat_below_low)
+
+// ----------------------------------------------------
+// ãäØÞ íææÊ ÈÇáÇ
+pivot_high_val = ta.pivothigh(high, pivot_len, pivot_len)
+var int last_high_idx = na
+var int prev_high_idx = na
+var float h_line_high = na
+var int num_candles_high = 100
+
+is_new_high = not na(pivot_high_val)
+prev_high_idx := is_new_high ? last_high_idx : prev_high_idx
+last_high_idx := is_new_high ? bar_index[pivot_len] : last_high_idx
+num_candles_high := is_new_high and not na(prev_high_idx) ? math.max(1, last_high_idx - prev_high_idx) : num_candles_high
+h_line_high := is_new_high ? pivot_high_val : h_line_high
+
+freq_high = 2 * math.pi / num_candles_high
+sine_high = h_line_high + amplitude * math.sin(freq_high * bar_index + offset)
+above_high = source > sine_high
+below_high = source <= sine_high
+var float flat_above_high = na
+var float flat_below_high = na
+flat_above_high := above_high ? source : (na(flat_above_high[1]) ? source : flat_above_high[1])
+flat_below_high := below_high ? source : (na(flat_below_high[1]) ? source : flat_below_high[1])
+dist_high = math.abs(flat_above_high - flat_below_high)
+
+// ----------------------------------------------------
+// ãÍÇÓÈå ÝÇÕáååÇ æ ÔÝÇÝíÊ ÇÕáí
+max_white = flat_above_low + dist_low * golden_ratio * 5
+min_white = flat_below_low - dist_low * golden_ratio * 5
+max_blue = flat_above_high + dist_high * golden_ratio * 5
+min_blue = flat_below_high - dist_high * golden_ratio * 5
+
+upper_dist = math.abs(max_white - max_blue)
+max_dist_100 = ta.highest(upper_dist, 100)
+min_dist_100 = ta.lowest(upper_dist, 100)
+dist_range = math.max(max_dist_100 - min_dist_100, 0.000001)
+intensity_ratio = (upper_dist - min_dist_100) / dist_range
+transparency = 80 - (intensity_ratio * 80)
+
+// ----------------------------------------------------
+// ãäØÞ ãÍÇÓÈå ÔÏÊ
+pivot_dist = int(math.max(num_candles_low, num_candles_high))
+lookback = math.max(1, pivot_dist)
+
+green_candles = math.sum(close >= open ? 1 : 0, lookback)
+red_candles = math.sum(close < open ? 1 : 0, lookback)
+green_ratio = green_candles / lookback
+red_ratio = red_candles / lookback
+
+price_diff = close - close[lookback]
+slope_val = price_diff / lookback
+max_slope = ta.highest(math.abs(slope_val), 100)
+slope_ratio = math.abs(slope_val) / math.max(max_slope, 0.000001)
+
+green_slope_factor = price_diff > 0 ? slope_ratio : 0.0
+red_slope_factor = price_diff < 0 ? slope_ratio : 0.0
+
+green_vol = math.sum(close >= open ? volume : 0, lookback)
+red_vol = math.sum(close < open ? volume : 0, lookback)
+total_vol = green_vol + red_vol
+
+green_vol_ratio = total_vol > 0 ? (green_vol / total_vol) : 0.0
+red_vol_ratio = total_vol > 0 ? (red_vol / total_vol) : 0.0
+
+float green_score = 0.0
+float red_score = 0.0
+int active_conditions = 0
+
+if use_candle_count
+    green_score += green_ratio
+    red_score += red_ratio
+    active_conditions += 1
+
+if use_slope
+    green_score += green_slope_factor
+    red_score += red_slope_factor
+    active_conditions += 1
+
+if use_volume
+    green_score += green_vol_ratio
+    red_score += red_vol_ratio
+    active_conditions += 1
+
+final_green_ratio = active_conditions > 0 ? (green_score / active_conditions) : 1.0
+final_red_ratio = active_conditions > 0 ? (red_score / active_conditions) : 1.0
+
+transp_green = 100 - ((100 - transparency) * final_green_ratio)
+transp_red = 100 - ((100 - transparency) * final_red_ratio)
+
+// ----------------------------------------------------
+// Ñä Çíå
+white_engulfs_blue = (max_white > max_blue) and (min_white < min_blue)
+blue_engulfs_white = (max_blue > max_white) and (min_blue < min_white)
+threshold = source * (close_percent / 100)
+edges_are_close = (math.abs(max_white - max_blue) <= threshold) and (math.abs(min_white - min_blue) <= threshold)
+
+color_green_dynamic = color.new(color.green, transp_green)
+color_red_dynamic = color.new(color.red, transp_red)
+color_purple_dynamic = color.new(color.purple, transparency)
+color_gray = color.new(color.gray, 50)
+
+ma_color = edges_are_close ? color_purple_dynamic : (white_engulfs_blue ? color_green_dynamic : (blue_engulfs_white ? color_red_dynamic : color_gray))
+atr_val = ta.atr(ma_len)
+
+// ----------------------------------------------------
+// ÏÑíÇÝÊ ÏíÊÇ ÇÒ ÊÇíãÝÑíãåÇ
+htf2_c = request.security(syminfo.tickerid, htf2_res, ma_color)
+htf2_o = request.security(syminfo.tickerid, htf2_res, atr_val)
+
+htf1_c = request.security(syminfo.tickerid, htf1_res, ma_color)
+htf1_o = request.security(syminfo.tickerid, htf1_res, atr_val)
+
+ltf1_c = request.security(syminfo.tickerid, ltf1_res, ma_color)
+ltf1_o = request.security(syminfo.tickerid, ltf1_res, atr_val)
+
+ltf2_c = request.security(syminfo.tickerid, ltf2_res, ma_color)
+ltf2_o = request.security(syminfo.tickerid, ltf2_res, atr_val)
+
+ma_val = ta.sma(source, ma_len)
+ma_up1 = ma_val + nz(htf1_o, atr_val)
+ma_up2 = ma_up1 + nz(htf2_o, atr_val)
+ma_down1 = ma_val - nz(ltf1_o, atr_val)
+ma_down2 = ma_down1 - nz(ltf2_o, atr_val)
+
+float r_sum = 0, float g_sum = 0, float b_sum = 0, float t_sum = 0
+int active_tfs = 0
+
+if show_htf2
+    r_sum += color.r(htf2_c), g_sum += color.g(htf2_c), b_sum += color.b(htf2_c), t_sum += color.t(htf2_c), active_tfs += 1
+if show_htf1
+    r_sum += color.r(htf1_c), g_sum += color.g(htf1_c), b_sum += color.b(htf1_c), t_sum += color.t(htf1_c), active_tfs += 1
+if show_main
+    r_sum += color.r(ma_color), g_sum += color.g(ma_color), b_sum += color.b(ma_color), t_sum += color.t(ma_color), active_tfs += 1
+if show_ltf1
+    r_sum += color.r(ltf1_c), g_sum += color.g(ltf1_c), b_sum += color.b(ltf1_c), t_sum += color.t(ltf1_c), active_tfs += 1
+if show_ltf2
+    r_sum += color.r(ltf2_c), g_sum += color.g(ltf2_c), b_sum += color.b(ltf2_c), t_sum += color.t(ltf2_c), active_tfs += 1
+
+active_tfs := math.max(1, active_tfs)
+combined_color = color.rgb(r_sum / active_tfs, g_sum / active_tfs, b_sum / active_tfs, t_sum / active_tfs)
+
+plot(show_combined or not show_htf2 ? na : ma_up2, color=htf2_c, linewidth=2, title="HTF 2 MA")
+plot(show_combined or not show_htf1 ? na : ma_up1, color=htf1_c, linewidth=3, title="HTF 1 MA")
+plot(show_combined or not show_main ? na : ma_val, color=ma_color, linewidth=4, title="Main MA")
+plot(show_combined or not show_ltf1 ? na : ma_down1, color=ltf1_c, linewidth=3, title="LTF 1 MA")
+plot(show_combined or not show_ltf2 ? na : ma_down2, color=ltf2_c, linewidth=2, title="LTF 2 MA")
+plot(show_combined ? ma_val : na, color=combined_color, linewidth=4, title="Combined MA")
+
+// ----------------------------------------------------
+// ãÍÇÓÈÇÊ áÇíæ ÈÑÇí ÌÏÇæá (Live Metrics)
+last_pivot_index = math.max(nz(last_low_idx, bar_index), nz(last_high_idx, bar_index))
+live_dist = math.max(1, bar_index - last_pivot_index)
+
+int live_green_c = 0
+int live_red_c = 0
+float live_green_v = 0.0
+float live_red_v = 0.0
+
+if barstate.islast
+    for i = 0 to live_dist - 1
+        if close[i] >= open[i]
+            live_green_c += 1
+            live_green_v += volume[i]
+        else
+            live_red_c += 1
+            live_red_v += volume[i]
+
+live_price_diff = close - close[live_dist]
+live_total_v = live_green_v + live_red_v
+
+// ãÍÇÓÈå Ñä ÇÎÊÕÇÕí áÇíæ (ÈÏæä á)
+float l_green_score = (live_green_c / live_dist) + (live_price_diff > 0 ? 1.0 : 0.0) + (live_total_v > 0 ? live_green_v / live_total_v : 0.0)
+float l_red_score = (live_red_c / live_dist) + (live_price_diff < 0 ? 1.0 : 0.0) + (live_total_v > 0 ? live_red_v / live_total_v : 0.0)
+
+color dedicated_live_color = l_green_score > l_red_score ? color.new(color.green, 20) : (l_red_score > l_green_score ? color.new(color.red, 20) : color.new(color.gray, 20))
+
+// ----------------------------------------------------
+// ÑÓã ÌÏÇæá
+var table tbl_analysis = table.new(position.top_right, 2, 6, bgcolor=color.new(color.black, 80), border_width=1, border_color=color.gray)
+var table tbl_status = table.new(position.bottom_right, 2, 4, bgcolor=color.new(color.black, 80), border_width=1, border_color=color.gray)
+
+if barstate.islast and show_tables
+    // ÌÏæá Çæá: Pivot to Live Analysis
+    table.cell(tbl_analysis, 0, 0, "Pivot to Live Analysis", text_color=color.white, text_halign=text.align_center, bgcolor=color.new(color.blue, 60))
+    
+    table.cell(tbl_analysis, 0, 1, "Bars Since Pivot", text_color=color.white, text_halign=text.align_left)
+    table.cell(tbl_analysis, 1, 1, str.tostring(live_dist), text_color=color.yellow, text_halign=text.align_center)
+    
+    table.cell(tbl_analysis, 0, 2, "Candles (G/R)", text_color=color.white, text_halign=text.align_left)
+    table.cell(tbl_analysis, 1, 2, str.tostring(live_green_c) + " / " + str.tostring(live_red_c), text_color=color.white, text_halign=text.align_center)
+    
+    table.cell(tbl_analysis, 0, 3, "Volume Focus", text_color=color.white, text_halign=text.align_left)
+    table.cell(tbl_analysis, 1, 3, live_green_v > live_red_v ? "Buying" : "Selling", text_color=live_green_v > live_red_v ? color.green : color.red, text_halign=text.align_center)
+    
+    table.cell(tbl_analysis, 0, 4, "Price Change", text_color=color.white, text_halign=text.align_left)
+    table.cell(tbl_analysis, 1, 4, str.tostring(live_price_diff, "#.##"), text_color=live_price_diff > 0 ? color.green : color.red, text_halign=text.align_center)
+
+    table.cell(tbl_analysis, 0, 5, "Live Pure Color", text_color=color.white, text_halign=text.align_left)
+    table.cell(tbl_analysis, 1, 5, "?????", text_color=dedicated_live_color, text_halign=text.align_center)
+
+    // ÌÏæá Ïæã: Live Market Status
+    string market_trend = close > ma_val ? "Bullish" : "Bearish"
+    color trend_color = close > ma_val ? color.green : color.red
+    
+    string strength = math.abs(close - ma_val) > atr_val ? "Strong" : "Weak/Ranging"
+    color strength_color = strength == "Strong" ? trend_color : color.gray
+
+    table.cell(tbl_status, 0, 0, "Live Market Status", text_color=color.white, text_halign=text.align_center, bgcolor=color.new(color.purple, 60))
+    
+    table.cell(tbl_status, 0, 1, "Price vs MA Trend", text_color=color.white, text_halign=text.align_left)
+    table.cell(tbl_status, 1, 1, market_trend, text_color=trend_color, text_halign=text.align_center)
+    
+    table.cell(tbl_status, 0, 2, "Trend Strength", text_color=color.white, text_halign=text.align_left)
+    table.cell(tbl_status, 1, 2, strength, text_color=strength_color, text_halign=text.align_center)
+    
+    table.cell(tbl_status, 0, 3, "Short-term Bias", text_color=color.white, text_halign=text.align_left)
+    table.cell(tbl_status, 1, 3, l_green_score > l_red_score ? "Buyers Active" : "Sellers Active", text_color=dedicated_live_color, text_halign=text.align_center)

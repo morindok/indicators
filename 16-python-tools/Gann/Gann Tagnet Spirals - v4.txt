@@ -1,0 +1,449 @@
+import dash
+from dash import dcc, html, Input, Output, State
+import plotly.graph_objects as go
+
+
+# ---  Ê«»⁄ Å«ÌÂ ---
+def generate_large_spiral_coords(size, reverse_dir=False):
+    coords = {}
+    r, c = 0, 0
+    coords[0] = (c, r)
+
+    if reverse_dir:
+        dr, dc = [0, 1, 0, -1], [-1, 0, 1, 0]
+    else:
+        dr, dc = [0, 1, 0, -1], [1, 0, -1, 0]
+
+    dir_idx, step_length, current_step, direction_changes = 0, 1, 0, 0
+
+    for i in range(1, size * size):
+        r, c = r + dr[dir_idx], c + dc[dir_idx]
+        coords[i] = (c, r)
+        current_step += 1
+        if current_step == step_length:
+            current_step, dir_idx = 0, (dir_idx + 1) % 4
+            direction_changes += 1
+            if direction_changes % 2 == 0:
+                step_length += 1
+    return coords
+
+
+def get_spiral_window(target_size, offset_x, offset_y, reverse_dir):
+    large_size = target_size + 40
+    if large_size % 2 == 0:
+        large_size += 1
+
+    matrix = [[-1] * large_size for _ in range(large_size)]
+    r, c = large_size // 2, large_size // 2
+    matrix[r][c] = 0
+
+    if reverse_dir:
+        dr, dc = [0, -1, 0, 1], [-1, 0, 1, 0]
+    else:
+        dr, dc = [0, -1, 0, 1], [1, 0, -1, 0]
+
+    dir_idx, step_length, current_step, direction_changes = 0, 1, 0, 0
+    for i in range(1, large_size * large_size):
+        r, c = r + dr[dir_idx], c + dc[dir_idx]
+        if 0 <= r < large_size and 0 <= c < large_size:
+            matrix[r][c] = i
+        current_step += 1
+        if current_step == step_length:
+            current_step, dir_idx = 0, (dir_idx + 1) % 4
+            direction_changes += 1
+            if direction_changes % 2 == 0:
+                step_length += 1
+
+    center = large_size // 2
+    r_start = center - target_size // 2 + offset_y
+    c_start = center - target_size // 2 + offset_x
+
+    window = []
+    for row in range(r_start, r_start + target_size):
+        row_vals = []
+        for col in range(c_start, c_start + target_size):
+            row_vals.append(matrix[row][col])
+        window.append(row_vals)
+    return window
+
+
+CARD_STYLE = {
+    'backgroundColor': '#ffffff', 'borderRadius': '12px', 'padding': '20px',
+    'boxShadow': '0 4px 6px rgba(0,0,0,0.05)', 'flex': '1', 'margin': '10px'
+}
+LABEL_STYLE = {
+    'display': 'block', 'marginBottom': '8px', 'fontWeight': '600',
+    'color': '#4a5568', 'fontSize': '14px'
+}
+INPUT_STYLE = {
+    'width': '100%', 'padding': '10px', 'borderRadius': '6px',
+    'border': '1px solid #cbd5e0', 'boxSizing': 'border-box', 'marginBottom': '15px'
+}
+
+app = dash.Dash(__name__)
+
+app.layout = html.Div(
+    style={
+        'fontFamily': 'Tahoma', 'direction': 'rtl',
+        'backgroundColor': '#f7fafc', 'minHeight': '100vh', 'padding': '40px'
+    },
+    children=[
+        html.H2("„«—ÅÌçùÂ«Ì œ—ê-«‰œ-œ—«Å ê‰", style={'textAlign': 'center'}),
+
+        html.Div(
+            style={
+                'display': 'flex', 'flexWrap': 'wrap',
+                'justifyContent': 'center', 'maxWidth': '1300px', 'margin': '0 auto'
+            },
+            children=[
+                html.Div(style=CARD_STYLE, children=[
+                    html.H4(" ‰ŸÌ„«  çÅ"),
+                    html.Label("ﬁÌ„  „—ò“Ì:"),
+                    dcc.Input(id='asc-center', type='number', value=60000.5, style=INPUT_STYLE),
+                    html.Label("ê«„ «›“«Ì‘Ì:"),
+                    dcc.Input(id='asc-step', type='number', value=10.25, style=INPUT_STYLE),
+                    html.Label("÷—Ì» ê«„:"),
+                    dcc.Input(id='asc-factor', type='number', value=1.0, style=INPUT_STYLE),
+                ]),
+                html.Div(style=CARD_STYLE, children=[
+                    html.H4(" ‰ŸÌ„«  —«” "),
+                    html.Label("ﬁÌ„  „—ò“Ì:"),
+                    dcc.Input(id='desc-center', type='number', value=63953.84, style=INPUT_STYLE),
+                    html.Label("ê«„ ò«Â‘Ì:"),
+                    dcc.Input(id='desc-step', type='number', value=630.04, style=INPUT_STYLE),
+                    html.Label("÷—Ì» ê«„:"),
+                    dcc.Input(id='desc-factor', type='number', value=1.618, style=INPUT_STYLE),
+                    # --- ›Ì·œ ÃœÌœ »—«Ì  «—ê  ”›«—‘Ì ---
+                    html.Label("÷—Ì»  «—ê  ”›«—‘Ì („À·« 1.44 Ì« 1.618):", style={'color': '#be185d'}),
+                    dcc.Input(id='desc-target-mult', type='number', value=1.44, step=0.01, style=INPUT_STYLE),
+                ]),
+                html.Div(style=CARD_STYLE, children=[
+                    html.H4("”«Œ «—"),
+                    html.Label("«»⁄«œ ÃœÊ· (N):"),
+                    dcc.Input(id='grid-size', type='number', value=7, step=2, min=3, style=INPUT_STYLE),
+                ]),
+            ]
+        ),
+
+        # ??????????????????????????????????????????????
+        # —«Â‰„«Ì —‰êù»‰œÌ Â«Ì·«Ì 
+        # ??????????????????????????????????????????????
+        html.Div(
+            style={
+                'display': 'flex', 'justifyContent': 'center', 'gap': '20px',
+                'margin': '20px auto', 'maxWidth': '1000px', 'flexWrap': 'wrap',
+                'backgroundColor': '#fff', 'borderRadius': '10px',
+                'padding': '14px 24px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.07)'
+            },
+            children=[
+                html.Div([
+                    html.Span("? ", style={'color': '#f59e0b', 'fontSize': '20px'}),
+                    html.Span(" ﬁ«ÿ⁄ ” Ê‰Ì", style={'fontWeight': '600', 'color': '#92400e'})
+                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '6px'}),
+                html.Div([
+                    html.Span("? ", style={'color': '#6366f1', 'fontSize': '20px'}),
+                    html.Span("‰ﬁÿÂ  ⁄«œ·", style={'fontWeight': '600', 'color': '#3730a3'})
+                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '6px'}),
+                html.Div([
+                    html.Span("? ", style={'color': '#10b981', 'fontSize': '20px'}),
+                    html.Span("Â„ù“„«‰ Â— œÊ ‘—ÿ", style={'fontWeight': '600', 'color': '#065f46'})
+                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '6px'}),
+                html.Div([
+                    html.Span("? ", style={'color': '#ec4899', 'fontSize': '20px'}),
+                    html.Span(" «—ê  ”›«—‘Ì", style={'fontWeight': '600', 'color': '#be185d'})
+                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '6px'}),
+            ]
+        ),
+
+        dcc.Store(id='offsets-store', data={'asc_x': 0, 'asc_y': 0, 'desc_x': 0, 'desc_y': 0}),
+
+        html.Div(
+            style={'display': 'flex', 'justifyContent': 'center', 'gap': '20px', 'marginTop': '20px'},
+            children=[
+                html.Div([
+                    html.H5("«”ÅÌ—«· ’⁄ÊœÌ („—»⁄ —« »ò‘Ìœ)", style={'textAlign': 'center'}),
+                    dcc.Graph(id='graph-left', config={'edits': {'shapePosition': True}})
+                ], style={'flex': '1'}),
+                html.Div([
+                    html.H5("«”ÅÌ—«· ‰“Ê·Ì („—»⁄ —« »ò‘Ìœ)", style={'textAlign': 'center'}),
+                    dcc.Graph(id='graph-right', config={'edits': {'shapePosition': True}})
+                ], style={'flex': '1'})
+            ]
+        ),
+
+        html.Div(
+            id='gann-table-container',
+            style={'display': 'flex', 'justifyContent': 'center', 'marginTop': '40px', 'direction': 'ltr'}
+        )
+    ]
+)
+
+
+@app.callback(
+    Output('offsets-store', 'data'),
+    [Input('graph-left', 'relayoutData'),
+     Input('graph-right', 'relayoutData')],
+    [State('offsets-store', 'data')]
+)
+def update_offsets_from_drag(relayout_left, relayout_right, current_offsets):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return current_offsets
+
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    relayout_data = relayout_left if trigger_id == 'graph-left' else relayout_right
+
+    if relayout_data and 'shapes[0].x0' in relayout_data:
+        x0 = relayout_data['shapes[0].x0']
+        x1 = relayout_data['shapes[0].x1']
+        y0 = relayout_data['shapes[0].y0']
+        y1 = relayout_data['shapes[0].y1']
+
+        center_x = round((x0 + x1) / 2)
+        center_y = round((y0 + y1) / 2)
+
+        if trigger_id == 'graph-left':
+            current_offsets['asc_x'] = center_x
+            current_offsets['asc_y'] = center_y
+        else:
+            current_offsets['desc_x'] = center_x
+            current_offsets['desc_y'] = center_y
+
+    return current_offsets
+
+
+@app.callback(
+    [Output('gann-table-container', 'children'),
+     Output('graph-left', 'figure'),
+     Output('graph-right', 'figure')],
+    [Input('asc-center', 'value'), Input('asc-step', 'value'), Input('asc-factor', 'value'),
+     Input('desc-center', 'value'), Input('desc-step', 'value'), Input('desc-factor', 'value'),
+     Input('desc-target-mult', 'value'), # Ê—ÊœÌ ÃœÌœ »Â  «»⁄ ò«·»ò «÷«›Â ‘œ
+     Input('grid-size', 'value'),
+     Input('offsets-store', 'data')]
+)
+def update_all(asc_center, asc_step, asc_factor, desc_center, desc_step, desc_factor, desc_target_mult, size, offsets):
+    # çò ò—œ‰ Œ«·Ì ‰»Êœ‰ „ﬁ«œÌ— («“ Ã„·Â ÷—Ì»  «—ê )
+    if None in [asc_center, asc_step, asc_factor, desc_center, desc_step, desc_factor, desc_target_mult, size]:
+        return html.Div(), go.Figure(), go.Figure()
+
+    if size % 2 == 0:
+        size += 1
+
+    asc_ox, asc_oy = offsets['asc_x'], offsets['asc_y']
+    desc_ox, desc_oy = offsets['desc_x'], offsets['desc_y']
+
+    large_size = size + 10
+
+    def create_spiral_fig(reverse_dir, current_ox, current_oy, color):
+        coords = generate_large_spiral_coords(large_size, reverse_dir)
+        x_vals = [coords[i][0] for i in range(large_size * large_size)]
+        y_vals = [coords[i][1] for i in range(large_size * large_size)]
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=x_vals, y=y_vals, mode='lines+markers',
+            marker=dict(size=4, color=color),
+            line=dict(width=1, color=color)
+        ))
+
+        half = size / 2
+        fig.add_shape(
+            type="rect",
+            x0=current_ox - half, y0=current_oy - half,
+            x1=current_ox + half, y1=current_oy + half,
+            line=dict(color="blue", width=3, dash="dash"),
+            fillcolor="rgba(0,0,255,0.1)",
+            editable=True
+        )
+
+        fig.update_layout(
+            xaxis=dict(showgrid=False, zeroline=True, scaleanchor="y", scaleratio=1),
+            yaxis=dict(showgrid=False, zeroline=True),
+            margin=dict(l=10, r=10, t=10, b=10),
+            dragmode="pan"
+        )
+        return fig
+
+    fig_left = create_spiral_fig(False, asc_ox, asc_oy, '#38a169')
+    fig_right = create_spiral_fig(True, desc_ox, desc_oy, '#e53e3e')
+
+    indices_left = get_spiral_window(size, asc_ox, -asc_oy, reverse_dir=False)
+    indices_right = get_spiral_window(size, desc_ox, -desc_oy, reverse_dir=True)
+
+    vals_left = []
+    for r in range(size):
+        row_vals = []
+        for c in range(size):
+            idx = indices_left[r][c]
+            if idx == 0:
+                price = asc_center
+            else:
+                if asc_factor == 1.0:
+                    price = asc_center + (idx * asc_step)
+                else:
+                    price = asc_center + (asc_step * (asc_factor ** (idx / 10.0))) * (idx ** 0.5)
+            row_vals.append(price)
+        vals_left.append(row_vals)
+
+    vals_right = []
+    for r in range(size):
+        row_vals = []
+        for c in range(size):
+            idx = indices_right[r][c]
+            if idx == 0:
+                price = desc_center
+            else:
+                if desc_factor == 1.0:
+                    price = desc_center - (idx * desc_step)
+                else:
+                    harmonic_multiplier = (desc_factor ** (idx % 4)) + (idx // 4)
+                    price = desc_center - (desc_step * harmonic_multiplier)
+            row_vals.append(price)
+        vals_right.append(row_vals)
+
+    # ?? Â«Ì·«Ì  ?:  ﬁ«ÿ⁄ ” Ê‰Ì ??????????????????????????????
+    closest_row_for_col = []
+    for c in range(size):
+        min_diff = float('inf')
+        best_r = -1
+        for r in range(size):
+            diff = abs(vals_left[r][c] - vals_right[r][c])
+            if diff < min_diff:
+                min_diff = diff
+                best_r = r
+        closest_row_for_col.append(best_r)
+
+    # ?? Â«Ì·«Ì  ?: ‰ﬁÿÂ  ⁄«œ· ﬁÌ„ Ì ?????????????????????????
+    price_equilibrium = (asc_center + desc_center) / 2
+    eq_min_diff = float('inf')
+    eq_best_r, eq_best_c = -1, -1
+    for r in range(size):
+        for c in range(size):
+            diff = abs(vals_right[r][c] - price_equilibrium)
+            if diff < eq_min_diff:
+                eq_min_diff = diff
+                eq_best_r, eq_best_c = r, c
+
+    # ?? Â«Ì·«Ì  ?: Ì«› ‰ Õ„«Ì  ”›«—‘Ì ( «—ê  „Œ›Ì) ???????????
+    # ›—„Ê· ÃœÌœ »— «”«” ÷—Ì»Ì òÂ œ— ò«œ— Ê«—œ „Ìùò‰Ìœ
+    target_distance = desc_step * desc_target_mult
+    expected_support = desc_center - target_distance
+
+    target_r, target_c = -1, -1
+    min_diff_to_target = float('inf')
+    for r in range(size):
+        for c in range(size):
+            diff = abs(vals_right[r][c] - expected_support)
+            if diff < min_diff_to_target:
+                min_diff_to_target = diff
+                target_r, target_c = r, c
+
+    # ?? ”«Œ  —œÌ›ùÂ«Ì ÃœÊ· ??????????????????????????????????????????????
+    rows = []
+
+    header_info = html.Tr([
+        html.Td(
+            f"‰ﬁÿÂ  ⁄«œ· ﬁÌ„ Ì: {price_equilibrium:,.2f} |  «—ê  ”›«—‘Ì («‰ Ÿ«— „«—ò ): {expected_support:,.2f}",
+            colSpan=size * 2 + 1,
+            style={
+                'textAlign': 'center', 'padding': '8px',
+                'backgroundColor': '#ede9fe', 'color': '#4c1d95',
+                'fontWeight': '700', 'fontSize': '13px',
+                'border': '1px solid #ddd6fe'
+            }
+        )
+    ])
+    rows.append(header_info)
+
+    for r in range(size):
+        cells = []
+
+        # ?? ” Ê‰ùÂ«Ì ÃœÊ· çÅ ??
+        for c in range(size):
+            val = vals_left[r][c]
+            is_col_cross = (r == closest_row_for_col[c])
+            is_eq = (r == eq_best_r and c == eq_best_c)
+
+            if is_eq and is_col_cross:
+                bg = '#6ee7b7'
+                fw = '800'
+                border = '2px solid #059669'
+            elif is_eq:
+                bg = '#c7d2fe'
+                fw = '700'
+                border = '2px solid #6366f1'
+            elif is_col_cross:
+                bg = '#fef08a'
+                fw = '600'
+                border = '1px solid #e2e8f0'
+            else:
+                bg = '#ffffff'
+                fw = 'normal'
+                border = '1px solid #e2e8f0'
+
+            cells.append(html.Td(
+                f"{val:g}",
+                style={
+                    'border': border, 'padding': '10px', 'textAlign': 'center',
+                    'backgroundColor': bg, 'fontWeight': fw
+                }
+            ))
+
+        # ” Ê‰ Ãœ«ò‰‰œÂ
+        cells.append(html.Td("", style={'width': '10px', 'backgroundColor': '#cbd5e0'}))
+
+        # ?? ” Ê‰ùÂ«Ì ÃœÊ· —«”  ??
+        for c in range(size):
+            val = vals_right[r][c]
+            is_col_cross = (r == closest_row_for_col[c])
+            is_eq = (r == eq_best_r and c == eq_best_c)
+            is_golden_target = (r == target_r and c == target_c)
+
+            if is_golden_target:
+                bg = '#fbcfe8'  # ’Ê— Ì ( «—ê  ”›«—‘Ì)
+                fw = '800'
+                border = '2px solid #be185d'
+                title_txt = f' «—ê  ”›«—‘Ì | «‰ Ÿ«—: {expected_support:,.2f}'
+            elif is_eq and is_col_cross:
+                bg = '#6ee7b7'
+                fw = '800'
+                border = '2px solid #059669'
+                title_txt = f' ⁄«œ· ﬁÌ„ Ì +  ﬁ«ÿ⁄ | ›«’·Â «“  ⁄«œ·: {abs(val - price_equilibrium):,.1f}'
+            elif is_eq:
+                bg = '#c7d2fe'
+                fw = '700'
+                border = '2px solid #6366f1'
+                title_txt = f'‰ﬁÿÂ  ⁄«œ· ﬁÌ„ Ì | ›«’·Â: {abs(val - price_equilibrium):,.1f}'
+            elif is_col_cross:
+                bg = '#fef08a'
+                fw = '600'
+                border = '1px solid #e2e8f0'
+                title_txt = ''
+            else:
+                bg = '#ffffff'
+                fw = 'normal'
+                border = '1px solid #e2e8f0'
+                title_txt = ''
+
+            cells.append(html.Td(
+                f"{val:g}",
+                title=title_txt,
+                style={
+                    'border': border, 'padding': '10px', 'textAlign': 'center',
+                    'backgroundColor': bg, 'fontWeight': fw
+                }
+            ))
+
+        rows.append(html.Tr(cells))
+
+    table = html.Table(
+        rows,
+        style={'borderCollapse': 'collapse', 'backgroundColor': 'white'}
+    )
+
+    return table, fig_left, fig_right
+
+
+if __name__ == '__main__':
+    app.run(debug=True)

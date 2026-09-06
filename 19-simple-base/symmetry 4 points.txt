@@ -1,0 +1,47 @@
+//@version=5
+indicator("Cross-Symmetry Global Symmetrical Plots", overlay=true)
+
+// --- Line 1 (Points 1 & 2) ---
+t1 = input.time(0,  title="Line 1 - Point 1", confirm=true, inline="L1_p1")
+p1 = input.price(0, title="", confirm=true, inline="L1_p1")
+t2 = input.time(0,  title="Line 1 - Point 2", confirm=true, inline="L1_p2")
+p2 = input.price(0, title="", confirm=true, inline="L1_p2")
+
+// --- Line 2 (Points 3 & 4) ---
+t3 = input.time(0,  title="Line 2 - Point 1", confirm=true, inline="L2_p1")
+p3 = input.price(0, title="", confirm=true, inline="L2_p1")
+t4 = input.time(0,  title="Line 2 - Point 2", confirm=true, inline="L2_p2")
+p4 = input.price(0, title="", confirm=true, inline="L2_p2")
+
+src = input.source(close, title="Source Price")
+
+// --- 1. Create Visual Infinite Lines ---
+var line l1 = line.new(t1, p1, t2, p2, xloc=xloc.bar_time, extend=extend.both, color=color.blue, width=2)
+var line l2 = line.new(t3, p3, t4, p4, xloc=xloc.bar_time, extend=extend.both, color=color.orange, width=2)
+
+// --- 2. Mathematical Y-Value Calculation Over Time ---
+// »——”Ì „Ìùò‰Ì„ òÂ ò«—»— Õ „« ‰ﬁ«ÿ —« «‰ Œ«» ò—œÂ »«‘œ
+bool is_ready = (t1 != 0 and t2 != 0 and t3 != 0 and t4 != 0)
+
+// „Õ«”»Â ‘Ì» ŒÿÊÿ («Œ ·«› ﬁÌ„   ﬁ”Ì„ »— «Œ ·«› “„«‰)
+float m1 = (t2 != t1) ? (p2 - p1) / (t2 - t1) : 0
+float m2 = (t4 != t3) ? (p4 - p3) / (t4 - t3) : 0
+
+// „Õ«”»Â ﬁÌ„  œﬁÌﬁ —ÊÌ Œÿ »—«Ì ò‰œ· ›⁄·Ì »« „⁄«œ·Â Œÿ: Y = p1 + m * (X - t1)
+float y_line1 = is_ready ? p1 + m1 * (time - t1) : na
+float y_line2 = is_ready ? p3 + m2 * (time - t3) : na
+
+// --- 3. Calculate Symmetries ---
+//  ﬁ«—‰ùÂ«Ì «Ê·ÌÂ
+float sym1 = is_ready ? (2 * y_line1) - src : na
+float sym2 = is_ready ? (2 * y_line2) - src : na
+
+//  ﬁ«—‰ùÂ«Ì „ ﬁ«»· (ò—«”)
+float sym1_cross = is_ready ? (2 * y_line2) - sym1 : na
+float sym2_cross = is_ready ? (2 * y_line1) - sym2 : na
+
+// --- 4. Plot Symmetries ---
+plot(sym1, title="Symmetry Line 1", color=color.new(color.fuchsia, 60), linewidth=1, style=plot.style_line)
+plot(sym2, title="Symmetry Line 2", color=color.new(color.yellow, 60),  linewidth=1, style=plot.style_line)
+plot(sym1_cross, title="Cross Sym 1", color=color.red,   linewidth=2, style=plot.style_cross)
+plot(sym2_cross, title="Cross Sym 2", color=color.green, linewidth=2, style=plot.style_cross)

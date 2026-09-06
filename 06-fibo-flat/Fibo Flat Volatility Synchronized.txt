@@ -1,0 +1,139 @@
+//@version=5
+indicator("Flat Multiplier{Morindok}", overlay=true)
+
+// Inputs
+x1 = input.time(timestamp("2024-01-01 00:00"), "Start Range", confirm=true)
+x2 = input.time(timestamp("2024-01-02 00:00"), "End Range", confirm=true)
+multiplier = input.float(1.618, "Time Multiplier (Length)")
+height_multiplier = input.float(1.618, "Height Multiplier", step=0.01)
+price_source = input.source(close, "Price Source (Red Line)", group="Price Sources")
+symmetric_source = input.source(close, "Price Source (Blue Line)", group="Price Sources")
+symmetric_enabled = input.bool(false, "Enable Symmetric Line")
+parabolic_enabled = input.bool(true, "Enable Smooth Moving Curve", group="Style Settings")
+
+// Variables
+var float stepped_price = na
+var float symmetric_price = na
+var float last_stepped_price = na
+var int segment_start_bar = na
+var float current_segment_length = na
+var int bars_in_range = 0
+var bool range_completed = false
+var bool limit_label_drawn = false 
+
+// ‰ﬁ«ÿ «» œ« Ê «‰ Â«Ì Ê«ﬁ⁄Ì Â— Å·Â
+var float seg_start_p = na
+var float seg_end_p = na
+var float seg_start_sym = na
+var float seg_end_sym = na
+
+// ‘„«—‘ ò‰œ·ùÂ«Ì »«“Â «Ê·ÌÂ
+in_range = time >= x1 and time <= x2
+if in_range
+    bars_in_range += 1
+
+// „ﬁœ«—œÂÌ «Ê·ÌÂ œ— ‰ﬁÿÂ ‘—Ê⁄ »«“Â
+if time >= x1 and na(stepped_price)
+    stepped_price := price_source
+    symmetric_price := symmetric_source
+    segment_start_bar := bar_index
+    
+    seg_start_p := price_source
+    seg_end_p := price_source
+    seg_start_sym := symmetric_source
+    seg_end_sym := symmetric_source
+
+//  ‘ŒÌ’ Œ—ÊÃ «“ »«“Â «Ê·ÌÂ Ê  ⁄—Ì› Å·Â «Ê·
+just_exited_range = not in_range and in_range[1]
+if just_exited_range
+    range_completed := true
+    last_stepped_price := stepped_price
+    
+    step_distance = price_source - last_stepped_price
+    new_price = last_stepped_price + (step_distance * height_multiplier)
+    
+    seg_start_p := last_stepped_price
+    seg_end_p := new_price
+    stepped_price := new_price
+    
+    if symmetric_enabled and not na(last_stepped_price)
+        new_sym = last_stepped_price * 2 - symmetric_source
+        seg_start_sym := symmetric_price
+        seg_end_sym := new_sym
+        symmetric_price := new_sym
+    else
+        seg_start_sym := symmetric_price
+        seg_end_sym := symmetric_source
+        symmetric_price := symmetric_source
+        
+    segment_start_bar := bar_index
+    current_segment_length := bars_in_range * multiplier
+    
+    if multiplier < 1.0 and math.round(current_segment_length) <= 1 and not limit_label_drawn
+        label.new(bar_index, stepped_price, text="End", color=color.orange, textcolor=color.white, style=label.style_label_down, size=size.small)
+        limit_label_drawn := true
+
+// ¬ÅœÌ  Ê «‰ ﬁ«· »Â Å·ÂùÂ«Ì »⁄œÌ
+if range_completed and not na(current_segment_length) and bar_index >= segment_start_bar + math.round(current_segment_length)
+    last_stepped_price := stepped_price
+    
+    step_distance = price_source - last_stepped_price
+    new_price = last_stepped_price + (step_distance * height_multiplier)
+    
+    seg_start_p := last_stepped_price
+    seg_end_p := new_price
+    stepped_price := new_price
+    
+    if symmetric_enabled and not na(last_stepped_price)
+        new_sym = last_stepped_price * 2 - symmetric_source
+        seg_start_sym := symmetric_price
+        seg_end_sym := new_sym
+        symmetric_price := new_sym
+    else
+        seg_start_sym := symmetric_price
+        seg_end_sym := symmetric_source
+        symmetric_price := symmetric_source
+        
+    segment_start_bar := bar_index
+    current_segment_length := current_segment_length * multiplier
+
+    if multiplier < 1.0 and math.round(current_segment_length) <= 1 and not limit_label_drawn
+        label.new(bar_index, stepped_price, text="End", color=color.orange, textcolor=color.white, style=label.style_label_down, size=size.small)
+        limit_label_drawn := true
+
+// „Õ«”»Â „ﬁœ«— ‰„«Ì‘ ŒÿÊÿ
+float display_price = na
+float display_symmetric_price = na
+
+if time >= x1
+    if parabolic_enabled and range_completed and not na(current_segment_length) and current_segment_length > 0
+        seg_len = math.max(1, math.round(current_segment_length))
+        // ÅÌ‘—›  ê«„ (»Ì‰ 0  « 1)
+        t = math.min(1.0, (bar_index - segment_start_bar) / seg_len)
+        
+        // ›—„Ê· ‘ «»ùœÂÌ ò”Ì‰Ê”Ì ‰—„ »—«Ì «ÌÃ«œ «‰Õ‰«Ì „·«Ì„ œ— ‘—Ê⁄ Ê Å«Ì«‰ Å·Â
+        // «Ì‰ ò«— »«⁄À „Ìù‘Êœ «» œ« Ê «‰ Â« ò«„·« „„«” Ê „ ’· »Â ﬁÌ„  »„«‰‰œ
+        float smooth_t = 0.5 - 0.5 * math.cos(t * math.pi)
+        
+        //  —òÌ» Ê“‰ùœ«— »— «”«” ‰Ê”«‰ ﬁÌ„  “‰œÂ (»—«Ì Õ›Ÿ ‘œ‰ œ— »«“Â ‰Ê”«‰«  Ê«ﬁ⁄Ì)
+        float price_wave = price_source - seg_start_p
+        float sym_wave = symmetric_source - seg_start_sym
+        
+        // Œÿ Å«ÌÂ „‰Õ‰Ì „«»Ì‰ ‘—Ê⁄ Ê Å«Ì«‰ Å·Â
+        float base_curve = seg_start_p + (seg_end_p - seg_start_p) * smooth_t
+        float base_sym_curve = seg_start_sym + (seg_end_sym - seg_start_sym) * smooth_t
+        
+        // «⁄„«· ‰Ê”«‰«  ﬁÌ„  œ— ÿÊ· „”Ì— »Â ‰ÕÊÌ òÂ œ— «‰ Â«Ì ”ê„‰  «À— ¬‰ »Â ’›— »—”œ (ÃÂ  « ’«· œﬁÌﬁ »Â ‰ﬁÿÂ Å«Ì«‰)
+        float noise_dampener = 1.0 - smooth_t
+        display_price := base_curve + (price_wave * noise_dampener * 0.5)
+        display_symmetric_price := base_sym_curve + (sym_wave * noise_dampener * 0.5)
+    else
+        display_price := stepped_price
+        display_symmetric_price := symmetric_price
+
+//  ⁄ÌÌ‰ ‰Ê⁄ «” «Ì· Œÿ
+plot_style = parabolic_enabled ? plot.style_line : plot.style_stepline
+
+// —”„ ŒÿÊÿ —ÊÌ ‰„Êœ«—
+plot(time >= x1 ? display_price : na, "Stepped/Moving Curve", color=color.red, linewidth=2, style=plot_style)
+plot(symmetric_enabled and time >= x1 ? display_symmetric_price : na, "Symmetric Line", color=color.blue, linewidth=2, style=plot_style)

@@ -1,0 +1,19 @@
+//@version=6
+indicator("Mirror Oscillator", overlay=true)
+
+n = input.int(100, minval=2)
+
+centralMirrorLevel = ta.highest(high, 500) / 2 + ta.lowest(low, 500) / 2
+mirrorLevel1 = ta.highest(high, n * 2)
+mirrorLevel2 = ta.lowest(low, n * 2)
+
+d0 = (close - centralMirrorLevel) / centralMirrorLevel * 100
+d1 = (close - mirrorLevel1)       / mirrorLevel1       * 100
+d2 = (close - mirrorLevel2)       / mirrorLevel2       * 100
+
+osc = ta.ema((d0 + d1 + d2) / 3, 3)
+
+// ãÞíÇÓÐÇÑí Ñæí ÇÑÊ ÞíãÊ
+oscScaled = close + osc * close / 100
+
+plot(oscScaled, title="Osc", color=oscScaled >= close ? color.teal : color.red, linewidth=2)

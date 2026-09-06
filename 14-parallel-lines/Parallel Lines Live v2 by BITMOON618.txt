@@ -1,0 +1,174 @@
+//@version=5
+indicator("Parallel Lines Live{Morindok}V2 by BITMOON618", overlay=true, max_lines_count=100)
+
+// --- تنظیمات و وزن‌دهی فاکتورها ---
+i_step_mult = input.float(1.0, "ضریب گسترش شبکه", step=0.1, group="هندسه شبکه")
+
+i_w_pa  = input.float(0.4, "وزن فاکتور پرایس اکشن", step=0.1, group="مدل احتمالات (باید جمعا 1.0 باشد)")
+i_w_vol = input.float(0.4, "وزن فاکتور حجم معاملات", step=0.1, group="مدل احتمالات (باید جمعا 1.0 باشد)")
+i_w_rej = input.float(0.2, "وزن فاکتور ریجکت (سایه‌ها)", step=0.1, group="مدل احتمالات (باید جمعا 1.0 باشد)")
+
+// نرمال‌سازی وزن‌ها در صورت اشتباه کاربر
+float total_w = i_w_pa + i_w_vol + i_w_rej
+float w_pa  = i_w_pa / total_w
+float w_vol = i_w_vol / total_w
+float w_rej = i_w_rej / total_w
+
+var float phi_ratio = 1.0 + (0.001618 * i_step_mult)
+
+// --- حافظه‌های تحلیلی (نقشه‌برداری دیتا) ---
+var touch_map      = map.new<int, int>()
+var bull_close_map = map.new<int, int>()
+var bear_close_map = map.new<int, int>()
+var bull_vol_map   = map.new<int, float>()
+var bear_vol_map   = map.new<int, float>()
+var bull_rej_map   = map.new<int, int>()
+var bear_rej_map   = map.new<int, int>()
+
+// --- سنجش فاکتورها تا قبل از برخورد لایو ---
+bool update_history = barstate.ishistory or barstate.isconfirmed
+
+if update_history
+    if low > 0 and high > 0
+        int min_N = int(math.ceil(math.log(low) / math.log(phi_ratio)))
+        int max_N = int(math.floor(math.log(high) / math.log(phi_ratio)))
+        
+        if min_N <= max_N
+            // دیتای کندل فعلی
+            float bar_vol = na(volume) ? 1.0 : volume
+            bool is_bull = close > open
+            bool is_bear = close < open
+            
+            for i = min_N to max_N
+                float lvl = math.pow(phi_ratio, i)
+                
+                // 1. ثبت برخورد کلی
+                int tc = touch_map.get(i)
+                touch_map.put(i, na(tc) ? 1 : tc + 1)
+                
+                // 2 و 3. ثبت پرایس اکشن، حجم و ریجکت
+                if is_bull
+                    // صعودی
+                    int bc = bull_close_map.get(i)
+                    bull_close_map.put(i, na(bc) ? 1 : bc + 1)
+                    
+                    float bv = bull_vol_map.get(i)
+                    bull_vol_map.put(i, na(bv) ? bar_vol : bv + bar_vol)
+                    
+                    // تشخیص ریجکت صعودی (حمایت شدن: سایه پایین خط بوده ولی قیمت بالای خط بسته شده)
+                    if low <= lvl and close > lvl
+                        int br = bull_rej_map.get(i)
+                        bull_rej_map.put(i, na(br) ? 1 : br + 1)
+                        
+                else if is_bear
+                    // نزولی
+                    int bc = bear_close_map.get(i)
+                    bear_close_map.put(i, na(bc) ? 1 : bc + 1)
+                    
+                    float bv = bear_vol_map.get(i)
+                    bear_vol_map.put(i, na(bv) ? bar_vol : bv + bar_vol)
+                    
+                    // تشخیص ریجکت نزولی (مقاومت شدن: سایه بالای خط بوده ولی قیمت پایین خط بسته شده)
+                    if high >= lvl and close < lvl
+                        int br = bear_rej_map.get(i)
+                        bear_rej_map.put(i, na(br) ? 1 : br + 1)
+
+// --- پردازش و خروجی لایو ---
+if barstate.islast
+    int below_idx = int(math.floor(math.log(close) / math.log(phi_ratio)))
+    int above_idx = int(math.ceil(math.log(close) / math.log(phi_ratio)))
+    if below_idx == above_idx
+        above_idx += 1
+
+    int center_N = int(math.round(math.log(close) / math.log(phi_ratio)))
+    
+    // رسم شبکه
+    for i = center_N - 50 to center_N + 49
+        float lvl = math.pow(phi_ratio, i)
+        color line_col = color.new(#d4af37, 75)
+        int line_wid = 1
+        
+        if i == above_idx
+            line_col := color.new(color.red, 20)
+            line_wid := 2
+        else if i == below_idx
+            line_col := color.new(color.green, 20)
+            line_wid := 2
+            
+        line.new(bar_index, lvl, bar_index + 10, lvl, color=line_col, width=line_wid, extend=extend.right)
+        
+    // جدول رابط کاربری
+    var table prob_table = table.new(position.top_right, 4, 12, border_width=1, border_color=color.rgb(40, 40, 40))
+    
+    color bg_header = color.rgb(15, 15, 15)
+    color text_header = color.rgb(212, 175, 55)
+    
+    table.cell(prob_table, 0, 0, "سطح هندسی", bgcolor=bg_header, text_color=text_header)
+    table.cell(prob_table, 1, 0, "وضعیت تحلیل", bgcolor=bg_header, text_color=text_header)
+    table.cell(prob_table, 2, 0, "وزن صعود", bgcolor=bg_header, text_color=text_header)
+    table.cell(prob_table, 3, 0, "وزن نزول", bgcolor=bg_header, text_color=text_header)
+
+    int row = 1
+    for i = center_N + 5 to center_N - 5
+        float lvl = math.pow(phi_ratio, i)
+        
+        // استخراج دیتا
+        int tc = na(touch_map.get(i)) ? 0 : touch_map.get(i)
+        
+        int bull_c = na(bull_close_map.get(i)) ? 0 : bull_close_map.get(i)
+        int bear_c = na(bear_close_map.get(i)) ? 0 : bear_close_map.get(i)
+        
+        float bull_v = na(bull_vol_map.get(i)) ? 0.0 : bull_vol_map.get(i)
+        float bear_v = na(bear_vol_map.get(i)) ? 0.0 : bear_vol_map.get(i)
+        
+        int bull_r = na(bull_rej_map.get(i)) ? 0 : bull_rej_map.get(i)
+        int bear_r = na(bear_rej_map.get(i)) ? 0 : bear_rej_map.get(i)
+        
+        // محاسبات احتمالات ترکیبی
+        float total_v = bull_v + bear_v
+        
+        // امتیازات صعودی
+        float pa_bull_score  = tc > 0 ? (bull_c / tc) : 0.0
+        float vol_bull_score = total_v > 0 ? (bull_v / total_v) : 0.0
+        float rej_bull_score = tc > 0 ? (bull_r / tc) : 0.0
+        float final_bull_prob = ((pa_bull_score * w_pa) + (vol_bull_score * w_vol) + (rej_bull_score * w_rej)) * 100.0
+        
+        // امتیازات نزولی
+        float pa_bear_score  = tc > 0 ? (bear_c / tc) : 0.0
+        float vol_bear_score = total_v > 0 ? (bear_v / total_v) : 0.0
+        float rej_bear_score = tc > 0 ? (bear_r / tc) : 0.0
+        float final_bear_prob = ((pa_bear_score * w_pa) + (vol_bear_score * w_vol) + (rej_bear_score * w_rej)) * 100.0
+        
+        // نرمال‌سازی نهایی برای اطمینان از سقف 100 درصد (در صورتی که دیتای کمی وجود داشته باشد)
+        float total_prob = final_bull_prob + final_bear_prob
+        if total_prob > 0
+            final_bull_prob := (final_bull_prob / total_prob) * 100.0
+            final_bear_prob := (final_bear_prob / total_prob) * 100.0
+
+        // گرافیک وضعیت لایو
+        bool is_touched_now = (high >= lvl) and (low <= lvl)
+        string status_text = ""
+        color bg_c = color.rgb(25, 25, 25)
+        color text_c = color.rgb(180, 180, 180)
+        
+        if is_touched_now
+            status_text := "💥 قطعی شد"
+            bg_c := color.rgb(184, 134, 11) 
+            text_c := color.white
+        else if i == above_idx
+            status_text := "مقاومت هدف"
+            bg_c := color.new(color.red, 70)
+            text_c := color.white
+        else if i == below_idx
+            status_text := "حمایت هدف"
+            bg_c := color.new(color.green, 80)
+            text_c := color.white
+        else
+            status_text := "آماده"
+            
+        table.cell(prob_table, 0, row, str.tostring(math.round(lvl, 5)), bgcolor=bg_c, text_color=text_c)
+        table.cell(prob_table, 1, row, status_text, bgcolor=bg_c, text_color=text_c)
+        table.cell(prob_table, 2, row, str.tostring(math.round(final_bull_prob, 1)) + "%", bgcolor=color.rgb(10, 40, 10), text_color=color.rgb(80, 255, 80))
+        table.cell(prob_table, 3, row, str.tostring(math.round(final_bear_prob, 1)) + "%", bgcolor=color.rgb(40, 10, 10), text_color=color.rgb(255, 80, 80))
+        
+        row += 1

@@ -1,0 +1,198 @@
+import dash
+from dash import dcc, html, Input, Output
+
+
+def generate_hex_spiral_indices(rings, reverse_dir=False):
+    """
+     Ê·Ìœ „« —Ì” ‘‘ù÷·⁄Ì („ò⁄» ê‰)
+    »—«Ì —‰œ— ’ÕÌÕ œ— ÃœÊ· HTML «“ ‘»òÂù«Ì «” ›«œÂ „Ìùò‰Ì„ òÂ ” Ê‰ùÂ«Ì ¬‰ Ìòùœ—„Ì«‰ Å— „Ìù‘Ê‰œ.
+    """
+    rows = 2 * rings + 1
+    cols = 4 * rings + 1
+    matrix = [[-1] * cols for _ in range(rows)]
+    center_r, center_c = rings, 2 * rings
+    matrix[center_r][center_c] = 0
+
+    # »—œ«—Â«Ì Õ—ò Ì œ— ‘»òÂ „ ‰«Ê» ‘‘ù÷·⁄Ì
+    if reverse_dir:
+        # ÃÂ  Õ—ò  ”«⁄ ùê—œ (»—«Ì «”ÅÌ—«· œÊ„)
+        dirs = [(1, -1), (0, -2), (-1, -1), (-1, 1), (0, 2), (1, 1)]
+    else:
+        # ÃÂ  Õ—ò  Å«œ”«⁄ ùê—œ (»—«Ì «”ÅÌ—«· «Ê·)
+        dirs = [(-1, -1), (0, -2), (1, -1), (1, 1), (0, 2), (-1, 1)]
+
+    idx = 1
+    for k in range(1, rings + 1):
+        # ‘—Ê⁄ Â— Õ·ﬁÂ «“ „‰ ÂÌù«·ÌÂ ”„  —«” 
+        r = center_r
+        c = center_c + 2 * k
+        for dr, dc in dirs:
+            for _ in range(k):
+                matrix[r][c] = idx
+                idx += 1
+                r += dr
+                c += dc
+
+    return matrix, rows, cols
+
+
+# «” «Ì·ùÂ«Ì À«»  —«»ÿ ò«—»—Ì
+CARD_STYLE = {'backgroundColor': '#ffffff', 'borderRadius': '12px', 'padding': '20px',
+              'boxShadow': '0 4px 6px rgba(0,0,0,0.05)', 'flex': '1', 'margin': '10px', 'border': '1px solid #e2e8f0'}
+LABEL_STYLE = {'display': 'block', 'marginBottom': '8px', 'fontWeight': '600', 'color': '#4a5568', 'fontSize': '14px'}
+INPUT_STYLE = {'width': '100%', 'padding': '10px', 'borderRadius': '6px', 'border': '1px solid #cbd5e0',
+               'boxSizing': 'border-box', 'marginBottom': '15px', 'fontSize': '14px'}
+
+app = dash.Dash(__name__)
+
+app.layout = html.Div(
+    style={'fontFamily': 'Tahoma, sans-serif', 'direction': 'rtl', 'backgroundColor': '#f7fafc', 'minHeight': '100vh',
+           'padding': '40px'}, children=[
+        html.H2("ç«—  „ò⁄» ê‰ (‘‘ù÷·⁄Ì) »« Â«Ì·«Ì  „ﬁ«œÌ— „„«”",
+                style={'textAlign': 'center', 'color': '#2d3748', 'marginBottom': '30px', 'fontWeight': 'bold'}),
+
+        html.Div(style={'display': 'flex', 'flexWrap': 'wrap', 'justifyContent': 'center', 'maxWidth': '1200px',
+                        'margin': '0 auto'}, children=[
+            html.Div(style=CARD_STYLE, children=[
+                html.H4("«”ÅÌ—«· ’⁄ÊœÌ (çÅ)",
+                        style={'color': '#38a169', 'marginTop': '0', 'borderBottom': '2px solid #38a169',
+                               'paddingBottom': '10px'}),
+                html.Label("ﬁÌ„  „—ò“Ì:", style=LABEL_STYLE),
+                dcc.Input(id='asc-center', type='number', value=60000.5, step='any', style=INPUT_STYLE),
+                html.Label("ê«„ «›“«Ì‘Ì:", style=LABEL_STYLE),
+                dcc.Input(id='asc-step', type='number', value=10.25, step='any', style=INPUT_STYLE),
+            ]),
+            html.Div(style=CARD_STYLE, children=[
+                html.H4("«”ÅÌ—«· ‰“Ê·Ì (—«” )",
+                        style={'color': '#e53e3e', 'marginTop': '0', 'borderBottom': '2px solid #e53e3e',
+                               'paddingBottom': '10px'}),
+                html.Label("ﬁÌ„  „—ò“Ì:", style=LABEL_STYLE),
+                dcc.Input(id='desc-center', type='number', value=60500.0, step='any', style=INPUT_STYLE),
+                html.Label("ê«„ ò«Â‘Ì:", style=LABEL_STYLE),
+                dcc.Input(id='desc-step', type='number', value=15.5, step='any', style=INPUT_STYLE),
+            ]),
+            html.Div(style=CARD_STYLE, children=[
+                html.H4("”«Œ «— ÃœÊ· „ò⁄»Ì",
+                        style={'color': '#3182ce', 'marginTop': '0', 'borderBottom': '2px solid #3182ce',
+                               'paddingBottom': '10px'}),
+                html.Label(" ⁄œ«œ Õ·ﬁÂùÂ« (‘⁄«⁄ „ò⁄»):", style=LABEL_STYLE),
+                dcc.Input(id='rings-count', type='number', value=4, min=1, max=10, step=1, style=INPUT_STYLE),
+            ]),
+        ]),
+
+        html.Div(id='gann-table-container',
+                 style={'display': 'flex', 'justifyContent': 'center', 'marginTop': '40px', 'overflowX': 'auto'})
+    ])
+
+
+@app.callback(
+    Output('gann-table-container', 'children'),
+    [Input('asc-center', 'value'), Input('asc-step', 'value'),
+     Input('desc-center', 'value'), Input('desc-step', 'value'),
+     Input('rings-count', 'value')]
+)
+def update_table(asc_center, asc_step, desc_center, desc_step, rings):
+    if None in [asc_center, asc_step, desc_center, desc_step, rings]:
+        return html.Div("·ÿ›«  „«„Ì „ﬁ«œÌ— —« Ê«—œ ò‰Ìœ.", style={'color': 'gray'})
+
+    rings = int(rings)
+
+    #  Ê·Ìœ „Œ ’«  ‘»òÂù«Ì
+    indices_left, rows, cols = generate_hex_spiral_indices(rings, reverse_dir=False)
+    indices_right, _, _ = generate_hex_spiral_indices(rings, reverse_dir=True)
+
+    # 1. „Õ«”»Â „ﬁ«œÌ— œ— ”·Ê·ùÂ«Ì „⁄ »— (Ã«Â«ÌÌ òÂ -1 ‰Ì” )
+    vals_left = [[(asc_center + (indices_left[r][c] * asc_step) if indices_left[r][c] != -1 else None)
+                  for c in range(cols)] for r in range(rows)]
+    vals_right = [[(desc_center - (indices_right[r][c] * desc_step) if indices_right[r][c] != -1 else None)
+                   for c in range(cols)] for r in range(rows)]
+
+    # 2. ÅÌœ« ò—œ‰ —œÌ›Ì òÂ œ— Â— ” Ê‰ ò„ —Ì‰ «Œ ·«› —« œ«—œ (’—› ‰Ÿ— «“ ”·Ê·ùÂ«Ì Œ«·Ì)
+    closest_row_for_col = []
+    for c in range(cols):
+        min_diff = float('inf')
+        best_r = -1
+        for r in range(rows):
+            if vals_left[r][c] is not None and vals_right[r][c] is not None:
+                diff = abs(vals_left[r][c] - vals_right[r][c])
+                if diff < min_diff:
+                    min_diff = diff
+                    best_r = r
+        closest_row_for_col.append(best_r)
+
+    # 3. ”«Œ «—œÂÌ HTML ÃœÊ·
+    html_rows = []
+    CELL_SIZE = '52px'  # «‰œ«“Â »·ÊòùÂ«
+
+    def create_cell(val, is_center, is_closest, theme):
+        # ”·Ê·ùÂ«Ì Œ«·Ì »—«Ì Õ›Ÿ ›—„  ‘‘ù÷·⁄Ì Å‰Â«‰ „Ìù‘Ê‰œ
+        if val is None:
+            return html.Td("", style={'border': 'none', 'backgroundColor': 'transparent',
+                                      'minWidth': CELL_SIZE, 'maxWidth': CELL_SIZE, 'height': CELL_SIZE,
+                                      'padding': '0'})
+
+        if is_closest:
+            bg_color = '#fef08a'
+            border_color = '#ca8a04'
+            text_color = '#854d0e'
+        else:
+            if theme == 'left':
+                bg_color = '#e6fffa' if is_center else '#ffffff'
+                border_color = '#38a169' if is_center else '#e2e8f0'
+                text_color = '#2f855a'
+            else:
+                bg_color = '#fff5f5' if is_center else '#ffffff'
+                border_color = '#e53e3e' if is_center else '#e2e8f0'
+                text_color = '#c53030'
+
+        return html.Td(
+            html.Div(f"{val:g}", style={
+                'color': text_color, 'fontWeight': 'bold', 'fontSize': '12px',
+                'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
+                'width': '100%', 'height': '100%'
+            }),
+            style={
+                'border': f'2px solid {border_color}',
+                'backgroundColor': bg_color,
+                'minWidth': CELL_SIZE, 'maxWidth': CELL_SIZE, 'height': CELL_SIZE,
+                'borderRadius': '50%',  # œ«Ì—Âù«Ì ò—œ‰ »Â Ÿ«Â— ·«‰Â “‰»Ê—Ì ò„ò „Ìùò‰œ
+                'boxSizing': 'border-box',
+                'padding': '0',
+                'boxShadow': '0 2px 4px rgba(0,0,0,0.05)'
+            }
+        )
+
+    for r in range(rows):
+        cells = []
+
+        # —”„ ‰Ì„Â çÅ (’⁄ÊœÌ)
+        for c in range(cols):
+            val = vals_left[r][c]
+            is_center = (indices_left[r][c] == 0) if val is not None else False
+            is_closest = (r == closest_row_for_col[c] and val is not None)
+            cells.append(create_cell(val, is_center, is_closest, 'left'))
+
+        # ” Ê‰ ›«’·Â „„«” œÊ ç«— 
+        cells.append(html.Td("", style={'minWidth': '30px', 'backgroundColor': 'transparent', 'border': 'none'}))
+
+        # —”„ ‰Ì„Â —«”  (‰“Ê·Ì)
+        for c in range(cols):
+            val = vals_right[r][c]
+            is_center = (indices_right[r][c] == 0) if val is not None else False
+            is_closest = (r == closest_row_for_col[c] and val is not None)
+            cells.append(create_cell(val, is_center, is_closest, 'right'))
+
+        html_rows.append(html.Tr(cells))
+
+    return html.Table(html_rows, style={
+        'borderCollapse': 'separate',
+        'borderSpacing': '1px',  # ò„ —Ì‰ ›«’·Â »—«Ì ç”»ÌœêÌ ‘‘ù÷·⁄ÌùÂ«
+        'backgroundColor': '#edf2f7',
+        'padding': '25px',
+        'borderRadius': '16px',
+        'boxShadow': '0 10px 25px -5px rgba(0, 0, 0, 0.1)'
+    })
+
+
+if __name__ == '__main__':
+    app.run(debug=True)

@@ -1,0 +1,270 @@
+//@version=5
+indicator("Fibonacci Box Mirrored + Golden MA & Slope", overlay=true, max_lines_count=500, max_boxes_count=500)
+
+// ==========================================
+// Ê—ÊœÌùÂ«Ì «’·Ì
+// ==========================================
+price1 = input.price(defval=0, title="ﬁÌ„  «Ê·", confirm=true)
+price2 = input.price(defval=0, title="ﬁÌ„  œÊ„", confirm=true)
+time1  = input.time(defval=0,  title="“„«‰ «Ê·", confirm=true)
+time2  = input.time(defval=0,  title="“„«‰ œÊ„", confirm=true)
+enableAngle = input.bool(false, " ‰ŸÌ„ ‘Ì» »« ﬁÌ„ ")
+
+//  ‰ŸÌ„«  ò‰œ· Ê «— ›«⁄
+useCandleHeight     = input.bool(false, "«” ›«œÂ «“ „Ã„Ê⁄ «— ›«⁄ ò‰œ·ùÂ«", group="Candle Height Settings")
+candleMode          = input.string("Â„Â", "‰Ê⁄ ò‰œ·", options=["”»“","ﬁ—„“","Â„Â"," ›«÷·"], group="Candle Height Settings")
+centerCandlePosition = input.float(0.5, "„Êﬁ⁄Ì  ò‰œ· „—Ã⁄", minval=0.0, maxval=1.0, step=0.01, group="Candle Height Settings")
+anchorHorizontal    = input.float(0.5, " ﬁ«ÿ⁄ «›ﬁÌ", minval=0.0, maxval=1.0, step=0.01, group="Candle Height Settings")
+anchorVertical      = input.float(0.5, " ﬁ«ÿ⁄ ⁄„ÊœÌ", minval=0.0, maxval=1.0, step=0.01, group="Candle Height Settings")
+
+symmetrizePrice     = input.bool(false, "„ ﬁ«—‰ù”«“Ì ﬁÌ„ ")
+
+// ==========================================
+//  ‰ŸÌ„«  MA ÃœÌœ
+// ==========================================
+useMA        = input.bool(false, "«⁄„«· „Ì«‰êÌ‰ „ Õ—ò (MA)", group="MA Settings")
+maType       = input.string("EMA", "‰Ê⁄ MA", options=["SMA", "EMA"], group="MA Settings")
+autoMALen    = input.bool(false, "ÿÊ· MA ŒÊœò«— ( ⁄œ«œ ò‰œ· »«“Â)", group="MA Settings")
+maLengthInput = input.int(20, "ÿÊ· MA Å«ÌÂ", minval=1, group="MA Settings")
+maMaxLength  = input.int(500, "Õœ«òÀ— ÿÊ· MA", minval=1, group="MA Settings")
+goldMode     = input.bool(false, "„Êœ ‰”»  ÿ·«ÌÌ (Golden Ratio)", group="MA Settings")
+
+// ==========================================
+//  ‰ŸÌ„«  Slope ÃœÌœ
+// ==========================================
+slopeMode   = input.bool(false, "›⁄«·ù”«“Ì ”Ì” „ ‘Ì» (Slope)", group="Slope Settings")
+slopeType   = input.string("Divergent", "‰Ê⁄ ‘Ì»", options=["Divergent","Convergent"], group="Slope Settings")
+slopeFactor = input.float(1.0, "÷—Ì» ‘œ  ‘Ì»", minval=0.0, step=0.1, group="Slope Settings")
+
+//  ‰ŸÌ„«  Ÿ«Â—Ì
+boxColor   = input.color(color.blue, "—‰ê »«ò”")
+boxWidth   = input.int(2, "÷Œ«„  »«ò”")
+fibWidth   = input.int(1, "÷Œ«„  ŒÿÊÿ ›Ì»Ê")
+manualAngleDegrees = input.float(0, "“«ÊÌÂ œ” Ì (œ—ÃÂ)", tooltip="“«ÊÌÂ »— «”«” ‰”»  “„«‰-ﬁÌ„  Ã⁄»Â. »—«Ì ç—Œ‘ùÂ«Ì Ã“∆Ì «“ 0.01 ‘—Ê⁄ ò‰Ìœ.")
+
+var line[] allLines = array.new_line()
+
+// ==========================================
+// „Õ«”»«  «— ›«⁄ Ê “„«‰
+// ==========================================
+var float totalHeight = 0.0
+var float greenHeight = 0.0
+var float redHeight   = 0.0
+var int[] candleTimes  = array.new_int()
+var float[] candleHighs = array.new_float()
+var float[] candleLows  = array.new_float()
+
+if time >= time1 and time <= time2
+    float ch = math.abs(high - low)
+    totalHeight += ch
+    if close >= open
+        greenHeight += ch
+    else
+        redHeight   += ch
+    array.push(candleTimes, time)
+    array.push(candleHighs, high)
+    array.push(candleLows, low)
+
+// „ €Ì—Â«Ì Â‰œ”Ì »«ò”
+float adjPriceRange = 0.0
+int   bT1 = 0, bT2 = 0
+float bP1 = 0.0, bP2 = 0.0
+int   cT = 0
+float cP = 0.0
+float pScale = 1.0
+float aRad   = 0.0
+
+// „Õ«”»Â  ⁄œ«œ ò‰œ·ùÂ«Ì »«“Â »—«Ì MA ŒÊœò«— Ê Slope
+int barsInRange = math.max(1, math.round(math.abs(time2 - time1) / (timeframe.in_seconds() * 1000)))
+
+if time1 > 0 and time2 > 0
+    adjPriceRange := useCandleHeight ? (candleMode=="”»“"?greenHeight : candleMode=="ﬁ—„“"?redHeight : candleMode==" ›«÷·"?greenHeight-redHeight : totalHeight) : (price2 - price1)
+    int ancT = 0
+    float ancP = 0.0
+    int tRange = time2 - time1
+    if useCandleHeight and array.size(candleTimes) > 0
+        val   = math.round((array.size(candleTimes)-1) * centerCandlePosition)
+        minVal = 0
+        maxVal = array.size(candleTimes)-1
+        idx   = math.max(minVal, math.min(val, maxVal))
+        ancT := array.get(candleTimes, idx)
+        ancP := (array.get(candleHighs, idx) + array.get(candleLows, idx)) / 2
+    else
+        ancT := int((time1 + time2) / 2)
+        ancP := (price1 + price2) / 2
+    if useCandleHeight
+        bP1 := ancP - adjPriceRange * anchorHorizontal
+        bP2 := bP1 + adjPriceRange
+        bT1 := ancT - int(tRange * anchorVertical)
+        bT2 := bT1 + tRange
+    else
+        bP1 := price1
+        bP2 := price2
+        bT1 := time1
+        bT2 := time2
+    cP := (bP1 + bP2) / 2
+    cT := int((bT1 + bT2) / 2)
+    pScale := adjPriceRange != 0 ? math.abs(adjPriceRange / barsInRange) : 1.0
+    float reqAngle = bT2 != bT1 ? math.atan((adjPriceRange/pScale) / (bT2 - bT1)) : 0
+    aRad := enableAngle ? reqAngle : manualAngleDegrees * math.pi / 180
+
+// ==========================================
+//  Ê«»⁄ ò„òÌ
+// ==========================================
+rotatePoint(t, p, ct, cp, angle, ps) =>
+    tn = (t - ct)
+    pn = (p - cp) / ps
+    tnr = tn * math.cos(angle) - pn * math.sin(angle)
+    pnr = tn * math.sin(angle) + pn * math.cos(angle)
+    [ct + tnr, cp + pnr * ps]
+
+getMALen(idx) =>
+    float base = autoMALen ? barsInRange : maLengthInput
+    if goldMode
+        dist = math.abs(idx - 3)
+        base := base * math.pow(1.618, dist)
+    int len = math.max(1, math.round(base))
+    math.min(len, maMaxLength)   // „ÕœÊœÌ  »—«Ì Ã·ÊêÌ—Ì «“ NA
+
+applyMA(src, len, type) =>
+    if type == "SMA"
+        ta.sma(src, len)
+    else
+        ta.ema(src, len)
+
+getSlopeAdj(idx) =>
+    if not slopeMode
+        0.0
+    else
+        float barsSinceStart = (time - bT1) / (timeframe.in_seconds() * 1000)
+        float multiplier = (idx - 3)
+        if slopeType == "Convergent"
+            multiplier := -multiplier
+        multiplier * (math.abs(bP2 - bP1) / barsInRange) * slopeFactor * barsSinceStart
+
+// ==========================================
+// „Õ«”»Â „ÕÊ— Å«ÌÂ (raw) »—«Ì Â— ”ÿÕ ›Ì»Ê‰«çÌ
+// ==========================================
+basePrice0 = bP1 + adjPriceRange * 0.0
+basePrice1 = bP1 + adjPriceRange * 0.236
+basePrice2 = bP1 + adjPriceRange * 0.382
+basePrice3 = bP1 + adjPriceRange * 0.5
+basePrice4 = bP1 + adjPriceRange * 0.618
+basePrice5 = bP1 + adjPriceRange * 0.786
+basePrice6 = bP1 + adjPriceRange * 1.0
+
+[t1r0, p1r0] = rotatePoint(bT1, basePrice0, cT, cP, aRad, pScale)
+[t2r0, p2r0] = rotatePoint(bT2, basePrice0, cT, cP, aRad, pScale)
+[t1r1, p1r1] = rotatePoint(bT1, basePrice1, cT, cP, aRad, pScale)
+[t2r1, p2r1] = rotatePoint(bT2, basePrice1, cT, cP, aRad, pScale)
+[t1r2, p1r2] = rotatePoint(bT1, basePrice2, cT, cP, aRad, pScale)
+[t2r2, p2r2] = rotatePoint(bT2, basePrice2, cT, cP, aRad, pScale)
+[t1r3, p1r3] = rotatePoint(bT1, basePrice3, cT, cP, aRad, pScale)
+[t2r3, p2r3] = rotatePoint(bT2, basePrice3, cT, cP, aRad, pScale)
+[t1r4, p1r4] = rotatePoint(bT1, basePrice4, cT, cP, aRad, pScale)
+[t2r4, p2r4] = rotatePoint(bT2, basePrice4, cT, cP, aRad, pScale)
+[t1r5, p1r5] = rotatePoint(bT1, basePrice5, cT, cP, aRad, pScale)
+[t2r5, p2r5] = rotatePoint(bT2, basePrice5, cT, cP, aRad, pScale)
+[t1r6, p1r6] = rotatePoint(bT1, basePrice6, cT, cP, aRad, pScale)
+[t2r6, p2r6] = rotatePoint(bT2, basePrice6, cT, cP, aRad, pScale)
+
+slope0 = (t2r0 != t1r0) ? (p2r0 - p1r0) / (t2r0 - t1r0) : 0.0
+slope1 = (t2r1 != t1r1) ? (p2r1 - p1r1) / (t2r1 - t1r1) : 0.0
+slope2 = (t2r2 != t1r2) ? (p2r2 - p1r2) / (t2r2 - t1r2) : 0.0
+slope3 = (t2r3 != t1r3) ? (p2r3 - p1r3) / (t2r3 - t1r3) : 0.0
+slope4 = (t2r4 != t1r4) ? (p2r4 - p1r4) / (t2r4 - t1r4) : 0.0
+slope5 = (t2r5 != t1r5) ? (p2r5 - p1r5) / (t2r5 - t1r5) : 0.0
+slope6 = (t2r6 != t1r6) ? (p2r6 - p1r6) / (t2r6 - t1r6) : 0.0
+
+rawAxis0 = p1r0 + slope0 * (time - t1r0)
+rawAxis1 = p1r1 + slope1 * (time - t1r1)
+rawAxis2 = p1r2 + slope2 * (time - t1r2)
+rawAxis3 = p1r3 + slope3 * (time - t1r3)
+rawAxis4 = p1r4 + slope4 * (time - t1r4)
+rawAxis5 = p1r5 + slope5 * (time - t1r5)
+rawAxis6 = p1r6 + slope6 * (time - t1r6)
+
+// «⁄„«· MA (œ— ’Ê—  ›⁄«· »Êœ‰)
+ma0 = useMA ? applyMA(rawAxis0, getMALen(0), maType) : rawAxis0
+ma1 = useMA ? applyMA(rawAxis1, getMALen(1), maType) : rawAxis1
+ma2 = useMA ? applyMA(rawAxis2, getMALen(2), maType) : rawAxis2
+ma3 = useMA ? applyMA(rawAxis3, getMALen(3), maType) : rawAxis3
+ma4 = useMA ? applyMA(rawAxis4, getMALen(4), maType) : rawAxis4
+ma5 = useMA ? applyMA(rawAxis5, getMALen(5), maType) : rawAxis5
+ma6 = useMA ? applyMA(rawAxis6, getMALen(6), maType) : rawAxis6
+
+// „ÕÊ— ‰Â«ÌÌ = MA + ‘Ì» «÷«›Ì (Slope)
+// „ÕÊ— ‰Â«ÌÌ = MA + ‘Ì» «÷«›Ì (Slope)
+ax0 = ma0 + getSlopeAdj(0)
+ax1 = ma1 + getSlopeAdj(1)
+ax2 = ma2 + getSlopeAdj(2)
+ax3 = ma3 + getSlopeAdj(3)
+ax4 = ma4 + getSlopeAdj(4)
+ax5 = ma5 + getSlopeAdj(5)
+ax6 = ma6 + getSlopeAdj(6)
+
+//
+// =================================
+// ==========================================
+// ﬁ—Ì‰Âù”«“Ì Ê —”„ ‘„⁄ùÂ«
+// ==========================================
+sym(ax) => [ax-(open-ax), ax-(low-ax), ax-(high-ax), ax-(close-ax)]
+
+[o0,h0,l0,c0] = sym(ax0)
+[o1,h1,l1,c1] = sym(ax1)
+[o2,h2,l2,c2] = sym(ax2)
+[o3,h3,l3,c3] = sym(ax3)
+[o4,h4,l4,c4] = sym(ax4)
+[o5,h5,l5,c5] = sym(ax5)
+[o6,h6,l6,c6] = sym(ax6)
+
+plotcandle(symmetrizePrice?o0:na, h0, l0, c0, color=c0>=o0?color.green:color.red, title="L0.0")
+plotcandle(symmetrizePrice?o1:na, h1, l1, c1, color=c1>=o1?color.green:color.red, title="L0.236")
+plotcandle(symmetrizePrice?o2:na, h2, l2, c2, color=c2>=o2?color.green:color.red, title="L0.382")
+plotcandle(symmetrizePrice?o3:na, h3, l3, c3, color=c3>=o3?color.green:color.red, title="L0.5")
+plotcandle(symmetrizePrice?o4:na, h4, l4, c4, color=c4>=o4?color.green:color.red, title="L0.618")
+plotcandle(symmetrizePrice?o5:na, h5, l5, c5, color=c5>=o5?color.green:color.red, title="L0.786")
+plotcandle(symmetrizePrice?o6:na, h6, l6, c6, color=c6>=o6?color.green:color.red, title="L1.0")
+
+// ==========================================
+// —”„ »«ò” Ê ŒÿÊÿ ›Ì»Ê‰«çÌ
+// ==========================================
+if barstate.islast
+    for l in allLines
+        line.delete(l)
+    array.clear(allLines)
+
+    cns = array.from(bT1, bP1, bT2, bP1, bT2, bP2, bT1, bP2)
+    for i = 0 to 3
+        [rt, rp] = rotatePoint(array.get(cns, i*2), array.get(cns, i*2+1), cT, cP, aRad, pScale)
+        array.set(cns, i*2, rt)
+        array.set(cns, i*2+1, rp)
+
+    for i = 0 to 3
+        nextI = (i + 1) % 4
+        array.push(allLines, line.new(x1=math.round(array.get(cns, i*2)), y1=array.get(cns, i*2+1), x2=math.round(array.get(cns, nextI*2)), y2=array.get(cns, nextI*2+1), xloc=xloc.bar_time, color=boxColor, width=boxWidth))
+
+    lvls = array.from(0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0)
+    lvlColors = array.from(color.new(color.red,50), color.new(color.orange,50), color.new(color.yellow,50), color.new(color.green,50), color.new(color.blue,50), color.new(color.purple,50), color.new(color.red,50))
+
+    for i = 0 to array.size(lvls) - 1
+        l = array.get(lvls, i)
+        [lx1, ly1] = rotatePoint(bT1, bP1 + adjPriceRange*l, cT, cP, aRad, pScale)
+        [lx2, ly2] = rotatePoint(bT2, bP1 + adjPriceRange*l, cT, cP, aRad, pScale)
+        array.push(allLines, line.new(x1=math.round(lx1), y1=ly1, x2=math.round(lx2), y2=ly2, xloc=xloc.bar_time, color=array.get(lvlColors,i), width=fibWidth, style=line.style_solid))
+
+    [vx1_left, vy1_left] = rotatePoint(bT1, bP1, cT, cP, aRad, pScale)
+    [vx2_left, vy2_left] = rotatePoint(bT1, bP2, cT, cP, aRad, pScale)
+    array.push(allLines, line.new(x1=math.round(vx1_left), y1=vy1_left, x2=math.round(vx2_left), y2=vy2_left, xloc=xloc.bar_time, color=boxColor, width=boxWidth, style=line.style_solid))
+
+    [vx1_right, vy1_right] = rotatePoint(bT2, bP1, cT, cP, aRad, pScale)
+    [vx2_right, vy2_right] = rotatePoint(bT2, bP2, cT, cP, aRad, pScale)
+    array.push(allLines, line.new(x1=math.round(vx1_right), y1=vy1_right, x2=math.round(vx2_right), y2=vy2_right, xloc=xloc.bar_time, color=boxColor, width=boxWidth, style=line.style_solid))
+
+    numVerticals = 10
+    for i = 1 to numVerticals - 1
+        ratio = i / numVerticals
+        vTime = math.round(bT1 + (bT2 - bT1) * ratio)
+        [vx1, vy1] = rotatePoint(vTime, bP1, cT, cP, aRad, pScale)
+        [vx2, vy2] = rotatePoint(vTime, bP2, cT, cP, aRad, pScale)
+        array.push(allLines, line.new(x1=math.round(vx1), y1=vy1, x2=math.round(vx2), y2=vy2, xloc=xloc.bar_time, color=color.new(boxColor,70), width=2, style=line.style_solid))

@@ -1,0 +1,41 @@
+//@version=5
+indicator("Complex Pattern Finder", overlay=true)
+
+// ÊäÙíãÇÊ
+use_fibo = input.bool(false, title="Use Auto Fibonacci Pattern?")
+fibo_level = input.int(4, minval=1, maxval=7, title="Fibonacci Level (if Auto)")
+custom_pattern = input.string("10110", title="Custom Complex Pattern (0 and 1)")
+
+// ÊÇÈÚ ÊæáíÏ ÑÔÊååÇí İíÈæäÇí
+generate_fibo(level) =>
+    string s1 = "1"
+    string s2 = "10"
+    if level == 1
+        s1
+    else if level == 2
+        s2
+    else
+        string result = ""
+        string prev1 = s2
+        string prev2 = s1
+        for i = 3 to level
+            result := prev1 + prev2
+            prev2 := prev1
+            prev1 := result
+        result
+
+// ÊÚííä Çáæí åÏİ ÈÑ ÇÓÇÓ ÇäÊÎÇÈ ˜ÇÑÈÑ
+target_pattern = use_fibo ? generate_fibo(fibo_level) : custom_pattern
+pattern_len = str.length(target_pattern)
+
+// ÓÇÎÊä ÑÔÊå ãÑÈæØ Èå ˜äÏáåÇí ÇÎíÑ ÈÑÇí ãŞÇíÓå
+string current_pattern = ""
+if bar_index >= pattern_len
+    for i = pattern_len - 1 to 0
+        current_pattern := current_pattern + (close[i] >= open[i] ? "1" : "0")
+
+// ÈÑÑÓí ÊØÇÈŞ Çáæí ÓÇÎÊå ÔÏå ÈÇ Çáæí åÏİ
+is_match = current_pattern == target_pattern
+
+// äãÇíÔ áíÈá Ñæí ÇÑÊí ˜å Çáæ ÏÑ Âä ˜Çãá ÔÏå ÇÓÊ
+plotshape(is_match, title="Pattern Match", style=shape.labeldown, location=location.abovebar, color=color.purple, textcolor=color.white, text="MATCH")

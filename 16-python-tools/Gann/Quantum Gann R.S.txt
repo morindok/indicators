@@ -1,0 +1,184 @@
+import dash
+from dash import dcc, html, Input, Output, State, dash_table
+import dash_bootstrap_components as dbc
+import math
+import pandas as pd
+
+
+# ==========================================
+# 1. CORE: Quantum Cardinal Math (90∞ Resolution)
+# ==========================================
+
+def calculate_quantum_orbitals(peak, trough):
+    """„Õ«”»Â „œ«—Â« »« œﬁ  90 œ—ÃÂ (Cardinal Cross) »œÊ‰ ‰ÊÌ“ ŒÿÌ"""
+    targets = []
+
+    sqrt_peak = math.sqrt(peak)
+    sqrt_trough = math.sqrt(trough)
+
+    # 1. Fibonacci Macro Fractals
+    diff = peak - trough
+    fib_levels = {
+        0.5: "Fibo 0.5", 0.618: "Fibo 0.618", 0.786: "Fibo 0.786",
+        1.272: "Fibo 1.272", 1.618: "Fibo 1.618", 2.0: "Fibo 2.0",
+        2.618: "Fibo 2.618", 4.236: "Fibo 4.236"
+    }
+    macro_fibs = []
+    for fib, name in fib_levels.items():
+        macro_fibs.append({"price": peak - (diff * fib), "name": f"Macro {name} (Down)"})
+        macro_fibs.append({"price": trough + (diff * fib), "name": f"Macro {name} (Up)"})
+
+    # 2. SQ9 Quantum Orbits (90∞ Increments -> Factor 0.5)
+    # factor 0.5 = 90 deg | 1.0 = 180 deg | 2.0 = 360 deg
+
+    for step in range(1, 25):  # „Õ«”»Â  « 6 ç—Œ‘ ò«„· (24 ê«„ 90 œ—ÃÂ «Ì)
+        factor = step * 0.5
+        degrees = int(factor * 180)
+
+        # === TARGETS DOWN (From Peak) ===
+        price_dn = (sqrt_peak - factor) ** 2
+        if price_dn > 0:
+            resonance, fib_name = check_resonance(price_dn, macro_fibs)
+            orbit_type, stars = classify_orbit(degrees)
+
+            targets.append({
+                "Target Price": price_dn,
+                "Degrees": f"-{degrees}∞",
+                "Geometry": orbit_type,
+                "Resonance": fib_name if resonance else "-",
+                "Power Level": stars
+            })
+
+        # === TARGETS UP (From Trough) ===
+        price_up = (sqrt_trough + factor) ** 2
+        resonance_up, fib_name_up = check_resonance(price_up, macro_fibs)
+        orbit_type_up, stars_up = classify_orbit(degrees)
+
+        targets.append({
+            "Target Price": price_up,
+            "Degrees": f"+{degrees}∞",
+            "Geometry": orbit_type_up,
+            "Resonance": fib_name_up if resonance_up else "-",
+            "Power Level": stars_up
+        })
+
+    return targets
+
+
+def classify_orbit(degrees):
+    """ÿ»ﬁÂù»‰œÌ «Â„Ì  “Ê«Ì« œ— „—»⁄ 9 ê«‰"""
+    if degrees == 1440:
+        return "Singularity Orbit", "?? MACRO DROP (1440∞)"
+    elif degrees % 360 == 0:
+        return "Full Cycle Orbit", "???"
+    elif degrees % 180 == 0:
+        return "Half Cycle Pivot", "??"
+    elif degrees % 90 == 0:
+        return "Cardinal Cross (90∞)", "? (Intraday/Swing)"
+    return "Minor", "-"
+
+
+def check_resonance(sq9_price, macro_fibs, tol_pct=0.002):
+    for fib in macro_fibs:
+        if abs(sq9_price - fib["price"]) / fib["price"] <= tol_pct:
+            return True, f"?? Res: {fib['name']}"
+    return False, None
+
+
+# ==========================================
+# 2. Dash App Layout
+# ==========================================
+
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
+
+app.layout = dbc.Container([
+    dbc.Row([
+        dbc.Col(html.H2("?? SQ9 Quantum-Fractal (V4 Cardinal Edition)", className="text-center text-info my-4"),
+                width=12)
+    ]),
+
+    dbc.Row([
+        dbc.Col(dbc.Card([
+            dbc.CardHeader("?? Macro Swing Anchors", className="fw-bold"),
+            dbc.CardBody([
+                html.P("œﬁ  ”Ì” „ »Â 90 œ—ÃÂ (ç·ÌÅ«Ì «’·Ì) «— ﬁ« Ì«› Â «” .", className="text-muted small"),
+
+                dbc.Label("Macro Swing High (ﬁ·Â)"),
+                dbc.Input(id="swing-hi", type="number", value=62848.41, className="mb-3"),
+
+                dbc.Label("Macro Swing Low (œ—Â)"),
+                dbc.Input(id="swing-lo", type="number", value=60759.48, className="mb-4"),
+
+                dbc.Button("?? EXTRACT CARDINAL TARGETS", id="scan-btn", color="info",
+                           className="w-100 text-dark fw-bold", size="lg")
+            ])
+        ]), width=4),
+
+        dbc.Col(dbc.Card([
+            dbc.CardHeader("?? Quantum Orbits Matrix", className="fw-bold"),
+            dbc.CardBody(html.Div(id="results-table"))
+        ]), width=8)
+    ])
+], fluid=True, className="p-4")
+
+
+# ==========================================
+# 3. Callbacks
+# ==========================================
+
+@app.callback(
+    Output("results-table", "children"),
+    Input("scan-btn", "n_clicks"),
+    State("swing-hi", "value"),
+    State("swing-lo", "value")
+)
+def run_quantum_extraction(n_clicks, peak, trough):
+    if None in [peak, trough] or peak <= trough:
+        return html.Div("Å«—«„ —Â«Ì ‰«„⁄ »—", className="text-danger")
+
+    raw_targets = calculate_quantum_orbitals(peak, trough)
+
+    # ›Ì· — „ÕœÊœÂ ‰„«Ì‘ (+- 15 œ—’œ)
+    min_view = trough * 0.85
+    max_view = peak * 1.15
+    filtered_targets = [t for t in raw_targets if min_view <= t["Target Price"] <= max_view]
+
+    filtered_targets.sort(key=lambda x: x["Target Price"], reverse=True)
+
+    df = pd.DataFrame(filtered_targets)
+    df["Target Price"] = df["Target Price"].apply(lambda x: f"${x:,.2f}")
+
+    table = dash_table.DataTable(
+        data=df.to_dict('records'),
+        columns=[{"name": i, "id": i} for i in df.columns],
+        style_header={'backgroundColor': '#121212', 'color': '#0dcaf0', 'fontWeight': 'bold'},
+        style_data={'backgroundColor': '#1e1e1e', 'color': '#e0e0e0', 'border': '1px solid #333'},
+        style_cell={'textAlign': 'center', 'padding': '10px', 'fontFamily': 'monospace'},
+        page_action='none',
+        style_table={'height': '650px', 'overflowY': 'auto'},
+        style_data_conditional=[
+            {
+                'if': {'filter_query': '{Geometry} eq "Singularity Orbit"'},
+                'backgroundColor': '#4a0000', 'color': '#ff4d4d', 'fontWeight': 'bold'
+            },
+            {
+                # —‰ê ¬„Ì“Ì ÊÌéÂ »—«Ì ç—Œ‘ Â«Ì 90 œ—ÃÂ «Ì (Cardinal)
+                'if': {'filter_query': '{Geometry} eq "Cardinal Cross (90∞)"'},
+                'color': '#ffc107'
+            },
+            {
+                'if': {'filter_query': '{Geometry} eq "Full Cycle Orbit"'},
+                'fontWeight': 'bold', 'color': '#ffffff'
+            },
+            {
+                'if': {'filter_query': '{Resonance} contains "??"'},
+                'backgroundColor': '#002b12', 'color': '#66ff99', 'fontWeight': 'bold'
+            }
+        ]
+    )
+
+    return table
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=8051)

@@ -1,0 +1,83 @@
+//@version=5
+indicator("Fibonacci Time Mirror - Dual + Price Fib", overlay=true, max_lines_count=500, max_boxes_count=500)
+
+time1 = input.time(timestamp("2024-01-01 00:00"), "Start Time", confirm=true)
+time2 = input.time(timestamp("2024-01-31 00:00"), "End Time", confirm=true)
+price1 = input.price(50000, "Price Level 1", confirm=true)
+price2 = input.price(45000, "Price Level 2", confirm=true)
+enablePriceFibMirror = input.bool(true, "Enable Price Fib Time Mirror")
+reverseLogic = input.bool(false, "Reverse Mirror Logic")
+
+var float[] fibLevels = array.from(0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0)
+var int[] fibTimes = array.new_int()
+var float[] fibPrices = array.new_float()
+var bool timesCalculated = false
+var bool pricesCalculated = false
+
+if not timesCalculated and time >= time1
+    for i = 0 to array.size(fibLevels) - 1
+        fibTime = time1 + int((time2 - time1) * array.get(fibLevels, i))
+        array.push(fibTimes, fibTime)
+    timesCalculated := true
+
+if not pricesCalculated and time >= time1
+    for i = 0 to array.size(fibLevels) - 1
+        fibPrice = price1 + (price2 - price1) * array.get(fibLevels, i)
+        array.push(fibPrices, fibPrice)
+    pricesCalculated := true
+
+if timesCalculated and time >= time1 and time <= time2
+    for i = 0 to array.size(fibTimes) - 1
+        fibTime = array.get(fibTimes, i)
+        if time == fibTime
+            line.new(bar_index, price1, bar_index, price2, xloc=xloc.bar_index, extend=extend.both, color=color.blue, width=1, style=line.style_dashed)
+
+hitFibLine = false
+if array.size(fibTimes) > 0
+    for i = 0 to array.size(fibTimes) - 1
+        fibTime = array.get(fibTimes, i)
+        if math.abs(time - fibTime) < timeframe.in_seconds() * 1000
+            hitFibLine := true
+            break
+
+hitPriceFib = false
+if enablePriceFibMirror and array.size(fibPrices) > 0
+    for i = 0 to array.size(fibPrices) - 1
+        fibPrice = array.get(fibPrices, i)
+        if (low <= fibPrice and high >= fibPrice)
+            hitPriceFib := true
+            break
+
+doPriceMirror = reverseLogic ? hitPriceFib : hitFibLine
+doTimeMirror = reverseLogic ? hitFibLine : hitPriceFib
+
+mirror1Open = doPriceMirror ? 2 * price1 - open : na
+mirror1High = doPriceMirror ? 2 * price1 - low : na
+mirror1Low = doPriceMirror ? 2 * price1 - high : na
+mirror1Close = doPriceMirror ? 2 * price1 - close : na
+
+mirror2Open = doPriceMirror ? 2 * price2 - open : na
+mirror2High = doPriceMirror ? 2 * price2 - low : na
+mirror2Low = doPriceMirror ? 2 * price2 - high : na
+mirror2Close = doPriceMirror ? 2 * price2 - close : na
+
+plotcandle(mirror1Open, mirror1High, mirror1Low, mirror1Close, color=mirror1Close >= mirror1Open ? color.green : color.red, wickcolor=color.red, bordercolor=color.red, title="Mirror 1")
+plotcandle(mirror2Open, mirror2High, mirror2Low, mirror2Close, color=mirror2Close >= mirror2Open ? color.blue : color.orange, wickcolor=color.orange, bordercolor=color.orange, title="Mirror 2")
+
+if doTimeMirror and time > time1 and time < time2
+    mirrorTime1 = int(2 * time1 - time)
+    mirrorTime2 = int(2 * time2 - time)
+    candleWidth = timeframe.in_seconds() * 1000
+    halfWidth = candleWidth / 2
+    bodyColor = close >= open ? color.new(color.yellow, 30) : color.new(color.purple, 30)
+    wickColor = color.new(color.purple, 0)
+    if mirrorTime1 > 0
+        box.new(mirrorTime1, math.max(open, close), mirrorTime1 + candleWidth, math.min(open, close), xloc=xloc.bar_time, border_color=wickColor, bgcolor=bodyColor, border_width=2)
+        line.new(mirrorTime1 + halfWidth, high, mirrorTime1 + halfWidth, math.max(open, close), xloc=xloc.bar_time, color=wickColor, width=2)
+        line.new(mirrorTime1 + halfWidth, low, mirrorTime1 + halfWidth, math.min(open, close), xloc=xloc.bar_time, color=wickColor, width=2)
+    bodyColor2 = close >= open ? color.new(color.aqua, 30) : color.new(color.fuchsia, 30)
+    wickColor2 = color.new(color.fuchsia, 0)
+    if mirrorTime2 > 0
+        box.new(mirrorTime2, math.max(open, close), mirrorTime2 + candleWidth, math.min(open, close), xloc=xloc.bar_time, border_color=wickColor2, bgcolor=bodyColor2, border_width=2)
+        line.new(mirrorTime2 + halfWidth, high, mirrorTime2 + halfWidth, math.max(open, close), xloc=xloc.bar_time, color=wickColor2, width=2)
+        line.new(mirrorTime2 + halfWidth, low, mirrorTime2 + halfWidth, math.min(open, close), xloc=xloc.bar_time, color=wickColor2, width=2)

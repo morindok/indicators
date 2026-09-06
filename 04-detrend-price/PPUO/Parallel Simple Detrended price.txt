@@ -1,0 +1,41 @@
+//@version=5
+indicator("7 Golden MA Detrended Layers", overlay=false)
+
+src = input.source(close, "Source")
+len = input.int(20, "Base Length", minval=1)
+
+phi = 1.61803398875
+
+len1 = math.max(1, math.round(len / (phi * phi)))
+len2 = math.max(1, math.round(len / phi))
+len3 = math.max(1, math.round(len))
+len4 = math.max(1, math.round(len * phi))
+len5 = math.max(1, math.round(len * phi * phi))
+len6 = math.max(1, math.round(len * phi * phi * phi))
+len7 = math.max(1, math.round(len * phi * phi * phi * phi))
+
+ma1 = ta.sma(src, len1)
+ma2 = ta.sma(src, len2)
+ma3 = ta.sma(src, len3)
+ma4 = ta.sma(src, len4)
+ma5 = ta.sma(src, len5)
+ma6 = ta.sma(src, len6)
+ma7 = ta.sma(src, len7)
+
+d1 = src - ma1
+d2 = src - ma2
+d3 = src - ma3
+d4 = src - ma4
+d5 = src - ma5
+d6 = src - ma6
+d7 = src - ma7
+
+plot(d1, title="Detrend 1", color=color.red)
+plot(d2, title="Detrend 2", color=color.orange)
+plot(d3, title="Detrend 3", color=color.yellow)
+plot(d4, title="Detrend 4", color=color.white, linewidth=2)
+plot(d5, title="Detrend 5", color=color.aqua)
+plot(d6, title="Detrend 6", color=color.lime)
+plot(d7, title="Detrend 7", color=color.green)
+
+hline(0, "Zero Line", color=color.gray)

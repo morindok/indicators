@@ -1,0 +1,197 @@
+//@version=5
+indicator("Mirrored Super Mirror [Optimized Auto-Points]", overlay=true, max_bars_back=1000, max_lines_count=500)
+
+// ==========================================
+//  ‰ŸÌ„«   ﬁ«—‰ “„«‰Ì Ê ÅÌÊÊ ùÂ« («“ «‰œÌò« Ê— «Ê·)
+// ==========================================
+targetTime = input.time(0, "«‰ Œ«» “„«‰ „ÕÊ— (Axis)", confirm=true, group="Pivot Settings")
+timeRatio = input.float(1.0, "‰”»  »«“ «» “„«‰Ì (Ratio)", step=0.1, group="Pivot Settings")
+leftLen = input.int(5, "ÿÊ· çÅ ÅÌÊÊ ", group="Pivot Settings")
+rightLen = input.int(5, "ÿÊ· —«”  ÅÌÊÊ ", group="Pivot Settings")
+
+// ==========================================
+//  ‰ŸÌ„«  ‰”» ùÂ«Ì  ﬁ«—‰ («“ «‰œÌò« Ê— œÊ„)
+// ==========================================
+ratio1 = input.float(1, title="Ratio Level 1", step=0.001, group="Reflection Settings")
+ratio2 = input.float(1, title="Ratio Level 2", step=0.001, group="Reflection Settings")
+
+// ==========================================
+//  ‰ŸÌ„«  ”Ê—” Ê »Ì”ù·«Ì‰ùÂ«
+// ==========================================
+src_input = input.source(close, title="Source", group="Baseline Settings")
+tf_input = input.timeframe("", title="Timeframe", group="Baseline Settings")
+
+baseline_type = input.string("Golden Cloud", options=["Golden Cloud", "Moving Average", "HH/LL", "ATR", "Bollinger Bands", "Ichimoku Cloud", "RSI", "CCI", "MACD"], title="Baseline Type", group="Baseline Settings")
+
+lookback = input.int(20, "Lookback Period", group="Baseline Settings")
+atr_len = input.int(14, "ATR Length", group="Baseline Settings")
+atr_mult = input.float(1.0, "ATR Multiplier", group="Baseline Settings")
+bb_len = input.int(20, "Bollinger Length", group="Baseline Settings")
+bb_mult = input.float(2.0, "Bollinger Multiplier", group="Baseline Settings")
+
+// ==========================================
+// »Œ‘ 1: ‘‰«”«ÌÌ ÅÌÊÊ ùÂ« Ê „ÕÊ—  ﬁ«—‰
+// ==========================================
+var int[] pivotBars = array.new_int()
+var int[] pivotTypes = array.new_int()
+var float[] pivotPrices = array.new_float()
+
+ph = ta.pivothigh(high, leftLen, rightLen)
+pl = ta.pivotlow(low, leftLen, rightLen)
+
+if not na(ph)
+    array.push(pivotBars, bar_index - rightLen)
+    array.push(pivotTypes, 1)
+    array.push(pivotPrices, high[rightLen])
+
+if not na(pl)
+    array.push(pivotBars, bar_index - rightLen)
+    array.push(pivotTypes, -1)
+    array.push(pivotPrices, low[rightLen])
+
+var int targetBarIndex = na
+if time >= targetTime and time[1] < targetTime
+    targetBarIndex := bar_index
+    line.new(bar_index, low, bar_index, high, extend=extend.both, color=color.blue, width=2, style=line.style_dashed)
+
+// ==========================================
+// »Œ‘ 2: «” Œ—«Ã « Ê„« Ìò ‰ﬁÿÂ 1 („ÕÊ—) Ê ‰ﬁÿÂ 2 («Ê·Ì‰ ÅÌÊÊ  „Œ«·›)
+// ==========================================
+var int p1_bar = na
+var float p1_price = na
+var int p1_type = na
+var int p2_bar = na
+var float p2_price = na
+
+var label l_p1 = na
+var label l_p2 = na
+
+if not na(targetBarIndex) and bar_index == targetBarIndex + rightLen
+    int size = array.size(pivotBars)
+    if size > 0
+        int min_dist = 999999
+        int best_idx = -1
+        // ÅÌœ« ò—œ‰ ÅÌÊÊ  „‰ÿ»ﬁ »— “„«‰ «‰ Œ«»Ì ò«—»—
+        for i = 0 to size - 1
+            int dist = math.abs(array.get(pivotBars, i) - targetBarIndex)
+            if dist < min_dist
+                min_dist := dist
+                best_idx := i
+        
+        if best_idx != -1
+            p1_bar := array.get(pivotBars, best_idx)
+            p1_type := array.get(pivotTypes, best_idx)
+            p1_price := array.get(pivotPrices, best_idx)
+            
+            // ÅÌœ« ò—œ‰ «Ê·Ì‰ ”Ìê‰«· „Œ«·› «“ ê–‘ Â »—«Ì ”«Œ  ‰ﬁÿÂ œÊ„ œ— ¬Ì‰œÂ
+            for i = best_idx - 1 to 0
+                if array.get(pivotTypes, i) != p1_type
+                    int p_bar = array.get(pivotBars, i)
+                    p2_bar := p1_bar + math.round((p1_bar - p_bar) * timeRatio)
+                    p2_price := array.get(pivotPrices, i)
+                    break
+
+// ‰„«Ì‘ ·Ì»·ùÂ« »—«Ì œ—ò »Â — ‰ﬁ«ÿ
+if not na(p1_bar) and na(l_p1)
+    l_p1 := label.new(p1_bar, p1_price, "Start (Axis)", style=label.style_label_down, color=color.blue, textcolor=color.white, size=size.small)
+if not na(p2_bar) and bar_index == p2_bar and na(l_p2)
+    l_p2 := label.new(p2_bar, p2_price, "End (Opposing Signal)", style=label.style_label_up, color=color.orange, textcolor=color.white, size=size.small)
+
+// ‰„«Ì‘  „«„ ÅÌÊÊ ùÂ«Ì »«“ «» ‘œÂ («“ «‰œÌò« Ê— «Ê·) »—«Ì ‰„«Ì ò·Ì
+bool isMirroredHigh = false
+bool isMirroredLow = false
+if not na(targetBarIndex) and bar_index > targetBarIndex
+    int size = array.size(pivotBars)
+    if size > 0
+        for i = 0 to size - 1
+            int pBar = array.get(pivotBars, i)
+            int pType = array.get(pivotTypes, i)
+            int mirroredBar = targetBarIndex + math.round((targetBarIndex - pBar) * timeRatio)
+            if bar_index == mirroredBar
+                if pType == 1
+                    isMirroredHigh := true
+                else if pType == -1
+                    isMirroredLow := true
+
+plotshape(isMirroredHigh, title="Mirrored Pivot High", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 50), size=size.tiny, text="?", textcolor=color.new(color.red, 50))
+plotshape(isMirroredLow, title="Mirrored Pivot Low", style=shape.triangleup, location=location.belowbar, color=color.new(color.green, 50), size=size.tiny, text="?", textcolor=color.new(color.green, 50))
+
+// ==========================================
+// »Œ‘ 3: Â” Â Super Mirror ( —òÌ» »« ‰ﬁ«ÿ ÃœÌœ)
+// ==========================================
+src_price = request.security(syminfo.tickerid, tf_input, src_input)
+high_price = request.security(syminfo.tickerid, tf_input, high)
+low_price = request.security(syminfo.tickerid, tf_input, low)
+
+int start_bar = p1_bar
+int end_bar = p2_bar
+float price1 = p1_price
+float price2 = p2_price
+
+bool is_inverted = not na(price1) and not na(price2) ? price2 < price1 : false
+
+int ma_length = na(start_bar) or na(end_bar) ? 14 : math.max(1, math.abs(end_bar - start_bar))
+float ma = ta.sma(src_price, ma_length)
+
+highestPrice = ta.highest(high_price, lookback)
+lowestPrice = ta.lowest(low_price, lookback)
+midPoint = (highestPrice + lowestPrice) / 2
+goldenRange = (highestPrice - lowestPrice) / 1.618
+upperLevel = midPoint + (goldenRange / 2)
+lowerLevel = midPoint - (goldenRange / 2)
+
+tr = math.max(high_price - low_price, math.max(math.abs(high_price - src_price[1]), math.abs(low_price - src_price[1])))
+atr_val = ta.rma(tr, atr_len) * atr_mult
+atr_upper = ma + atr_val
+atr_lower = ma - atr_val
+
+[bb_mid, bb_upper, bb_lower] = ta.bb(src_price, bb_len, bb_mult)
+
+actual_upper = baseline_type == "Golden Cloud" ? upperLevel : baseline_type == "HH/LL" ? highestPrice : baseline_type == "ATR" ? atr_upper : baseline_type == "Bollinger Bands" ? bb_upper : ma
+actual_lower = baseline_type == "Golden Cloud" ? lowerLevel : baseline_type == "HH/LL" ? lowestPrice : baseline_type == "ATR" ? atr_lower : baseline_type == "Bollinger Bands" ? bb_lower : ma
+
+plot(actual_upper, "Upper Baseline", color=color.new(color.blue, 70))
+plot(actual_lower, "Lower Baseline", color=color.new(color.red, 70))
+
+//  ﬁ«—‰ ﬁÌ„ 
+float price_ref1_lvl1 = na(price1) ? na : price1 + (price1 - src_price) * ratio1
+float price_ref1_lvl2 = na(price2) ? na : price2 + (price2 - src_price) * ratio2
+
+float price_ref2_lvl1 = na(price_ref1_lvl1) ? na : 2 * actual_upper - price_ref1_lvl1
+float price_ref2_lvl2 = na(price_ref1_lvl2) ? na : 2 * actual_lower - price_ref1_lvl2
+
+// „‰ÿﬁ ”Ìê‰«·ùœÂÌ
+bool is_after = not na(end_bar) and bar_index > end_bar
+
+var float lowest_green = na
+var bool has_collided_1 = false
+var bool signal_fired_1 = false
+
+lowest_green := is_after and not has_collided_1 ? math.min(nz(lowest_green, price_ref2_lvl1), price_ref2_lvl1) : lowest_green
+bool is_hit_1 = is_after and not na(lowest_green) and not has_collided_1 and (ta.cross(price_ref2_lvl2, lowest_green) or price_ref2_lvl2 == lowest_green)
+bool logic_signal_1 = is_hit_1 and not signal_fired_1
+
+if is_hit_1
+    has_collided_1 := true
+if logic_signal_1
+    signal_fired_1 := true
+
+var float highest_purple = na
+var bool has_collided_2 = false
+var bool signal_fired_2 = false
+
+highest_purple := is_after and not has_collided_2 ? math.max(nz(highest_purple, price_ref2_lvl2), price_ref2_lvl2) : highest_purple
+bool is_hit_2 = is_after and not na(highest_purple) and not has_collided_2 and (ta.cross(price_ref2_lvl1, highest_purple) or price_ref2_lvl1 == highest_purple)
+bool logic_signal_2 = is_hit_2 and not signal_fired_2
+
+if is_hit_2
+    has_collided_2 := true
+if logic_signal_2
+    signal_fired_2 := true
+
+// ’œÊ— ”Ìê‰«· ‰Â«ÌÌ »«  ÊÃÂ »Â ‘Ì» —Ê‰œ
+bool final_sell = is_inverted ? logic_signal_2 : logic_signal_1
+bool final_buy  = is_inverted ? logic_signal_1 : logic_signal_2
+
+plotshape(final_sell, title="Sell Signal", text="SELL", style=shape.labeldown, location=location.abovebar, color=color.red, textcolor=color.white, size=size.small)
+plotshape(final_buy, title="Buy Signal", text="BUY", style=shape.labelup, location=location.belowbar, color=color.green, textcolor=color.white, size=size.small)

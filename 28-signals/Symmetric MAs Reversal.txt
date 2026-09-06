@@ -1,0 +1,59 @@
+//@version=5
+indicator("Symmetric MA Reversal Signals", overlay=true, max_labels_count=500)
+
+// --- ÊäÙíãÇÊ äÌÑå ãÊÍÑ˜ æ ÓíäÇá ---
+length = input.int(20, "Øæá äÌÑå ãÊÍÑ˜ (Window)", minval=5)
+src = input.source(close, "ãäÈÚ ÞíãÊ")
+devMult = input.float(2.0, "ÖÑíÈ ÇäÍÑÇÝ ÏÇíäÇãí˜ (Z-Score)", minval=0.5, step=0.1)
+
+// ÊäÙíãÇÊ ÊÞÇÑä
+useGoldenRatio = input.bool(false, "ÇÓÊÝÇÏå ÇÒ äÓÈÊ ØáÇíí ÏÑ ÎØ ãíÇäí")
+phi = input.float(1.618, "ãÞÏÇÑ äÓÈÊ ØáÇíí")
+
+// --- ?. ãÍÇÓÈÇÊ Çíå æ ÊÞÇÑä ÏÑ äÌÑå ãÊÍÑ˜ ---
+ma = ta.sma(src, length)
+highest_ma = ta.highest(ma, length)
+lowest_ma = ta.lowest(ma, length)
+
+// ãÍÇÓÈå ÎØ ãíÇäí ÏÇíäÇãí˜
+mid = useGoldenRatio ? ma + (highest_ma - ma) / phi : (highest_ma + lowest_ma) / 2
+
+// ãÍÇÓÈå ãææíä ãÊÞÇÑä
+symmetric_ma = 2 * mid - ma
+
+// --- ?. ãÍÇÓÈå ÇäÍÑÇÝ æ ÔíÈåÇ ---
+// ãíÒÇä ÇäÍÑÇÝ ÞíãÊ ÇÒ ãææíä ãÊÞÇÑä
+deviation = src - symmetric_ma
+
+// ãÍÇÓÈå ÇäÍÑÇÝ ãÚíÇÑ ÏÑ äÌÑå ãÊÍÑ˜ ÈÑÇí íÇÝÊä ãÑÒåÇí ÇÔÈÇÚ
+dev_std = ta.stdev(deviation, length)
+upper_extreme = dev_std * devMult
+lower_extreme = -dev_std * devMult
+
+// ÔíÈ ÞíãÊ (ÈÑÇí ÊÇííÏ ÈÇÒÔÊ)
+price_slope = src - src[1]
+
+// --- ?. ãäØÞ ÓíäÇá ÈÇÒÔÊí ---
+// ˜ÑÇÓ ÇäÍÑÇÝ Èå ÏÇÎá ÈÇäÏåÇí ÏÇíäÇãí˜ + ÊÇííÏ ÔíÈ ÞíãÊ
+bullish_reversal = ta.crossover(deviation, lower_extreme) and price_slope > 0
+bearish_reversal = ta.crossunder(deviation, upper_extreme) and price_slope < 0
+
+// ÝíáÊÑ ˜ÑÏä ÓíäÇáåÇí ÔÊ ÓÑ åã
+var int last_signal = 0
+if bullish_reversal
+    last_signal := 1
+else if bearish_reversal
+    last_signal := -1
+
+valid_bull = bullish_reversal and last_signal[1] != 1
+valid_bear = bearish_reversal and last_signal[1] != -1
+
+// --- ?. ÑÓã ÑÇÝí˜ Ñæí ÇÑÊ ---
+// ÑÓã ãææíäåÇ
+plot(ma, "Original MA", color=color.new(color.blue, 0), linewidth=2)
+plot(symmetric_ma, "Symmetric MA", color=color.new(color.red, 0), linewidth=2)
+plot(mid, "Dynamic MidLine", color=color.new(color.gray, 50), style=plot.style_cross)
+
+// ÑÓã ÓíäÇáåÇ
+plotshape(valid_bull, title="Buy Signal", location=location.belowbar, color=color.green, style=shape.labelup, size=size.normal, text="BUY", textcolor=color.white)
+plotshape(valid_bear, title="Sell Signal", location=location.abovebar, color=color.red, style=shape.labeldown, size=size.normal, text="SELL", textcolor=color.white)

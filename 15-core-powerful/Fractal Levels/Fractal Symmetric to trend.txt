@@ -1,0 +1,160 @@
+//@version=6
+indicator("Fractals + Reflection", overlay=true, max_lines_count=500, max_labels_count=500, max_polylines_count=100)
+
+// --- –ŒÌ—Â  «—ÌŒçÂ “„«‰ Ê ﬁÌ„  ò‰œ·ùÂ« ---
+var int[] barTimes = array.new_int()
+var float[] barHighs = array.new_float()
+var float[] barLows = array.new_float()
+
+array.push(barTimes, time)
+array.push(barHighs, high)
+array.push(barLows, low)
+
+// --- ¬—«ÌÂùÂ«Ì „œÌ—Ì  «‘ò«· »—«Ì Ã·ÊêÌ—Ì «“  ò—«— —ÊÌ ò‰œ· ·«ÌÊ ---
+var line[] drawnLines = array.new_line()
+var label[] drawnLabels = array.new_label()
+var polyline[] drawnPolys = array.new<polyline>()
+
+// ---  «»⁄ »——”Ì »—ŒÊ—œ ÂÊ‘„‰œ (ÅÊ‘‘ùœÂ‰œÂ ¬Ì‰œÂ Ê êÅùÂ«Ì “„«‰Ì) ---
+f_check_and_label(int t, float p, array<int> times, array<float> highs, array<float> lows, string styleType) =>
+    int left = 0
+    int right = array.size(times) - 1
+    int ans = -1
+    
+    // Ã” ÃÊÌ ò‰œ·Ì òÂ “„«‰ ¬‰ œﬁÌﬁ« —ÊÌ ‰ﬁÿÂ Ì« »·«›«’·Â »⁄œ «“ ¬‰ »«‘œ
+    while left <= right
+        int mid = int((left + right) / 2)
+        int mid_time = array.get(times, mid)
+        if mid_time == t
+            ans := mid
+            break
+        else if mid_time < t
+            left := mid + 1
+        else
+            ans := mid // –ŒÌ—Â ò‰œ·Ì òÂ “„«‰‘ Ã·Ê — «“ ‰ﬁÿÂ Âœ› «” 
+            right := mid - 1
+            
+    if ans >= 0
+        // »——”Ì »—ŒÊ—œ ﬁÌ„  »Â ”ﬁ› Ì« ò› ò‰œ· ÅÌœ« ‘œÂ
+        float bHigh = array.get(highs, ans)
+        float bLow = array.get(lows, ans)
+        if p <= bHigh and p >= bLow
+            string lblStyle = styleType == "down" ? label.style_label_down : label.style_label_up
+            lbl = label.new(array.get(times, ans), p, "Reversal\nSignal", xloc=xloc.bar_time, style=lblStyle, color=color.red, textcolor=color.white, size=size.small)
+            array.push(drawnLabels, lbl)
+
+n = input.int(title="Periods", defval=2, minval=2)
+t1 = input.time(0, "Point 1 Time", confirm=true, inline="p1")
+p1 = input.price(0, "Point 1 Price", confirm=true, inline="p1")
+t2 = input.time(0, "Point 2 Time", confirm=true, inline="p2")
+p2 = input.price(0, "Point 2 Price", confirm=true, inline="p2")
+showCircles = input.bool(false, "Show Circles")
+
+// »ÂÌ‰Âù”«“Ì —”„ Œÿ «’·Ì
+var line mainLine = na
+if na(mainLine)
+    mainLine := line.new(t1, p1, t2, p2, xloc=xloc.bar_time, extend=extend.both, color=color.blue, width=2)
+
+bool upflagDownFrontier = true
+bool upflagUpFrontier0 = true
+bool upflagUpFrontier1 = true
+bool upflagUpFrontier2 = true
+bool upflagUpFrontier3 = true
+bool upflagUpFrontier4 = true
+for i = 1 to n
+    upflagDownFrontier := upflagDownFrontier and (high[n-i] < high[n])
+    upflagUpFrontier0 := upflagUpFrontier0 and (high[n+i] < high[n])
+    upflagUpFrontier1 := upflagUpFrontier1 and (high[n+1] <= high[n] and high[n+i + 1] < high[n])
+    upflagUpFrontier2 := upflagUpFrontier2 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i + 2] < high[n])
+    upflagUpFrontier3 := upflagUpFrontier3 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i + 3] < high[n])
+    upflagUpFrontier4 := upflagUpFrontier4 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i + 4] < high[n])
+flagUpFrontier = upflagUpFrontier0 or upflagUpFrontier1 or upflagUpFrontier2 or upflagUpFrontier3 or upflagUpFrontier4
+upFractal = upflagDownFrontier and flagUpFrontier
+
+bool downflagDownFrontier = true
+bool downflagUpFrontier0 = true
+bool downflagUpFrontier1 = true
+bool downflagUpFrontier2 = true
+bool downflagUpFrontier3 = true
+bool downflagUpFrontier4 = true
+for i = 1 to n
+    downflagDownFrontier := downflagDownFrontier and (low[n-i] > low[n])
+    downflagUpFrontier0 := downflagUpFrontier0 and (low[n+i] > low[n])
+    downflagUpFrontier1 := downflagUpFrontier1 and (low[n+1] >= low[n] and low[n+i + 1] > low[n])
+    downflagUpFrontier2 := downflagUpFrontier2 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i + 2] > low[n])
+    downflagUpFrontier3 := downflagUpFrontier3 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i + 3] > low[n])
+    downflagUpFrontier4 := downflagUpFrontier4 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i + 4] > low[n])
+flagDownFrontier = downflagUpFrontier0 or downflagUpFrontier1 or downflagUpFrontier2 or downflagUpFrontier3 or downflagUpFrontier4
+downFractal = downflagDownFrontier and flagDownFrontier
+
+beforeT1 = time[n] < t1
+
+plotshape(downFractal and beforeT1, style=shape.triangledown, location=location.belowbar, offset=-n, color=#F44336, size=size.small)
+plotshape(upFractal and beforeT1, style=shape.triangleup, location=location.abovebar, offset=-n, color=#009688, size=size.small)
+
+var chart.point[] downRef1Points = array.new<chart.point>()
+var chart.point[] upRef2Points = array.new<chart.point>()
+
+if upFractal and beforeT1
+    int rt2 = 2 * t2 - time[n]
+    float rp2 = 2 * p2 - high[n]
+    array.push(upRef2Points, chart.point.from_time(rt2, rp2))
+
+if downFractal and beforeT1
+    int rt1 = 2 * t1 - time[n]
+    float rp1 = 2 * p1 - low[n]
+    array.push(downRef1Points, chart.point.from_time(rt1, rp1))
+
+if barstate.islast
+    // Å«ò”«“Ì —”„ùÂ«Ì “‰œÂ ﬁ»·Ì »—«Ì Ã·ÊêÌ—Ì «“ «‰»«‘  œÌ « —ÊÌ ò‰œ· Ã«—Ì
+    if array.size(drawnLines) > 0
+        for i = 0 to array.size(drawnLines) - 1
+            line.delete(array.get(drawnLines, i))
+        array.clear(drawnLines)
+    if array.size(drawnLabels) > 0
+        for i = 0 to array.size(drawnLabels) - 1
+            label.delete(array.get(drawnLabels, i))
+        array.clear(drawnLabels)
+    if array.size(drawnPolys) > 0
+        for i = 0 to array.size(drawnPolys) - 1
+            polyline.delete(array.get(drawnPolys, i))
+        array.clear(drawnPolys)
+
+    int minSize = math.min(array.size(upRef2Points), array.size(downRef1Points))
+    if minSize > 0
+        float bar_dt = time - time[1]
+        for i = 0 to minSize - 1
+            chart.point uP = array.get(upRef2Points, i)
+            chart.point dP = array.get(downRef1Points, i)
+            float r_price = math.abs(uP.price - dP.price)
+            float r_time = math.max(math.abs(uP.time - dP.time), bar_dt * 5)
+            float cx = (uP.time + dP.time) / 2
+            float cy = (uP.price + dP.price) / 2
+            int leftEdgeTime = int(cx - r_time)
+            int rightEdgeTime = int(cx + r_time)
+            
+            line l1 = line.new(leftEdgeTime, cy - r_price * 2, leftEdgeTime, cy + r_price * 2, xloc=xloc.bar_time, extend=extend.both, color=#E040FB, width=1, style=line.style_dashed)
+            line l2 = line.new(rightEdgeTime, cy - r_price * 2, rightEdgeTime, cy + r_price * 2, xloc=xloc.bar_time, extend=extend.both, color=#FF6D00, width=1, style=line.style_dashed)
+            line l3 = line.new(leftEdgeTime, cy + r_price, rightEdgeTime, cy + r_price, xloc=xloc.bar_time, color=#00E5FF, width=1, style=line.style_dashed)
+            line l4 = line.new(leftEdgeTime, cy - r_price, rightEdgeTime, cy - r_price, xloc=xloc.bar_time, color=#FFEA00, width=1, style=line.style_dashed)
+            
+            array.push(drawnLines, l1)
+            array.push(drawnLines, l2)
+            array.push(drawnLines, l3)
+            array.push(drawnLines, l4)
+            
+            // »——”Ì —Ê »Â Ã·Ê Ê ⁄ﬁ» Â— ? êÊ‘Â
+            f_check_and_label(leftEdgeTime, cy + r_price, barTimes, barHighs, barLows, "down")  
+            f_check_and_label(leftEdgeTime, cy - r_price, barTimes, barHighs, barLows, "up")    
+            f_check_and_label(rightEdgeTime, cy + r_price, barTimes, barHighs, barLows, "down") 
+            f_check_and_label(rightEdgeTime, cy - r_price, barTimes, barHighs, barLows, "up")   
+
+            if showCircles
+                chart.point[] circlePts = array.new<chart.point>()
+                for j = 0 to 32
+                    float angle = j * 2 * math.pi / 32
+                    int px = int(cx + r_time * math.cos(angle))
+                    float py = cy + r_price * math.sin(angle)
+                    array.push(circlePts, chart.point.from_time(px, py))
+                polyline pl = polyline.new(circlePts, closed=true, curved=true, xloc=xloc.bar_time, line_color=color.yellow, line_width=1)
+                array.push(drawnPolys, pl)

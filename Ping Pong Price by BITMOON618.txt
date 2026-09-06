@@ -1,0 +1,34 @@
+//@version=5
+indicator("Ping Pong Price", overlay=false)
+
+lookback = input.int(100, "Lookback Period", minval=1)
+
+hh = ta.highest(high, lookback)
+ll = ta.lowest(low, lookback)
+priceRange = hh - ll
+
+var float pp = 50.0
+var int direction = 1
+var float entry_price = close
+var float cum_slope = 0.0
+
+change = nz(ta.change(close))
+cum_slope := cum_slope + change
+
+segment_move = (cum_slope / priceRange) * 100 * direction
+pp := 50.0 + segment_move
+
+if pp >= 100
+    cum_slope := 0.0
+    direction := -1
+    pp := 100.0
+
+if pp <= 0
+    cum_slope := 0.0
+    direction := 1
+    pp := 0.0
+
+plot(pp, color=color.aqua, linewidth=2)
+hline(100, linestyle=hline.style_dotted)
+hline(50, linestyle=hline.style_dotted)
+hline(0, linestyle=hline.style_dotted)

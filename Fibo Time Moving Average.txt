@@ -1,0 +1,44 @@
+//@version=5
+indicator("Fibonacci Time Moving Average", overlay=true)
+
+time1 = input.time(timestamp("2024-01-01 00:00"), "Start Time", confirm=true)
+time2 = input.time(timestamp("2024-01-31 00:00"), "End Time", confirm=true)
+
+var float[] fibLevels = array.from(0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.272, 1.618, 2.0, 2.618, 3.618, 4.236)
+var int[] fibTimes = array.new_int()
+var bool timesCalculated = false
+
+if not timesCalculated and time >= time1
+    for i = 0 to array.size(fibLevels) - 1
+        fibTime = time1 + int((time2 - time1) * array.get(fibLevels, i))
+        array.push(fibTimes, fibTime)
+    timesCalculated := true
+
+var int basePeriod = na
+var int barsInRange = 0
+
+if time >= time1 and time <= time2
+    barsInRange += 1
+
+if time == time2
+    basePeriod := barsInRange
+
+currentFibIndex = -1
+if array.size(fibTimes) > 0
+    for i = 0 to array.size(fibTimes) - 1
+        fibTime = array.get(fibTimes, i)
+        if time >= fibTime
+            currentFibIndex := i
+
+currentMultiplier = currentFibIndex >= 0 ? array.get(fibLevels, currentFibIndex) : 0.0
+adjustedPeriod = not na(basePeriod) and basePeriod > 0 ? int(basePeriod * math.max(currentMultiplier, 0.1)) : 1
+
+ma = ta.sma(close, adjustedPeriod)
+
+plot(ma, color=color.blue, linewidth=2, title="Fibonacci Adjusted MA")
+
+if timesCalculated and time >= time1
+    for i = 0 to array.size(fibTimes) - 1
+        fibTime = array.get(fibTimes, i)
+        if time == fibTime
+            line.new(bar_index, low - (high - low), bar_index, high + (high - low), xloc=xloc.bar_index, color=color.new(color.orange, 50), width=1, style=line.style_dashed)

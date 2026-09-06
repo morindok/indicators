@@ -1,0 +1,1110 @@
+# -*- coding: utf-8 -*-
+"""
+🌀 Annual Spiral + 🔱 Golden Angle + ⚡ φ²-Turn Signal System
+----------------------------------------------------------------------
+✓ فقط سیگنال‌های φ²-Turn (قوی‌ترین مقاومت طلایی) صادر می‌شوند
+✓ φ² = 942.5° = 2.618 دور = 43.6% از دوره هر تایم‌فریم
+"""
+
+import threading
+import time
+import urllib3
+from datetime import datetime, timedelta
+
+import numpy as np
+import requests
+import dash
+from dash import dcc, html, Input, Output
+import dash_bootstrap_components as dbc
+import plotly.graph_objects as go
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# ==============================================================================
+# 1) ثابت‌ها
+# ==============================================================================
+SYMBOL = "BTCUSDT"
+CATEGORY = "linear"
+YEAR_SECONDS = 365.25 * 24 * 3600
+
+N_SPIRAL_TURNS = 6
+A_SPIRAL = 0.8
+B_SPIRAL = 0.07
+THETA_MAX = 2 * np.pi * N_SPIRAL_TURNS
+
+PHI = (1 + np.sqrt(5)) / 2
+GA_RAD = 2 * np.pi / (PHI ** 2)
+GA_DEG = GA_RAD * 180 / np.pi
+GA_SUPP_RAD = 2 * np.pi - GA_RAD
+GA_SUPP_DEG = GA_SUPP_RAD * 180 / np.pi
+GC_RAD = np.pi + GA_RAD
+GC_DEG = GC_RAD * 180 / np.pi
+
+# ⚡ φ²-Turn: قوی‌ترین مقاومت طلایی
+PHI2_RAD = (PHI ** 2) * 2 * np.pi        # 16.449 rad
+PHI2_DEG = PHI2_RAD * 180 / np.pi        # 942.49°
+PHI2_PROGRESS = PHI2_RAD / THETA_MAX     # ≈ 0.436 (43.6% از دوره)
+
+
+def spiral_radius(theta):
+    return A_SPIRAL * np.exp(B_SPIRAL * theta)
+
+
+def spiral_x(theta):
+    return spiral_radius(theta) * np.cos(theta)
+
+
+def spiral_y(theta):
+    return spiral_radius(theta) * np.sin(theta)
+
+
+# ==============================================================================
+# 2) صرافی
+# ==============================================================================
+API_ENDPOINTS = [
+    "https://api.bybit.com",
+    "https://api.bytick.com",
+    "https://api.bybit.kz",
+]
+
+SESSION = requests.Session()
+SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
+})
+
+APP_STATE = {"price": 0.0, "connected": False, "endpoint": "None"}
+KLINE_CACHE = {}
+SIGNAL_LOG = []
+
+# ==============================================================================
+# 3) تایم‌فریم‌ها
+# ==============================================================================
+TIMEFRAMES_NORMAL = [
+    {'name': '1M',  'T': 30 * 24 * 3600, 'R': 12.0, 'color': '#FFD700', 'width': 5},
+    {'name': '1W',  'T': 7 * 24 * 3600,  'R': 6.0,  'color': '#FFA500', 'width': 4},
+    {'name': '1D',  'T': 86400,          'R': 3.5,  'color': '#FF6B6B', 'width': 4},
+    {'name': '4H',  'T': 14400,          'R': 2.0,  'color': '#4ECDC4', 'width': 3},
+    {'name': '1H',  'T': 3600,           'R': 1.2,  'color': '#95E1D3', 'width': 2.5},
+    {'name': '15m', 'T': 900,            'R': 0.7,  'color': '#F38181', 'width': 2},
+    {'name': '1m',  'T': 60,             'R': 0.4,  'color': '#AA96DA', 'width': 1.5},
+]
+
+FIB_MINUTES = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89,
+               144, 233, 377, 610, 987, 1597, 2584, 4181,
+               6765, 10946, 17711, 28657, 46368]
+
+
+def format_fib_time(minutes):
+    if minutes < 60:
+        return f"{minutes}m"
+    elif minutes < 1440:
+        h = minutes // 60
+        m = minutes % 60
+        return f"{h}h{m:02d}m"
+    elif minutes < 10080:
+        d = minutes // 1440
+        h = (minutes % 1440) // 60
+        return f"{d}d{h}h"
+    elif minutes < 43200:
+        w = minutes // 10080
+        d = (minutes % 10080) // 1440
+        return f"{w}w{d}d"
+    else:
+        mo = minutes // 43200
+        d = (minutes % 43200) // 1440
+        return f"{mo}mo{d}d"
+
+
+def build_fib_timeframes():
+    tfs = []
+    colors = [
+        '#FFD700', '#FFC300', '#FFB000', '#FF9D00', '#FF8A00',
+        '#FF7700', '#FF6400', '#FF5100', '#FF3E00', '#FF2B00',
+        '#FF1800', '#FF0500', '#E000FF', '#CC00FF', '#AA00FF',
+        '#8800FF', '#6600FF', '#4400FF', '#2200FF', '#0044FF',
+        '#0088FF', '#00CCFF', '#00FFCC'
+    ]
+    for i, minutes in enumerate(FIB_MINUTES):
+        tfs.append({
+            'name': format_fib_time(minutes),
+            'T': minutes * 60,
+            'R': 0.8 + np.log10(minutes + 1) * 3.5,
+            'color': colors[i % len(colors)],
+            'width': max(1.0, 4.0 - i * 0.15),
+            'fib_index': i + 1,
+            'minutes': minutes
+        })
+    return tfs
+
+
+TIMEFRAMES_FIB = build_fib_timeframes()
+ALL_TIMEFRAMES = TIMEFRAMES_NORMAL + TIMEFRAMES_FIB
+
+SHORT_TF = ALL_TIMEFRAMES[:10]
+MID_TF = ALL_TIMEFRAMES[10:18]
+LONG_TF = ALL_TIMEFRAMES[18:]
+
+
+def api_request(path, params, timeout=10):
+    endpoints = [APP_STATE["endpoint"]] if APP_STATE["endpoint"] != "None" else []
+    endpoints += [ep for ep in API_ENDPOINTS if ep != APP_STATE["endpoint"]]
+    for endpoint in endpoints:
+        url = f"{endpoint}{path}"
+        for verify in [True, False]:
+            try:
+                resp = SESSION.get(url, params=params, timeout=timeout, verify=verify)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("retCode") == 0:
+                        APP_STATE["endpoint"] = endpoint
+                        APP_STATE["connected"] = True
+                        return data
+            except Exception:
+                continue
+    APP_STATE["connected"] = False
+    return None
+
+
+def data_loop(stop_flag):
+    while not stop_flag.is_set():
+        try:
+            data = api_request("/v5/market/tickers", {"category": CATEGORY, "symbol": SYMBOL})
+            if data and data.get("result") and data["result"].get("list"):
+                APP_STATE["price"] = float(data["result"]["list"][0].get("lastPrice", 0))
+            for tf in TIMEFRAMES_NORMAL:
+                data = api_request("/v5/market/kline", {
+                    "category": CATEGORY, "symbol": SYMBOL,
+                    "interval": tf['name'], "limit": 2
+                })
+                if data and data.get("result") and data["result"].get("list"):
+                    k = data["result"]["list"][0]
+                    KLINE_CACHE[tf['name']] = {
+                        'open': float(k[1]), 'high': float(k[2]),
+                        'low': float(k[3]), 'close': float(k[4])
+                    }
+        except Exception:
+            pass
+        time.sleep(3)
+
+
+threading.Thread(target=data_loop, args=(threading.Event(),), daemon=True).start()
+
+
+# ==============================================================================
+# 4) محاسبات زاویه طلایی (برای جداول و تقویم)
+# ==============================================================================
+def find_next_golden_event(t_now, T_sec):
+    progress = (t_now % T_sec) / T_sec
+    theta_now = progress * THETA_MAX
+
+    events = {
+        '1×GA': GA_RAD, '2×GA': 2 * GA_RAD, '3×GA': 3 * GA_RAD,
+        '4×GA': 4 * GA_RAD, '5×GA': 5 * GA_RAD, '6×GA': 6 * GA_RAD,
+        '7×GA': 7 * GA_RAD, '8×GA': 8 * GA_RAD, '9×GA': 9 * GA_RAD,
+        '10×GA': 10 * GA_RAD,
+        '1×GS': GA_SUPP_RAD, '2×GS': 2 * GA_SUPP_RAD, '3×GS': 3 * GA_SUPP_RAD,
+        '4×GS': 4 * GA_SUPP_RAD, '5×GS': 5 * GA_SUPP_RAD, '6×GS': 6 * GA_SUPP_RAD,
+        'GC': GC_RAD, 'GCS': np.pi + GA_SUPP_RAD,
+        'φ-Turn': PHI * 2 * np.pi, 'φ²-Turn': PHI2_RAD,
+        'Mid(3π)': 3 * np.pi,
+    }
+
+    candidates = []
+    for name, theta_ev in events.items():
+        if 0 <= theta_ev <= THETA_MAX:
+            for k in range(0, 4):
+                theta_target = theta_ev + k * THETA_MAX
+                if theta_target > theta_now + 0.001:
+                    progress_target = (theta_target % THETA_MAX) / THETA_MAX
+                    t_remaining = T_sec * (progress_target - progress)
+                    if t_remaining < 0:
+                        t_remaining += T_sec
+                    candidates.append((t_remaining, name, theta_ev))
+                    break
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda x: x[0])
+    t_rem, event, theta_base = candidates[0]
+    return {
+        'time_remaining': t_rem,
+        'event': event,
+        'theta_base': theta_base,
+        'event_time': datetime.fromtimestamp(t_now + t_rem)
+    }
+
+
+def get_event_strength(event):
+    if event == 'φ²-Turn':
+        return 5, '⚡', '#FF0055'
+    elif event in ['GC', 'GCS', 'φ-Turn']:
+        return 4, '🔥', '#FF6B00'
+    elif event.startswith(('3×', '4×', '5×')):
+        return 3, '⭐', '#FFD700'
+    elif event.startswith(('1×GS', '2×GS')):
+        return 3, '🟡', '#FFA500'
+    elif event.startswith(('1×GA', '2×GA')):
+        return 2, '🟢', '#4ECDC4'
+    else:
+        return 1, '➖', '#888888'
+
+
+def format_time_remaining(seconds):
+    if seconds < 0:
+        return "—"
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m {int(seconds % 60):02d}s"
+    if seconds < 86400:
+        return f"{int(seconds // 3600)}h {int((seconds % 3600) // 60):02d}m"
+    return f"{int(seconds // 86400)}d {int((seconds % 86400) // 3600)}h"
+
+
+def compute_golden_resistances(t_now, timeframes):
+    results = []
+    for tf in timeframes:
+        progress = (t_now % tf['T']) / tf['T']
+        theta_now = progress * THETA_MAX
+        event = find_next_golden_event(t_now, tf['T'])
+        results.append({
+            'tf': tf['name'],
+            'period': format_fib_time(tf['T'] // 60),
+            'color': tf['color'],
+            'theta_now': theta_now,
+            'progress': progress,
+            'event': event
+        })
+    return results
+
+
+# ==============================================================================
+# 5) ⚡ موتور سیگنال φ²-Turn (فقط φ²)
+# ==============================================================================
+def find_next_phi2_event(t_now, T_sec):
+    """
+    فقط رویداد φ²-Turn بعدی را پیدا می‌کند.
+    φ²-Turn در progress = 43.6% از دوره هر تایم‌فریم رخ می‌دهد.
+    """
+    progress = (t_now % T_sec) / T_sec
+    
+    # زمان تا φ² در دوره فعلی
+    t_remaining = T_sec * (PHI2_PROGRESS - progress)
+    if t_remaining < 0:
+        t_remaining += T_sec  # دوره بعد
+    
+    return {
+        'time_remaining': t_remaining,
+        'event': 'φ²-Turn',
+        'theta_base': PHI2_RAD,
+        'event_time': datetime.fromtimestamp(t_now + t_remaining)
+    }
+
+
+def get_trend():
+    """روند کلی از کندل‌های زنده"""
+    bulls, bears = 0, 0
+    for name in ['15m', '1H', '4H', '1D']:
+        k = KLINE_CACHE.get(name)
+        if k and k['open'] > 0:
+            if k['close'] >= k['open']:
+                bulls += 1
+            else:
+                bears += 1
+    if bulls > bears:
+        return 'bull', bulls, bears
+    if bears > bulls:
+        return 'bear', bulls, bears
+    return 'neutral', bulls, bears
+
+
+def get_volatility_pct():
+    """نوسان زنده بازار"""
+    pcts = []
+    for k in KLINE_CACHE.values():
+        if k['low'] > 0:
+            pcts.append((k['high'] - k['low']) / k['low'] * 100)
+    return float(np.mean(pcts)) if pcts else 0.5
+
+
+def compute_phi2_candidates(t_now):
+    """فقط رویدادهای φ²-Turn را محاسبه و رتبه‌بندی می‌کند"""
+    cands = []
+    for tf in ALL_TIMEFRAMES:
+        ev = find_next_phi2_event(t_now, tf['T'])
+        t_rem = ev['time_remaining']
+        proximity = 1.0 / (1.0 + t_rem / 7200.0)
+        score = 100 * proximity  # φ² همیشه حداکثر قدرت را دارد
+        cands.append(dict(tf=tf, ev=ev, stars=5, icon='⚡',
+                          color='#FF0055', score=score, t_rem=t_rem))
+    cands.sort(key=lambda c: -c['score'])
+    return cands
+
+
+def build_signal(t_now):
+    """ساخت سیگنال φ²-Turn با TP/SL/لوریج"""
+    price = APP_STATE['price']
+    cands = compute_phi2_candidates(t_now)
+    if not cands:
+        return None, []
+
+    top = cands[0]
+    trend, bulls, bears = get_trend()
+    vol = get_volatility_pct()
+
+    # ─── جهت: φ² همیشه معکوس روند (قوی‌ترین مقاومت/حمایت) ───
+    if trend == 'bull':
+        direction = 'SHORT'  # مقاومت → انتظار بازگشت به پایین
+    elif trend == 'bear':
+        direction = 'LONG'   # حمایت → انتظار بازگشت به بالا
+    else:
+        direction = 'SHORT'  # پیش‌فرض: مقاومت
+
+    # ─── وضعیت بر اساس زمان تا رویداد ───
+    if top['t_rem'] < 900:          # < 15 دقیقه
+        status, status_color = '🔥 فعال (ACTIVE)', '#FF0055'
+    elif top['t_rem'] < 3600:       # < 1 ساعت
+        status, status_color = '⏳ آماده‌سازی (PREPARING)', '#FFA500'
+    elif top['t_rem'] < 24 * 3600:  # < 24 ساعت
+        status, status_color = '⏳ در انتظار (PENDING)', '#888888'
+    else:
+        status, status_color = '😴 دور (FAR)', '#555555'
+
+    no_signal = top['t_rem'] > 24 * 3600
+
+    # ─── TP/SL: φ² قوی‌ترین است → SL بزرگ‌تر و مطمئن‌تر ───
+    sl_pct = max(0.6, round(vol * 1.5, 2))
+    tp1_pct, tp2_pct, tp3_pct = sl_pct, sl_pct * 2, sl_pct * 3
+
+    # ─── لوریج: φ² = قوی‌ترین رویداد = لوریج بالا ───
+    base_lev = 25
+    T = top['tf']['T']
+    tf_factor = 1.0 if T <= 3600 else (0.7 if T <= 86400 else 0.4)
+    leverage = max(3, int(base_lev * tf_factor))
+
+    # ─── سطوح قیمت ───
+    levels = {}
+    if price > 0:
+        if direction == 'LONG':
+            levels = {
+                'entry': price,
+                'tp1': price * (1 + tp1_pct / 100),
+                'tp2': price * (1 + tp2_pct / 100),
+                'tp3': price * (1 + tp3_pct / 100),
+                'sl': price * (1 - sl_pct / 100),
+            }
+        else:
+            levels = {
+                'entry': price,
+                'tp1': price * (1 - tp1_pct / 100),
+                'tp2': price * (1 - tp2_pct / 100),
+                'tp3': price * (1 - tp3_pct / 100),
+                'sl': price * (1 + sl_pct / 100),
+            }
+
+    strength = min(100, int(top['score']))
+
+    signal = {
+        'id': f"{top['tf']['name']}_PHI2_{int(top['ev']['event_time'].timestamp() // 3600)}",
+        'direction': direction,
+        'status': status,
+        'status_color': status_color,
+        'no_signal': no_signal,
+        'tf': top['tf'],
+        'event': top['ev'],
+        'stars': 5,
+        'icon': '⚡',
+        'color': '#FF0055',
+        'strength': strength,
+        'trend': trend,
+        'bulls': bulls,
+        'bears': bears,
+        'vol': vol,
+        'sl_pct': sl_pct,
+        'tp1_pct': tp1_pct,
+        'tp2_pct': tp2_pct,
+        'tp3_pct': tp3_pct,
+        'leverage': leverage,
+        'levels': levels,
+        'confluence': [c for c in cands if c['t_rem'] < 3600],
+        't_rem': top['t_rem'],
+    }
+
+    # ─── لاگ سیگنال ───
+    if not no_signal and (not SIGNAL_LOG or SIGNAL_LOG[-1]['id'] != signal['id']):
+        SIGNAL_LOG.append({
+            'id': signal['id'],
+            'time': datetime.fromtimestamp(t_now),
+            'direction': direction,
+            'tf': top['tf']['name'],
+            'event': 'φ²-Turn',
+            'price': price,
+            'strength': strength,
+        })
+        del SIGNAL_LOG[:-8]
+
+    return signal, cands
+
+
+# ==============================================================================
+# 6) اسپیرال سالانه
+# ==============================================================================
+def compute_annual_spiral(t_now, timeframes):
+    traces = []
+    price = APP_STATE["price"]
+
+    theta_bg = np.linspace(0, THETA_MAX, 800)
+    traces.append(go.Scatter(
+        x=spiral_x(theta_bg), y=spiral_y(theta_bg), mode='lines',
+        line=dict(color='#2a2a3e', width=1.5, dash='dot'),
+        showlegend=False, hoverinfo='skip', name='🌀 Annual Spiral'
+    ))
+
+    for turn in range(N_SPIRAL_TURNS):
+        theta_c = np.linspace(turn * 2 * np.pi, (turn + 1) * 2 * np.pi, 120)
+        r = A_SPIRAL * np.exp(B_SPIRAL * theta_c)
+        traces.append(go.Scatter(
+            x=r * np.cos(theta_c), y=r * np.sin(theta_c), mode='lines',
+            line=dict(color='#1a1a2e', width=0.5),
+            showlegend=False, hoverinfo='skip'
+        ))
+
+    seasons = [(0, "🌱 Jan"), (2*np.pi, "🌸 Mar"), (4*np.pi, "☀️ May"),
+               (6*np.pi, "🌿 Jul"), (8*np.pi, "🍂 Sep"), (10*np.pi, "❄️ Nov")]
+    for theta_s, label_s in seasons:
+        if theta_s < THETA_MAX:
+            traces.append(go.Scatter(
+                x=[spiral_x(theta_s)], y=[spiral_y(theta_s)],
+                mode='markers+text',
+                marker=dict(color='#555566', size=5),
+                text=[label_s], textposition='top right',
+                textfont=dict(color='#777788', size=8, family='monospace'),
+                showlegend=False, hoverinfo='skip'
+            ))
+
+    # ⚡ فقط φ²-Turn روی اسپیرال (بزرگ‌تر و برجسته‌تر)
+    traces.append(go.Scatter(
+        x=[spiral_x(PHI2_RAD)], y=[spiral_y(PHI2_RAD)],
+        mode='markers+text',
+        marker=dict(color='#FF0055', size=14, symbol='diamond',
+                    line=dict(color='#FFD700', width=2)),
+        text=["⚡φ²"], textposition='top center',
+        textfont=dict(color='#FF0055', size=12, family='monospace'),
+        showlegend=False,
+        hovertemplate=f"<b>⚡ φ²-Turn</b><br>θ = {PHI2_RAD/np.pi:.3f}π rad<br>{PHI2_DEG:.1f}°<extra></extra>"
+    ))
+
+    # سایر نقاط طلایی (کوچک‌تر)
+    ga_nodes = [(GA_RAD, 'GA'), (GA_SUPP_RAD, 'GS'), (GC_RAD, 'GC'),
+                (PHI * 2 * np.pi, 'φ')]
+    for theta_n, label_n in ga_nodes:
+        if theta_n < THETA_MAX:
+            traces.append(go.Scatter(
+                x=[spiral_x(theta_n)], y=[spiral_y(theta_n)],
+                mode='markers+text',
+                marker=dict(color='#FF6B00', size=7, symbol='diamond',
+                            line=dict(color='#FFD700', width=1)),
+                text=[label_n], textposition='top center',
+                textfont=dict(color='#FFD700', size=8, family='monospace'),
+                showlegend=False, hoverinfo='skip'
+            ))
+
+    year_progress = (t_now % YEAR_SECONDS) / YEAR_SECONDS
+    theta_year_now = year_progress * THETA_MAX
+    traces.append(go.Scatter(
+        x=[spiral_x(theta_year_now)], y=[spiral_y(theta_year_now)],
+        mode='markers+text',
+        marker=dict(color='white', size=11, symbol='star',
+                    line=dict(color='#FFD700', width=2)),
+        text=[f"📅 {year_progress * 100:.0f}%"],
+        textposition='bottom center',
+        textfont=dict(color='#FFD700', size=8, family='monospace'),
+        showlegend=False,
+        hovertemplate=f"<b>📅 Year</b><br>{year_progress * 100:.2f}%<extra></extra>"
+    ))
+
+    for tf in timeframes:
+        progress = (t_now % tf['T']) / tf['T']
+        theta_tf = progress * THETA_MAX
+
+        theta_recent = 3 * 2 * np.pi
+        theta_trail_start = max(0, theta_tf - theta_recent)
+        n_pts = max(int(400 * (theta_tf - theta_trail_start) / theta_recent), 10)
+        theta_trail = np.linspace(theta_trail_start, theta_tf, n_pts)
+
+        traces.append(go.Scatter(
+            x=spiral_x(theta_trail), y=spiral_y(theta_trail), mode='lines',
+            line=dict(color=tf['color'], width=tf['width']),
+            showlegend=True, name=tf['name'],
+            hovertemplate=f"<b style='color:{tf['color']}'>{tf['name']}</b><br>📍 {progress * 100:.1f}%<extra></extra>"
+        ))
+
+        x_cur = spiral_x(theta_tf)
+        y_cur = spiral_y(theta_tf)
+
+        for g in [10, 6]:
+            traces.append(go.Scatter(
+                x=[x_cur], y=[y_cur], mode='markers',
+                marker=dict(color=tf['color'], size=g, opacity=0.3),
+                showlegend=False, hoverinfo='skip'
+            ))
+
+        hover_pt = f"<b style='color:{tf['color']}'>{tf['name']}</b><br>📊 {progress * 100:.1f}%<br>"
+        if price > 0:
+            hover_pt += f"💰 ${price:,.2f}"
+
+        traces.append(go.Scatter(
+            x=[x_cur], y=[y_cur], mode='markers',
+            marker=dict(color='#FFF', size=6, line=dict(color=tf['color'], width=2)),
+            showlegend=False,
+            hovertemplate=hover_pt + "<extra></extra>"
+        ))
+
+    return traces
+
+
+def build_spiral_figure(traces):
+    fig = go.Figure(data=traces)
+    shapes = []
+    for r in [5, 10, 15, 20]:
+        shapes.append(dict(type="circle", xref="x", yref="y",
+                           x0=-r, y0=-r, x1=r, y1=r,
+                           line=dict(color="#1a1a2e", width=1, dash="dot")))
+    for angle in np.linspace(0, 2 * np.pi, 12, endpoint=False):
+        shapes.append(dict(type="line", xref="x", yref="y",
+                           x0=0, y0=0, x1=15 * np.cos(angle), y1=15 * np.sin(angle),
+                           line=dict(color="#1a1a2e", width=0.5, dash="dot")))
+
+    fig.update_layout(
+        plot_bgcolor='#0a0a12', paper_bgcolor='#0a0a12',
+        font=dict(color='#f5efe0'), showlegend=True,
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01,
+                    bgcolor="rgba(10,10,18,0.8)", font=dict(size=8, family="monospace")),
+        shapes=shapes,
+        xaxis=dict(visible=False, scaleanchor="y", scaleratio=1, range=[-15, 15]),
+        yaxis=dict(visible=False, scaleanchor="x", scaleratio=1, range=[-15, 15]),
+        margin=dict(l=0, r=0, t=10, b=0), hovermode='closest',
+        hoverlabel=dict(bgcolor="#1a1a2e", bordercolor="#FFD700",
+                        font=dict(family="monospace", size=11)),
+        uirevision='constant'
+    )
+    return fig
+
+
+# ==============================================================================
+# 7) رندر تب‌ها (جداول)
+# ==============================================================================
+HEADER_CELL = {
+    'backgroundColor': '#1a1a2e', 'color': '#FFD700', 'padding': '10px 8px',
+    'textAlign': 'center', 'fontFamily': 'monospace', 'fontSize': '11px',
+    'fontWeight': 'bold', 'borderBottom': '2px solid #FFD700',
+}
+
+TABLE_STYLE = {
+    'width': '100%', 'borderCollapse': 'collapse', 'backgroundColor': '#0a0a12',
+    'borderRadius': '8px', 'overflow': 'hidden',
+    'boxShadow': '0 4px 20px rgba(0,0,0,0.5)'
+}
+
+
+def render_resistance_table(results, title, icon):
+    headers = ['TF', 'دوره', 'θ فعلی', 'پیشرفت', 'رویداد طلایی', 'زمان تا', 'تاریخ/ساعت', 'قدرت']
+    rows = [html.Tr([html.Th(h, style=HEADER_CELL) for h in headers])]
+
+    for r in results:
+        event = r['event']
+        if event:
+            strength, icon_e, color = get_event_strength(event['event'])
+            time_rem = format_time_remaining(event['time_remaining'])
+            event_time = event['event_time'].strftime('%m-%d %H:%M:%S')
+        else:
+            strength, icon_e, color = 1, '➖', '#888888'
+            time_rem, event_time = "—", "—"
+
+        row_style = {
+            'backgroundColor': '#0f0f1a', 'borderBottom': '1px solid #1a1a2e',
+            'fontFamily': 'monospace', 'fontSize': '10px',
+        }
+        if strength >= 4:
+            row_style['backgroundColor'] = f'{color}22'
+            row_style['borderLeft'] = f'3px solid {color}'
+
+        cell = {'padding': '8px', 'textAlign': 'center', 'color': '#e0e0e0'}
+
+        rows.append(html.Tr([
+            html.Td(html.Span(r['tf'], style={'color': r['color'], 'fontWeight': 'bold',
+                                              'fontSize': '11px'}), style=cell),
+            html.Td(r['period'], style={**cell, 'color': '#888'}),
+            html.Td(f"{r['theta_now']:.2f}", style={**cell, 'color': '#aaa'}),
+            html.Td(f"{r['progress'] * 100:.1f}%", style={**cell, 'color': '#4ECDC4'}),
+            html.Td(html.Span(event['event'] if event else "—",
+                              style={'color': color, 'fontWeight': 'bold'}), style=cell),
+            html.Td(time_rem, style={**cell, 'color': '#FFD700', 'fontWeight': 'bold'}),
+            html.Td(event_time, style={**cell, 'color': '#888', 'fontSize': '9px'}),
+            html.Td(icon_e, style={**cell, 'fontSize': '14px'}),
+        ], style=row_style))
+
+    return html.Div([
+        html.H4(f"{icon} {title}", style={
+            'color': '#FFD700', 'fontFamily': 'monospace', 'marginBottom': '15px',
+            'textShadow': '0 0 8px rgba(255,215,0,0.3)'}),
+        html.Table(rows, style=TABLE_STYLE)
+    ])
+
+
+def render_golden_calendar(t_now):
+    all_events = []
+    for tf in ALL_TIMEFRAMES:
+        event = find_next_golden_event(t_now, tf['T'])
+        if event and event['time_remaining'] < 7 * 24 * 3600:
+            all_events.append({
+                'tf': tf['name'], 'color': tf['color'], 'event': event['event'],
+                'time_remaining': event['time_remaining'],
+                'event_time': event['event_time'],
+                'theta': event['theta_base'] / np.pi
+            })
+    all_events.sort(key=lambda x: x['time_remaining'])
+
+    rows = [html.Tr([
+        html.Th('#', style=HEADER_CELL), html.Th('TF', style=HEADER_CELL),
+        html.Th('رویداد طلایی', style=HEADER_CELL), html.Th('θ', style=HEADER_CELL),
+        html.Th('زمان تا رویداد', style=HEADER_CELL),
+        html.Th('ساعت دقیق', style=HEADER_CELL), html.Th('اهمیت', style=HEADER_CELL),
+    ])]
+
+    for i, e in enumerate(all_events[:25], 1):
+        strength, icon, color = get_event_strength(e['event'])
+        row_style = {'backgroundColor': '#0f0f1a', 'borderBottom': '1px solid #1a1a2e',
+                     'fontFamily': 'monospace', 'fontSize': '10px'}
+        if strength >= 4:
+            row_style['backgroundColor'] = f'{color}22'
+            row_style['borderLeft'] = f'3px solid {color}'
+
+        cell = {'padding': '8px', 'textAlign': 'center'}
+        rows.append(html.Tr([
+            html.Td(i, style={**cell, 'color': '#666'}),
+            html.Td(html.Span(e['tf'], style={'color': e['color'], 'fontWeight': 'bold'}), style=cell),
+            html.Td(html.Span(e['event'], style={'color': color, 'fontWeight': 'bold'}), style=cell),
+            html.Td(f"{e['theta']:.3f}π", style={**cell, 'color': '#aaa'}),
+            html.Td(format_time_remaining(e['time_remaining']),
+                    style={**cell, 'color': '#FFD700', 'fontWeight': 'bold'}),
+            html.Td(e['event_time'].strftime('%m-%d %H:%M:%S'),
+                    style={**cell, 'color': '#888', 'fontSize': '9px'}),
+            html.Td(icon, style={**cell, 'fontSize': '14px'}),
+        ], style=row_style))
+
+    return html.Div([
+        html.H4("📅 تقویم رویدادهای طلایی (7 روز آینده)", style={
+            'color': '#FFD700', 'fontFamily': 'monospace', 'marginBottom': '15px',
+            'textShadow': '0 0 8px rgba(255,215,0,0.3)'}),
+        html.Table(rows, style=TABLE_STYLE)
+    ])
+
+
+def render_key_nodes(t_now):
+    year_progress = (t_now % YEAR_SECONDS) / YEAR_SECONDS
+    theta_year_now = year_progress * THETA_MAX
+
+    key_nodes = [
+        ("⚡ φ²-Turn (2.618 turns)", PHI2_RAD, "قوی‌ترین مقاومت - فقط این سیگنال صادر می‌شود"),
+        ("1× Golden Angle (GA)", GA_RAD, "مقاومت اولیه - 137.5°"),
+        ("2× Golden Angle", 2 * GA_RAD, "مقاومت دوتایی قوی"),
+        ("Golden Supplement (GS)", GA_SUPP_RAD, "مکمل طلایی - 222.5°"),
+        ("🔥 Golden Convergence (GC)", GC_RAD, "بازگشت قوی - 317.5°"),
+        ("φ-Turn (1.618 turns)", PHI * 2 * np.pi, "چرخش طلایی کامل"),
+        ("2× φ-Turn", 2 * PHI * 2 * np.pi, "چرخش دوتایی"),
+        ("3× Golden Angle", 3 * GA_RAD, "تشدید سه‌گانه"),
+        ("5× Golden Angle", 5 * GA_RAD, "کلاستر فیبوناچی"),
+        ("8× Golden Angle", 8 * GA_RAD, "کلاستر فیبوناچی"),
+        ("Spiral Midpoint (3π)", 3 * np.pi, "نقطه محوری نیمه"),
+        ("Spiral Terminus (6π)", 6 * np.pi, "پایان اسپیرال سالانه"),
+    ]
+
+    rows = [html.Tr([
+        html.Th('نوع نقطه', style=HEADER_CELL), html.Th('θ (rad)', style=HEADER_CELL),
+        html.Th('θ (deg)', style=HEADER_CELL), html.Th('θ (π)', style=HEADER_CELL),
+        html.Th('% سال', style=HEADER_CELL), html.Th('بعدی', style=HEADER_CELL),
+        html.Th('توضیحات', style=HEADER_CELL),
+    ])]
+
+    for name, theta, significance in key_nodes:
+        if theta <= THETA_MAX:
+            year_pct = (theta / THETA_MAX) * 100
+            theta_deg = theta * 180 / np.pi
+
+            if theta > theta_year_now:
+                t_to = YEAR_SECONDS * ((theta - theta_year_now) / THETA_MAX)
+            else:
+                t_to = YEAR_SECONDS * ((THETA_MAX - theta_year_now + theta) / THETA_MAX)
+            dt_next = datetime.fromtimestamp(t_now + t_to)
+
+            if 'φ²' in name:
+                color, bg = '#FF0055', 'rgba(255,0,85,0.2)'
+            elif 'φ-Turn' in name or 'Convergence' in name or 'Terminus' in name:
+                color, bg = '#FF6B00', 'rgba(255,107,0,0.1)'
+            elif ('3×' in name or '5×' in name or '8×' in name):
+                color, bg = '#FFD700', 'rgba(255,215,0,0.08)'
+            else:
+                color, bg = '#4ECDC4', '#0f0f1a'
+
+            cell = {'padding': '8px', 'textAlign': 'center', 'color': '#e0e0e0'}
+            rows.append(html.Tr([
+                html.Td(html.Span(name, style={'color': color, 'fontWeight': 'bold'}), style=cell),
+                html.Td(f"{theta:.3f}", style={**cell, 'color': '#aaa'}),
+                html.Td(f"{theta_deg:.2f}°", style={**cell, 'color': '#aaa'}),
+                html.Td(f"{theta/np.pi:.3f}π", style={**cell, 'color': '#4ECDC4'}),
+                html.Td(f"{year_pct:.1f}%", style={**cell, 'color': '#FFD700'}),
+                html.Td(dt_next.strftime('%Y-%m-%d %H:%M'),
+                        style={**cell, 'color': '#888', 'fontSize': '9px'}),
+                html.Td(significance, style={**cell, 'color': '#ccc', 'fontSize': '9px'}),
+            ], style={'backgroundColor': bg, 'borderBottom': '1px solid #1a1a2e',
+                      'fontFamily': 'monospace', 'fontSize': '10px'}))
+
+    return html.Div([
+        html.H4("🌟 نقاط کلیدی طلایی سالانه", style={
+            'color': '#FFD700', 'fontFamily': 'monospace', 'marginBottom': '15px',
+            'textShadow': '0 0 8px rgba(255,215,0,0.3)'}),
+        html.Table(rows, style=TABLE_STYLE)
+    ])
+
+
+# ==============================================================================
+# 8) ⚡ رندر تب سیگنال φ²-Turn
+# ==============================================================================
+def kv_row(label, value, vcolor='#fff', vsize='15px', vbold=True):
+    return html.Div([
+        html.Span(label, style={'color': '#999', 'fontFamily': 'monospace',
+                                'fontSize': '12px', 'display': 'inline-block',
+                                'width': '140px', 'textAlign': 'left'}),
+        html.Span(value, style={'color': vcolor, 'fontFamily': 'monospace',
+                                'fontSize': vsize,
+                                'fontWeight': 'bold' if vbold else 'normal'}),
+    ], style={'margin': '7px 0', 'display': 'flex', 'alignItems': 'center'})
+
+
+def render_live_signal(t_now):
+    signal, cands = build_signal(t_now)
+    price = APP_STATE['price']
+
+    if signal is None:
+        return html.Div("❌ داده‌ای موجود نیست", style={'color': '#888'})
+
+    components = []
+
+    # ─── توضیح φ² ───
+    phi2_info = html.Div([
+        html.Span("⚡ φ²-Turn", style={'color': '#FF0055', 'fontWeight': 'bold',
+                                       'fontFamily': 'monospace', 'fontSize': '16px'}),
+        html.Span(f" = {PHI2_DEG:.1f}° = 2.618 دور | در 43.6% از دوره هر تایم‌فریم",
+                  style={'color': '#888', 'fontFamily': 'monospace', 'fontSize': '11px',
+                         'marginLeft': '10px'}),
+        html.Span("  |  فقط قوی‌ترین سیگنال‌ها صادر می‌شوند",
+                  style={'color': '#FFD700', 'fontFamily': 'monospace', 'fontSize': '11px',
+                         'marginLeft': '10px'}),
+    ], style={'backgroundColor': 'rgba(255,0,85,0.08)', 'border': '1px solid #FF0055',
+              'borderRadius': '8px', 'padding': '10px 15px', 'marginBottom': '20px'})
+    components.append(phi2_info)
+
+    # ─── کارت اصلی سیگنال ───
+    if signal['no_signal']:
+        dir_color = '#555555'
+        dir_text = '😴 انتظار (WAIT)'
+    elif signal['direction'] == 'LONG':
+        dir_color = '#00E676'
+        dir_text = '🟢 خرید (LONG)'
+    else:
+        dir_color = '#FF1744'
+        dir_text = '🔴 فروش (SHORT)'
+
+    header = html.Div([
+        html.Div([
+            html.Span(dir_text, style={'color': dir_color, 'fontSize': '26px',
+                                       'fontWeight': 'bold', 'fontFamily': 'monospace',
+                                       'textShadow': f'0 0 15px {dir_color}'}),
+            html.Span(f"  {SYMBOL}", style={'color': '#f5efe0', 'fontSize': '20px',
+                                            'fontFamily': 'monospace', 'marginLeft': '15px'}),
+        ]),
+        html.Div([
+            html.Span(signal['status'], style={
+                'color': signal['status_color'], 'fontSize': '14px',
+                'fontFamily': 'monospace', 'fontWeight': 'bold',
+                'border': f'1px solid {signal["status_color"]}',
+                'padding': '4px 12px', 'borderRadius': '15px',
+                'backgroundColor': f'{signal["status_color"]}22'}),
+        ], style={'marginTop': '8px'}),
+    ], style={'marginBottom': '15px'})
+
+    strength_bar = html.Div([
+        html.Div([
+            html.Span("💪 قدرت سیگنال: ", style={'color': '#999', 'fontFamily': 'monospace',
+                                                 'fontSize': '12px'}),
+            html.Span(f"{signal['strength']}/100", style={
+                'color': '#FFD700', 'fontFamily': 'monospace', 'fontSize': '14px',
+                'fontWeight': 'bold'}),
+        ], style={'marginBottom': '5px'}),
+        html.Div([
+            html.Div(style={'width': f"{signal['strength']}%", 'height': '100%',
+                            'backgroundColor': dir_color if signal['strength'] > 60 else '#FFA500',
+                            'borderRadius': '4px', 'transition': 'width 0.5s',
+                            'boxShadow': f'0 0 10px {dir_color}'})
+        ], style={'width': '100%', 'height': '10px', 'backgroundColor': '#1a1a2e',
+                  'borderRadius': '4px', 'overflow': 'hidden'}),
+    ], style={'marginBottom': '18px'})
+
+    lv = signal['levels']
+    if price > 0 and not signal['no_signal']:
+        levels_box = html.Div([
+            kv_row("🎯 ورود (Entry):", f"${lv['entry']:,.2f}", '#FFFFFF', '17px'),
+            html.Hr(style={'borderColor': '#222', 'margin': '10px 0'}),
+            kv_row("✅ TP1:", f"${lv['tp1']:,.2f}  ({signal['tp1_pct']:+.2f}%)", '#00E676', '15px'),
+            kv_row("✅ TP2:", f"${lv['tp2']:,.2f}  ({signal['tp2_pct']:+.2f}%)", '#00E676', '15px'),
+            kv_row("✅ TP3:", f"${lv['tp3']:,.2f}  ({signal['tp3_pct']:+.2f}%)", '#00E676', '15px'),
+            html.Hr(style={'borderColor': '#222', 'margin': '10px 0'}),
+            kv_row("🛑 SL:", f"${lv['sl']:,.2f}  ({signal['sl_pct']:-.2f}%)", '#FF1744', '16px'),
+            html.Hr(style={'borderColor': '#222', 'margin': '10px 0'}),
+            kv_row("⚙️ لوریج پیشنهادی:", f"{signal['leverage']}x  (Isolated)", '#FFD700', '17px'),
+            kv_row("💵 ریسک هر معامله:", "حداکثر 2% از سرمایه", '#FFA500', '12px', False),
+            kv_row("📊 R:R:", f"1 : 3  (TP3)", '#4ECDC4', '13px'),
+        ])
+    else:
+        levels_box = html.Div([
+            html.Span("⏳ در انتظار قیمت یا سیگنال باکیفیت...",
+                      style={'color': '#888', 'fontFamily': 'monospace', 'fontSize': '14px'})
+        ], style={'padding': '20px', 'textAlign': 'center'})
+
+    trend_fa = {'bull': '📈 صعودی', 'bear': '📉 نزولی', 'neutral': '➖ خنثی'}[signal['trend']]
+    conf_txt = (f"{len(signal['confluence'])} تایم‌فریم همپوشان"
+                if signal['confluence'] else "بدون همپوشانی")
+
+    reason_box = html.Div([
+        html.Div("📝 دلیل سیگنال:", style={'color': '#FFD700', 'fontFamily': 'monospace',
+                                           'fontSize': '13px', 'fontWeight': 'bold',
+                                           'marginBottom': '8px'}),
+        html.Div([
+            html.Li(f"⚡ رویداد: φ²-Turn روی تایم‌فریم {signal['tf']['name']} "
+                    f"(قوی‌ترین مقاومت)",
+                    style={'color': '#ccc', 'fontFamily': 'monospace', 'fontSize': '12px',
+                           'marginBottom': '4px'}),
+            html.Li(f"روند فعلی بازار: {trend_fa} ({signal['bulls']}↑ / {signal['bears']}↓)",
+                    style={'color': '#ccc', 'fontFamily': 'monospace', 'fontSize': '12px',
+                           'marginBottom': '4px'}),
+            html.Li(f"همپوشانی: {conf_txt}",
+                    style={'color': '#ccc', 'fontFamily': 'monospace', 'fontSize': '12px',
+                           'marginBottom': '4px'}),
+            html.Li(f"نوسان بازار (Vol): {signal['vol']:.2f}%",
+                    style={'color': '#ccc', 'fontFamily': 'monospace', 'fontSize': '12px',
+                           'marginBottom': '4px'}),
+            html.Li(f"فعال‌سازی: {format_time_remaining(signal['t_rem'])} دیگر "
+                    f"({signal['event']['event_time'].strftime('%m-%d %H:%M')})",
+                    style={'color': '#ccc', 'fontFamily': 'monospace', 'fontSize': '12px'}),
+        ], style={'paddingRight': '20px'}),
+    ], style={'marginTop': '15px', 'padding': '12px', 'backgroundColor': '#0d0d16',
+              'borderRadius': '8px', 'border': '1px solid #222'})
+
+    main_card = html.Div([header, strength_bar, levels_box, reason_box], style={
+        'backgroundColor': '#12121e', 'borderRadius': '12px', 'padding': '20px',
+        'border': f'2px solid {dir_color}',
+        'boxShadow': f'0 0 25px {dir_color}44',
+        'marginBottom': '25px', 'maxWidth': '600px'})
+
+    components.append(main_card)
+
+    # ─── φ²-Turn های بعدی ───
+    next_cards = []
+    for c in cands[1:4]:
+        next_cards.append(html.Div([
+            html.Div([
+                html.Span(c['tf']['name'], style={'color': c['tf']['color'],
+                                                  'fontWeight': 'bold',
+                                                  'fontFamily': 'monospace',
+                                                  'fontSize': '14px'}),
+                html.Span("  ⚡", style={'fontSize': '14px'}),
+            ]),
+            html.Div("φ²-Turn", style={'color': '#FF0055', 'fontFamily': 'monospace',
+                                       'fontSize': '12px', 'fontWeight': 'bold',
+                                       'margin': '5px 0'}),
+            html.Div(f"⏰ {format_time_remaining(c['t_rem'])}",
+                     style={'color': '#888', 'fontFamily': 'monospace', 'fontSize': '11px'}),
+            html.Div(c['ev']['event_time'].strftime('%m-%d %H:%M'),
+                     style={'color': '#666', 'fontFamily': 'monospace', 'fontSize': '10px'}),
+        ], style={'backgroundColor': '#12121e', 'borderRadius': '8px', 'padding': '12px',
+                  'border': '1px solid #FF005555', 'flex': '1', 'minWidth': '150px',
+                  'marginRight': '10px'}))
+
+    components.append(html.Div([
+        html.H5("⏭️ φ²-Turn های بعدی:", style={'color': '#FF0055', 'fontFamily': 'monospace',
+                                               'marginBottom': '10px'}),
+        html.Div(next_cards, style={'display': 'flex', 'flexWrap': 'wrap',
+                                    'marginBottom': '25px'}),
+    ]))
+
+    # ─── تاریخچه سیگنال‌ها ───
+    if SIGNAL_LOG:
+        log_rows = []
+        for s in reversed(SIGNAL_LOG):
+            d_color = '#00E676' if s['direction'] == 'LONG' else '#FF1744'
+            log_rows.append(html.Div([
+                html.Span(s['time'].strftime('%m-%d %H:%M'),
+                          style={'color': '#666', 'fontFamily': 'monospace',
+                                 'fontSize': '10px', 'display': 'inline-block',
+                                 'width': '90px'}),
+                html.Span(f"{s['direction']}",
+                          style={'color': d_color, 'fontFamily': 'monospace',
+                                 'fontSize': '11px', 'fontWeight': 'bold',
+                                 'display': 'inline-block', 'width': '60px'}),
+                html.Span(f"{s['tf']:<8}", style={'color': '#aaa', 'fontFamily': 'monospace',
+                                                  'fontSize': '11px',
+                                                  'display': 'inline-block', 'width': '70px'}),
+                html.Span(f"φ²", style={'color': '#FF0055',
+                                        'fontFamily': 'monospace',
+                                        'fontSize': '11px',
+                                        'display': 'inline-block',
+                                        'width': '40px'}),
+                html.Span(f"${s['price']:,.0f}" if s['price'] > 0 else "—",
+                          style={'color': '#888', 'fontFamily': 'monospace',
+                                 'fontSize': '11px', 'display': 'inline-block',
+                                 'width': '90px'}),
+                html.Span(f"💪{s['strength']}", style={'color': '#4ECDC4',
+                                                       'fontFamily': 'monospace',
+                                                       'fontSize': '11px'}),
+            ], style={'margin': '4px 0'}))
+
+        components.append(html.Div([
+            html.H5("📜 تاریخچه سیگنال‌های φ²:", style={'color': '#FF0055',
+                                                         'fontFamily': 'monospace',
+                                                         'marginBottom': '10px'}),
+            html.Div(log_rows, style={'backgroundColor': '#12121e', 'borderRadius': '8px',
+                                      'padding': '12px', 'border': '1px solid #222',
+                                      'maxWidth': '600px'}),
+        ]))
+
+    # ─── هشدار ریسک ───
+    components.append(html.Div([
+        "⚠️ هشدار: این سیگنال‌ها صرفاً جنبه تحلیلی دارند. همیشه مدیریت ریسک را رعایت کنید. "
+        "φ²-Turn قوی‌ترین رویداد است ولی همیشه مدیریت سرمایه را در اولویت قرار دهید.",
+    ], style={'color': '#FF6B6B', 'fontFamily': 'monospace', 'fontSize': '10px',
+              'marginTop': '20px', 'padding': '10px', 'backgroundColor': 'rgba(255,0,0,0.05)',
+              'borderRadius': '8px', 'border': '1px solid rgba(255,0,0,0.2)'}))
+
+    return html.Div(components)
+
+
+# ==============================================================================
+# 9) Dash App
+# ==============================================================================
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
+app.title = "🌀 Spiral + ⚡ φ²-Turn Signal"
+
+TAB_STYLE = {'backgroundColor': '#0a0a12', 'color': '#888',
+             'fontFamily': 'monospace', 'fontSize': '12px', 'border': 'none'}
+TAB_SEL = {'backgroundColor': '#1a1a2e', 'borderTop': '2px solid #FFD700',
+           'fontFamily': 'monospace', 'fontSize': '12px', 'border': 'none'}
+
+app.layout = html.Div([
+    html.Div([
+        html.Div([
+            html.H2("🌀 Spiral + ⚡ φ²-Turn", style={
+                "fontFamily": "monospace", "textShadow": "0 0 10px #FF0055",
+                "fontSize": "18px", "margin": "0", "color": "#f5efe0",
+                "display": "inline-block"}),
+            html.Span(id="price-display", style={
+                "fontFamily": "monospace", "fontSize": "16px", "color": "#FFD700",
+                "marginLeft": "20px"}),
+        ]),
+        html.Div(id="status-bar", style={
+            "fontFamily": "monospace", "fontSize": "10px", "color": "#888",
+            "marginTop": "4px"}),
+    ], style={"textAlign": "center", "padding": "8px 16px",
+              "backgroundColor": "rgba(10,10,18,0.95)", "borderBottom": "1px solid #333"}),
+
+    dcc.Tabs(id="main-tabs", value='tab-signal', children=[
+        dcc.Tab(label='⚡ φ² Signal', value='tab-signal',
+                style=TAB_STYLE, selected_style={**TAB_SEL, 'color': '#FF0055',
+                                                 'borderTop': '2px solid #FF0055'}),
+        dcc.Tab(label='🌀 Annual Spiral', value='tab-spiral',
+                style=TAB_STYLE, selected_style={**TAB_SEL, 'color': '#FFD700'}),
+        dcc.Tab(label='🔱 Short', value='tab-short',
+                style=TAB_STYLE, selected_style={**TAB_SEL, 'color': '#FF6B6B',
+                                                 'borderTop': '2px solid #FF6B6B'}),
+        dcc.Tab(label='🔱 Mid', value='tab-mid',
+                style=TAB_STYLE, selected_style={**TAB_SEL, 'color': '#4ECDC4',
+                                                 'borderTop': '2px solid #4ECDC4'}),
+        dcc.Tab(label='🔱 Long', value='tab-long',
+                style=TAB_STYLE, selected_style={**TAB_SEL, 'color': '#95E1D3',
+                                                 'borderTop': '2px solid #95E1D3'}),
+        dcc.Tab(label='📅 Calendar', value='tab-calendar',
+                style=TAB_STYLE, selected_style={**TAB_SEL, 'color': '#FFD700'}),
+        dcc.Tab(label='🌟 Key Nodes', value='tab-nodes',
+                style=TAB_STYLE, selected_style={**TAB_SEL, 'color': '#E000FF',
+                                                 'borderTop': '2px solid #E000FF'}),
+    ], style={'backgroundColor': '#0a0a12', 'borderBottom': '1px solid #333'}),
+
+    html.Div(id="tab-content", style={
+        'padding': '20px', 'height': 'calc(100vh - 150px)',
+        'overflow': 'auto', 'backgroundColor': '#0a0a12'}),
+
+    dcc.Interval(id="interval", interval=2000, n_intervals=0),
+], style={"height": "100vh", "overflow": "hidden", "backgroundColor": "#0a0a12"})
+
+
+@app.callback(
+    [Output("tab-content", "children"),
+     Output("price-display", "children"),
+     Output("status-bar", "children")],
+    [Input("interval", "n_intervals"),
+     Input("main-tabs", "value")]
+)
+def update(n, active_tab):
+    t_now = time.time()
+    price = APP_STATE["price"]
+    connected = APP_STATE["connected"]
+
+    price_text = f"💰 ${price:,.2f}" if price > 0 else "💰 Loading..."
+    status_text = (f"{'🟢' if connected else '🔴'} Live | {SYMBOL} | "
+                   f"φ={PHI:.4f} | φ²={PHI2_DEG:.1f}° | θ_max={THETA_MAX/np.pi:.1f}π")
+
+    if active_tab == 'tab-signal':
+        content = render_live_signal(t_now)
+    elif active_tab == 'tab-spiral':
+        traces = compute_annual_spiral(t_now, ALL_TIMEFRAMES)
+        content = dcc.Graph(figure=build_spiral_figure(traces),
+                            config={'displayModeBar': True, 'scrollZoom': True},
+                            style={'height': '100%'})
+    elif active_tab == 'tab-short':
+        content = render_resistance_table(
+            compute_golden_resistances(t_now, SHORT_TF),
+            "مقاومت‌های کوتاه‌مدت (1m → 89m)", "🔱")
+    elif active_tab == 'tab-mid':
+        content = render_resistance_table(
+            compute_golden_resistances(t_now, MID_TF),
+            "مقاومت‌های میان‌مدت (144m → 4181m)", "🔱")
+    elif active_tab == 'tab-long':
+        content = render_resistance_table(
+            compute_golden_resistances(t_now, LONG_TF),
+            "مقاومت‌های بلندمدت (6765m → 46368m)", "🔱")
+    elif active_tab == 'tab-calendar':
+        content = render_golden_calendar(t_now)
+    elif active_tab == 'tab-nodes':
+        content = render_key_nodes(t_now)
+    else:
+        content = html.Div("Tab not found", style={'color': '#888'})
+
+    return content, price_text, status_text
+
+
+if __name__ == '__main__':
+    print("=" * 70)
+    print("🌀 Spiral + ⚡ φ²-Turn Signal System")
+    print("=" * 70)
+    print(f"🔢 φ = {PHI:.6f}")
+    print(f"⚡ φ²-Turn = {PHI2_DEG:.2f}° = {PHI2_RAD:.2f} rad")
+    print(f"📊 φ² Position = {PHI2_PROGRESS*100:.1f}% of each timeframe period")
+    print(f"🌀 θ_max = {THETA_MAX:.2f} rad | Turns = {N_SPIRAL_TURNS}")
+    print("=" * 70)
+    print("✅ فقط سیگنال‌های φ²-Turn صادر می‌شوند")
+    print("=" * 70)
+    print("Server: http://localhost:8050")
+    print("=" * 70)
+    app.run(debug=True, port=8050, host='0.0.0.0')

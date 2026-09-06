@@ -1,0 +1,85 @@
+//@version=5
+indicator("Auto Mirror Reversal Signals", overlay=true, max_labels_count=500)
+
+// --- ÊäÙíãÇÊ äÌÑå ÏÇíäÇãí˜ ---
+windowSize = input.int(50, "Øæá äÌÑå ãÊÍÑ˜ (˜äÏá)", minval=10)
+speed = input.float(2.0, "ÓÑÚÊ ÍÑ˜Ê ÓØÍ", minval=0.1, step=0.1)
+
+// --- ÊäÙíãÇÊ ÓíäÇá ---
+areaLength = input.int(14, "Øæá ÏæÑå ãÓÇÍÊ")
+rsiLength = input.int(14, "Øæá RSI")
+
+// ?. ãÍÇÓÈå ÎæÏ˜ÇÑ ÓÞÝ æ ˜Ý ÏÑ äÌÑå ãÊÍÑ˜
+upperBound = ta.highest(high, windowSize)
+lowerBound = ta.lowest(low, windowSize)
+midLine = (upperBound + lowerBound) / 2
+priceRange = upperBound - lowerBound
+
+// ãÊÛíÑåÇí ãÍÇÓÈå ÓØÍ ãÊÍÑ˜
+var float currentLevel = na
+var int direction = 1
+
+if barstate.isfirst
+    currentLevel := close
+
+// ?. ÍÑ˜Ê ÓØÍ ãÊÍÑ˜ Èíä ÓÞÝ æ ˜Ý ÏÇíäÇãí˜
+deltaY = priceRange * speed * 0.01
+
+if not na(upperBound) and not na(lowerBound)
+    newLevel = currentLevel + (direction * deltaY)
+    
+    if newLevel >= upperBound
+        excess = newLevel - upperBound
+        currentLevel := upperBound - excess
+        direction := -1
+    else if newLevel <= lowerBound
+        excess = lowerBound - newLevel
+        currentLevel := lowerBound + excess
+        direction := 1
+    else
+        currentLevel := newLevel
+
+// ?. ãÍÇÓÈÇÊ ÊÞÇÑä (Mirror) Èå ÕæÑÊ ÎæÏ˜ÇÑ
+mirrorClose = 2 * currentLevel - close
+// ÊÞÇÑä ãÚ˜æÓ äÓÈÊ Èå ÎØ ãíÇäí ˜ÇäÇá
+inverseMirrorClose = 2 * midLine - mirrorClose 
+
+// ?. ãäØÞ ÓíäÇáåÇí ÈÇÒÔÊí (Area + RSI + Momentum)
+// ãÍÇÓÈå ãÓÇÍÊ (ÊÎáíå ÇäÑŽí)
+currentArea = math.sum(math.abs(close - currentLevel), areaLength)
+areaPeak = ta.highest(currentArea, 30)
+areaExhausted = currentArea < (areaPeak * 0.85) // ÇÝÊ 15 ÏÑÕÏí ãÓÇÍÊ ÇÒ Þáå
+
+rsiVal = ta.rsi(close, rsiLength)
+priceSlope = ta.linreg(close, 7, 0) - ta.linreg(close[1], 7, 0)
+
+// ÔÑæØ ÊÞÇØÚ ÞíãÊ ÈÇ ÓØæÍ ãÊÞÇÑä
+crossUpInverse = ta.crossover(close, inverseMirrorClose) or ta.crossover(close, currentLevel)
+crossDnInverse = ta.crossunder(close, inverseMirrorClose) or ta.crossunder(close, currentLevel)
+
+bullishReversal = crossUpInverse and areaExhausted and rsiVal < 50 and priceSlope > 0
+bearishReversal = crossDnInverse and areaExhausted and rsiVal > 50 and priceSlope < 0
+
+// ÝíáÊÑ ÓíäÇáåÇí Ê˜ÑÇÑí
+var int lastSig = 0
+if bullishReversal
+    lastSig := 1
+else if bearishReversal
+    lastSig := -1
+
+validBull = bullishReversal and lastSig[1] != 1
+validBear = bearishReversal and lastSig[1] != -1
+
+// --- ÑÓã ÓØæÍ æ ÓíäÇáåÇ Ñæí ÇÑÊ ---
+// ÑÓã ˜ÇäÇá ÏÇíäÇãí˜ æ ÓØÍ ãÊÍÑ˜
+plot(upperBound, "ÓÞÝ ÏÇíäÇãí˜", color=color.new(color.red, 70), linewidth=1)
+plot(lowerBound, "˜Ý ÏÇíäÇãí˜", color=color.new(color.green, 70), linewidth=1)
+plot(midLine, "ÎØ ãíÇäí", color=color.new(color.gray, 50), linewidth=1, style=plot.style_cross)
+plot(currentLevel, "ÓØÍ ãÊÍÑ˜", color=color.new(color.yellow, 0), linewidth=2)
+
+// ÑÓã ÊÞÇÑä ãÚ˜æÓ (ÈÑÇí ãÔÇåÏå äÞØå ˜ÑÇÓ)
+plot(inverseMirrorClose, "ÎØ ÊÞÇÑä ãÚ˜æÓ", color=color.new(color.aqua, 50), linewidth=1)
+
+// ÑÓã ÓíäÇáåÇ
+plotshape(validBull, title="Buy Signal", location=location.belowbar, color=color.green, style=shape.labelup, size=size.normal, text="BUY", textcolor=color.white)
+plotshape(validBear, title="Sell Signal", location=location.abovebar, color=color.red, style=shape.labeldown, size=size.normal, text="SELL", textcolor=color.white)

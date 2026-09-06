@@ -1,0 +1,117 @@
+//@version=5
+indicator("Gann Advanced Pivot Predictor", overlay=true, max_lines_count=500, max_boxes_count=500)
+
+pivotTime1 = input.time(timestamp("2024-01-01 00:00"), "Pivot 1", confirm=true)
+pivotTime2 = input.time(timestamp("2024-01-02 00:00"), "Pivot 2", confirm=true)
+pivotTime3 = input.time(timestamp("2024-01-03 00:00"), "Pivot 3", confirm=true)
+pivotTime4 = input.time(timestamp("2024-01-04 00:00"), "Pivot 4", confirm=true)
+pivotTime5 = input.time(timestamp("2024-01-05 00:00"), "Pivot 5", confirm=true)
+pivotTime6 = input.time(timestamp("2024-01-06 00:00"), "Pivot 6", confirm=true)
+pivotTime7 = input.time(timestamp("2024-01-07 00:00"), "Pivot 7", confirm=true)
+pivotTime8 = input.time(timestamp("2024-01-08 00:00"), "Pivot 8", confirm=true)
+pivotTime9 = input.time(timestamp("2024-01-09 00:00"), "Pivot 9", confirm=true)
+pivotTime10 = input.time(timestamp("2024-01-10 00:00"), "Pivot 10", confirm=true)
+
+levelMultiplier = input.float(1.0, "Level Multiplier", minval=0.1, maxval=10.0, step=0.1)
+gannSquareMultiplier = input.float(0.01, "Gann Square Multiplier", minval=0.001, maxval=1.0, step=0.001)
+projectionLimit = input.float(5.0, "Projection Limit", minval=1.0, maxval=20.0, step=0.5)
+
+var float[] pivotPrices = array.new_float(10, na)
+var int[] pivotTimes = array.new_int(10, na)
+
+array.set(pivotTimes, 0, pivotTime1)
+array.set(pivotTimes, 1, pivotTime2)
+array.set(pivotTimes, 2, pivotTime3)
+array.set(pivotTimes, 3, pivotTime4)
+array.set(pivotTimes, 4, pivotTime5)
+array.set(pivotTimes, 5, pivotTime6)
+array.set(pivotTimes, 6, pivotTime7)
+array.set(pivotTimes, 7, pivotTime8)
+array.set(pivotTimes, 8, pivotTime9)
+array.set(pivotTimes, 9, pivotTime10)
+
+for i = 0 to 9
+    if time == array.get(pivotTimes, i)
+        array.set(pivotPrices, i, close)
+
+gannSquare(price, timeRange) => price * math.sqrt(timeRange / 360) * gannSquareMultiplier
+
+gannAngle(p1, p2, t1, t2) => (p2 - p1) / math.max(math.abs(t2 - t1), 1)
+
+var line[] gannLines = array.new_line(0)
+var float nextSupport = na
+var float nextResistance = na
+
+if barstate.islast and not na(array.get(pivotPrices, 9))
+    if array.size(gannLines) > 0
+        for i = 0 to array.size(gannLines) - 1
+            line.delete(array.get(gannLines, i))
+        array.clear(gannLines)
+    
+    float totalAngle = 0.0
+    int validAngles = 0
+    float priceRange = 0.0
+    
+    for i = 0 to 8
+        p1 = array.get(pivotPrices, i)
+        p2 = array.get(pivotPrices, i + 1)
+        t1 = array.get(pivotTimes, i)
+        t2 = array.get(pivotTimes, i + 1)
+        
+        if not na(p1) and not na(p2) and not na(t1) and not na(t2)
+            angle = gannAngle(p1, p2, t1, t2)
+            totalAngle := totalAngle + angle
+            validAngles := validAngles + 1
+            priceRange := priceRange + math.abs(p2 - p1)
+            
+            x1 = t1
+            x2 = t2
+            y1 = p1
+            y2 = p2
+            
+            gannLine = line.new(x1, y1, x2, y2, color=color.new(color.blue, 30), width=1, xloc=xloc.bar_time)
+            array.push(gannLines, gannLine)
+            
+            timeDiff = math.abs(t2 - t1)
+            gannSq = gannSquare(p1, timeDiff)
+            midPrice = (p1 + p2) / 2
+            
+            for mult = 1 to 3
+                levelUp = midPrice + (gannSq * mult)
+                levelDown = midPrice - (gannSq * mult)
+                sqLine1 = line.new(x1, levelUp, x2, levelUp, color=color.new(color.orange, 70), width=1, style=line.style_dotted, xloc=xloc.bar_time)
+                sqLine2 = line.new(x1, levelDown, x2, levelDown, color=color.new(color.orange, 70), width=1, style=line.style_dotted, xloc=xloc.bar_time)
+                array.push(gannLines, sqLine1)
+                array.push(gannLines, sqLine2)
+    
+    if validAngles > 0
+        avgAngle = totalAngle / validAngles
+        avgPriceMove = priceRange / validAngles
+        lastPrice = array.get(pivotPrices, 9)
+        lastTime = array.get(pivotTimes, 9)
+        currentTime = time
+        timeDiff = (currentTime - lastTime) / (1000 * 60 * 60 * 24)
+        
+        projectionFactor = math.min(timeDiff / 10.0, projectionLimit)
+        
+        nextResistance := lastPrice + (avgPriceMove * 0.382 * projectionFactor * levelMultiplier)
+        nextSupport := lastPrice - (avgPriceMove * 0.382 * projectionFactor * levelMultiplier)
+        
+        fibLevels = array.from(0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.272, 1.618)
+        
+        for i = 0 to array.size(fibLevels) - 1
+            fibMult = array.get(fibLevels, i)
+            resLevel = lastPrice + (avgPriceMove * fibMult * projectionFactor * 0.5 * levelMultiplier)
+            supLevel = lastPrice - (avgPriceMove * fibMult * projectionFactor * 0.5 * levelMultiplier)
+            resLine = line.new(lastTime, resLevel, currentTime, resLevel, color=color.new(color.red, 60), width=1, extend=extend.right, style=line.style_dashed, xloc=xloc.bar_time)
+            supLine = line.new(lastTime, supLevel, currentTime, supLevel, color=color.new(color.green, 60), width=1, extend=extend.right, style=line.style_dashed, xloc=xloc.bar_time)
+            array.push(gannLines, resLine)
+            array.push(gannLines, supLine)
+        
+        mainResLine = line.new(lastTime, nextResistance, currentTime, nextResistance, color=color.red, width=3, extend=extend.right, xloc=xloc.bar_time)
+        mainSupLine = line.new(lastTime, nextSupport, currentTime, nextSupport, color=color.green, width=3, extend=extend.right, xloc=xloc.bar_time)
+        array.push(gannLines, mainResLine)
+        array.push(gannLines, mainSupLine)
+
+plot(nextResistance, "Next Resistance", color=color.red, linewidth=2, style=plot.style_circles)
+plot(nextSupport, "Next Support", color=color.green, linewidth=2, style=plot.style_circles)

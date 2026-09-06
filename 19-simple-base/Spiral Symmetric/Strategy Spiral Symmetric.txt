@@ -1,0 +1,76 @@
+//@version=5
+strategy("ÇÓÊÑÇÊí ÏíäÇãí˜ ÊŞÇÑä æ ÇÓíÑÇá (ÓíäÇá ãÊäÇæÈ)", overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=10)
+
+// --- ÈÎÔ ?: æÑæÏíåÇí ÏíäÇãí˜ ---
+useDynamicLevels = input.bool(true, title="ÇÓÊİÇÏå ÇÒ ÓØæÍ ÏíäÇãí˜ (ÇÊæãÇÊí˜)")
+manualUpper = input.float(0, title="ÓØÍ ÈÇáÇ (ÏÓÊí - ÏÑ ÕæÑÊ ÛíÑİÚÇá ÈæÏä ÈÇáÇ)")
+manualLower = input.float(0, title="ÓØÍ Çííä (ÏÓÊí - ÏÑ ÕæÑÊ ÛíÑİÚÇá ÈæÏä ÈÇáÇ)")
+lookback = input.int(50, title="ÏæÑå ÒãÇäí ãÍÇÓÈå ÓØæÍ ÏíäÇãí˜")
+
+spiralMultUp = input.float(1.0, title="ÖÑíÈ ÇäÈÓÇØ ÇÓíÑÇá ÈÇáÇ")
+spiralMultDown = input.float(1.0, title="ÖÑíÈ ÇäÈÓÇØ ÇÓíÑÇá Çííä")
+spiralSpeed = input.float(0.05, title="ÓÑÚÊ ÑÔÏ ÇÓíÑÇá")
+
+useAlternating = input.bool(true, title="ÓíäÇáåÇí Ç˜íÏÇğ ãÊäÇæÈ (ÎÑíÏ -> İÑæÔ -> ÎÑíÏ)")
+
+// --- ÈÎÔ ?: ãÍÇÓÈå ÓØæÍ ãÑÌÚ (ÏíäÇãí˜ íÇ ÏÓÊí) ---
+float upperLevel = useDynamicLevels ? ta.highest(high, lookback) : manualUpper
+float lowerLevel = useDynamicLevels ? ta.lowest(low, lookback) : manualLower
+float centerLevel = (upperLevel + lowerLevel) / 2.0
+
+// --- ÈÎÔ ?: ãÍÇÓÈå ÇÓíÑÇáåÇí ÏíäÇãí˜ (ÇÕáÇÍ ÔÏå ÈÑÇí ÒãÇä ãæäæÊæä) ---
+// ÏÑ ˜Ï ÇÕáí ÒãÇä ÈÇ cos(theta) ãÍÇÓÈå ãíÔÏ ˜å ÈÇÚË ÍÑ˜Ê Ñæ Èå ÚŞÈ ÏÑ ÒãÇä ãíÔÏ.
+// ÏÑ ÇíäÌÇ ÒãÇä ÑÇ Èå ÕæÑÊ íæÓÊå Ñæ Èå Ìáæ ãíÈÑíã ÊÇ ÇÓíÑÇá ÏÑ ÒãÇä ÈÇÒ ÔæÏ.
+float theta = bar_index * 0.05
+float r = 0.02 * math.exp(spiralSpeed * theta)
+r := math.min(r, 5.0) // ãÍÏæÏ ˜ÑÏä ÔÚÇÚ ÈÑÇí ÌáæíÑí ÇÒ ÇäİÌÇÑ æ ÎÑæÌ ÇÒ ÇÑÊ
+
+float dp = math.max(upperLevel - lowerLevel, 1.0) // ÌáæíÑí ÇÒ ÊŞÓíã ÈÑ ÕİÑ íÇ İÇÕáå ÕİÑ
+float spiralUp = upperLevel + (r * dp * spiralMultUp)
+float spiralDown = lowerLevel - (r * dp * spiralMultDown)
+
+
+// --- ÈÎÔ ?: ãäØŞ ÊÔÎíÕ ÈÑÎæÑÏ æ ÓíäÇá ÈÇÒÔÊí ---
+// ÔÑØ ÈÑÎæÑÏ ŞíãÊ ÈÇ ÓØæÍ íÇ ÇÓíÑÇáåÇ æ ÈÇÒÔÊ (˜äÏá ÈÇÒÔÊí / rejection)
+// íÚäí ŞíãÊ ÓØÍ ÑÇ ÈÔ˜äÏ ÇãÇ ÏÑ äåÇíÊ ÒíÑ/ÈÇáÇí Âä ÈÓÊå ÔæÏ
+bool touchUpper = high >= upperLevel and close < upperLevel
+bool touchLower = low <= lowerLevel and close > lowerLevel
+
+bool touchSpiralUp = high >= spiralUp and close < spiralUp
+bool touchSpiralDown = low <= spiralDown and close > spiralDown
+
+bool rawSell = touchUpper or touchSpiralUp
+bool rawBuy = touchLower or touchSpiralDown
+
+// ÊÔÎíÕ Çæáíä ÈÑÎæÑÏ (ÌáæíÑí ÇÒ ÕÏæÑ ÓíäÇáåÇí Ê˜ÑÇÑí ÏÑ ˜äÏáåÇí ãÊæÇáí)
+bool isFirstTouchSell = rawSell and not rawSell[1]
+bool isFirstTouchBuy = rawBuy and not rawBuy[1]
+
+// --- ÈÎÔ ?: İíáÊÑ ÓíäÇáåÇí ãÊäÇæÈ (í˜í ÏÑ ãíÇä) ---
+var int lastSignal = 0 // 0: ÈÏæä ÓíäÇá¡ 1: ÎÑíÏ¡ -1: İÑæÔ
+
+bool finalBuy = false
+bool finalSell = false
+
+if isFirstTouchBuy
+    // ÇÑ ÍÇáÊ ãÊäÇæÈ İÚÇá ÈÇÔÏ æ ÂÎÑíä ÓíäÇá ÎÑíÏ äÈÇÔÏ¡ ÓíäÇá ÎÑíÏ ÑÇ ŞÈæá ˜ä
+    if not useAlternating or lastSignal != 1
+        finalBuy := true
+        lastSignal := 1 // æÖÚíÊ ÑÇ Èå ÎÑíÏ ÊÛííÑ ÈÏå
+
+if isFirstTouchSell
+    // ÇÑ ÍÇáÊ ãÊäÇæÈ İÚÇá ÈÇÔÏ æ ÂÎÑíä ÓíäÇá İÑæÔ äÈÇÔÏ¡ ÓíäÇá İÑæÔ ÑÇ ŞÈæá ˜ä
+    if not useAlternating or lastSignal != -1
+        finalSell := true
+        lastSignal := -1 // æÖÚíÊ ÑÇ Èå İÑæÔ ÊÛííÑ ÈÏå
+
+// --- ÈÎÔ ?: ÑÓã ÓíäÇáåÇ æ ÇÌÑÇí ÇÓÊÑÇÊí ---
+plotshape(finalBuy, title="ÓíäÇá ÎÑíÏ", location=location.belowbar, color=color.green, style=shape.labelup, text="BUY", size=size.small, textcolor=color.white)
+plotshape(finalSell, title="ÓíäÇá İÑæÔ", location=location.abovebar, color=color.red, style=shape.labeldown, text="SELL", size=size.small, textcolor=color.white)
+
+// ÇÌÑÇí ÏÓÊæÑÇÊ ÏÑ ÔÈíåÓÇÒ
+if finalBuy
+    strategy.entry("Long Position", strategy.long)
+    
+if finalSell
+    strategy.entry("Short Position", strategy.short)

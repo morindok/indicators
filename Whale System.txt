@@ -1,0 +1,109 @@
+//@version=5
+indicator("Dynamic Math Shapes & Mirrored Candles", overlay=true)
+
+// --- Inputs (Interactive on Chart) ---
+time1 = input.time(timestamp("2023-01-10 00:00"), title="Time 1 (First Peak/Radius)", confirm=true)
+time2 = input.time(timestamp("2023-01-20 00:00"), title="Time 2 (Reference)", confirm=true)
+time3 = input.time(timestamp("2023-01-01 00:00"), title="Time 3 (Start & Center)", confirm=true)
+
+level1 = input.price(1.1000, title="Level 1 (Upper)", confirm=true)
+level2 = input.price(1.0000, title="Level 2 (Lower)", confirm=true)
+
+shape_type = input.string("Circle (Sine)", title="Shape Type", options=["Circle (Sine)", "Spiral", "Damped", "Triangle", "Square", "Parabola", "Logarithmic", "Cubic (S-Curve)", "Gaussian (Bell)", "Catenary", "Sawtooth", "Semi-Circle", "Hyperbola"])
+
+// --- Core Calculations ---
+mid_price = (level1 + level2) / 2
+base_amplitude = (level1 - level2) / 2
+radius_time = time1 - time3
+cycle_length = radius_time * 4
+current_time_offset = time - time3
+angle = (current_time_offset / cycle_length) * 2 * math.pi
+
+// --- Shape Logic ---
+bool is_active = time >= time3
+
+float wave_val = 0.0
+float dynamic_amplitude = base_amplitude
+float x = radius_time != 0 ? current_time_offset / radius_time : 0.0
+
+if is_active
+    if shape_type == "Circle (Sine)"
+        wave_val := math.sin(angle)
+    else if shape_type == "Spiral"
+        wave_val := math.sin(angle)
+        dynamic_amplitude := base_amplitude * x
+    else if shape_type == "Damped"
+        wave_val := math.sin(angle)
+        dynamic_amplitude := base_amplitude * math.exp(-0.5 * (x - 1))
+    else if shape_type == "Triangle"
+        wave_val := math.asin(math.sin(angle)) / (math.pi / 2)
+    else if shape_type == "Square"
+        wave_val := math.sign(math.sin(angle))
+    else if shape_type == "Parabola"
+        wave_val := math.pow(x, 2)
+    else if shape_type == "Logarithmic"
+        wave_val := math.log(x + 1) / math.log(2)
+    else if shape_type == "Cubic (S-Curve)"
+        wave_val := math.pow(x, 3)
+    else if shape_type == "Gaussian (Bell)"
+        wave_val := math.exp(-math.pow(x - 1, 2) * 5)
+    else if shape_type == "Catenary"
+        wave_val := (math.exp(x) + math.exp(-x)) / 2 - 1
+    else if shape_type == "Sawtooth"
+        wave_val := 2 * (x - math.floor(x + 0.5))
+    else if shape_type == "Semi-Circle"
+        wave_val := x <= 1 ? math.sqrt(1 - math.pow(x, 2)) : 0
+    else if shape_type == "Hyperbola"
+        wave_val := math.sqrt(math.pow(x, 2) + 1) - 1
+
+float adjustedLevel1 = is_active ? mid_price + (dynamic_amplitude * wave_val) : na
+float adjustedLevel2 = is_active ? mid_price - (dynamic_amplitude * wave_val) : na
+
+// --- Plotting the Curves ---
+plot(adjustedLevel1, "Level 1 Curve", color=color.blue, linewidth=2, style=plot.style_line)
+plot(adjustedLevel2, "Level 2 Curve", color=color.red, linewidth=2, style=plot.style_line)
+
+// --- Mirrored Candles ---
+// åäÇã ÈÇÒÊÇÈ¡ ÈÇáÇÊÑíä ÞíãÊ (high) ÊÈÏíá Èå ÇííäÊÑíä ÞíãÊ (low) ãíÔæÏ æ ÈÑÚ˜Ó
+mirror1Open  = is_active ? 2 * adjustedLevel1 - open  : na
+mirror1High  = is_active ? 2 * adjustedLevel1 - low   : na 
+mirror1Low   = is_active ? 2 * adjustedLevel1 - high  : na
+mirror1Close = is_active ? 2 * adjustedLevel1 - close : na
+
+mirror2Open  = is_active ? 2 * adjustedLevel2 - open  : na
+mirror2High  = is_active ? 2 * adjustedLevel2 - low   : na
+mirror2Low   = is_active ? 2 * adjustedLevel2 - high  : na
+mirror2Close = is_active ? 2 * adjustedLevel2 - close : na
+
+color candle_col1 = close > open ? color.new(color.red, 50) : color.new(color.blue, 50)
+color candle_col2 = close > open ? color.new(color.red, 50) : color.new(color.orange, 50)
+
+plotcandle(mirror1Open, mirror1High, mirror1Low, mirror1Close, title="Mirror Level 1", color=candle_col1, wickcolor=candle_col1, bordercolor=candle_col1)
+plotcandle(mirror2Open, mirror2High, mirror2Low, mirror2Close, title="Mirror Level 2", color=candle_col2, wickcolor=candle_col2, bordercolor=candle_col2)
+
+// --- Vertical Guides ---
+var line startLine3 = na
+var line startLine1 = na
+var line endLine2 = na
+
+if barstate.islast
+    if not na(startLine3)
+        line.delete(startLine3)
+    if not na(startLine1)
+        line.delete(startLine1)
+    if not na(endLine2)
+        line.delete(endLine2)
+        
+    chartLow = low[500]
+    chartHigh = high[500]
+    for i = 0 to 499
+        chartLow := math.min(chartLow, low[i])
+        chartHigh := math.max(chartHigh, high[i])
+        
+    rangeExtension = (chartHigh - chartLow) * 0.2
+    minPrice = chartLow - rangeExtension
+    maxPrice = chartHigh + rangeExtension
+    
+    startLine3 := line.new(x1=time3, y1=minPrice, x2=time3, y2=maxPrice, xloc=xloc.bar_time, color=color.gray, style=line.style_dashed, width=2)
+    startLine1 := line.new(x1=time1, y1=minPrice, x2=time1, y2=maxPrice, xloc=xloc.bar_time, color=color.black, style=line.style_dashed, width=3)
+    endLine2 := line.new(x1=time2, y1=minPrice, x2=time2, y2=maxPrice, xloc=xloc.bar_time, color=color.black, style=line.style_dashed, width=3)

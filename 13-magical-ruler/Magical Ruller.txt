@@ -1,0 +1,82 @@
+//@version=5
+// ÇÖÇÝå ˜ÑÏä max_lines_count=500 ÈÑÇí ÑÝÚ ãÔ˜á ãÍÏæÏíÊ äãÇíÔ ÎØæØ
+indicator("Magical Ruller{Morindok} by BITMOON618", overlay=true, max_lines_count=500)
+
+// ÊäÙíãÇÊ ÝÚÇá/ÛíÑÝÚÇáÓÇÒí
+show_time = input.bool(true, title="Enable Time Projection")
+show_price = input.bool(true, title="Enable Price Projection")
+
+// ÏÑíÇÝÊ ÒãÇä ÈÇ ˜áí˜ ˜ÇÑÈÑ Ñæí ÇÑÊ
+target_time = input.time(0, title="Select Start Time & Candle", confirm=true)
+
+// ÏÑíÇÝÊ ãÞÇÏíÑ Çæáíå
+initial_bars = input.float(100, title="Initial Number (Bars) for Time")
+initial_price_gap = input.float(100, title="Initial Gap for Price")
+
+// ãÍÇÓÈå ÒãÇä åÑ ˜äÏá (ÊÇíã ÝÑíã ÝÚáí) Èå ãíáíËÇäíå
+var int bar_duration = na
+if bar_index > 0
+    bar_duration := time - time[1]
+
+// íÏÇ ˜ÑÏä ÞíãÊ æÓØ (High + Low) / 2 ÈÑÇí ˜äÏá ÇäÊÎÇÈ ÔÏå
+selected_mid_price = ta.valuewhen(time == target_time, hl2, 0)
+
+// ÈÑÇí ÌáæíÑí ÇÒ ÑÓã ãÌÏÏ
+var bool is_drawn = false
+
+if barstate.islast and not is_drawn
+    // ==========================================
+    // --- ÑÓã ÎØæØ ÒãÇäí (ÚãæÏí) ---
+    // ==========================================
+    if show_time and not na(target_time)
+        // ÂíäÏå
+        float val_forward = initial_bars
+        int time_forward = target_time
+        
+        while val_forward >= 1
+            val_forward := val_forward * 0.618
+            if val_forward < 1
+                break
+            step_time = math.round(val_forward * bar_duration)
+            time_forward := time_forward + step_time
+            line.new(x1=time_forward, y1=low, x2=time_forward, y2=high, xloc=xloc.bar_time, extend=extend.both, color=color.blue, width=1)
+                     
+        // ÐÔÊå
+        float val_backward = initial_bars
+        int time_backward = target_time
+        
+        while val_backward >= 1
+            val_backward := val_backward * 0.618
+            if val_backward < 1
+                break
+            step_time = math.round(val_backward * bar_duration)
+            time_backward := time_backward - step_time
+            line.new(x1=time_backward, y1=low, x2=time_backward, y2=high, xloc=xloc.bar_time, extend=extend.both, color=color.red, width=1)
+
+    // ==========================================
+    // --- ÑÓã ÎØæØ ÞíãÊí (ÇÝÞí) ---
+    // ==========================================
+    if show_price and not na(selected_mid_price)
+        // ÈÇáÇ (ãÞÇæãÊ)
+        float val_up = initial_price_gap
+        float price_up = selected_mid_price
+        
+        while val_up >= syminfo.mintick
+            val_up := val_up * 0.618
+            if val_up < syminfo.mintick
+                break
+            price_up := price_up + val_up
+            line.new(x1=target_time, y1=price_up, x2=target_time + bar_duration, y2=price_up, xloc=xloc.bar_time, extend=extend.both, color=color.green, width=1)
+                     
+        // Çííä (ÍãÇíÊ)
+        float val_down = initial_price_gap
+        float price_down = selected_mid_price
+        
+        while val_down >= syminfo.mintick
+            val_down := val_down * 0.618
+            if val_down < syminfo.mintick
+                break
+            price_down := price_down - val_down
+            line.new(x1=target_time, y1=price_down, x2=target_time + bar_duration, y2=price_down, xloc=xloc.bar_time, extend=extend.both, color=color.orange, width=1)
+            
+    is_drawn := true

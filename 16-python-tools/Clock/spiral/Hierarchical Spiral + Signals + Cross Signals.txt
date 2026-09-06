@@ -1,0 +1,636 @@
+# -*- coding: utf-8 -*-
+"""
+Hierarchical Spiral + Signals + Cross Signals
+----------------------------------------------------------------------
+✓ سیگنال‌های معمولی (چند تایم‌فریم همزمان)
+✓ سیگنال‌های تقاطع (Cross): ۲ تایم‌فریم خاص همزمان
+✓ Backtest هر دو نوع سیگنال
+✓ جدول‌های جداگانه
+"""
+
+import threading
+import time
+import urllib3
+from datetime import datetime, timezone
+from collections import deque
+
+import numpy as np
+import requests
+import dash
+from dash import dcc, html, Input, Output
+import dash_bootstrap_components as dbc
+import plotly.graph_objects as go
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# ==============================================================================
+# 1) تنظیمات
+# ==============================================================================
+SYMBOL = "BTCUSDT"
+CATEGORY = "linear"
+
+API_ENDPOINTS = [
+    "https://api.bybit.com",
+    "https://api.bytick.com",
+    "https://api.bybit.kz",
+]
+
+SESSION = requests.Session()
+SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
+})
+
+APP_STATE = {"price": 0.0, "connected": False, "endpoint": "None", "error": ""}
+KLINE_CACHE = {}
+
+TIMEFRAMES = [
+    {'name': '1M', 'T': 30 * 24 * 3600, 'R': 12.0, 'color': '#FFD700', 'width': 5},
+    {'name': '1W', 'T': 7 * 24 * 3600, 'R': 6.0, 'color': '#FFA500', 'width': 4},
+    {'name': '1D', 'T': 86400, 'R': 3.5, 'color': '#FF6B6B', 'width': 4},
+    {'name': '4H', 'T': 14400, 'R': 2.0, 'color': '#4ECDC4', 'width': 3},
+    {'name': '1H', 'T': 3600, 'R': 1.2, 'color': '#95E1D3', 'width': 2.5},
+    {'name': '15m', 'T': 900, 'R': 0.7, 'color': '#F38181', 'width': 2},
+    {'name': '1m', 'T': 60, 'R': 0.4, 'color': '#AA96DA', 'width': 1.5},
+]
+
+TF_PERIODS = {tf['name']: tf['T'] for tf in TIMEFRAMES}
+
+# تاریخچه سیگنال‌ها
+SIGNAL_HISTORY = deque(maxlen=500)  # سیگنال‌های معمولی
+CROSS_HISTORY = deque(maxlen=500)  # سیگنال‌های تقاطع
+
+BACKTEST_STATUS = {"running": False, "progress": 0.0, "signals": 0, "crosses": 0}
+LAST_SIGNAL_TIME = {"t": 0.0}
+LAST_CROSS_TIME = {"t": 0.0}
+
+
+# ==============================================================================
+# 2) Backtest: سیگنال‌های معمولی + تقاطع
+# ==============================================================================
+def compute_progress(t, T):
+    t_start = (t // T) * T
+    return (t - t_start) / T
+
+
+def backtest_all(selected_tfs, signal_level, cross_tf_a, cross_tf_b, cross_level, days_back=90):
+    """Backtest همزمان سیگنال‌های معمولی و تقاطع"""
+    global SIGNAL_HISTORY, CROSS_HISTORY, BACKTEST_STATUS
+
+    BACKTEST_STATUS["running"] = True
+    BACKTEST_STATUS["progress"] = 0.0
+    BACKTEST_STATUS["signals"] = 0
+    BACKTEST_STATUS["crosses"] = 0
+
+    # پاک کردن سیگنال‌های backtest قبلی
+    SIGNAL_HISTORY = deque([s for s in SIGNAL_HISTORY if s.get('type') == 'live'], maxlen=500)
+    CROSS_HISTORY = deque([c for c in CROSS_HISTORY if c.get('type') == 'live'], maxlen=500)
+
+    t_now = time.time()
+    t_start_bt = t_now - days_back * 24 * 3600
+
+    step = 30
+    tolerance = 0.05
+    min_gap_signal = 120
+    min_gap_cross = 60
+
+    total_steps = int((t_now - t_start_bt) / step)
+    last_sig_t = 0
+    last_cross_t = 0
+    sig_count = 0
+    cross_count = 0
+
+    # Period تایم‌فریم‌های انتخابی
+    sel_periods = {tf: TF_PERIODS[tf] for tf in selected_tfs if tf in TF_PERIODS}
+
+    # Period تایم‌فریم‌های تقاطع
+    cross_a_T = TF_PERIODS.get(cross_tf_a, 0)
+    cross_b_T = TF_PERIODS.get(cross_tf_b, 0)
+    has_cross = cross_a_T > 0 and cross_b_T > 0 and cross_tf_a != cross_tf_b
+
+    print(f"Backtest: {days_back}d | step={step}s | tol={tolerance}")
+    print(f"Signal TFs: {list(sel_periods.keys())} @ {signal_level}")
+    print(f"Cross TFs: {cross_tf_a} × {cross_tf_b} @ {cross_level}")
+
+    for i in range(total_steps):
+        t = t_start_bt + i * step
+
+        # === سیگنال معمولی ===
+        if sel_periods and signal_level > 0:
+            all_at = True
+            for tf_name, T in sel_periods.items():
+                p = compute_progress(t, T)
+                if abs(p - signal_level) >= tolerance:
+                    all_at = False
+                    break
+
+            if all_at and t - last_sig_t >= min_gap_signal:
+                last_sig_t = t
+                sig_count += 1
+                SIGNAL_HISTORY.append({
+                    'time': t, 'price': 0, 'level': signal_level,
+                    'tfs': list(selected_tfs), 'type': 'backtest'
+                })
+
+        # === سیگنال تقاطع ===
+        if has_cross and cross_level > 0:
+            p_a = compute_progress(t, cross_a_T)
+            p_b = compute_progress(t, cross_b_T)
+
+            if (abs(p_a - cross_level) < tolerance and
+                    abs(p_b - cross_level) < tolerance):
+                if t - last_cross_t >= min_gap_cross:
+                    last_cross_t = t
+                    cross_count += 1
+                    CROSS_HISTORY.append({
+                        'time': t, 'price': 0, 'level': cross_level,
+                        'tf_a': cross_tf_a, 'tf_b': cross_tf_b,
+                        'type': 'backtest'
+                    })
+
+        # Progress
+        if i % 5000 == 0:
+            BACKTEST_STATUS["progress"] = i / total_steps
+            BACKTEST_STATUS["signals"] = sig_count
+            BACKTEST_STATUS["crosses"] = cross_count
+            time.sleep(0.001)
+
+    BACKTEST_STATUS["progress"] = 1.0
+    BACKTEST_STATUS["signals"] = sig_count
+    BACKTEST_STATUS["crosses"] = cross_count
+    BACKTEST_STATUS["running"] = False
+
+    print(f"✅ Done: {sig_count} signals, {cross_count} crosses")
+
+
+def run_backtest(selected_tfs, signal_level, cross_a, cross_b, cross_level):
+    threading.Thread(
+        target=backtest_all,
+        args=(selected_tfs, signal_level, cross_a, cross_b, cross_level, 90),
+        daemon=True
+    ).start()
+
+
+# Backtest اولیه
+print("🔄 Initial backtest starting...")
+run_backtest(['1D', '4H', '1H'], 0.5, '4H', '1H', 0.5)
+
+
+# ==============================================================================
+# 3) اتصال به صرافی
+# ==============================================================================
+def api_request(path, params, timeout=10):
+    endpoints = [APP_STATE["endpoint"]] if APP_STATE["endpoint"] != "None" else []
+    endpoints += [ep for ep in API_ENDPOINTS if ep != APP_STATE["endpoint"]]
+
+    for endpoint in endpoints:
+        url = f"{endpoint}{path}"
+        for verify in [True, False]:
+            try:
+                resp = SESSION.get(url, params=params, timeout=timeout, verify=verify)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("retCode") == 0:
+                        APP_STATE["endpoint"] = endpoint
+                        APP_STATE["connected"] = True
+                        return data
+            except:
+                continue
+    APP_STATE["connected"] = False
+    return None
+
+
+def data_loop(stop_flag):
+    while not stop_flag.is_set():
+        try:
+            data = api_request("/v5/market/tickers", {"category": CATEGORY, "symbol": SYMBOL})
+            if data and data.get("result") and data["result"].get("list"):
+                APP_STATE["price"] = float(data["result"]["list"][0].get("lastPrice", 0))
+
+            for tf in TIMEFRAMES:
+                data = api_request("/v5/market/kline", {
+                    "category": CATEGORY, "symbol": SYMBOL,
+                    "interval": tf['name'], "limit": 2
+                })
+                if data and data.get("result") and data["result"].get("list"):
+                    k = data["result"]["list"][0]
+                    KLINE_CACHE[tf['name']] = {
+                        'open': float(k[1]), 'high': float(k[2]),
+                        'low': float(k[3]), 'close': float(k[4])
+                    }
+        except:
+            pass
+        time.sleep(3)
+
+
+threading.Thread(target=data_loop, args=(threading.Event(),), daemon=True).start()
+
+
+# ==============================================================================
+# 4) اسپیرال‌ها
+# ==============================================================================
+def compute_spirals(t_now):
+    traces = []
+    progress_map = {}
+    cx, cy = 0.0, 0.0
+    acc_angle = 0.0
+    price = APP_STATE["price"]
+
+    for tf in TIMEFRAMES:
+        T = tf['T']
+        R = tf['R']
+        t_start = (t_now // T) * T
+        progress = min((t_now - t_start) / T, 1.0)
+        progress_map[tf['name']] = progress
+
+        kline = KLINE_CACHE.get(tf['name'], {})
+        close_p = kline.get('close', 0)
+        open_p = kline.get('open', 0)
+
+        if open_p > 0 and close_p > 0:
+            change_pct = ((close_p - open_p) / open_p) * 100
+            trend = "📈" if close_p >= open_p else "📉"
+        else:
+            change_pct = 0
+            trend = "➖"
+
+        # مدار
+        u = np.linspace(0, 1, 120)
+        theta = 2 * np.pi * u
+        x_f = cx + R * np.cos(theta + acc_angle)
+        y_f = cy + R * np.sin(theta + acc_angle)
+
+        hover = f"<b style='color:{tf['color']}'>{tf['name']}</b><br>📊 {progress * 100:.1f}%<br>"
+        if close_p > 0:
+            hover += f"💰 ${close_p:,.0f} {trend}{change_pct:+.2f}%"
+
+        traces.append(go.Scatter(
+            x=x_f, y=y_f, mode='lines',
+            line=dict(color=tf['color'], width=1.5, dash='dot'),
+            opacity=0.35, showlegend=False,
+            hovertemplate=hover + "<extra></extra>"
+        ))
+
+        # مسیر
+        n = max(int(120 * progress), 3)
+        u_c = np.linspace(0, progress, n)
+        th_c = 2 * np.pi * u_c
+        x_c = cx + R * np.cos(th_c + acc_angle)
+        y_c = cy + R * np.sin(th_c + acc_angle)
+
+        traces.append(go.Scatter(
+            x=x_c, y=y_c, mode='lines',
+            line=dict(color=tf['color'], width=tf['width']),
+            name=tf['name'], showlegend=True,
+            hovertemplate=f"<b>{tf['name']}</b><br>📍 {progress * 100:.1f}%<extra></extra>"
+        ))
+
+        # نقطه
+        th_now = 2 * np.pi * progress
+        cur_x = cx + R * np.cos(th_now + acc_angle)
+        cur_y = cy + R * np.sin(th_now + acc_angle)
+
+        for g in [14, 10]:
+            traces.append(go.Scatter(
+                x=[cur_x], y=[cur_y], mode='markers',
+                marker=dict(color=tf['color'], size=g, opacity=0.25),
+                showlegend=False, hoverinfo='skip'
+            ))
+
+        hover_pt = f"<b style='color:{tf['color']}'>{tf['name']}</b><br>📊 {progress * 100:.1f}%<br>"
+        if price > 0:
+            hover_pt += f"💰 ${price:,.2f}"
+
+        traces.append(go.Scatter(
+            x=[cur_x], y=[cur_y], mode='markers',
+            marker=dict(color='#FFF', size=8, line=dict(color=tf['color'], width=2)),
+            showlegend=False,
+            hovertemplate=hover_pt + "<extra></extra>"
+        ))
+
+        # برچسب
+        la = th_now + acc_angle + np.pi / 4
+        traces.append(go.Scatter(
+            x=[cur_x + R * 0.3 * np.cos(la)], y=[cur_y + R * 0.3 * np.sin(la)],
+            mode='text', text=[f"{tf['name']}<br>{progress * 100:.0f}%"],
+            textfont=dict(color=tf['color'], size=9, family='monospace'),
+            showlegend=False, hoverinfo='skip'
+        ))
+
+        cx, cy = cur_x, cur_y
+        acc_angle += th_now
+
+    return traces, progress_map
+
+
+# ==============================================================================
+# 5) جداول سیگنال
+# ==============================================================================
+def build_signal_table():
+    """جدول سیگنال‌های معمولی"""
+    if not SIGNAL_HISTORY:
+        return html.P("No signals", style={"color": "#666", "textAlign": "center",
+                                           "fontFamily": "monospace", "fontSize": "11px"})
+
+    rows = []
+    for sig in list(SIGNAL_HISTORY)[::-1][:30]:
+        dt = datetime.fromtimestamp(sig['time'], tz=timezone.utc)
+        utc = dt.strftime('%m-%d %H:%M')
+        price = f"${sig['price']:,.0f}" if sig['price'] > 0 else "—"
+
+        rows.append(html.Tr([
+            html.Td(utc, style={"color": "#f5efe0", "fontSize": "9px", "padding": "1px 3px"}),
+            html.Td(price, style={"color": "#00FF88", "fontSize": "9px", "padding": "1px 3px"}),
+            html.Td(f"{sig['level']:.2f}", style={"color": "#FFD700", "fontSize": "9px", "padding": "1px 3px"}),
+            html.Td(', '.join(sig['tfs']), style={"color": "#aaa", "fontSize": "9px", "padding": "1px 3px"}),
+        ], style={"fontFamily": "monospace"}))
+
+    return html.Div([
+        html.Small(f"📊 {len(SIGNAL_HISTORY)} signals", style={"color": "#888"}),
+        html.Table([
+            html.Thead([html.Tr([
+                html.Th("UTC", style={"color": "#FFD700", "fontSize": "9px"}),
+                html.Th("Price", style={"color": "#FFD700", "fontSize": "9px"}),
+                html.Th("Lvl", style={"color": "#FFD700", "fontSize": "9px"}),
+                html.Th("TFs", style={"color": "#FFD700", "fontSize": "9px"}),
+            ])]),
+            html.Tbody(rows)
+        ], style={"width": "100%", "borderCollapse": "collapse"})
+    ], style={"maxHeight": "200px", "overflowY": "auto"})
+
+
+def build_cross_table():
+    """جدول سیگنال‌های تقاطع"""
+    if not CROSS_HISTORY:
+        return html.P("No cross signals", style={"color": "#666", "textAlign": "center",
+                                                 "fontFamily": "monospace", "fontSize": "11px"})
+
+    rows = []
+    for cr in list(CROSS_HISTORY)[::-1][:30]:
+        dt = datetime.fromtimestamp(cr['time'], tz=timezone.utc)
+        utc = dt.strftime('%m-%d %H:%M')
+        price = f"${cr['price']:,.0f}" if cr['price'] > 0 else "—"
+
+        rows.append(html.Tr([
+            html.Td(utc, style={"color": "#f5efe0", "fontSize": "9px", "padding": "1px 3px"}),
+            html.Td(price, style={"color": "#00FF88", "fontSize": "9px", "padding": "1px 3px"}),
+            html.Td(f"{cr['level']:.2f}", style={"color": "#FF6B6B", "fontSize": "9px", "padding": "1px 3px"}),
+            html.Td(f"{cr['tf_a']}×{cr['tf_b']}", style={"color": "#4ECDC4", "fontSize": "9px", "padding": "1px 3px"}),
+        ], style={"fontFamily": "monospace"}))
+
+    return html.Div([
+        html.Small(f"✂️ {len(CROSS_HISTORY)} crosses", style={"color": "#888"}),
+        html.Table([
+            html.Thead([html.Tr([
+                html.Th("UTC", style={"color": "#FF6B6B", "fontSize": "9px"}),
+                html.Th("Price", style={"color": "#FF6B6B", "fontSize": "9px"}),
+                html.Th("Lvl", style={"color": "#FF6B6B", "fontSize": "9px"}),
+                html.Th("Cross", style={"color": "#FF6B6B", "fontSize": "9px"}),
+            ])]),
+            html.Tbody(rows)
+        ], style={"width": "100%", "borderCollapse": "collapse"})
+    ], style={"maxHeight": "200px", "overflowY": "auto"})
+
+
+# ==============================================================================
+# 6) Dash App
+# ==============================================================================
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
+app.title = "🌀 Spiral + Cross Signals"
+
+tf_options = [{'label': f" {tf['name']}", 'value': tf['name']} for tf in TIMEFRAMES]
+
+app.layout = html.Div([
+    # هدر
+    html.Div([
+        html.H2("🌀 Spiral + Cross Signals", style={
+            "fontFamily": "monospace", "textShadow": "0 0 10px #FFD700",
+            "fontSize": "18px", "margin": "0", "color": "#f5efe0"}),
+        html.Div(id="price-display", style={"fontFamily": "monospace",
+                                            "fontSize": "16px", "color": "#FFD700"}),
+        html.Div(id="status-bar", style={"fontFamily": "monospace",
+                                         "fontSize": "10px", "color": "#888"})
+    ], style={"position": "absolute", "top": "5px", "left": "0", "width": "100%",
+              "textAlign": "center", "zIndex": "10", "pointerEvents": "none"}),
+
+    # === پنل تنظیمات سیگنال معمولی ===
+    html.Div([
+        html.Div([
+            html.H6("📊 Signal Settings", style={"color": "#FFD700", "marginBottom": "6px", "fontSize": "13px"}),
+
+            html.Label("Timeframes:", style={"color": "#aaa", "fontSize": "10px"}),
+            dcc.Checklist(id='tf-checklist', options=tf_options,
+                          value=['1D', '4H', '1H'], inline=True,
+                          labelStyle={'color': '#f5efe0', 'marginRight': '8px',
+                                      'fontFamily': 'monospace', 'fontSize': '10px'}),
+
+            html.Label("Level:", style={"color": "#aaa", "fontSize": "10px", "marginTop": "4px", "display": "block"}),
+            dcc.Slider(id='signal-level', min=0.0, max=1.0, step=0.05, value=0.5,
+                       marks={i / 5: f"{i / 5:.1f}" for i in range(0, 6)},
+                       tooltip={"placement": "bottom", "always_visible": True}),
+
+            html.Div(id='signal-status', style={"color": "#00FF88", "textAlign": "center",
+                                                "fontFamily": "monospace", "fontSize": "11px", "marginTop": "4px"})
+        ], style={"backgroundColor": "rgba(10,10,18,0.92)", "padding": "10px",
+                  "borderRadius": "8px", "border": "1px solid #444", "marginBottom": "8px"}),
+
+        # === پنل تنظیمات تقاطع ===
+        html.Div([
+            html.H6("✂️ Cross Signal", style={"color": "#FF6B6B", "marginBottom": "6px", "fontSize": "13px"}),
+
+            html.Div([
+                html.Div([
+                    html.Label("TF A:", style={"color": "#aaa", "fontSize": "10px"}),
+                    dcc.Dropdown(id='cross-tf-a', options=tf_options, value='4H',
+                                 style={"fontSize": "11px", "backgroundColor": "#1a1a2e"})
+                ], style={"width": "48%", "display": "inline-block"}),
+
+                html.Div([
+                    html.Label("TF B:", style={"color": "#aaa", "fontSize": "10px"}),
+                    dcc.Dropdown(id='cross-tf-b', options=tf_options, value='1H',
+                                 style={"fontSize": "11px", "backgroundColor": "#1a1a2e"})
+                ], style={"width": "48%", "display": "inline-block", "marginLeft": "4%"})
+            ]),
+
+            html.Label("Cross Level:",
+                       style={"color": "#aaa", "fontSize": "10px", "marginTop": "4px", "display": "block"}),
+            dcc.Slider(id='cross-level', min=0.0, max=1.0, step=0.05, value=0.5,
+                       marks={i / 5: f"{i / 5:.1f}" for i in range(0, 6)},
+                       tooltip={"placement": "bottom", "always_visible": True}),
+
+            html.Div(id='cross-status', style={"color": "#FF6B6B", "textAlign": "center",
+                                               "fontFamily": "monospace", "fontSize": "11px", "marginTop": "4px"})
+        ], style={"backgroundColor": "rgba(10,10,18,0.92)", "padding": "10px",
+                  "borderRadius": "8px", "border": "1px solid #444", "marginBottom": "8px"}),
+
+        # دکمه Backtest
+        html.Button("🔄 Run Backtest (90d)", id='backtest-btn', n_clicks=0,
+                    style={"width": "100%", "backgroundColor": "#1a1a2e", "color": "#FFD700",
+                           "border": "1px solid #444", "borderRadius": "4px", "padding": "6px",
+                           "cursor": "pointer", "fontFamily": "monospace", "fontSize": "11px",
+                           "marginBottom": "8px"}),
+        html.Div(id='backtest-status', style={"color": "#888", "textAlign": "center",
+                                              "fontFamily": "monospace", "fontSize": "10px", "marginBottom": "8px"}),
+
+        # جدول سیگنال‌ها
+        html.Div([
+            html.H6("📊 Signal History", style={"color": "#FFD700", "marginBottom": "4px", "fontSize": "12px"}),
+            html.Div(id='signal-table')
+        ], style={"backgroundColor": "rgba(10,10,18,0.92)", "padding": "8px",
+                  "borderRadius": "8px", "border": "1px solid #444", "marginBottom": "8px"}),
+
+        # جدول تقاطع‌ها
+        html.Div([
+            html.H6("✂️ Cross History", style={"color": "#FF6B6B", "marginBottom": "4px", "fontSize": "12px"}),
+            html.Div(id='cross-table')
+        ], style={"backgroundColor": "rgba(10,10,18,0.92)", "padding": "8px",
+                  "borderRadius": "8px", "border": "1px solid #444"}),
+
+    ], style={"position": "absolute", "top": "70px", "right": "10px", "zIndex": "10",
+              "width": "280px", "maxHeight": "90vh", "overflowY": "auto"}),
+
+    # نمودار اسپیرال
+    dcc.Graph(id="spiral-graph", config={'displayModeBar': True, 'scrollZoom': True},
+              style={'height': '100vh', 'width': '100vw', 'backgroundColor': '#0a0a12'}),
+
+    dcc.Interval(id="interval", interval=1000, n_intervals=0),
+
+], style={"height": "100vh", "overflow": "hidden", "backgroundColor": "#0a0a12"})
+
+
+# === Callbacks ===
+
+@app.callback(
+    Output('backtest-btn', 'n_clicks'),
+    [Input('tf-checklist', 'value'),
+     Input('signal-level', 'value'),
+     Input('cross-tf-a', 'value'),
+     Input('cross-tf-b', 'value'),
+     Input('cross-level', 'value')],
+    prevent_initial_call=True
+)
+def auto_backtest(sel_tfs, sig_lvl, cr_a, cr_b, cr_lvl):
+    if sel_tfs and sig_lvl is not None and cr_a and cr_b and cr_lvl is not None:
+        run_backtest(sel_tfs, sig_lvl, cr_a, cr_b, cr_lvl)
+    return 0
+
+
+@app.callback(
+    [Output("spiral-graph", "figure"),
+     Output("price-display", "children"),
+     Output("status-bar", "children"),
+     Output("signal-status", "children"),
+     Output("cross-status", "children"),
+     Output("signal-table", "children"),
+     Output("cross-table", "children"),
+     Output("backtest-status", "children")],
+    [Input("interval", "n_intervals"),
+     Input("tf-checklist", "value"),
+     Input("signal-level", "value"),
+     Input("cross-tf-a", "value"),
+     Input("cross-tf-b", "value"),
+     Input("cross-level", "value")]
+)
+def update(n, sel_tfs, sig_lvl, cr_a, cr_b, cr_lvl):
+    t_now = time.time()
+    if not sel_tfs:
+        sel_tfs = []
+
+    # اسپیرال‌ها
+    spiral_traces, progress_map = compute_spirals(t_now)
+
+    # === سیگنال معمولی لایو ===
+    if sel_tfs and sig_lvl and sig_lvl > 0:
+        tol = 0.05
+        sel_prog = [progress_map.get(tf, 0) for tf in sel_tfs]
+        if sel_prog and all(abs(p - sig_lvl) < tol for p in sel_prog):
+            if t_now - LAST_SIGNAL_TIME["t"] > 60:
+                LAST_SIGNAL_TIME["t"] = t_now
+                SIGNAL_HISTORY.append({
+                    'time': t_now, 'price': APP_STATE["price"],
+                    'level': sig_lvl, 'tfs': sel_tfs.copy(), 'type': 'live'
+                })
+
+    # === سیگنال تقاطع لایو ===
+    if cr_a and cr_b and cr_a != cr_b and cr_lvl and cr_lvl > 0:
+        tol = 0.05
+        p_a = progress_map.get(cr_a, 0)
+        p_b = progress_map.get(cr_b, 0)
+        if abs(p_a - cr_lvl) < tol and abs(p_b - cr_lvl) < tol:
+            if t_now - LAST_CROSS_TIME["t"] > 30:
+                LAST_CROSS_TIME["t"] = t_now
+                CROSS_HISTORY.append({
+                    'time': t_now, 'price': APP_STATE["price"],
+                    'level': cr_lvl, 'tf_a': cr_a, 'tf_b': cr_b, 'type': 'live'
+                })
+
+    # Figure
+    fig = go.Figure(data=spiral_traces)
+    shapes = []
+    for r in [5, 10, 15]:
+        shapes.append(dict(type="circle", xref="x", yref="y", x0=-r, y0=-r, x1=r, y1=r,
+                           line=dict(color="#1a1a2e", width=1, dash="dot")))
+    for angle in np.linspace(0, 2 * np.pi, 8, endpoint=False):
+        shapes.append(dict(type="line", xref="x", yref="y", x0=0, y0=0,
+                           x1=15 * np.cos(angle), y1=15 * np.sin(angle),
+                           line=dict(color="#1a1a2e", width=0.5, dash="dot")))
+
+    fig.update_layout(
+        plot_bgcolor='#0a0a12', paper_bgcolor='#0a0a12',
+        font=dict(color='#f5efe0'), showlegend=True,
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01,
+                    bgcolor="rgba(10,10,18,0.7)", font=dict(size=10, family="monospace")),
+        shapes=shapes,
+        xaxis=dict(visible=False, scaleanchor="y", scaleratio=1, range=[-15, 15]),
+        yaxis=dict(visible=False, scaleanchor="x", scaleratio=1, range=[-15, 15]),
+        margin=dict(l=0, r=0, t=70, b=0), hovermode='closest',
+        hoverlabel=dict(bgcolor="#1a1a2e", bordercolor="#FFD700",
+                        font=dict(family="monospace", size=12)),
+        uirevision='constant'
+    )
+
+    # وضعیت
+    price = APP_STATE["price"]
+    connected = APP_STATE["connected"]
+    price_text = f"💰 ${price:,.2f}" if price > 0 else "💰 Loading..."
+    status_text = f"🟢 {APP_STATE['endpoint']}" if connected else f"🔴 {APP_STATE['error'][:30]}"
+
+    # Signal status
+    if sel_tfs and sig_lvl:
+        sel_prog = [progress_map.get(tf, 0) for tf in sel_tfs]
+        if sel_prog:
+            dist = np.mean([abs(p - sig_lvl) for p in sel_prog])
+            sig_status = f"📡 Dist: {dist * 100:.1f}%"
+        else:
+            sig_status = "..."
+    else:
+        sig_status = "—"
+
+    # Cross status
+    if cr_a and cr_b and cr_lvl:
+        p_a = progress_map.get(cr_a, 0)
+        p_b = progress_map.get(cr_b, 0)
+        dist_a = abs(p_a - cr_lvl)
+        dist_b = abs(p_b - cr_lvl)
+        cross_status = f"✂️ {cr_a}:{p_a * 100:.0f}% | {cr_b}:{p_b * 100:.0f}%"
+    else:
+        cross_status = "—"
+
+    # جداول
+    sig_table = build_signal_table()
+    cross_table = build_cross_table()
+
+    # Backtest status
+    if BACKTEST_STATUS["running"]:
+        bt_status = f"⏳ {BACKTEST_STATUS['progress'] * 100:.0f}%"
+    else:
+        bt_status = f"✅ {BACKTEST_STATUS['signals']} sig | {BACKTEST_STATUS['crosses']} cross"
+
+    return fig, price_text, status_text, sig_status, cross_status, sig_table, cross_table, bt_status
+
+
+if __name__ == '__main__':
+    print("=" * 60)
+    print("🌀 Spiral + Cross Signals")
+    print("=" * 60)
+    app.run(debug=True, port=8050, host='0.0.0.0')

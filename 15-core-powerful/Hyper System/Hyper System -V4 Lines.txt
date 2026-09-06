@@ -1,0 +1,191 @@
+//@version=5
+indicator("Hyper Fibo System{Morindok}", overlay=true)
+
+// =============================================================================
+//                             INPUTS
+// =============================================================================
+// ÏÑíÇÝÊ äÞÇØ
+t1 = input.time(0, title="Point 1", confirm=true, inline="p1", group="Main Points")
+p1 = input.price(0, title="", confirm=true, inline="p1", group="Main Points")
+t2 = input.time(0, title="Point 2", confirm=true, inline="p2", group="Main Points")
+p2 = input.price(0, title="", confirm=true, inline="p2", group="Main Points")
+
+// ÒíäååÇí Úãæãí
+sym_center_ratio = input.float(0.5, title="Wave Symmetry Center Ratio", step=0.1, tooltip="0.5 means center, 1.0 means end (t2), 0.0 means start (t1)", group="Wave Options")
+reset_wave = input.bool(true, title="Reset Wave After 5 Cycles (Disable for Infinite Growth)", group="Wave Options")
+
+// ÒíäååÇí ÇÚãÇá ãæÌ
+apply_wave_to_line = input.bool(false, title="Apply Fibo Wave to Trend Line", group="Apply Fibo Wave")
+apply_wave_to_gray = input.bool(false, title="Apply Fibo Wave to Gray Line (Cross Level)", group="Apply Fibo Wave")
+apply_wave_to_price = input.bool(false, title="Apply Fibo Wave to Main Price Candles", group="Apply Fibo Wave")
+apply_wave_to_high = input.bool(false, title="Apply Fibo Wave to High Point Level", group="Apply Fibo Wave")
+apply_wave_to_low = input.bool(false, title="Apply Fibo Wave to Low Point Level", group="Apply Fibo Wave")
+
+// ÒíäååÇí ÎØ ÎÇ˜ÓÊÑí
+use_slope_for_gray = input.bool(false, title="Apply Overall Slope to Gray Line", group="Gray Line Options")
+inverse_gray_slope = input.bool(false, title="Inverse Slope for Gray Line", group="Gray Line Options")
+
+// ÒíäååÇí ÞÑíäåÓÇÒí äÞØå ÈÇáÇ æ Çííä
+show_high_sym = input.bool(false, title="Show High Point Symmetry Candles", group="Symmetry Options")
+show_low_sym = input.bool(false, title="Show Low Point Symmetry Candles", group="Symmetry Options")
+
+// ÒíäååÇí ÑÑÓíæä ÇÎÊÕÇÕí ÈÑÇí åÑ äæÚ ˜äÏá
+// ÏÑ ÇíäÌÇ Èå ÕæÑÊ íÔÝÑÖ ÑÑÓíæä äÇÑäÌí ÝÚÇá æ ÈÞíå ÎÇãæÔ åÓÊäÏ
+show_reg_main = input.bool(false, title="Regression: Main Candles", group="Candle Regression")
+show_reg_sym = input.bool(true, title="Regression: Orange Symmetrical", group="Candle Regression")
+show_reg_norm_ma = input.bool(false, title="Regression: Green Normal MA", group="Candle Regression")
+show_reg_inv_ma = input.bool(false, title="Regression: Purple Inverse MA", group="Candle Regression")
+show_reg_high = input.bool(false, title="Regression: Teal High Point", group="Candle Regression")
+show_reg_low = input.bool(false, title="Regression: Maroon Low Point", group="Candle Regression")
+regression_source = input.source(hlc3, title="Main Candle Source", group="Candle Regression")
+
+// =============================================================================
+//                             CALCULATIONS
+// =============================================================================
+// ãÍÇÓÈå ÔíÈ¡ ÒãÇä ãíÇäí æ ÞíãÊ ãíÇäí Çíå
+slope = (t2 - t1) != 0 ? (p2 - p1) / (t2 - t1) : 0
+mid_time = math.round(t1 + (t2 - t1) * sym_center_ratio)
+cross_level = (p1 + p2) / 2
+high_level = math.max(p1, p2)
+low_level = math.min(p1, p2)
+
+// ãÍÇÓÈå Øæá ÈÇÒå
+bar_ms = timeframe.in_seconds(timeframe.period) * 1000
+ma_len = math.max(1, math.round(math.abs(t2 - t1) / bar_ms))
+
+// ãÍÇÓÈå ãÞíÇÓ ãæÌ
+base_amp = math.abs(p2 - p1) != 0 ? math.abs(p2 - p1) / 2 : ta.atr(14)
+relative_x = (time - mid_time) / bar_ms
+dist_bars = math.abs(relative_x)
+int max_cycles = 5
+int cycle_index = reset_wave ? math.floor((dist_bars % (ma_len * max_cycles)) / ma_len) : math.floor(dist_bars / ma_len)
+float max_fibo = math.pow(1.618, max_cycles - 1)
+float fibo_amp = (math.pow(1.618, cycle_index) / max_fibo) * base_amp
+float wave = math.sin(relative_x * 2 * math.pi / ma_len) * fibo_amp
+
+// =============================================================================
+//                             PLOTTING & SYMMETRY LOGIC
+// =============================================================================
+
+// -- ˜äÏáåÇí ãæÌÏÇÑ ÇÕáí (ãÎÝí ÔÏå ÌåÊ ÓÇÏí) --
+wavy_open  = apply_wave_to_price ? open + wave : na
+wavy_high  = apply_wave_to_price ? high + wave : na
+wavy_low   = apply_wave_to_price ? low + wave : na
+wavy_close = apply_wave_to_price ? close + wave : na
+// wavy_color = close >= open ? color.new(#26A69A, 0) : color.new(#EF5350, 0)
+// plotcandle(wavy_open, wavy_high, wavy_low, wavy_close, title="Wavy Main Price Candles", color=wavy_color, wickcolor=wavy_color, bordercolor=wavy_color)
+
+// -- ÎØ ÑæäÏ Çíå¡ äåÇíí æ ãÚ˜æÓ (ÝÞØ ÎØ ÇÕáí ÑÓã ãíÔæÏ) --
+base_trend_line = cross_level + (slope * (time - mid_time))
+final_trend_line = apply_wave_to_line ? base_trend_line + wave : base_trend_line
+final_trend_line_rev = apply_wave_to_line ? base_trend_line - wave : na 
+plot(final_trend_line, color=color.white, linewidth=2, title="Extended Trend Line")
+// plot(final_trend_line_rev, color=color.new(color.fuchsia, 50), style=plot.style_circles, linewidth=2, title="Extended Trend Line (Inverse Wave)")
+
+// -- ãææíäåÇ (ãÍÇÓÈå ÈÑÇí ÑÑÓíæä ÇäÌÇã ãíÔæÏ¡ ÇãÇ ÑÓã ãÎÝí ÔÏå ÇÓÊ) --
+base_ma = ta.sma(close, ma_len)
+ma_slope = base_ma + wave + (slope * (time - mid_time))
+ma_inverse = base_ma + wave - (slope * (time - mid_time))
+// plot(ma_slope, color=color.blue, title="MA Normal Slope (Fibo Wave)")
+// plot(ma_inverse, color=color.red, title="MA Inverse Slope (Fibo Wave)")
+
+// -- ÎØ ÎÇ˜ÓÊÑí æ ÞÑíäååÇ (ÝÞØ ÎØ ÎÇ˜ÓÊÑí ÑÓã ãíÔæÏ) --
+float gray_slope = use_slope_for_gray ? (inverse_gray_slope ? -slope : slope) : 0
+float base_gray_line = cross_level + (gray_slope * (time - mid_time))
+final_cross_level = apply_wave_to_gray ? base_gray_line + wave : base_gray_line
+plot(final_cross_level, color=color.gray, style=plot.style_line, linewidth=2, title="Cross Level (Gray Line)")
+
+sym_open  = (2 * final_cross_level) - open
+sym_high  = (2 * final_cross_level) - low  
+sym_low   = (2 * final_cross_level) - high 
+sym_close = (2 * final_cross_level) - close
+// candle_color = sym_close >= sym_open ? color.new(color.orange, 50) : color.orange
+// plotcandle(sym_open, sym_high, sym_low, sym_close, title="Symmetrical Candles", color=candle_color, wickcolor=color.orange, bordercolor=color.orange)
+
+final_slope_open  = (2 * ma_slope) - sym_open
+final_slope_high  = (2 * ma_slope) - sym_low   
+final_slope_low   = (2 * ma_slope) - sym_high  
+final_slope_close = (2 * ma_slope) - sym_close
+
+final_inv_open  = (2 * ma_inverse) - sym_open
+final_inv_high  = (2 * ma_inverse) - sym_low   
+final_inv_low   = (2 * ma_inverse) - sym_high  
+final_inv_close = (2 * ma_inverse) - sym_close
+
+// -- ÞÑíäåÓÇÒí äÞÇØ ÈÇáÇ æ Çííä --
+final_high_level = apply_wave_to_high ? high_level + wave : high_level
+high_sym_high  = show_high_sym ? (2 * final_high_level) - low   : na
+high_sym_low   = show_high_sym ? (2 * final_high_level) - high  : na
+high_sym_close = show_high_sym ? (2 * final_high_level) - close : na
+
+final_low_level = apply_wave_to_low ? low_level + wave : low_level
+low_sym_high  = show_low_sym ? (2 * final_low_level) - low   : na
+low_sym_low   = show_low_sym ? (2 * final_low_level) - high  : na
+low_sym_close = show_low_sym ? (2 * final_low_level) - close : na
+
+
+// --- [START] Advanced Independent Regression Logic ---
+// ÊÇÈÚ ÇÎÊÕÇÕí ÈÑÇí ãÍÇÓÈå ÒäÏå ÑÑÓíæä åÑ ÎØ ÈÏæä ãÍÏæÏíÊ 5000 ˜äÏá
+f_draw_regression(y_val, in_zone, show_line, line_color) =>
+    var float sumX = 0.0
+    var float sumY = 0.0
+    var float sumXY = 0.0
+    var float sumX2 = 0.0
+    var int reg_count = 0
+    var line reg_line = na
+
+    if show_line and in_zone and not na(y_val)
+        x_val = bar_index
+        sumX += x_val
+        sumY += y_val
+        sumXY += x_val * y_val
+        sumX2 += x_val * x_val
+        reg_count += 1
+
+    if show_line and barstate.islast and reg_count > 1 and na(reg_line)
+        float denominator = reg_count * sumX2 - sumX * sumX
+        if denominator != 0
+            reg_slope = (reg_count * sumXY - sumX * sumY) / denominator
+            reg_intercept = (sumY - reg_slope * sumX) / reg_count
+            
+            x1 = bar_index
+            y1 = reg_slope * x1 + reg_intercept
+            x2 = bar_index - 10
+            y2 = reg_slope * x2 + reg_intercept
+            
+            reg_line := line.new(x1, y1, x2, y2, extend=extend.both, color=line_color, width=2, style=line.style_dashed)
+
+// ÈÑÑÓí ÈÇÒå ÒãÇäí ãÔÎÕ ÔÏå Èíä Ïæ äÞØå
+in_reg_zone = (time >= t1) and (time <= t2)
+
+// ãÍÇÓÈå HLC3 (ãíÇäíä ÞíãÊ) ÈÑÇí ÑÑÓíæäåÇ
+val_sym = (sym_high + sym_low + sym_close) / 3
+val_norm_ma = (final_slope_high + final_slope_low + final_slope_close) / 3
+val_inv_ma = (final_inv_high + final_inv_low + final_inv_close) / 3
+val_high_sym = show_high_sym ? (high_sym_high + high_sym_low + high_sym_close) / 3 : na
+val_low_sym = show_low_sym ? (low_sym_high + low_sym_low + low_sym_close) / 3 : na
+
+// ÝÑÇÎæÇäí ÊÇÈÚ ÈÑÇí ÑÓã ãÓÊÞá åÑ ÎØ ÑÑÓíæä (ÝÚÇá ÓÇÒí ÇÒ ØÑíÞ ãäæí ÊäÙíãÇÊ)
+f_draw_regression(regression_source, in_reg_zone, show_reg_main, color.new(color.yellow, 0))
+f_draw_regression(val_sym, in_reg_zone, show_reg_sym, color.new(color.orange, 0))
+f_draw_regression(val_norm_ma, in_reg_zone, show_reg_norm_ma, color.new(color.green, 0))
+f_draw_regression(val_inv_ma, in_reg_zone, show_reg_inv_ma, color.new(color.purple, 0))
+f_draw_regression(val_high_sym, in_reg_zone, show_reg_high, color.new(color.teal, 0))
+f_draw_regression(val_low_sym, in_reg_zone, show_reg_low, color.new(color.maroon, 0))
+// --- [END] Advanced Independent Regression Logic ---
+
+
+// --- [START] Signal Logic: Price hits Gray Line (Single Signal) ---
+is_active_zone = time > t2
+var bool has_signaled = false
+hit_gray = (high >= nz(final_cross_level)) and (low <= nz(final_cross_level))
+final_signal = is_active_zone and hit_gray and not has_signaled
+
+if final_signal
+    has_signaled := true
+
+plotshape(final_signal, title="Hit Gray Line Signal",
+          location=location.abovebar, color=color.new(color.yellow, 0), 
+          style=shape.labeldown, size=size.small, 
+          text="HIT", textcolor=color.black)
+// --- [END] Signal Logic ---

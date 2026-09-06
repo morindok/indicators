@@ -1,0 +1,144 @@
+//@version=5
+indicator("Moving Averages & HH/LL by Time Range", overlay=true)
+
+// ÊäÙíãÇÊ äãÇíÔ
+showMA = input.bool(true, title="Show Moving Averages")
+showHL = input.bool(true, title="Show HH/LL Channels")
+showVertLines = input.bool(true, title="Show Vertical Distance Lines")
+
+// ÏÑíÇÝÊ Ïæ ÓØÍ ÞíãÊ ÈÑÇí ÇÊÕÇá HH æ LL
+priceStart = input.price(0, title="Price Level for Start (LL)", confirm=true)
+priceEnd   = input.price(0, title="Price Level for End (HH)", confirm=true)
+
+// ÏÑíÇÝÊ ÒãÇä ÔÑæÚ æ ÇíÇä
+startTime = input.time(0, title="Start Time", confirm=true)
+endTime   = input.time(0, title="End Time", confirm=true)
+
+
+var int startIdx = na
+var int endIdx   = na
+
+if time >= startTime and na(startIdx)
+    startIdx := bar_index
+
+if time >= endTime and na(endIdx)
+    endIdx := bar_index
+
+var int baseLength = na
+if not na(startIdx) and not na(endIdx) and na(baseLength)
+    baseLength := endIdx - startIdx
+    if baseLength < 1
+        baseLength := 1
+
+len1 = baseLength
+len2 = math.round(baseLength * 1.618)
+len3 = math.round(baseLength * 0.618)
+
+safeLen1 = na(len1) or len1 < 1 ? 1 : int(len1)
+safeLen2 = na(len2) or len2 < 1 ? 1 : int(len2)
+safeLen3 = na(len3) or len3 < 1 ? 1 : int(len3)
+
+// --- ãÍÇÓÈÇÊ ãææíä ÇæÑíÌåÇ ---
+ma1 = ta.sma(close, safeLen1)
+ma2 = ta.sma(close, safeLen2)
+ma3 = ta.sma(close, safeLen3)
+
+// --- ãÍÇÓÈÇÊ ÓÞÝ æ ˜ÝåÇí Çæáíå ---
+hh_base = ta.highest(high, safeLen1)
+ll_base = ta.lowest(low, safeLen1)
+
+hh_1618 = ta.highest(high, safeLen2)
+ll_1618 = ta.lowest(low, safeLen2)
+
+hh_618  = ta.highest(high, safeLen3)
+ll_618  = ta.lowest(low, safeLen3)
+
+// --- ÇÊÕÇá HH æ LL Èå ÓØæÍ ˜ÇÑÈÑ (ãÍÇÓÈå ÂÝÓÊ) ---
+var float offset_hh = na
+var float offset_ll = na
+
+if bar_index == endIdx
+    offset_hh := priceEnd - hh_base
+    offset_ll := priceStart - ll_base
+
+// ÇÚãÇá ÌÇÈÌÇíí Èå ˜á ãÓíÑ ÑÓã
+s_hh_base = hh_base + offset_hh
+s_hh_1618 = hh_1618 + offset_hh
+s_hh_618  = hh_618  + offset_hh
+
+s_ll_base = ll_base + offset_ll
+s_ll_1618 = ll_1618 + offset_ll
+s_ll_618  = ll_618  + offset_ll
+
+// ================= ÑÓã Ñæí ÇÑÊ =================
+
+// äãÇíÔ ÓØæÍ ÇäÊÎÇÈí ˜ÇÑÈÑ
+plot(priceStart != 0 ? priceStart : na, color=color.gray, style=plot.style_circles, linewidth=2, title="Selected Price Start (LL)")
+plot(priceEnd != 0 ? priceEnd : na, color=color.gray, style=plot.style_circles, linewidth=2, title="Selected Price End (HH)")
+
+plot(showMA and not na(baseLength) ? ma1 : na, color=color.orange,  linewidth=2, title="MA Base Length")
+plot(showMA and not na(baseLength) ? ma2 : na, color=color.purple,  linewidth=1, title="MA 1.618x")
+plot(showMA and not na(baseLength) ? ma3 : na, color=color.white, linewidth=1, title="MA 0.618x")
+
+// ÑÓã HH æ LL ãÊÕá ÔÏå Èå ÓØæÍ
+plot(showHL and not na(baseLength) ? s_hh_base : na, color=color.blue, linewidth=2, title="HH Base Length")
+plot(showHL and not na(baseLength) ? s_ll_base : na, color=color.blue, linewidth=2, title="LL Base Length")
+
+plot(showHL and not na(baseLength) ? s_hh_1618 : na, color=color.red, linewidth=1, title="HH 1.618x")
+plot(showHL and not na(baseLength) ? s_ll_1618 : na, color=color.red, linewidth=1, title="LL 1.618x")
+
+plot(showHL and not na(baseLength) ? s_hh_618 : na, color=color.green, linewidth=1, title="HH 0.618x")
+plot(showHL and not na(baseLength) ? s_ll_618 : na, color=color.green, linewidth=1, title="LL 0.618x")
+
+
+// ================= ÑÓã ÎØæØ ÚãæÏí æ ÇÝÞí (ÝæÇÕá) =================
+var bool linesDrawn = false
+
+if bar_index == endIdx and not linesDrawn
+    // ãÍÇÓÈå ÇÑÊÝÇÚ ÎØæØ ÈÑ ÇÓÇÓ HH/LL åÇí ÌÇÈÌÇ ÔÏå æ ãææíäåÇ
+    dist_hh_base = math.abs(s_hh_base - ma1)
+    dist_hh_1618 = math.abs(s_hh_1618 - ma2)
+    dist_hh_618  = math.abs(s_hh_618 - ma3)
+    
+    dist_ll_base = math.abs(ma1 - s_ll_base)
+    dist_ll_1618 = math.abs(ma2 - s_ll_1618)
+    dist_ll_618  = math.abs(ma3 - s_ll_618)
+
+    // ÈÑÑÏÇäÏä ãÑ˜Ò ÎØæØ Èå æÓØ ˜äÏáåÇ (hl2)
+    center_end = hl2
+    center_start = hl2[endIdx - startIdx]
+
+    if showVertLines
+        // ================= ÇäÊåÇí ÈÇÒå (Ñæí ˜äÏá ÂÎÑ) =================
+        // ÚãæÏí
+        line.new(endIdx, center_end + dist_hh_1618/2, endIdx, center_end - dist_hh_1618/2, color=color.red, width=6)
+        line.new(endIdx, center_end + dist_hh_base/2, endIdx, center_end - dist_hh_base/2, color=color.blue, width=4)
+        line.new(endIdx, center_end + dist_hh_618/2,  endIdx, center_end - dist_hh_618/2,  color=color.green, width=2)
+
+        // ÇÝÞí
+        line.new(endIdx, center_end + dist_hh_1618/2, endIdx + 1, center_end + dist_hh_1618/2, color=color.red, style=line.style_dashed, extend=extend.right)
+        line.new(endIdx, center_end - dist_hh_1618/2, endIdx + 1, center_end - dist_hh_1618/2, color=color.red, style=line.style_dashed, extend=extend.right)
+        
+        line.new(endIdx, center_end + dist_hh_base/2, endIdx + 1, center_end + dist_hh_base/2, color=color.blue, style=line.style_dashed, extend=extend.right)
+        line.new(endIdx, center_end - dist_hh_base/2, endIdx + 1, center_end - dist_hh_base/2, color=color.blue, style=line.style_dashed, extend=extend.right)
+        
+        line.new(endIdx, center_end + dist_hh_618/2,  endIdx + 1, center_end + dist_hh_618/2,  color=color.green, style=line.style_dashed, extend=extend.right)
+        line.new(endIdx, center_end - dist_hh_618/2,  endIdx + 1, center_end - dist_hh_618/2,  color=color.green, style=line.style_dashed, extend=extend.right)
+
+        // ================= ÇÈÊÏÇí ÈÇÒå (Ñæí ˜äÏá Çæá) =================
+        // ÚãæÏí
+        line.new(startIdx, center_start + dist_ll_1618/2, startIdx, center_start - dist_ll_1618/2, color=color.red, width=6)
+        line.new(startIdx, center_start + dist_ll_base/2, startIdx, center_start - dist_ll_base/2, color=color.blue, width=4)
+        line.new(startIdx, center_start + dist_ll_618/2,  startIdx, center_start - dist_ll_618/2,  color=color.green, width=2)
+
+        // ÇÝÞí
+        line.new(startIdx, center_start + dist_ll_1618/2, startIdx + 1, center_start + dist_ll_1618/2, color=color.red, style=line.style_dashed, extend=extend.right)
+        line.new(startIdx, center_start - dist_ll_1618/2, startIdx + 1, center_start - dist_ll_1618/2, color=color.red, style=line.style_dashed, extend=extend.right)
+        
+        line.new(startIdx, center_start + dist_ll_base/2, startIdx + 1, center_start + dist_ll_base/2, color=color.blue, style=line.style_dashed, extend=extend.right)
+        line.new(startIdx, center_start - dist_ll_base/2, startIdx + 1, center_start - dist_ll_base/2, color=color.blue, style=line.style_dashed, extend=extend.right)
+        
+        line.new(startIdx, center_start + dist_ll_618/2,  startIdx + 1, center_start + dist_ll_618/2,  color=color.green, style=line.style_dashed, extend=extend.right)
+        line.new(startIdx, center_start - dist_ll_618/2,  startIdx + 1, center_start - dist_ll_618/2,  color=color.green, style=line.style_dashed, extend=extend.right)
+    
+    linesDrawn := true

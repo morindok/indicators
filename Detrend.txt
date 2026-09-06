@@ -1,0 +1,54 @@
+//@version=5
+indicator("Detrended Candles (Switchable)", overlay=false)
+
+// --- Inputs ---
+mode = input.string("MA", options=["MA", "HH/LL"], title="Select Baseline Mode")
+
+// MA Settings
+ma_length = input.int(20, title="MA Length", group="Moving Average Settings")
+ma_type   = input.string("SMA", options=["SMA", "EMA"], title="MA Type", group="Moving Average Settings")
+
+// HH/LL Settings
+hl_length = input.int(20, title="HH/LL Length", group="HH/LL Settings")
+
+// --- Calculations ---
+// Calculate MA
+ma = ma_type == "SMA" ? ta.sma(close, ma_length) : ta.ema(close, ma_length)
+
+// Calculate HH & LL
+hh = ta.highest(high, hl_length)
+ll = ta.lowest(low, hl_length)
+
+// Condition variables for switching
+is_ma = mode == "MA"
+is_hl = mode == "HH/LL"
+
+// --- Moving Average Candles ---
+ma_o = is_ma ? open - ma : na
+ma_h = is_ma ? high - ma : na
+ma_l = is_ma ? low - ma : na
+ma_c = is_ma ? close - ma : na
+ma_color = ma_c >= ma_o ? color.new(color.teal, 0) : color.new(color.red, 0)
+
+// --- LL Candles (Positive side) ---
+ll_o = is_hl ? open - ll : na
+ll_h = is_hl ? high - ll : na
+ll_l = is_hl ? low - ll : na
+ll_c = is_hl ? close - ll : na
+ll_color = ll_c >= ll_o ? color.new(color.blue, 0) : color.new(color.orange, 0)
+
+// --- HH Candles (Negative side) ---
+hh_o = is_hl ? open - hh : na
+hh_h = is_hl ? high - hh : na
+hh_l = is_hl ? low - hh : na
+hh_c = is_hl ? close - hh : na
+hh_color = hh_c >= hh_o ? color.new(color.green, 50) : color.new(color.maroon, 50)
+
+// --- Plotting ---
+// Zero Line (Time Axis)
+hline(0, title="Zero Line (Time Axis)", color=color.gray, linestyle=hline.style_solid, linewidth=2)
+
+// Plot Candles (will only show the ones not equal to 'na' based on user selection)
+plotcandle(ma_o, ma_h, ma_l, ma_c, title="MA Candles", color=ma_color, wickcolor=ma_color, bordercolor=ma_color)
+plotcandle(ll_o, ll_h, ll_l, ll_c, title="LL Candles", color=ll_color, wickcolor=ll_color, bordercolor=ll_color)
+plotcandle(hh_o, hh_h, hh_l, hh_c, title="HH Candles", color=hh_color, wickcolor=hh_color, bordercolor=hh_color)

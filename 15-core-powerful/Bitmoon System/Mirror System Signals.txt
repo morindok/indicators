@@ -1,0 +1,267 @@
+//@version=5
+indicator("Mirror Oscillator Signals Only", shorttitle="Sym Signals", overlay=true, max_bars_back=4000)
+
+// =============================================================================
+//                             INPUTS - FIBO WAVE & AUTO PATH
+// =============================================================================
+t1 = input.time(0, title="äŞØå ãæÌ 1 (ÒãÇä)", confirm=true, inline="p1", group="äŞÇØ ãÑÌÚ ãæÌ")
+p1 = input.price(0, title="äŞØå 1 (ŞíãÊ)", confirm=true, inline="p1", group="äŞÇØ ãÑÌÚ ãæÌ")
+t2 = input.time(0, title="äŞØå ãæÌ 2 (ÒãÇä)", confirm=true, inline="p2", group="äŞÇØ ãÑÌÚ ãæÌ")
+p2 = input.price(0, title="äŞØå 2 (ŞíãÊ)", confirm=true, inline="p2", group="äŞÇØ ãÑÌÚ ãæÌ")
+
+sym_center_ratio = input.float(0.5, title="äÓÈÊ ãÑ˜Ò ÊŞÇÑä ãæÌ", step=0.1, group="ÊäÙíãÇÊ ãæÌ")
+reset_wave       = input.bool(true,  title="ÑíÓÊ ãæÌ Ó ÇÒ n ÏæÑå", group="ÊäÙíãÇÊ ãæÌ")
+use_hh_ll_amp    = input.bool(false, title="ÇÑÊİÇÚ ãæÌ ÈÑ ÇÓÇÓ İÇÕáå ÊÇ HH/LL", group="ÊäÙíãÇÊ ãæÌ")
+hh_ll_len        = input.int(50, title="ÏæÑå HH/LL ÈÑÇí ÇÑÊİÇÚ ãæÌ", minval=1, group="ÊäÙíãÇÊ ãæÌ")
+
+ma_type        = input.string("SMA", title="äæÚ ãææíä ÇæÑíÌ", options=["SMA", "EMA", "WMA"], group="ÊäÙíãÇÊ ãææíä ÇæÑíÌ")
+ma_src         = input.source(close, title="ãäÈÚ ãææíä ÇæÑíÌ", group="ÊäÙíãÇÊ ãææíä ÇæÑíÌ")
+
+show_fibo_ma   = input.bool(true, title="äãÇíÔ ãææíä İíÈæ", group="ãææíä İíÈæ")
+use_ma_gap_amp = input.bool(false, title="ÇÑÊİÇÚ ãæÌ = İÇÕáå Ïæ ãææíä", group="ãææíä İíÈæ")
+
+use_price_mirror = input.bool(true, title="ÊŞÇÑä ŞíãÊ äÓÈÊ Èå ãæÌ İíÈæ", group="ÊŞÇÑä ŞíãÊ")
+mirror_src       = input.source(close, title="ãäÈÚ ŞíãÊ ÈÑÇí ÊŞÇÑä", group="ÊŞÇÑä ŞíãÊ")
+
+// =============================================================================
+//                             INPUTS - OSCILLATOR
+// =============================================================================
+n = input.int(title="Periods (Fractal)", defval=100, minval=2, group="Oscillator Settings")
+sig_len = input.int(9, title="Signal Line Length", group="Oscillator Settings")
+
+// =============================================================================
+//                       CALCULATIONS - OSCILLATOR LOGIC
+// =============================================================================
+// --- Williams Fractals ---
+bool upDnFront = true, bool upUp0 = true, bool upUp1 = true, bool upUp2 = true, bool upUp3 = true, bool upUp4 = true
+for i = 1 to n
+    upDnFront := upDnFront and (high[n-i] < high[n])
+    upUp0 := upUp0 and (high[n+i] < high[n])
+    upUp1 := upUp1 and (high[n+1] <= high[n] and high[n+i + 1] < high[n])
+    upUp2 := upUp2 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i + 2] < high[n])
+    upUp3 := upUp3 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i + 3] < high[n])
+    upUp4 := upUp4 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i + 4] < high[n])
+flagUpFrontier = upUp0 or upUp1 or upUp2 or upUp3 or upUp4
+upFractal = (upDnFront and flagUpFrontier)
+
+bool dnDnFront = true, bool dnUp0 = true, bool dnUp1 = true, bool dnUp2 = true, bool dnUp3 = true, bool dnUp4 = true
+for i = 1 to n
+    dnDnFront := dnDnFront and (low[n-i] > low[n])
+    dnUp0 := dnUp0 and (low[n+i] > low[n])
+    dnUp1 := dnUp1 and (low[n+1] >= low[n] and low[n+i + 1] > low[n])
+    dnUp2 := dnUp2 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i + 2] > low[n])
+    dnUp3 := dnUp3 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i + 3] > low[n])
+    dnUp4 := dnUp4 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i + 4] > low[n])
+flagDownFrontier = dnUp0 or dnUp1 or dnUp2 or dnUp3 or dnUp4
+downFractal = (dnDnFront and flagDownFrontier)
+
+var int target_bar_index = 0
+var float level1 = na
+var float level2 = na
+var float last_fractal_val = 0.0
+
+if upFractal or downFractal
+    target_bar_index := bar_index - n
+    float current_val = upFractal ? high[n] : low[n]
+    if current_val > last_fractal_val
+        level1 := low[n]
+        level2 := high[n]
+    else
+        level1 := high[n]
+        level2 := low[n]
+    last_fractal_val := current_val
+
+dist = bar_index - target_bar_index
+
+var int lastUpBar = na
+var int lastDownBar = na
+if upFractal
+    lastUpBar := bar_index - n
+if downFractal
+    lastDownBar := bar_index - n
+
+int base_dyn_length = 14 
+if not na(lastUpBar) and not na(lastDownBar)
+    base_dyn_length := math.max(1, math.abs(lastUpBar - lastDownBar))
+
+int offset_past_exact = (2 * dist) - n
+int sym_dyn_length = nz(base_dyn_length[math.max(0, offset_past_exact)], 14)
+sym_dyn_length := math.max(1, sym_dyn_length)
+
+ma = ta.sma(close, sym_dyn_length)
+level_mid = (nz(level1, high) + nz(level2, low)) / 2
+
+ma_sym_mid = 2 * level_mid - ma
+ma_sym_mid_2 = 2 * nz(level2, low) - ma_sym_mid
+sym_mid2_c = 2 * ma_sym_mid_2 - close
+
+osc = close - sym_mid2_c
+osc_signal = ta.ema(osc, sig_len)
+
+// =============================================================================
+//                       CALCULATIONS - FIBO WAVE & AUTO PATH
+// =============================================================================
+bar_ms   = timeframe.in_seconds(timeframe.period) * 1000
+mid_time = math.round(t1 + (t2 - t1) * sym_center_ratio)
+
+int wave_period      = math.max(1, math.round(math.abs(t2 - t1) / bar_ms))
+int wave_period_fibo = math.max(1, math.round(wave_period * 1.618))
+
+float base_ma = na
+float fibo_ma = na
+
+if ma_type == "SMA"
+    base_ma := ta.sma(ma_src, wave_period)
+    fibo_ma := ta.sma(ma_src, wave_period_fibo)
+else if ma_type == "EMA"
+    base_ma := ta.ema(ma_src, wave_period)
+    fibo_ma := ta.ema(ma_src, wave_period_fibo)
+else if ma_type == "WMA"
+    base_ma := ta.wma(ma_src, wave_period)
+    fibo_ma := ta.wma(ma_src, wave_period_fibo)
+
+float hh          = ta.highest(high, hh_ll_len)
+float ll          = ta.lowest(low,   hh_ll_len)
+float hh_ll_range = hh - ll
+float mid_hh_ll   = (hh + ll) / 2
+float dist_to_mid = math.abs(close - mid_hh_ll)
+float ma_gap      = math.abs(base_ma - fibo_ma)
+
+float base_amp = na
+if use_ma_gap_amp
+    base_amp := ma_gap > 0 ? ma_gap : ta.atr(14)
+else if use_hh_ll_amp
+    base_amp := hh_ll_range > 0 ? dist_to_mid : ta.atr(14)
+else
+    base_amp := math.abs(p2 - p1) != 0 ? math.abs(p2 - p1) / 2 : ta.atr(14)
+
+float relative_x  = (time - mid_time) / bar_ms
+float dist_bars   = math.abs(relative_x)
+int   max_cycles  = 5
+int   cycle_index = reset_wave ? math.floor((dist_bars % (wave_period * max_cycles)) / wave_period) : math.floor(dist_bars / wave_period)
+float max_fibo    = math.pow(1.618, max_cycles - 1)
+float fibo_amp    = (math.pow(1.618, cycle_index) / max_fibo) * base_amp
+float wave        = math.sin(relative_x * 2 * math.pi / wave_period) * fibo_amp
+
+float wavy_ma        = base_ma + wave
+float mirrored_price = 2.0 * wavy_ma - mirror_src
+
+var int   mode      = 0
+var float temp_high = na
+var float temp_low  = na
+var float global_path1 = na
+var float global_path2 = na
+
+if use_price_mirror and time >= t2
+    if mirrored_price > wavy_ma
+        if mode != 1
+            mode      := 1
+            temp_high := mirrored_price
+        else
+            if mirrored_price > temp_high
+                temp_high := mirrored_price
+
+    if mirrored_price < wavy_ma
+        if mode != -1
+            mode     := -1
+            temp_low := mirrored_price
+        else
+            if mirrored_price < temp_low
+                temp_low := mirrored_price
+
+    if ta.crossover(mirrored_price, wavy_ma)
+        global_path1 := temp_low
+
+    if ta.crossunder(mirrored_price, wavy_ma)
+        global_path2 := temp_high
+
+
+// =============================================================================
+//                             SIGNALS LOGIC
+// =============================================================================
+
+float wavy_ma_osc = wavy_ma - sym_mid2_c
+float mirror_osc  = use_price_mirror and not na(mirrored_price) ? mirrored_price - sym_mid2_c : na
+
+float blue_line_val   = nz(global_path1 - sym_mid2_c, osc)
+float yellow_line_val = nz(global_path2 - sym_mid2_c, osc)
+float orange_line_val = nz(wavy_ma_osc, osc)
+
+// --- ÊÔÎíÕ ÊŞÇÑä ãæÌ (Symmetry Filter) ---
+var int bars_since_cross = 0
+var int peak_bar_index = 0
+var float peak_val = na
+
+bool is_red_over_green = mirror_osc > osc
+bool cross_up = ta.crossover(mirror_osc, osc)
+bool cross_dn = ta.crossunder(mirror_osc, osc)
+
+if cross_up or cross_dn
+    bars_since_cross := 0
+    peak_val := mirror_osc
+    peak_bar_index := 0
+else
+    bars_since_cross += 1
+
+if is_red_over_green
+    if mirror_osc > nz(peak_val, mirror_osc)
+        peak_val := mirror_osc
+        peak_bar_index := bars_since_cross
+
+if not is_red_over_green
+    if mirror_osc < nz(peak_val, mirror_osc)
+        peak_val := mirror_osc
+        peak_bar_index := bars_since_cross
+
+float tolerance = 0.30 
+int bars_to_peak = peak_bar_index
+int bars_from_peak = bars_since_cross - peak_bar_index
+
+bool is_symmetric = bars_to_peak > 0 and bars_from_peak > 0 and math.abs(bars_to_peak - bars_from_peak) <= (bars_since_cross * tolerance)
+
+// --- İíáÊÑ ÑíÓÊ ÎØ ÕİÑ ---
+var bool can_sell = true
+var bool can_buy = true
+
+if ta.crossunder(osc, 0)
+    can_sell := true 
+if ta.crossover(osc, 0)
+    can_buy := true  
+
+var int signal_state = 0
+
+// ÔÑæØ æÖÚíÊ ÎØæØ ÏÑ ˜äÏáö ŞÈá ÇÒ ÊŞÇØÚ
+bool lines_below_red_before_crossdn = (yellow_line_val[1] < mirror_osc[1]) and (blue_line_val[1] < mirror_osc[1]) and (orange_line_val[1] < mirror_osc[1])
+bool lines_above_red_before_crossup = (yellow_line_val[1] > mirror_osc[1]) and (blue_line_val[1] > mirror_osc[1]) and (orange_line_val[1] > mirror_osc[1])
+
+if cross_dn and lines_below_red_before_crossdn
+    signal_state := 1
+
+if cross_up and lines_above_red_before_crossup
+    signal_state := -1
+
+bool osc_turn_dn = osc < osc[1] and osc[1] >= osc[2]
+bool osc_turn_up = osc > osc[1] and osc[1] <= osc[2]
+
+bool osc_cross_signal_dn = ta.crossunder(osc, osc_signal)
+bool osc_cross_signal_up = ta.crossover(osc, osc_signal)
+
+bool is_osc_green = osc > 0
+bool is_osc_red   = osc <= 0
+
+bool sell_signal = false
+bool buy_signal  = false
+
+if signal_state == 1 and (osc_turn_dn or osc_cross_signal_dn) and not is_osc_red and (blue_line_val < mirror_osc) and (mirror_osc < osc) and is_symmetric and can_sell
+    sell_signal  := true
+    can_sell     := false 
+    signal_state := 0 
+
+if signal_state == -1 and (osc_turn_up or osc_cross_signal_up) and not is_osc_green and (blue_line_val > mirror_osc) and (mirror_osc > osc) and is_symmetric and can_buy
+    buy_signal   := true
+    can_buy      := false 
+    signal_state := 0
+
+// ÊäåÇ íÒí ˜å Ñæí ÇÑÊ ÑÓã ãíÔæÏ
+plotshape(sell_signal, title="ÓíäÇá İÑæÔ", style=shape.labeldown, location=location.abovebar, color=color.red,   text="SELL", textcolor=color.white, size=size.small)
+plotshape(buy_signal,  title="ÓíäÇá ÎÑíÏ", style=shape.labelup,   location=location.belowbar, color=color.green, text="BUY",  textcolor=color.white, size=size.small)

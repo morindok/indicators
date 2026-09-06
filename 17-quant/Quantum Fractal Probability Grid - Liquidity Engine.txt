@@ -1,0 +1,80 @@
+//@version=5
+indicator("Quantum Fractal Probability Grid & Liquidity Engine", overlay=true, max_lines_count=500, max_boxes_count=500)
+
+// --- Inputs ---
+fractal_period = input.int(2, title="Fractal Period", minval=1)
+grid_projection = input.int(150, title="Future Grid Projection (Bars)")
+
+// --- Core Fractal Variables ---
+ph = ta.pivothigh(high, fractal_period, fractal_period)
+pl = ta.pivotlow(low, fractal_period, fractal_period)
+
+var float last_ph = high[1]
+var float last_pl = low[1]
+
+// Extend lines sequentially to the right into the future (Static levels)
+if not na(ph)
+    last_ph := ph
+    line.new(bar_index - fractal_period, ph, bar_index + grid_projection, ph, color=color.new(color.red, 40), style=line.style_dashed)
+
+if not na(pl)
+    last_pl := pl
+    line.new(bar_index - fractal_period, pl, bar_index + grid_projection, pl, color=color.new(color.green, 40), style=line.style_dashed)
+
+// --- Scientific Metrics & Intent Analysis ---
+volume_ma = ta.sma(volume, 20)
+vol_ratio = volume / (volume_ma == 0 ? 1 : volume_ma)
+
+ma_intent = ta.sma(close, 50)
+ma_intent_slope = ma_intent - ma_intent[1]
+
+// --- Liquidity Trap Engine (Sweeps) ---
+sweep_bullish = low < last_pl and close > last_pl and vol_ratio > 1.0
+sweep_bearish = high > last_ph and close < last_ph and vol_ratio > 1.0
+
+// --- Probability Engine (Markov-Bayesian Weights) ---
+var float total_interactions = 1.0
+var float bullish_wins = 1.0
+var float bearish_wins = 1.0
+
+interaction_zone = (high >= last_ph and low <= last_ph) or (low <= last_pl and high >= last_pl)
+
+if interaction_zone
+    total_interactions := total_interactions + 1.0
+    bullish_wins := bullish_wins + (sweep_bullish ? 2.0 : (close > last_ph ? 1.0 : 0.0))
+    bearish_wins := bearish_wins + (sweep_bearish ? 2.0 : (close < last_pl ? 1.0 : 0.0))
+
+// Multi-dimensional dynamic probability variables
+base_bull = bullish_wins / total_interactions
+base_bear = bearish_wins / total_interactions
+
+trend_factor = ma_intent_slope > 0 ? 0.15 : (ma_intent_slope < 0 ? -0.15 : 0)
+trap_factor = sweep_bullish ? 0.25 : (sweep_bearish ? -0.25 : 0)
+
+raw_bull = base_bull + trend_factor + trap_factor + (vol_ratio > 1.5 and close > open ? 0.1 : 0)
+raw_bear = base_bear - trend_factor - trap_factor + (vol_ratio > 1.5 and close < open ? 0.1 : 0)
+
+raw_bull_final = math.max(0.01, raw_bull)
+raw_bear_final = math.max(0.01, raw_bear)
+
+total_prob = raw_bull_final + raw_bear_final
+final_bull_prob = (raw_bull_final / total_prob) * 100
+final_bear_prob = (raw_bear_final / total_prob) * 100
+
+// --- Output Table ---
+var table prob_table = table.new(position.bottom_right, 2, 4, border_width=1, border_color=color.gray)
+
+if barstate.islast
+    table.cell(prob_table, 0, 0, "Market State", text_color=color.white, bgcolor=color.black)
+    table.cell(prob_table, 1, 0, "Probability", text_color=color.white, bgcolor=color.black)
+    table.cell(prob_table, 0, 1, "Bullish Reversal / Break", text_color=color.lime, bgcolor=color.black)
+    table.cell(prob_table, 1, 1, str.tostring(math.round(final_bull_prob, 2)) + " %", text_color=color.lime, bgcolor=color.black)
+    table.cell(prob_table, 0, 2, "Bearish Reversal / Break", text_color=color.red, bgcolor=color.black)
+    table.cell(prob_table, 1, 2, str.tostring(math.round(final_bear_prob, 2)) + " %", text_color=color.red, bgcolor=color.black)
+    table.cell(prob_table, 0, 3, "Live Liquidity Trap", text_color=color.yellow, bgcolor=color.black)
+    table.cell(prob_table, 1, 3, sweep_bullish ? "Bullish Trap (Long)" : (sweep_bearish ? "Bearish Trap (Short)" : "Clear Grid"), text_color=color.yellow, bgcolor=color.black)
+
+// --- Global Scope Plots (Strict Rule Compliance) ---
+plot(ma_intent, color=color.new(color.blue, 70), title="Capital Flow Intent MA")
+plotshape(sweep_bullish, style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small, title="Bull Trap Signal")
+plotshape(sweep_bearish, style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small, title="Bear Trap Signal")

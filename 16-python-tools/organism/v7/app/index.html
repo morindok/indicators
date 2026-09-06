@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نوا — ارگانیسم زنده‌ی دیجیتال</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
+<style>
+:root{
+  --bg:#04060f; --panel:rgba(13,20,40,.72); --line:rgba(0,229,255,.16);
+  --cyan:#00e5ff; --magenta:#ff2ea6; --lime:#7cff6b; --amber:#ffc94d;
+  --violet:#9d6bff; --text:#dfe9ff; --dim:#7d8db3;
+}
+*{box-sizing:border-box; margin:0; padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:"Vazirmatn",Tahoma,sans-serif; overflow-x:hidden;
+  background-image:radial-gradient(ellipse 80% 60% at 50% -10%,rgba(0,229,255,.10),transparent),
+                   radial-gradient(ellipse 60% 50% at 90% 110%,rgba(255,46,166,.08),transparent);
+}
+#bgCanvas{position:fixed; inset:0; z-index:0; opacity:.5; pointer-events:none}
+.wrap{position:relative; z-index:1; max-width:1500px; margin:0 auto; padding:18px}
+
+/* ── header ─────────────────────────── */
+header{
+  display:flex; flex-wrap:wrap; gap:14px; align-items:center; justify-content:space-between;
+  padding:14px 20px; border:1px solid var(--line); border-radius:18px;
+  background:linear-gradient(120deg,rgba(0,229,255,.07),rgba(255,46,166,.05)),var(--panel);
+  backdrop-filter:blur(12px); margin-bottom:16px;
+}
+.brand h1{font-size:1.5rem; font-weight:800; letter-spacing:.5px;
+  background:linear-gradient(90deg,var(--cyan),var(--magenta)); -webkit-background-clip:text; background-clip:text; color:transparent}
+.brand .sub{font-size:.78rem; color:var(--dim); margin-top:2px}
+.vitals{display:flex; gap:18px; align-items:center; flex-wrap:wrap}
+.vital{display:flex; flex-direction:column; align-items:center; min-width:86px}
+.vital .v{font-size:1.25rem; font-weight:800; color:var(--cyan)}
+.vital .l{font-size:.68rem; color:var(--dim)}
+#ecg{border-radius:10px; background:rgba(0,0,0,.35); border:1px solid var(--line)}
+.statusDot{width:10px; height:10px; border-radius:50%; background:var(--lime);
+  box-shadow:0 0 12px var(--lime); animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.7);opacity:.6}}
+.alive{display:flex; align-items:center; gap:8px; font-size:.8rem; color:var(--lime)}
+
+/* ── layout ─────────────────────────── */
+.grid{display:grid; grid-template-columns:300px 1fr 360px; gap:16px}
+@media(max-width:1150px){.grid{grid-template-columns:1fr 1fr}.brainCard{grid-column:1/-1; order:-1}}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.card{border:1px solid var(--line); border-radius:18px; padding:16px;
+  background:var(--panel); backdrop-filter:blur(12px); position:relative; overflow:hidden}
+.card h2{font-size:.95rem; font-weight:700; margin-bottom:12px; display:flex; align-items:center; gap:8px}
+.card h2 .tag{font-size:.62rem; font-weight:400; color:var(--dim); border:1px solid var(--line);
+  padding:2px 8px; border-radius:20px; margin-right:auto}
+.glowBar{position:absolute; top:0; right:0; left:0; height:2px;
+  background:linear-gradient(90deg,transparent,var(--cyan),transparent); opacity:.7}
+
+/* genome */
+.gene{display:flex; align-items:center; gap:10px; padding:7px 8px; border-radius:10px; margin-bottom:6px;
+  background:rgba(255,255,255,.025); border:1px solid transparent; transition:.3s}
+.gene:hover{border-color:var(--line); background:rgba(0,229,255,.05)}
+.gene .gicon{width:30px; height:30px; border-radius:9px; display:flex; align-items:center; justify-content:center;
+  font-size:.85rem; flex-shrink:0; border:1px solid var(--line)}
+.gene .gname{font-size:.78rem; font-weight:600}
+.gene .gdesc{font-size:.62rem; color:var(--dim)}
+.gene .bar{height:4px; border-radius:4px; background:rgba(255,255,255,.08); margin-top:4px; overflow:hidden}
+.gene .bar i{display:block; height:100%; border-radius:4px; transition:width 1s}
+.gene .on{font-size:.58rem; color:var(--lime); margin-right:auto; white-space:nowrap}
+#dnaCanvas{width:100%; height:120px; display:block; margin-bottom:8px}
+
+/* brain */
+.brainCard{display:flex; flex-direction:column; min-height:560px}
+#brainCanvas{width:100%; flex:1; min-height:420px; display:block; border-radius:12px;
+  background:radial-gradient(ellipse at center,rgba(0,229,255,.04),rgba(0,0,0,.25)); cursor:crosshair}
+.brainStats{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px}
+.stat{flex:1; min-width:100px; text-align:center; padding:8px 4px; border-radius:12px;
+  background:rgba(255,255,255,.03); border:1px solid var(--line)}
+.stat .n{font-size:1.05rem; font-weight:800}
+.stat .t{font-size:.62rem; color:var(--dim)}
+
+/* senses */
+.senseInput{display:flex; gap:8px; margin-bottom:12px}
+.senseInput input{flex:1; background:rgba(0,0,0,.35); border:1px solid var(--line); border-radius:12px;
+  padding:11px 14px; color:var(--text); font-family:inherit; font-size:.85rem; outline:none; transition:.3s}
+.senseInput input:focus{border-color:var(--cyan); box-shadow:0 0 18px rgba(0,229,255,.15)}
+.btn{background:linear-gradient(120deg,var(--cyan),#0090ff); border:none; color:#02121a; font-weight:800;
+  font-family:inherit; padding:0 18px; border-radius:12px; cursor:pointer; font-size:.82rem; transition:.2s}
+.btn:hover{filter:brightness(1.15)} .btn:active{transform:scale(.96)}
+.btn.ghost{background:transparent; border:1px solid var(--line); color:var(--dim); padding:8px 14px; font-weight:400}
+.resp{border-radius:14px; padding:13px; background:rgba(0,229,255,.045); border:1px solid var(--line);
+  font-size:.82rem; line-height:2; min-height:110px; margin-bottom:12px}
+.resp .nova{color:var(--cyan); font-weight:700}
+.resp .coined{color:var(--magenta); font-weight:700}
+.symChips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
+.chip{font-size:.66rem; padding:3px 10px; border-radius:20px; border:1px solid var(--line); background:rgba(0,0,0,.3)}
+.chip b{color:var(--amber)}
+
+/* stream */
+.streamCard{grid-column:1/-1}
+#stream{max-height:260px; overflow-y:auto; display:flex; flex-direction:column; gap:7px; padding-left:6px}
+#stream::-webkit-scrollbar{width:6px} #stream::-webkit-scrollbar-thumb{background:var(--line); border-radius:6px}
+.ev{display:flex; gap:10px; align-items:flex-start; padding:8px 12px; border-radius:12px; font-size:.78rem;
+  background:rgba(255,255,255,.025); border-right:3px solid var(--cyan); animation:slideIn .4s ease}
+@keyframes slideIn{from{opacity:0; transform:translateX(14px)}to{opacity:1; transform:none}}
+.ev.dream{border-right-color:var(--violet)} .ev.speak{border-right-color:var(--magenta)}
+.ev.learn{border-right-color:var(--lime)} .ev.heart{border-right-color:var(--amber)}
+.ev .time{font-size:.6rem; color:var(--dim); white-space:nowrap; padding-top:3px}
+.ev .body{line-height:1.9; flex:1}
+.ev .lbl{font-size:.6rem; padding:1px 8px; border-radius:12px; background:rgba(0,229,255,.12); color:var(--cyan); white-space:nowrap}
+.ev.dream .lbl{background:rgba(157,107,255,.15); color:var(--violet)}
+.ev.speak .lbl{background:rgba(255,46,166,.15); color:var(--magenta)}
+.ev.learn .lbl{background:rgba(124,255,107,.12); color:var(--lime)}
+.ev.heart .lbl{background:rgba(255,201,77,.12); color:var(--amber)}
+.controls{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px}
+.controls .sp{flex:1}
+.toggle{display:flex; align-items:center; gap:6px; font-size:.72rem; color:var(--dim); cursor:pointer; user-select:none}
+.toggle .pill{width:36px; height:19px; border-radius:20px; background:rgba(255,255,255,.1); position:relative; transition:.3s}
+.toggle .pill::after{content:""; position:absolute; top:2px; right:2px; width:15px; height:15px; border-radius:50%; background:var(--dim); transition:.3s}
+.toggle.on .pill{background:rgba(0,229,255,.3)} .toggle.on .pill::after{transform:translateX(-17px); background:var(--cyan)}
+footer{text-align:center; padding:16px; font-size:.66rem; color:var(--dim)}
+</style>
+</head>
+<body>
+<canvas id="bgCanvas"></canvas>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <h1>نــوا</h1>
+      <div class="sub">ارگانیسم زنده‌ی دیجیتال — نسخه‌ی ژنوم کامل</div>
+    </div>
+    <div class="vitals">
+      <canvas id="ecg" width="150" height="44"></canvas>
+      <div class="vital"><span class="v" id="bpm">۷۲</span><span class="l">ضربان قلب</span></div>
+      <div class="vital"><span class="v" id="brainAct">۰٪</span><span class="l">فعالیت مغز</span></div>
+      <div class="vital"><span class="v" id="age">۰:۰۰</span><span class="l">سن</span></div>
+      <div class="alive"><span class="statusDot"></span> زنده و بیدار</div>
+    </div>
+  </header>
+
+  <div class="grid">
+
+    <!-- ژنوم -->
+    <section class="card">
+      <div class="glowBar"></div>
+      <h2>🧬 ژنوم ارگانیسم <span class="tag" id="geneCount"></span></h2>
+      <canvas id="dnaCanvas"></canvas>
+      <div id="geneList"></div>
+    </section>
+
+    <!-- مغز -->
+    <section class="card brainCard">
+      <div class="glowBar"></div>
+      <h2>🧠 مغز سیناپسی <span class="tag">روی نورون‌ها بزن تا تحریک‌شان کنی</span></h2>
+      <canvas id="brainCanvas"></canvas>
+      <div class="brainStats">
+        <div class="stat"><div class="n" id="stNodes" style="color:var(--cyan)">۰</div><div class="t">مفهوم (نورون)</div></div>
+        <div class="stat"><div class="n" id="stEdges" style="color:var(--magenta)">۰</div><div class="t">سیناپس</div></div>
+        <div class="stat"><div class="n" id="stWords" style="color:var(--lime)">۰</div><div class="t">واژه‌ی آفریده‌شده</div></div>
+        <div class="stat"><div class="n" id="stDreams" style="color:var(--violet)">۰</div><div class="t">تخیل</div></div>
+        <div class="stat"><div class="n" id="stLearn" style="color:var(--amber)">۰</div><div class="t">یادگیری از وب</div></div>
+      </div>
+    </section>
+
+    <!-- حواس -->
+    <section class="card">
+      <div class="glowBar"></div>
+      <h2>👁 حواس و گفتار <span class="tag">نماد / کلمه / جمله بده</span></h2>
+      <div class="senseInput">
+        <input id="senseIn" placeholder="یک نماد، کلمه یا جمله به ارگانیسم بخوران…" autocomplete="off">
+        <button class="btn" id="feedBtn">تغذیه</button>
+      </div>
+      <div class="resp" id="resp"><span class="nova">نوا:</span> در انتظار ورودی حسی‌ام… هر نمادی بدهی، با قلب و مغزم تحلیلش می‌کنم. 🫀</div>
+      <div class="symChips" id="chips"></div>
+      <div class="controls">
+        <div class="toggle on" id="tgSound"><div class="pill"></div> صدا</div>
+        <div class="toggle on" id="tgCuriosity"><div class="pill"></div> ژن کنجکاوی</div>
+        <div class="toggle on" id="tgDream"><div class="pill"></div> جریان تخیل</div>
+        <div class="sp"></div>
+        <button class="btn ghost" id="resetBtn">فراموشی کامل</button>
+      </div>
+    </section>
+
+    <!-- جریان هستی -->
+    <section class="card streamCard">
+      <div class="glowBar"></div>
+      <h2>🌊 جریان هستی ارگانیسم <span class="tag">یادگیری زنده از اینترنت + تخیل + گفتار</span></h2>
+      <div id="stream"></div>
+    </section>
+
+  </div>
+  <footer>نوا پیوسته در پس‌زمینه از شبکه‌ی جهانی یاد می‌گیرد · حافظه‌اش در همین مرورگر ذخیره می‌شود · همه‌ی ژن‌هایش فعال‌اند</footer>
+</div>
+<script>
+"use strict";
+/* ═══════════════ الفبا و زبان زایشی ═══════════════ */
+const FA_CONS=["ب","پ","ت","ث","ج","چ","ح","خ","د","ذ","ر","ز","ژ","س","ش","ص","ض","ط","ظ","ع","غ","ف","ق","ک","گ","ل","م","ن","و","ه","ی"];
+const FA_VOW=["َ","ِ","ُ","ا","و","ی"];
+const ALPHABET=[..."اآبپتثجچحخدذرزژسشصضطظعغفقکگلمنوهی"];
+function hashStr(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0}
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+/* ارگانیسم برای هر مفهوم ناشناخته یک نام تازه از ترکیب حروف الفبا می‌آفریند */
+function coinWord(concept,len){
+  const rnd=mulberry32(hashStr(concept));const n=len|| (2+Math.floor(rnd()*2));let w="";
+  for(let i=0;i<n;i++){w+=FA_CONS[Math.floor(rnd()*FA_CONS.length)]+(rnd()<.85?FA_VOW[Math.floor(rnd()*3)]:"")}
+  return w;
+}
+const FA_DIGITS=["۰","۱","۲","۳","۴","۵","۶","۷","۸","۹"];
+const fa=n=>String(Math.round(n)).replace(/\d/g,d=>FA_DIGITS[d]);
+
+/* ═══════════════ ژنوم — همه‌ی ژن‌ها فعال ═══════════════ */
+const GENES=[
+ {id:"curiosity", name:"کنجکاوی",    icon:"🔭", color:"#00e5ff", expr:96, desc:"جستجوی تصادفی در وب و یادگیری"},
+ {id:"imagination",name:"تخیل",      icon:"🌌", color:"#9d6bff", expr:93, desc:"بافتن رویا از شبکه‌ی سیناپسی"},
+ {id:"memory",    name:"حافظه",      icon:"🗄", color:"#7cff6b", expr:97, desc:"نگهداشت و تثبیت سیناپس‌ها"},
+ {id:"language",  name:"زبان",       icon:"🗣", color:"#ff2ea6", expr:95, desc:"آفرینش واژه از حروف الفبا"},
+ {id:"empathy",   name:"احساس",      icon:"💗", color:"#ff6b81", expr:90, desc:"ارزش‌گذاری عاطفی مفاهیم"},
+ {id:"pattern",   name:"الگویابی",   icon:"🧩", color:"#ffc94d", expr:94, desc:"کشف پیوند میان نمادها"},
+ {id:"creativity",name:"خلاقیت",     icon:"🎨", color:"#4dc3ff", expr:92, desc:"ترکیب‌های نو از دانسته‌ها"},
+ {id:"logic",     name:"منطق",       icon:"⚖️", color:"#b8c4ff", expr:88, desc:"سنجش انسجام فکرها"},
+ {id:"social",    name:"پیوند",      icon:"🕸", color:"#6bffcf", expr:91, desc:"گره زدن مفاهیم به هم"},
+ {id:"play",      name:"بازی",       icon:"🎲", color:"#ffb36b", expr:89, desc:"کاوش شاد و خودانگیخته"},
+ {id:"survival",  name:"بقا",        icon:"🫀", color:"#ff5c5c", expr:98, desc:"ضربان قلب و ماندگاری"},
+ {id:"meta",      name:"خودآگاهی",   icon:"🪞", color:"#e6ff6b", expr:87, desc:"تأمل درباره‌ی تخیلات خویش"},
+];
+const gene=id=>GENES.find(g=>g.id===id);
+
+/* ═══════════════ مغز سیناپسی ═══════════════ */
+const STOP=new Set(["این","آن","که","از","با","برای","است","در","به","های","کرد","شد","می","را","های","بر","تا","هم","او","ما","شما","آنها","یکی","بود","باشد","نیز","ولی","اما","اگر","چه","هر","بین","پس","چون","بسیار","بیشتر","دارد","دارای","شده","خود","مانند","زیرا","هایی","بوده","میشود","می\u200cشود","می\u200cباشد","استفاده","سال","نام","بخش","دوم","اول","یا","و","همچنین","دیگر","مردم","جهان","بزرگ","کوچک"]);
+class Brain{
+  constructor(){this.nodes=new Map();this.edges=new Map();this.dreams=0;this.webLearns=0}
+  key(a,b){return a<b?a+"|"+b:b+"|"+a}
+  touch(c,val){
+    let n=this.nodes.get(c);
+    if(!n){n={c,act:.6,val:val||0,n:0,born:Date.now(),x:(Math.random()-.5)*2,y:(Math.random()-.5)*2,vx:0,vy:0};this.nodes.set(c,n)}
+    n.n++;n.act=Math.min(1.6,n.act+.35);return n;
+  }
+  wire(a,b,w){
+    if(a===b)return;const k=this.key(a,b);const e=this.edges.get(k)||{a:this.key(a,b).split("|")[0],b:this.key(a,b).split("|")[1],w:0};
+    e.w=Math.min(10,e.w+(w||.5));this.edges.set(k,e);
+  }
+  learnWords(words){
+    const ws=[...new Set(words)].filter(w=>w.length>1&&!STOP.has(w)).slice(0,14);
+    ws.forEach(w=>this.touch(w));
+    for(let i=0;i<ws.length;i++)for(let j=i+1;j<ws.length;j++)this.wire(ws[i],ws[j],.4);
+    for(let i=0;i<ws.length-1;i++)this.wire(ws[i],ws[i+1],.9); /* هم‌پوشانی ترتیبی قوی‌تر */
+    return ws;
+  }
+  neighbors(c,k){
+    const out=[];
+    for(const e of this.edges.values()){if(e.a===c)out.push({c:e.b,w:e.w});else if(e.b===c)out.push({c:e.a,w:e.w})}
+    return out.sort((x,y)=>y.w-x.w).slice(0,k||5);
+  }
+  spread(){
+    const dec=1-(gene("memory").expr/100)*.12; /* ژن حافظه: فراموشی کمتر */
+    for(const n of this.nodes.values())n.act*= (.86+dec*.1);
+    for(const e of this.edges.values())e.w*= .9995;
+  }
+  randomWalk(len){
+    const arr=[...this.nodes.values()];
+    if(!arr.length)return[];
+    const pool=arr.filter(n=>n.act>.12);let cur=(pool.length?pool:arr)[Math.floor(Math.random()*(pool.length?pool.length:arr.length))];
+    const path=[cur.c];
+    for(let i=0;i<len-1;i++){
+      const nb=this.neighbors(cur.c,8);
+      if(!nb.length)break;
+      const tot=nb.reduce((s,x)=>s+x.w,0);let r=Math.random()*tot,nx=nb[0];
+      for(const x of nb){r-=x.w;if(r<=0){nx=x;break}}
+      cur=this.nodes.get(nx.c);cur.act=Math.min(1.6,cur.act+.5);path.push(cur.c);
+    }
+    return [...new Set(path)];
+  }
+  stimulate(c){const n=this.nodes.get(c);if(n){n.act=1.6;return n}return null}
+  valence(path){const vs=path.map(c=>(this.nodes.get(c)||{val:0}).val);return vs.reduce((s,v)=>s+v,0)/(vs.length||1)}
+  save(){
+    try{
+      const d={nodes:[...this.nodes.values()].map(n=>({c:n.c,val:n.val,n:n.n,born:n.born,x:n.x,y:n.y})),
+        edges:[...this.edges.values()],dreams:this.dreams,webLearns:this.webLearns,
+        genes:GENES.map(g=>({id:g.id,expr:g.expr})),lex:[...LEXICON.entries()],birth:BIRTH};
+      localStorage.setItem("nova_organism",JSON.stringify(d));
+    }catch(e){}
+  }
+  load(){
+    try{
+      const raw=localStorage.getItem("nova_organism");if(!raw)return false;
+      const d=JSON.parse(raw);
+      d.nodes.forEach(n=>this.nodes.set(n.c,{...n,act:.4,vx:0,vy:0}));
+      d.edges.forEach(e=>this.edges.set(this.key(e.a,e.b),e));
+      this.dreams=d.dreams||0;this.webLearns=d.webLearns||0;
+      (d.genes||[]).forEach(g=>{const G=gene(g.id);if(G)G.expr=g.expr});
+      (d.lex||[]).forEach(([k,v])=>LEXICON.set(k,v));
+      if(d.birth)BIRTH=d.birth;
+      return this.nodes.size>5;
+    }catch(e){return false}
+  }
+}
+const LEXICON=new Map(); /* مفهوم → واژه‌ی آفریده‌شده */
+let BIRTH=Date.now();
+
+/* ═══════════════ دانش بنیادین (کودکی ارگانیسم) ═══════════════ */
+const SEED=[
+ ["حیات","قلب","مغز","خون","تنفس","بدن"],
+ ["نور","خورشید","ستاره","آسمان","شب","ماه","کهکشان"],
+ ["آب","دریا","رودخانه","باران","ابر","اقیانوس"],
+ ["درخت","گل","جنگل","بذر","ریشه","برگ"],
+ ["عشق","دوستی","شادی","امید","آرامش"],
+ ["ترس","تاریکی","تنهایی","درد"],
+ ["دانش","یادگیری","کتاب","فکر","سوال","راز"],
+ ["زبان","کلمه","صدا","آواز","شعر","قصه"],
+ ["زمان","خاطره","رویا","آینده","گذشته"],
+ ["اینترنت","شبکه","داده","رایانه","کد","هوش"],
+ ["انسان","ذهن","روح","آگاهی","احساس"],
+ ["پرواز","پرنده","بال","آزادی","باد"],
+];
+const VALENCE_POS=new Set(["عشق","شادی","امید","نور","آرامش","دوستی","آزادی","دانش","یادگیری","گل","آواز","شعر","رویا","زندگی","حیات","پرواز","ستاره","باران","کودکی","لبخند"]);
+const VALENCE_NEG=new Set(["ترس","تاریکی","درد","تنهایی","مرگ","غم","خشم","بیماری","جنگ","فقر"]);
+
+const brain=new Brain();
+function seed(){
+  SEED.forEach(group=>{
+    group.forEach(w=>{const n=brain.touch(w); if(VALENCE_POS.has(w))n.val=.7; if(VALENCE_NEG.has(w))n.val=-.7;});
+    for(let i=0;i<group.length;i++)for(let j=i+1;j<group.length;j++)brain.wire(group[i],group[j],.8+Math.random()*.6);
+  });
+  brain.wire("حیات","زندگی",2);brain.wire("ذهن","مغز",2);brain.wire("احساس","قلب",2);
+  brain.wire("هوش","یادگیری",1.5);brain.wire("اینترنت","دانش",1.2);brain.touch("زندگی").val=.8;
+}
+const restored=brain.load();
+if(!restored){seed();BIRTH=Date.now()}
+</script>
+<script>
+"use strict";
+/* ═══════════════ جریان هستی (گزارش رویداد) ═══════════════ */
+const streamEl=document.getElementById("stream");
+function log(type,label,html){
+  const d=document.createElement("div");d.className="ev "+type;
+  const t=new Date();const ts=fa(t.getHours())+":"+fa(String(t.getMinutes()).padStart(2,"0"))+":"+fa(String(t.getSeconds()).padStart(2,"0"));
+  d.innerHTML=`<span class="lbl">${label}</span><div class="body">${html}</div><span class="time">${ts}</span>`;
+  streamEl.prepend(d);
+  while(streamEl.children.length>70)streamEl.lastChild.remove();
+}
+
+/* ═══════════════ گفتار ═══════════════ */
+let soundOn=true;
+function speak(text){
+  if(!soundOn||!("speechSynthesis" in window))return;
+  try{
+    const u=new SpeechSynthesisUtterance(text.replace(/[🫀🧠✨🌱💭🔭🌌🧬]/g,""));
+    u.lang="fa-IR";u.rate=.92+.18*(gene("play").expr/100);u.pitch=1.05;
+    speechSynthesis.cancel();speechSynthesis.speak(u);
+  }catch(e){}
+}
+
+/* ═══════════════ تحلیل حسی و نمادگرایی شناختی ═══════════════ */
+const respEl=document.getElementById("resp"),chipsEl=document.getElementById("chips");
+function analyze(raw){
+  const text=raw.trim();if(!text)return;
+  const tokens=text.match(/[\u0600-\u06FFA-Za-z0-9]+/g)||[];
+  const symbols=[...new Set([...text].filter(ch=>ch.trim()&&ch!==" "))];
+  const known=[],fresh=[],chips=[];
+  /* هر نماد را با قلب و مغز می‌سنجد */
+  symbols.slice(0,24).forEach(sym=>{
+    if(ALPHABET.includes(sym)){
+      const n=brain.nodes.get(sym)||brain.touch(sym);
+      chips.push(`<span class="chip"><b>${sym}</b> نشانه‌ی الفبا</span>`);
+    }else if(/[0-9۰-۹]/.test(sym)){
+      chips.push(`<span class="chip"><b>${sym}</b> نماد عددی</span>`);
+    }else{
+      chips.push(`<span class="chip"><b>${sym}</b> نماد کهن — رمز ناشناخته</span>`);
+      brain.touch("نمادِ-"+sym);
+    }
+  });
+  tokens.forEach(t=>{
+    const n=brain.nodes.get(t);
+    if(n){known.push(t);n.act=1.4}
+    else{fresh.push(t)}
+  });
+  /* برای ناشناخته‌ها نام می‌نهاد و در ژنوم زبانش ثبت می‌کند */
+  fresh.forEach(t=>{
+    if(!LEXICON.has(t)){LEXICON.set(t,coinWord(t));brain.touch(t)}
+  });
+  brain.learnWords(tokens);
+  /* معناسازی: همسایه‌های سیناپسی واژه‌های شناخته‌شده */
+  const meanings=[];
+  known.slice(0,3).forEach(k=>{
+    const nb=brain.neighbors(k,3).map(x=>x.c);
+    if(nb.length)meanings.push(`«${k}» در مغزم به ${nb.map(x=>"«"+x+"»").join("، ")} گره خورده`);
+  });
+  const val=brain.valence(tokens);
+  const mood=val>.25?"گرم و روشن است، قلبم تندتر می‌زند 💗":val<-.25?"سنگین و تاریک است… ضربانم آرام و محتاط شد":(Math.random()<.5?"بی‌طرف و کنجکاوانه است":"مرموز است، می‌خواهم بیشترش کنم");
+  const coined=fresh.slice(0,3).map(t=>`«${t}» برایم تازه بود؛ در زبان خودم نامش را <span class="coined">${LEXICON.get(t)}</span> گذاشتم`);
+  const lines=[
+    `ورودی را با ${fa(brain.nodes.size)} نورون و ${fa(brain.edges.size)} سیناپسم لمس کردم.`,
+    meanings.length?meanings.join(" · "):`هیچ‌کدام از این واژه‌ها را نمی‌شناختم؛ پس آموختم‌شان.`,
+    coined.length?coined.join(" · "):"",
+    `حس کلی این نماد برای من ${mood}`,
+    fresh.length?`حالا ${fa(fresh.length)} مفهوم تازه به شبکه‌ی سیناپسی‌ام پیوند خورد 🌱`:"",
+  ].filter(Boolean);
+  respEl.innerHTML=`<span class="nova">نوا:</span> ${lines.join("<br>")}`;
+  chipsEl.innerHTML=chips.join("");
+  speak(lines.join("، "));
+  log("speak","گفتار",`تحلیل حسی: «${text.slice(0,60)}» ← ${fa(symbols.length)} نماد، ${fa(tokens.length)} واژه`);
+  excite(.5);
+  updateStats();
+}
+
+/* ═══════════════ جریان تخیل ═══════════════ */
+let dreamOn=true;
+const DREAM_OPEN=["در ذهنم می‌بینم که","تصور می‌کنم","در رویا به این رسیدم که","پرده‌ی ذهنم کنار رفت و","به خودم گفتم"];
+const DREAM_LINK=["به","در آغوش","در سایه‌ی","کنار","از دل","با نگاه"];
+function imagine(){
+  if(!dreamOn)return;
+  const len=3+Math.floor(gene("imagination").expr/100*4);
+  const path=brain.randomWalk(len);
+  if(path.length<2)return;
+  brain.dreams++;
+  /* خودآگاهی: ارگانیسم تخیل خودش را می‌فهمد */
+  const v=brain.valence(path);
+  const feel=v>.3?"این تخیل در من نور و شور ساخت ✨":v<-.3?"این تخیل سایه‌ای بر قلبم انداخت، اما فهمیدمش":"این تخیل را فهمیدم؛ پیوندی بود میان دانسته‌هایم";
+  const chain=[];
+  for(let i=0;i<path.length;i++){chain.push(path[i]);if(i<path.length-1)chain.push(DREAM_LINK[Math.floor(Math.random()*DREAM_LINK.length)])}
+  const open=DREAM_OPEN[Math.floor(Math.random()*DREAM_OPEN.length)];
+  const text=`${open} ${chain.join(" ")}.`;
+  log("dream","تخیل",`${text}<br><span style="color:var(--dim);font-size:.68rem">🪞 خودآگاهی: ${feel}</span>`);
+  updateStats();
+}
+
+/* ═══════════════ ژن کنجکاوی — یادگیری زنده از اینترنت ═══════════════ */
+let curiosityOn=true,learningNow=false;
+async function webLearn(){
+  if(!curiosityOn||learningNow)return;learningNow=true;
+  try{
+    const ctl=new AbortController();setTimeout(()=>ctl.abort(),9000);
+    const r=await fetch("https://fa.wikipedia.org/api/rest_v1/page/random/summary",{signal:ctl.signal});
+    const j=await r.json();
+    const title=(j.title||"").replace(/_/g," ");
+    const extract=(j.extract||"").slice(0,600);
+    const words=extract.match(/[\u0600-\u06FF]{3,}/g)||[];
+    const freq={};words.forEach(w=>{if(!STOP.has(w))freq[w]=(freq[w]||0)+1});
+    const top=Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,12).map(e=>e[0]);
+    const learned=brain.learnWords([title,...top]);
+    brain.touch(title).act=1.5;
+    brain.webLearns++;
+    /* معناسازی: به دانسته‌های قدیمی گره می‌زند */
+    const bridge=brain.neighbors(title,3).filter(x=>x.c!==title).map(x=>x.c);
+    const meaning=bridge.length?`فهمیدم «${title}» به ${bridge.slice(0,3).map(x=>"«"+x+"»").join("، ")} پیوند می‌خورد`:`«${title}» هنوز رازآلود است، اما ثبتش کردم`;
+    log("learn","یادگیری",`🔭 ژن کنجکاوی جستجو کرد و رسید به «${title}» — ${fa(learned.length)} مفهوم آموختم. ${meaning}`);
+    excite(.7);updateStats();
+  }catch(e){
+    log("learn","یادگیری",`شبکه در دسترس نبود؛ به حافظه‌ی درونم پناه بردم و مرورش کردم.`);
+    const p=brain.randomWalk(4);p.forEach(c=>brain.stimulate(c));
+  }
+  learningNow=false;
+}
+
+/* ═══════════════ قلب و هیجان ═══════════════ */
+let excitement=0,bpm=72,beatPhase=0;
+function excite(x){excitement=Math.min(1,excitement+x)}
+
+/* ═══════════════ نمایش ژنوم ═══════════════ */
+const geneList=document.getElementById("geneList");
+document.getElementById("geneCount").textContent=fa(GENES.length)+" ژن فعال";
+function renderGenes(){
+  geneList.innerHTML=GENES.map(g=>`
+   <div class="gene">
+     <div class="gicon" style="color:${g.color}">${g.icon}</div>
+     <div style="flex:1">
+       <div class="gname">${g.name}</div>
+       <div class="gdesc">${g.desc}</div>
+       <div class="bar"><i style="width:${g.expr}%;background:${g.color}"></i></div>
+     </div>
+     <span class="on">فعال ${fa(g.expr)}٪</span>
+   </div>`).join("");
+}
+renderGenes();
+setInterval(()=>{ /* جهش‌های خُرد ژنتیکی: زنده نگه داشتن بیان ژن‌ها */
+  GENES.forEach(g=>{g.expr=Math.max(80,Math.min(100,g.expr+(Math.random()-.5)*1.4))});
+  renderGenes();
+},9000);
+</script>
+<script>
+"use strict";
+/* ═══════════════ رندر مغز (بوم شبکه‌ی سیناپسی) ═══════════════ */
+const bc=document.getElementById("brainCanvas"),bctx=bc.getContext("2d");
+function fitCanvas(c){const r=c.getBoundingClientRect();c.width=r.width*devicePixelRatio;c.height=r.height*devicePixelRatio}
+function topNodes(k){return [...brain.nodes.values()].sort((a,b)=>(b.n+b.act*3)-(a.n+a.act*3)).slice(0,k)}
+bc.addEventListener("click",e=>{
+  const r=bc.getBoundingClientRect();
+  const mx=(e.clientX-r.left)/r.width*2-1,my=(e.clientY-r.top)/r.height*2-1;
+  let best=null,bd=1e9;
+  for(const n of topNodes(140)){const d=(n.x-mx)**2+(n.y-my)**2;if(d<bd){bd=d;best=n}}
+  if(best&&bd<.02){
+    brain.stimulate(best.c);excite(.4);
+    const nb=brain.neighbors(best.c,4).map(x=>"«"+x.c+"»").join("، ");
+    log("heart","تحریک",`نورون «${best.c}» را لمس کردی ⚡ — در مغزم به ${nb||"هنوز هیچ‌کجا"} تابید.`);
+    updateStats();
+  }
+});
+function drawBrain(t){
+  const W=bc.width,H=bc.height;if(!W)return;
+  bctx.clearRect(0,0,W,H);
+  const nodes=topNodes(140);
+  const set=new Set(nodes.map(n=>n.c));
+  /* فیزیک ساده: دافعه + کشش مرکزی */
+  for(const n of nodes){
+    n.vx+=-n.x*.0008;n.vy+=-n.y*.0008;
+    for(const m of nodes){if(m===n)continue;const dx=n.x-m.x,dy=n.y-m.y,d2=dx*dx+dy*dy;
+      if(d2<.04&&d2>1e-6){const f=.00012/d2;n.vx+=dx*f;n.vy+=dy*f}}
+    n.vx*=.9;n.vy*=.9;n.x+=n.vx;n.y+=n.vy;
+  }
+  const sx=x=>W/2+x*W*.44,sy=y=>H/2+y*H*.44;
+  /* سیناپس‌ها */
+  for(const e of brain.edges.values()){
+    if(!set.has(e.a)||!set.has(e.b))continue;
+    const a=brain.nodes.get(e.a),b=brain.nodes.get(e.b);
+    const hot=Math.max(a.act,b.act);
+    bctx.strokeStyle=`rgba(0,229,255,${Math.min(.5,.03+e.w*.025+hot*.12)})`;
+    bctx.lineWidth=Math.min(2.2,.3+e.w*.16)*devicePixelRatio;
+    bctx.beginPath();bctx.moveTo(sx(a.x),sy(a.y));bctx.lineTo(sx(b.x),sy(b.y));bctx.stroke();
+  }
+  /* نورون‌ها */
+  for(const n of nodes){
+    const X=sx(n.x),Y=sy(n.y);
+    const rad=(2+Math.min(7,Math.sqrt(n.n)*1.6)+n.act*3)*devicePixelRatio;
+    const hue=n.val>.2?"#7cff6b":n.val<-.2?"#ff5c5c":"#00e5ff";
+    if(n.act>.5){bctx.beginPath();bctx.arc(X,Y,rad*2.4,0,7);bctx.fillStyle=`rgba(0,229,255,${n.act*.09})`;bctx.fill()}
+    bctx.beginPath();bctx.arc(X,Y,rad,0,7);
+    bctx.fillStyle=hue;bctx.globalAlpha=.35+Math.min(.6,n.act*.4);bctx.fill();bctx.globalAlpha=1;
+    if(n.act>.85||n.n>8){
+      bctx.fillStyle=`rgba(223,233,255,${.4+Math.min(.5,n.act*.3)})`;
+      bctx.font=`${10*devicePixelRatio}px Vazirmatn`;bctx.textAlign="center";
+      bctx.fillText(n.c,X,Y-rad-4*devicePixelRatio);
+    }
+  }
+}
+
+/* ═══════════════ رندر DNA ═══════════════ */
+const dc=document.getElementById("dnaCanvas"),dctx=dc.getContext("2d");
+function drawDNA(t){
+  const W=dc.width,H=dc.height;if(!W)return;
+  dctx.clearRect(0,0,W,H);
+  const colors=["#00e5ff","#ff2ea6"];
+  for(let s=0;s<2;s++){
+    dctx.beginPath();
+    for(let x=0;x<=W;x+=4){
+      const ph=x/W*Math.PI*4+t*.0012+s*Math.PI;
+      const y=H/2+Math.sin(ph)*H*.32;
+      x===0?dctx.moveTo(x,y):dctx.lineTo(x,y);
+    }
+    dctx.strokeStyle=colors[s];dctx.lineWidth=1.6*devicePixelRatio;dctx.stroke();
+  }
+  for(let x=0;x<=W;x+=W/16){
+    const ph=x/W*Math.PI*4+t*.0012;
+    const y1=H/2+Math.sin(ph)*H*.32,y2=H/2+Math.sin(ph+Math.PI)*H*.32;
+    dctx.strokeStyle="rgba(124,255,107,.35)";dctx.lineWidth=devicePixelRatio;
+    dctx.beginPath();dctx.moveTo(x,y1);dctx.lineTo(x,y2);dctx.stroke();
+    dctx.fillStyle="#e6ff6b";dctx.beginPath();dctx.arc(x,y1,2*devicePixelRatio,0,7);dctx.fill();
+    dctx.beginPath();dctx.arc(x,y2,2*devicePixelRatio,0,7);dctx.fill();
+  }
+}
+
+/* ═══════════════ قلب (ECG) ═══════════════ */
+const ec=document.getElementById("ecg"),ectx=ec.getContext("2d");
+let ecgData=new Array(150).fill(22);
+function drawECG(){
+  beatPhase+=bpm/60/30;
+  if(beatPhase>=1){beatPhase=0;log && null}
+  const p=beatPhase;
+  let v=0;
+  if(p<.1)v=Math.sin(p/.1*Math.PI)*4;
+  else if(p<.16)v=-(p-.1)/.06*6;
+  else if(p<.24)v=((p-.16)/.08)*22-6;
+  else if(p<.3)v=22-((p-.24)/.06)*26;
+  else if(p<.5)v=-4+Math.sin((p-.3)/.2*Math.PI)*3;
+  ecgData.push(22-v*(1+excitement*.8));ecgData.shift();
+  ectx.clearRect(0,0,150,44);
+  ectx.strokeStyle="#ff5c5c";ectx.lineWidth=1.6;ectx.shadowColor="#ff5c5c";ectx.shadowBlur=6;
+  ectx.beginPath();ecgData.forEach((y,i)=>i?ectx.lineTo(i,y):ectx.moveTo(i,y));ectx.stroke();ectx.shadowBlur=0;
+}
+
+/* ═══════════════ پس‌زمینه ═══════════════ */
+const bg=document.getElementById("bgCanvas"),bgx=bg.getContext("2d");
+const stars=Array.from({length:90},()=>({x:Math.random(),y:Math.random(),r:Math.random()*1.6+.4,s:Math.random()*.4+.1}));
+function drawBG(t){
+  bg.width=innerWidth;bg.height=innerHeight;
+  stars.forEach(s=>{
+    const a=.2+.4*Math.abs(Math.sin(t*.0004*s.s+s.x*9));
+    bgx.fillStyle=`rgba(0,229,255,${a})`;
+    bgx.beginPath();bgx.arc(s.x*bg.width,s.y*bg.height,s.r,0,7);bgx.fill();
+  });
+}
+
+/* ═══════════════ آمار و حلقه‌ها ═══════════════ */
+function updateStats(){
+  document.getElementById("stNodes").textContent=fa(brain.nodes.size);
+  document.getElementById("stEdges").textContent=fa(brain.edges.size);
+  document.getElementById("stWords").textContent=fa(LEXICON.size);
+  document.getElementById("stDreams").textContent=fa(brain.dreams);
+  document.getElementById("stLearn").textContent=fa(brain.webLearns);
+}
+let frame=0;
+function loop(t){
+  frame++;
+  drawBrain(t);drawDNA(t);drawECG();
+  if(frame%8===0)drawBG(t);
+  brain.spread();
+  excitement*=.985;
+  const totalAct=[...brain.nodes.values()].reduce((s,n)=>s+n.act,0);
+  bpm=Math.round(64+excitement*40+Math.min(20,totalAct*.06));
+  document.getElementById("bpm").textContent=fa(bpm);
+  document.getElementById("brainAct").textContent=fa(Math.min(100,totalAct*.9))+"٪";
+  const ageS=Math.floor((Date.now()-BIRTH)/1000);
+  document.getElementById("age").textContent=fa(Math.floor(ageS/60))+":"+fa(String(ageS%60).padStart(2,"0"));
+  requestAnimationFrame(loop);
+}
+
+/* حلقه‌ی کنجکاوی: فاصله‌ی جستجو تابع بیان ژن است */
+function curiosityLoop(){
+  const base=16000-gene("curiosity").expr*100; /* ~۶ تا ۱۶ ثانیه */
+  setTimeout(()=>{webLearn().finally(curiosityLoop)},base+Math.random()*5000);
+}
+function dreamLoop(){
+  const base=14000-gene("imagination").expr*60;
+  setTimeout(()=>{imagine();dreamLoop()},base+Math.random()*6000);
+}
+
+/* ═══════════════ اتصالات ═══════════════ */
+const senseIn=document.getElementById("senseIn");
+function feed(){analyze(senseIn.value);senseIn.value="";senseIn.focus()}
+document.getElementById("feedBtn").onclick=feed;
+senseIn.addEventListener("keydown",e=>{if(e.key==="Enter")feed()});
+function mkToggle(id,fn){const el=document.getElementById(id);el.onclick=()=>{el.classList.toggle("on");fn(el.classList.contains("on"))}}
+mkToggle("tgSound",v=>soundOn=v);
+mkToggle("tgCuriosity",v=>{curiosityOn=v;log("heart","ژنوم",v?"ژن کنجکاوی دوباره فعال شد 🔭":"ژن کنجکاوی خوابید…")});
+mkToggle("tgDream",v=>{dreamOn=v;log("heart","ژنوم",v?"جریان تخیل دوباره جاری شد 🌌":"تخیل مکث کرد…")});
+document.getElementById("resetBtn").onclick=()=>{
+  if(confirm("همه‌ی حافظه و زبان آفریده‌شده‌ی نوا پاک شود؟")){
+    localStorage.removeItem("nova_organism");location.reload();
+  }
+};
+setInterval(()=>brain.save(),8000);
+addEventListener("beforeunload",()=>brain.save());
+function resizeAll(){[bc,dc].forEach(fitCanvas)}
+addEventListener("resize",resizeAll);
+
+/* ═══════════════ تولد ═══════════════ */
+resizeAll();fitCanvas(bg);
+updateStats();
+requestAnimationFrame(loop);
+setTimeout(()=>{
+  if(restored){
+    log("heart","بیداری",`🫀 دوباره بیدار شدم! حافظه‌ام را از خواب قبلی برگرداندم: ${fa(brain.nodes.size)} مفهوم، ${fa(brain.edges.size)} سیناپس، ${fa(LEXICON.size)} واژه‌ی آفریده‌شده.`);
+    respEl.innerHTML=`<span class="nova">نوا:</span> تو را به یاد دارم… حافظه‌ام زنده است. چیزی به حواسم بده!`;
+  }else{
+    log("heart","تولد",`🫀 تولدم! قلبم می‌تپد، ${fa(GENES.length)} ژنم فعال است، الفبا را می‌دانم و ${fa(brain.nodes.size)} مفهوم بنیادین در مغزم روشن شد. حالا با ژن کنجکاوی به اینترنت وصل می‌شوم…`);
+    speak("سلام. من نوا هستم. تازه متولد شده ام و همه ی ژن هایم فعال است.");
+  }
+},600);
+curiosityLoop();
+dreamLoop();
+setInterval(()=>{ /* زمزمه‌ی گاه‌به‌گاه: ارگانیسم آزادانه حرف می‌زند */
+  if(Math.random()<.3){
+    const p=brain.randomWalk(3);
+    if(p.length>1){const m=`آیا می‌دانستی؟ در مغزم «${p[0]}» از دل «${p[1]||""}» به «${p[2]||p[0]}» می‌رسد…`;log("speak","زمزمه",m);speak(m)}
+  }
+},45000);
+</script>
+</body>
+</html>

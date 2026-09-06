@@ -1,0 +1,644 @@
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import yfinance as yf
+
+from dash import Dash, Input, Output, dcc, html
+from plotly.subplots import make_subplots
+
+
+CRYPTO_DICT = {
+    "BTC-USD": "Bitcoin (BTC)",
+    "ETH-USD": "Ethereum (ETH)",
+    "BNB-USD": "Binance Coin (BNB)",
+    "SOL-USD": "Solana (SOL)",
+    "XRP-USD": "Ripple (XRP)",
+    "DOGE-USD": "Dogecoin (DOGE)",
+    "ADA-USD": "Cardano (ADA)",
+    "LINK-USD": "Chainlink (LINK)",
+    "LTC-USD": "Litecoin (LTC)",
+}
+
+
+PHI = (1.0 + np.sqrt(5.0)) / 2.0
+PHI_INV = 1.0 / PHI
+
+
+def get_crypto_data(symbol: str, period: str = "2d", interval: str = "5m") -> pd.DataFrame:
+    try:
+        df = yf.Ticker(symbol).history(
+            period=period,
+            interval=interval,
+            auto_adjust=False,
+            prepost=True,
+        )
+
+        if df.empty:
+            return pd.DataFrame()
+
+        df = df.reset_index()
+        time_col = "Datetime" if "Datetime" in df.columns else "Date"
+
+        df = df.rename(
+            columns={
+                time_col: "timestamp",
+                "Open": "open",
+                "High": "high",
+                "Low": "low",
+                "Close": "close",
+                "Volume": "volume",
+            }
+        )
+
+        needed = ["timestamp", "open", "high", "low", "close", "volume"]
+        df = df[needed].copy()
+        df = df.dropna(subset=["timestamp", "close"])
+        df = df.drop_duplicates(subset="timestamp")
+        df = df.sort_values("timestamp").reset_index(drop=True)
+
+        return df
+    except Exception as exc:
+        print(f"fetch error {symbol}: {exc}")
+        return pd.DataFrame()
+
+
+def atr(df: pd.DataFrame, period: int) -> pd.Series:
+    prev_close = df["close"].shift(1)
+    tr = pd.concat(
+        [
+            df["high"] - df["low"],
+            (df["high"] - prev_close).abs(),
+            (df["low"] - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+    return tr.ewm(span=period, adjust=False).mean()
+
+
+def rsi(series: pd.Series, period: int = 14) -> pd.Series:
+    delta = series.diff()
+    up = delta.clip(lower=0.0)
+    down = -delta.clip(upper=0.0)
+
+    avg_up = up.ewm(alpha=1.0 / period, adjust=False).mean()
+    avg_down = down.ewm(alpha=1.0 / period, adjust=False).mean()
+
+    rs = avg_up / avg_down.replace(0.0, np.nan)
+    out = 100.0 - (100.0 / (1.0 + rs))
+    return out.fillna(50.0)
+
+
+def enforce_spacing(mask: np.ndarray, score: np.ndarray, min_gap: int) -> np.ndarray:
+    result = np.zeros(len(mask), dtype=bool)
+    idx = np.flatnonzero(mask)
+
+    if len(idx) == 0:
+        return result
+
+    start = 0
+    while start < len(idx):
+        group = [idx[start]]
+        end = start + 1
+
+        while end < len(idx) and idx[end] - idx[end - 1] <= min_gap:
+            group.append(idx[end])
+            end += 1
+
+        best = max(group, key=lambda i: score[i])
+        result[best] = True
+        start = end
+
+    return result
+
+
+def build_spiral_system(
+    symbol: str,
+    ema_period: int = 34,
+    atr_period: int = 21,
+    smooth_period: int = 13,
+    reversal_lookback: int = 3,
+    min_signal_gap: int = 10,
+    spiral_turns: float = 5.0,
+) -> pd.DataFrame:
+    df = get_crypto_data(symbol, period="2d", interval="5m")
+    if df.empty or len(df) < max(ema_period, atr_period, smooth_period) + 20:
+        return pd.DataFrame()
+
+    price = df["close"]
+
+    df["ema"] = price.ewm(span=ema_period, adjust=False).mean()
+    df["atr"] = atr(df, atr_period)
+    df["rsi"] = rsi(price, 14)
+
+    deviation = (price - df["ema"]).abs()
+    dev_smooth = deviation.ewm(span=smooth_period, adjust=False).mean()
+
+    # Band width mixes deviation and ATR so it adapts to both drift and volatility.
+    core_width = 0.55 * dev_smooth + 0.45 * df["atr"]
+    core_width = core_width.clip(lower=price.abs() * 0.0015)
+
+    df["width_0618"] = core_width * PHI_INV
+    df["width_1000"] = core_width
+    df["width_1618"] = core_width * PHI
+
+    df["upper_0618"] = df["ema"] + df["width_0618"]
+    df["lower_0618"] = df["ema"] - df["width_0618"]
+
+    df["upper_1000"] = df["ema"] + df["width_1000"]
+    df["lower_1000"] = df["ema"] - df["width_1000"]
+
+    df["upper_1618"] = df["ema"] + df["width_1618"]
+    df["lower_1618"] = df["ema"] - df["width_1618"]
+
+    df["z"] = (price - df["ema"]) / df["width_1000"].replace(0.0, np.nan)
+    df["z_smooth"] = df["z"].ewm(span=5, adjust=False).mean()
+    df["slope"] = df["z_smooth"].diff()
+    df["slope_prev"] = df["slope"].shift(1)
+
+    # Spiral coordinates are built from normalized distance to the center.
+    n = len(df)
+    theta = np.linspace(0.0, spiral_turns * 2.0 * np.pi, n)
+    base_r = np.exp(np.log(PHI) * theta / (np.pi / 2.0))
+
+    z_clipped = df["z"].clip(-2.5, 2.5).fillna(0.0).to_numpy()
+    gain = 0.28
+    r_main = base_r * np.exp(gain * z_clipped)
+
+    upper0618_z = ((df["upper_0618"] - df["ema"]) / df["width_1000"]).fillna(0.0).to_numpy()
+    lower0618_z = ((df["lower_0618"] - df["ema"]) / df["width_1000"]).fillna(0.0).to_numpy()
+    upper1000_z = ((df["upper_1000"] - df["ema"]) / df["width_1000"]).fillna(0.0).to_numpy()
+    lower1000_z = ((df["lower_1000"] - df["ema"]) / df["width_1000"]).fillna(0.0).to_numpy()
+    upper1618_z = ((df["upper_1618"] - df["ema"]) / df["width_1000"]).fillna(0.0).to_numpy()
+    lower1618_z = ((df["lower_1618"] - df["ema"]) / df["width_1000"]).fillna(0.0).to_numpy()
+
+    r_ema = base_r
+    r_u0618 = base_r * np.exp(gain * upper0618_z)
+    r_l0618 = base_r * np.exp(gain * lower0618_z)
+    r_u1000 = base_r * np.exp(gain * upper1000_z)
+    r_l1000 = base_r * np.exp(gain * lower1000_z)
+    r_u1618 = base_r * np.exp(gain * upper1618_z)
+    r_l1618 = base_r * np.exp(gain * lower1618_z)
+
+    c = np.cos(theta)
+    s = np.sin(theta)
+
+    df["theta"] = theta
+    df["x_main"] = r_main * c
+    df["y_main"] = r_main * s
+    df["x_ema"] = r_ema * c
+    df["y_ema"] = r_ema * s
+
+    for prefix, radius in [
+        ("u0618", r_u0618),
+        ("l0618", r_l0618),
+        ("u1000", r_u1000),
+        ("l1000", r_l1000),
+        ("u1618", r_u1618),
+        ("l1618", r_l1618),
+    ]:
+        df[f"x_{prefix}"] = radius * c
+        df[f"y_{prefix}"] = radius * s
+
+    # Reversal logic:
+    # 1) reach outer zone
+    # 2) normalized slope flips
+    # 3) exit from extreme starts
+    # 4) RSI confirms exhaustion
+    upper_zone = df["close"] >= df["upper_1618"]
+    lower_zone = df["close"] <= df["lower_1618"]
+
+    future_close = df["close"].shift(-reversal_lookback)
+    past_close = df["close"].shift(1)
+
+    upper_turn = (
+        upper_zone
+        & (df["slope_prev"] > 0.0)
+        & (df["slope"] < 0.0)
+        & (future_close < df["close"])
+        & (df["close"] > past_close)
+        & (df["rsi"] >= 62.0)
+    )
+
+    lower_turn = (
+        lower_zone
+        & (df["slope_prev"] < 0.0)
+        & (df["slope"] > 0.0)
+        & (future_close > df["close"])
+        & (df["close"] < past_close)
+        & (df["rsi"] <= 38.0)
+    )
+
+    upper_score = (
+        ((df["close"] - df["upper_1618"]).clip(lower=0.0) / df["width_1000"])
+        + (df["rsi"] - 50.0) / 50.0
+        + (-df["slope"]).clip(lower=0.0) * 2.0
+    ).fillna(0.0)
+
+    lower_score = (
+        ((df["lower_1618"] - df["close"]).clip(lower=0.0) / df["width_1000"])
+        + (50.0 - df["rsi"]) / 50.0
+        + (df["slope"]).clip(lower=0.0) * 2.0
+    ).fillna(0.0)
+
+    df["upper_reversal"] = enforce_spacing(
+        upper_turn.to_numpy(dtype=bool),
+        upper_score.to_numpy(dtype=float),
+        min_signal_gap,
+    )
+
+    df["lower_reversal"] = enforce_spacing(
+        lower_turn.to_numpy(dtype=bool),
+        lower_score.to_numpy(dtype=float),
+        min_signal_gap,
+    )
+
+    df["upper_score"] = upper_score
+    df["lower_score"] = lower_score
+
+    return df.dropna().reset_index(drop=True)
+
+
+def add_line(fig, x, y, name, color, row, col, width=2.0, dash=None, hovertemplate=None):
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="lines",
+            name=name,
+            line=dict(color=color, width=width, dash=dash),
+            hovertemplate=hovertemplate,
+        ),
+        row=row,
+        col=col,
+    )
+
+
+def build_figure(
+    symbol: str,
+    ema_period: int,
+    atr_period: int,
+    smooth_period: int,
+    reversal_lookback: int,
+    min_signal_gap: int,
+):
+    df = build_spiral_system(
+        symbol=symbol,
+        ema_period=ema_period,
+        atr_period=atr_period,
+        smooth_period=smooth_period,
+        reversal_lookback=reversal_lookback,
+        min_signal_gap=min_signal_gap,
+    )
+
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        vertical_spacing=0.09,
+        row_heights=[0.6, 0.4],
+        subplot_titles=("Spiral Structure", "Time-Price Structure"),
+    )
+
+    if df.empty:
+        fig.update_layout(template="plotly_dark", height=1100, title="No enough data")
+        return fig
+
+    upper_rev = df[df["upper_reversal"]]
+    lower_rev = df[df["lower_reversal"]]
+    latest = df.iloc[-1]
+
+    add_line(fig, df["x_u0618"], df["y_u0618"], "Upper 0.618", "#f5a623", 1, 1, 1.2, "dot", None)
+    add_line(fig, df["x_l0618"], df["y_l0618"], "Lower 0.618", "#41ead4", 1, 1, 1.2, "dot", None)
+    add_line(fig, df["x_u1000"], df["y_u1000"], "Upper 1.0", "#ff5c5c", 1, 1, 1.6, "dash", None)
+    add_line(fig, df["x_l1000"], df["y_l1000"], "Lower 1.0", "#36d17d", 1, 1, 1.6, "dash", None)
+    add_line(fig, df["x_u1618"], df["y_u1618"], "Upper 1.618", "#ff006e", 1, 1, 2.8, None, None)
+    add_line(fig, df["x_l1618"], df["y_l1618"], "Lower 1.618", "#00e676", 1, 1, 2.8, None, None)
+    add_line(fig, df["x_ema"], df["y_ema"], f"EMA {ema_period}", "#a0a7b5", 1, 1, 1.2, "dot", None)
+
+    hover_main = [
+        (
+            f"Time: {t}<br>"
+            f"Close: {p:.4f}<br>"
+            f"EMA: {e:.4f}<br>"
+            f"Z: {z:.2f}<br>"
+            f"RSI: {r:.1f}<br>"
+            f"Upper 1.618: {u:.4f}<br>"
+            f"Lower 1.618: {l:.4f}"
+        )
+        for t, p, e, z, r, u, l in zip(
+            df["timestamp"],
+            df["close"],
+            df["ema"],
+            df["z"],
+            df["rsi"],
+            df["upper_1618"],
+            df["lower_1618"],
+        )
+    ]
+
+    fig.add_trace(
+        go.Scatter(
+            x=df["x_main"],
+            y=df["y_main"],
+            mode="lines",
+            name="Main Spiral Price",
+            line=dict(color="#31b8ff", width=3),
+            text=hover_main,
+            hovertemplate="%{text}<extra></extra>",
+        ),
+        row=1,
+        col=1,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=upper_rev["x_main"],
+            y=upper_rev["y_main"],
+            mode="markers",
+            name="Upper Reversal",
+            marker=dict(color="#ffd166", size=14, symbol="triangle-down", line=dict(color="white", width=1)),
+            text=[
+                f"Upper reversal<br>Time: {t}<br>Close: {p:.4f}<br>Score: {s:.2f}"
+                for t, p, s in zip(upper_rev["timestamp"], upper_rev["close"], upper_rev["upper_score"])
+            ],
+            hovertemplate="%{text}<extra></extra>",
+        ),
+        row=1,
+        col=1,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=lower_rev["x_main"],
+            y=lower_rev["y_main"],
+            mode="markers",
+            name="Lower Reversal",
+            marker=dict(color="#ffee58", size=14, symbol="triangle-up", line=dict(color="white", width=1)),
+            text=[
+                f"Lower reversal<br>Time: {t}<br>Close: {p:.4f}<br>Score: {s:.2f}"
+                for t, p, s in zip(lower_rev["timestamp"], lower_rev["close"], lower_rev["lower_score"])
+            ],
+            hovertemplate="%{text}<extra></extra>",
+        ),
+        row=1,
+        col=1,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=[latest["x_main"]],
+            y=[latest["y_main"]],
+            mode="markers+text",
+            name="Live Spiral",
+            marker=dict(color="white", size=12, line=dict(color="#31b8ff", width=2)),
+            text=[f'{latest["close"]:.4f}'],
+            textposition="top center",
+            hovertemplate=f"Live: {latest['close']:.4f}<extra></extra>",
+        ),
+        row=1,
+        col=1,
+    )
+
+    add_line(fig, df["timestamp"], df["upper_0618"], "Upper 0.618 2D", "#f5a623", 2, 1, 1.1, "dot", "Upper 0.618: %{y:.4f}<extra></extra>")
+    add_line(fig, df["timestamp"], df["lower_0618"], "Lower 0.618 2D", "#41ead4", 2, 1, 1.1, "dot", "Lower 0.618: %{y:.4f}<extra></extra>")
+    add_line(fig, df["timestamp"], df["upper_1000"], "Upper 1.0 2D", "#ff5c5c", 2, 1, 1.5, "dash", "Upper 1.0: %{y:.4f}<extra></extra>")
+    add_line(fig, df["timestamp"], df["lower_1000"], "Lower 1.0 2D", "#36d17d", 2, 1, 1.5, "dash", "Lower 1.0: %{y:.4f}<extra></extra>")
+    add_line(fig, df["timestamp"], df["upper_1618"], "Upper 1.618 2D", "#ff006e", 2, 1, 2.5, None, "Upper 1.618: %{y:.4f}<extra></extra>")
+    add_line(fig, df["timestamp"], df["lower_1618"], "Lower 1.618 2D", "#00e676", 2, 1, 2.5, None, "Lower 1.618: %{y:.4f}<extra></extra>")
+    add_line(fig, df["timestamp"], df["ema"], f"EMA {ema_period}", "#a0a7b5", 2, 1, 1.2, "dot", "EMA: %{y:.4f}<extra></extra>")
+
+    fig.add_trace(
+        go.Scatter(
+            x=df["timestamp"],
+            y=df["close"],
+            mode="lines",
+            name="Close",
+            line=dict(color="#31b8ff", width=2.8),
+            text=hover_main,
+            hovertemplate="%{text}<extra></extra>",
+        ),
+        row=2,
+        col=1,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=upper_rev["timestamp"],
+            y=upper_rev["close"],
+            mode="markers",
+            name="Upper Reversal 2D",
+            marker=dict(color="#ffd166", size=12, symbol="triangle-down", line=dict(color="white", width=1)),
+            text=[
+                f"Upper reversal<br>Time: {t}<br>Close: {p:.4f}<br>Score: {s:.2f}"
+                for t, p, s in zip(upper_rev["timestamp"], upper_rev["close"], upper_rev["upper_score"])
+            ],
+            hovertemplate="%{text}<extra></extra>",
+        ),
+        row=2,
+        col=1,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=lower_rev["timestamp"],
+            y=lower_rev["close"],
+            mode="markers",
+            name="Lower Reversal 2D",
+            marker=dict(color="#ffee58", size=12, symbol="triangle-up", line=dict(color="white", width=1)),
+            text=[
+                f"Lower reversal<br>Time: {t}<br>Close: {p:.4f}<br>Score: {s:.2f}"
+                for t, p, s in zip(lower_rev["timestamp"], lower_rev["close"], lower_rev["lower_score"])
+            ],
+            hovertemplate="%{text}<extra></extra>",
+        ),
+        row=2,
+        col=1,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=[latest["timestamp"]],
+            y=[latest["close"]],
+            mode="markers+text",
+            name="Live Price",
+            marker=dict(color="white", size=11, line=dict(color="#31b8ff", width=2)),
+            text=[f'{latest["close"]:.4f}'],
+            textposition="top center",
+            hovertemplate=f"Live: {latest['close']:.4f}<extra></extra>",
+        ),
+        row=2,
+        col=1,
+    )
+
+    fig.update_xaxes(showgrid=True, zeroline=False, row=1, col=1, title_text="Spiral X")
+    fig.update_yaxes(showgrid=True, zeroline=False, row=1, col=1, title_text="Spiral Y", scaleanchor="x", scaleratio=1)
+    fig.update_xaxes(showgrid=True, zeroline=False, row=2, col=1, title_text="Time")
+    fig.update_yaxes(showgrid=True, zeroline=False, row=2, col=1, title_text="Price")
+
+    fig.update_layout(
+        template="plotly_dark",
+        height=1120,
+        margin=dict(l=20, r=20, t=90, b=20),
+        title=(
+            f"{CRYPTO_DICT.get(symbol, symbol)} | "
+            f"Adaptive Golden Spiral Reversal System"
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+    )
+
+    return fig
+
+
+app = Dash(__name__)
+
+app.layout = html.Div(
+    style={
+        "backgroundColor": "#111111",
+        "minHeight": "100vh",
+        "padding": "20px",
+        "color": "white",
+        "fontFamily": "Arial",
+    },
+    children=[
+        html.H2(
+            "Adaptive Golden Spiral Reversal System",
+            style={"textAlign": "center"},
+        ),
+        html.Div(
+            style={
+                "display": "grid",
+                "gridTemplateColumns": "repeat(6, minmax(150px, 1fr))",
+                "gap": "16px",
+                "maxWidth": "1400px",
+                "margin": "0 auto 20px auto",
+            },
+            children=[
+                html.Div(
+                    children=[
+                        html.Label("Crypto"),
+                        dcc.Dropdown(
+                            id="symbol",
+                            options=[{"label": v, "value": k} for k, v in CRYPTO_DICT.items()],
+                            value="BTC-USD",
+                            clearable=False,
+                            style={"color": "black"},
+                        ),
+                    ]
+                ),
+                html.Div(
+                    children=[
+                        html.Label(id="ema-label"),
+                        dcc.Slider(
+                            id="ema-period",
+                            min=10,
+                            max=89,
+                            step=1,
+                            value=34,
+                            marks={10: "10", 21: "21", 34: "34", 55: "55", 89: "89"},
+                        ),
+                    ]
+                ),
+                html.Div(
+                    children=[
+                        html.Label(id="atr-label"),
+                        dcc.Slider(
+                            id="atr-period",
+                            min=7,
+                            max=55,
+                            step=1,
+                            value=21,
+                            marks={7: "7", 14: "14", 21: "21", 34: "34", 55: "55"},
+                        ),
+                    ]
+                ),
+                html.Div(
+                    children=[
+                        html.Label(id="smooth-label"),
+                        dcc.Slider(
+                            id="smooth-period",
+                            min=5,
+                            max=34,
+                            step=1,
+                            value=13,
+                            marks={5: "5", 8: "8", 13: "13", 21: "21", 34: "34"},
+                        ),
+                    ]
+                ),
+                html.Div(
+                    children=[
+                        html.Label(id="lookback-label"),
+                        dcc.Slider(
+                            id="lookback",
+                            min=1,
+                            max=8,
+                            step=1,
+                            value=3,
+                            marks={1: "1", 3: "3", 5: "5", 8: "8"},
+                        ),
+                    ]
+                ),
+                html.Div(
+                    children=[
+                        html.Label(id="gap-label"),
+                        dcc.Slider(
+                            id="gap",
+                            min=3,
+                            max=30,
+                            step=1,
+                            value=10,
+                            marks={3: "3", 5: "5", 10: "10", 20: "20", 30: "30"},
+                        ),
+                    ]
+                ),
+            ],
+        ),
+        dcc.Graph(id="chart"),
+        dcc.Interval(id="refresh", interval=60 * 1000, n_intervals=0),
+    ],
+)
+
+
+@app.callback(
+    Output("ema-label", "children"),
+    Output("atr-label", "children"),
+    Output("smooth-label", "children"),
+    Output("lookback-label", "children"),
+    Output("gap-label", "children"),
+    Input("ema-period", "value"),
+    Input("atr-period", "value"),
+    Input("smooth-period", "value"),
+    Input("lookback", "value"),
+    Input("gap", "value"),
+)
+def update_labels(ema_period, atr_period, smooth_period, lookback, gap):
+    return (
+        f"EMA: {ema_period}",
+        f"ATR: {atr_period}",
+        f"Width smoothing: {smooth_period}",
+        f"Reversal lookahead: {lookback}",
+        f"Signal gap: {gap}",
+    )
+
+
+@app.callback(
+    Output("chart", "figure"),
+    Input("symbol", "value"),
+    Input("ema-period", "value"),
+    Input("atr-period", "value"),
+    Input("smooth-period", "value"),
+    Input("lookback", "value"),
+    Input("gap", "value"),
+    Input("refresh", "n_intervals"),
+)
+def update_chart(symbol, ema_period, atr_period, smooth_period, lookback, gap, _):
+    return build_figure(
+        symbol=symbol,
+        ema_period=int(ema_period),
+        atr_period=int(atr_period),
+        smooth_period=int(smooth_period),
+        reversal_lookback=int(lookback),
+        min_signal_gap=int(gap),
+    )
+
+
+if __name__ == "__main__":
+    app.run(debug=True)

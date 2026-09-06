@@ -1,0 +1,79 @@
+//@version=5
+indicator("Symmetric Price Mirror (Global Dynamic/Manual Lookback & MA)", overlay=true)
+
+// æÑæÏíåÇí ÓØæÍ æ ÈÇÒå ÒãÇäí
+selectedLevelMain = input.price(0, "Symmetry Level for Main Price", confirm=true)
+selectedLevelLookback = input.price(0, "Symmetry Level for Lookback Price", confirm=true)
+selectedLevelInvert = input.price(0, "Symmetry Level for Invert", confirm=true)
+startTime = input.time(0, "Range Start Time", confirm=true)
+endTime = input.time(0, "Range End Time", confirm=true)
+
+// æÑæÏíåÇí ÊäÙíã ÏÓÊí ÏæÑååÇ
+useManualLookback = input.bool(false, "Use Manual Lookback Period?")
+manualPeriod = input.int(0, "Manual Lookback Period", minval=0)
+
+useManualMA = input.bool(false, "Use Manual MA Period?")
+manualMaLength = input.int(20, "Manual Moving Average Period", minval=1)
+
+// æÑæÏí ÊÞÇÑä ˜á ÓíÓÊã áæ˜È˜
+invertLookback = input.bool(false, "Mirror Entire Lookback System")
+
+// ãÍÇÓÈå Øæá ÈÇÒå ÏÇíäÇãí˜ æ ÇäÊÎÇÈ ÏæÑååÇ
+dynamicPeriod = int(math.max(0, math.round((endTime - startTime) / (timeframe.in_seconds(timeframe.period) * 1000))))
+lookbackPeriod = useManualLookback ? manualPeriod : dynamicPeriod
+maLength = useManualMA ? manualMaLength : math.max(1, dynamicPeriod)
+
+// ãÍÇÓÈå ãææíä ÇæÑíÌ ÓÇÏå ÞíãÊ ÇÕáí
+maValue = ta.sma(close, maLength)
+plot(maValue, color=color.blue, title="Moving Average")
+
+// ÑÓã ÓØæÍ ÇäÊÎÇÈ ÔÏå
+plot(selectedLevelMain, "Main Symmetry Axis", color=color.gray, style=plot.style_linebr)
+plot(selectedLevelLookback, "Lookback Symmetry Axis", color=color.fuchsia, style=plot.style_linebr)
+plot(selectedLevelInvert, "Invert Symmetry Axis", color=color.white, style=plot.style_linebr)
+
+// --- ãÍÇÓÈå æ ÑÓã ˜äÏá ãÊÞÇÑä ÞíãÊ ÇÕáí ---
+symMainOpen = 2 * selectedLevelMain - open
+symMainHigh = 2 * selectedLevelMain - low
+symMainLow = 2 * selectedLevelMain - high
+symMainClose = 2 * selectedLevelMain - close
+mainBodyColor = symMainClose >= symMainOpen ? color.green : color.red
+plotcandle(symMainOpen, symMainHigh, symMainLow, symMainClose, color=mainBodyColor, bordercolor=mainBodyColor, wickcolor=mainBodyColor, title="Mirrored Main Price")
+
+
+// --- ãÍÇÓÈÇÊ Çíå ÈÑÇí ÓíÓÊã áæ˜È˜ ---
+symLookbackOpenBase = 2 * selectedLevelLookback - open[lookbackPeriod]
+symLookbackHighBase = 2 * selectedLevelLookback - low[lookbackPeriod]
+symLookbackLowBase = 2 * selectedLevelLookback - high[lookbackPeriod]
+symLookbackCloseBase = 2 * selectedLevelLookback - close[lookbackPeriod]
+
+lookbackMA_Base = ta.sma(symLookbackCloseBase, maLength)
+
+doubleSymOpenBase = 2 * lookbackMA_Base - symLookbackOpenBase
+doubleSymHighBase = 2 * lookbackMA_Base - symLookbackLowBase
+doubleSymLowBase = 2 * lookbackMA_Base - symLookbackHighBase
+doubleSymCloseBase = 2 * lookbackMA_Base - symLookbackCloseBase
+
+
+// --- ÇÚãÇá ÊÞÇÑä Ñæí ˜á ÓíÓÊã áæ˜È˜ (äÓÈÊ Èå ÓØÍ ÌÏíÏ Invert) ---
+symLookbackOpen = invertLookback ? (2 * selectedLevelInvert - symLookbackOpenBase) : symLookbackOpenBase
+symLookbackHigh = invertLookback ? (2 * selectedLevelInvert - symLookbackLowBase) : symLookbackHighBase
+symLookbackLow = invertLookback ? (2 * selectedLevelInvert - symLookbackHighBase) : symLookbackLowBase
+symLookbackClose = invertLookback ? (2 * selectedLevelInvert - symLookbackCloseBase) : symLookbackCloseBase
+
+lookbackMA = invertLookback ? (2 * selectedLevelInvert - lookbackMA_Base) : lookbackMA_Base
+
+doubleSymOpen = invertLookback ? (2 * selectedLevelInvert - doubleSymOpenBase) : doubleSymOpenBase
+doubleSymHigh = invertLookback ? (2 * selectedLevelInvert - doubleSymLowBase) : doubleSymHighBase
+doubleSymLow = invertLookback ? (2 * selectedLevelInvert - doubleSymHighBase) : doubleSymLowBase
+doubleSymClose = invertLookback ? (2 * selectedLevelInvert - doubleSymCloseBase) : doubleSymCloseBase
+
+
+// --- ÑÓã ÓíÓÊã áæ˜È˜ äåÇíí ---
+lookbackBodyColor = symLookbackClose >= symLookbackOpen ? color.orange : color.purple
+plotcandle(symLookbackOpen, symLookbackHigh, symLookbackLow, symLookbackClose, color=lookbackBodyColor, bordercolor=lookbackBodyColor, wickcolor=lookbackBodyColor, title="Mirrored Lookback Price")
+
+plot(lookbackMA, color=color.yellow, title="Lookback Moving Average")
+
+doubleSymBodyColor = doubleSymClose >= doubleSymOpen ? color.aqua : color.maroon
+plotcandle(doubleSymOpen, doubleSymHigh, doubleSymLow, doubleSymClose, color=doubleSymBodyColor, bordercolor=doubleSymBodyColor, wickcolor=doubleSymBodyColor, title="Lookback Mirrored to its MA")

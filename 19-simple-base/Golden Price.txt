@@ -1,0 +1,204 @@
+//@version=5
+indicator("Price Deviated by 2 MAs {Morindok} v5", shorttitle="Deviated Price v5", overlay=true, max_bars_back=5000)
+
+// ============================
+//  ‰ŸÌ„«  »«“Â
+// ============================
+startTime = input.time(0, title="‘—Ê⁄ »«“Â («‰ Œ«» —ÊÌ ç«— )", confirm=true, group=" ‰ŸÌ„«  »«“Â")
+endTime = input.time(0, title="Å«Ì«‰ »«“Â («‰ Œ«» —ÊÌ ç«— )", confirm=true, group=" ‰ŸÌ„«  »«“Â")
+
+// ============================
+//  ‰ŸÌ„«  „Ì«‰êÌ‰ùÂ«
+// ============================
+maType = input.string("EMA", title="‰Ê⁄ „Ì«‰êÌ‰", options=["SMA", "EMA"], group=" ‰ŸÌ„«  „Ì«‰êÌ‰ùÂ«")
+mult = input.float(1.0, title="÷—Ì» «‰Õ—«› (Multiplier)", step=0.1, group=" ‰ŸÌ„«  „Ì«‰êÌ‰ùÂ«")
+
+// ============================
+//  ‰ŸÌ„«  Ã” ÃÊÌ œÌ‰«„Ìò
+// ============================
+enableSearch1 = input.bool(true, title="›⁄«·ù”«“Ì Ã” ÃÊÌ “„«‰ «Ê· (»Â ⁄ﬁ»)", group=" ‰ŸÌ„«  Ã” ÃÊ")
+enableSearch2 = input.bool(true, title="›⁄«·ù”«“Ì Ã” ÃÊÌ “„«‰ œÊ„ (»Â Ã·Ê)", group=" ‰ŸÌ„«  Ã” ÃÊ")
+maxSearchBars = input.int(500, title="Õœ«òÀ— ê” —‘ Ã” ÃÊ (ò‰œ·)", minval=10, maxval=2000, group=" ‰ŸÌ„«  Ã” ÃÊ")
+gapRatio = input.float(1.0, title="Õ”«”Ì  Ãœ«ÌÌ (?=ò«„·)", minval=0.05, maxval=1.0, step=0.05, group=" ‰ŸÌ„«  Ã” ÃÊ")
+
+// ============================
+// „Õ«”»«  «’·Ì —ÊÌ »«“ÂùÌ «Ê·ÌÂ
+// ============================
+barDuration = timeframe.in_seconds(timeframe.period) * 1000
+rangeLength = math.max(1, math.round((endTime - startTime) / barDuration))
+fastLen = math.max(1, math.round(rangeLength * 0.618))
+slowLen = math.max(1, math.round(rangeLength * 1.618))
+fastMA = maType == "EMA" ? ta.ema(close, fastLen) : ta.sma(close, fastLen)
+slowMA = maType == "EMA" ? ta.ema(close, slowLen) : ta.sma(close, slowLen)
+plot(fastMA, color=color.blue, title="Fast MA", linewidth=2)
+plot(slowMA, color=color.red, title="Slow MA", linewidth=2)
+spread = (fastMA - slowMA) * mult
+devOpen = open + spread
+devHigh = high + spread
+devLow = low + spread
+devClose = close + spread
+candleColor = devClose >= devOpen ? color.new(color.teal, 0) : color.new(color.maroon, 0)
+plotcandle(devOpen, devHigh, devLow, devClose, title="Deviated Candles", color=candleColor, wickcolor=candleColor, bordercolor=candleColor)
+
+// ============================
+//  Ê«»⁄ ò„òÌ
+// ============================
+f_findOffset(targetTime) =>
+    int off = -1
+    for i = 0 to 5000
+        if time[i] <= targetTime
+            off := i
+            break
+    off
+
+// ============================
+// »·Êò Å—œ«“‘ ”Ìê‰«·ùÂ« (›ﬁÿ œ— ò‰œ· ¬Œ—)
+// ============================
+var line searchLine1 = na
+var label searchLabel1 = na
+var line searchLine2 = na
+var label searchLabel2 = na
+
+if barstate.islast and not na(startTime) and not na(endTime)
+    line.delete(searchLine1)
+    label.delete(searchLabel1)
+    line.delete(searchLine2)
+    label.delete(searchLabel2)
+    
+    int endOff = f_findOffset(endTime)
+    int startOff0 = f_findOffset(startTime)
+    float safetyPadding = gapRatio >= 0.99 ? syminfo.mintick : 0.0
+
+    if endOff >= 0 and startOff0 >= 0 and startOff0 > endOff
+        
+        // ----------------------------------------------------
+        // Ã” ÃÊÌ “„«‰ «Ê· (ê” —‘ »Â ⁄ﬁ») - ò«„·« „” ﬁ·
+        // ----------------------------------------------------
+        if enableSearch1
+            bool found1 = false
+            int foundStartOff = na
+            int expand1 = 0
+            
+            while not found1 and (startOff0 + expand1) <= bar_index and expand1 <= maxSearchBars
+                int curStartOff = startOff0 + expand1
+                int curRangeLength = curStartOff - endOff + 1
+                int curFastLen = math.max(1, math.round(curRangeLength * 0.618))
+                int curSlowLen = math.max(1, math.round(curRangeLength * 1.618))
+                
+                int minDeepestSlow = curStartOff + curSlowLen - 1
+                int deepestSlow = maType == "EMA" ? math.min(4990, curStartOff + math.round(curSlowLen * 2.5)) : minDeepestSlow
+                deepestSlow := math.max(minDeepestSlow, deepestSlow)
+                
+                int minDeepestFast = curStartOff + curFastLen - 1
+                int deepestFast = maType == "EMA" ? math.min(4990, curStartOff + math.round(curFastLen * 2.5)) : minDeepestFast
+                deepestFast := math.max(minDeepestFast, deepestFast)
+                
+                if minDeepestSlow < 4990
+                    float ks = 2.0 / (curSlowLen + 1)
+                    float kf = 2.0 / (curFastLen + 1)
+                    float emaS = 0.0, emaF = 0.0
+                    int matchCount = 0, totalCount = 0
+                    
+                    int off = deepestSlow
+                    while off >= endOff
+                        if off == deepestSlow
+                            float sumS = 0.0
+                            for i = 0 to curSlowLen - 1
+                                sumS := sumS + close[deepestSlow - i]
+                            emaS := sumS / curSlowLen
+                        else
+                            emaS := close[off] * ks + emaS * (1 - ks)
+                            
+                        if off == deepestFast
+                            float sumF = 0.0
+                            for i = 0 to curFastLen - 1
+                                sumF := sumF + close[deepestFast - i]
+                            emaF := sumF / curFastLen
+                        else if off < deepestFast
+                            emaF := close[off] * kf + emaF * (1 - kf)
+                            
+                        if off <= curStartOff
+                            float sp = (emaF - emaS) * mult
+                            float rng = high[off] - low[off]
+                            bool matches = math.abs(sp) > (rng * gapRatio) + safetyPadding
+                            if matches
+                                matchCount := matchCount + 1
+                            totalCount := totalCount + 1
+                        off := off - 1
+                        
+                    if totalCount > 0 and (matchCount == totalCount)
+                        found1 := true
+                        foundStartOff := curStartOff
+                        
+                expand1 := expand1 + 1
+                
+            if found1
+                int xBar1 = bar_index - foundStartOff
+                searchLine1 := line.new(x1=xBar1, y1=low[foundStartOff]*0.995, x2=xBar1, y2=high[foundStartOff]*1.005, color=color.orange, width=2, extend=extend.none)
+                searchLabel1 := label.new(x=xBar1, y=high[foundStartOff]*1.008, text="“„«‰ «Ê·", color=color.orange, style=label.style_label_down, textcolor=color.white, size=size.small)
+
+        // ----------------------------------------------------
+        // Ã” ÃÊÌ “„«‰ œÊ„ (ê” —‘ »Â Ã·Ê) - ò«„·« „” ﬁ·
+        // ----------------------------------------------------
+        if enableSearch2
+            bool found2 = false
+            int foundEndOff = na
+            int expand2 = 0
+            
+            while not found2 and (endOff - expand2) >= 0 and expand2 <= maxSearchBars
+                int curEndOff = endOff - expand2
+                int curRangeLength = startOff0 - curEndOff + 1
+                int curFastLen = math.max(1, math.round(curRangeLength * 0.618))
+                int curSlowLen = math.max(1, math.round(curRangeLength * 1.618))
+                
+                int minDeepestSlow = startOff0 + curSlowLen - 1
+                int deepestSlow = maType == "EMA" ? math.min(4990, startOff0 + math.round(curSlowLen * 2.5)) : minDeepestSlow
+                deepestSlow := math.max(minDeepestSlow, deepestSlow)
+                
+                int minDeepestFast = startOff0 + curFastLen - 1
+                int deepestFast = maType == "EMA" ? math.min(4990, startOff0 + math.round(curFastLen * 2.5)) : minDeepestFast
+                deepestFast := math.max(minDeepestFast, deepestFast)
+                
+                if minDeepestSlow < 4990
+                    float ks = 2.0 / (curSlowLen + 1)
+                    float kf = 2.0 / (curFastLen + 1)
+                    float emaS = 0.0, emaF = 0.0
+                    int matchCount = 0, totalCount = 0
+                    
+                    int off = deepestSlow
+                    while off >= curEndOff
+                        if off == deepestSlow
+                            float sumS = 0.0
+                            for i = 0 to curSlowLen - 1
+                                sumS := sumS + close[deepestSlow - i]
+                            emaS := sumS / curSlowLen
+                        else
+                            emaS := close[off] * ks + emaS * (1 - ks)
+                            
+                        if off == deepestFast
+                            float sumF = 0.0
+                            for i = 0 to curFastLen - 1
+                                sumF := sumF + close[deepestFast - i]
+                            emaF := sumF / curFastLen
+                        else if off < deepestFast
+                            emaF := close[off] * kf + emaF * (1 - kf)
+                            
+                        if off <= startOff0
+                            float sp = (emaF - emaS) * mult
+                            float rng = high[off] - low[off]
+                            bool matches = math.abs(sp) > (rng * gapRatio) + safetyPadding
+                            if matches
+                                matchCount := matchCount + 1
+                            totalCount := totalCount + 1
+                        off := off - 1
+                        
+                    if totalCount > 0 and (matchCount == totalCount)
+                        found2 := true
+                        foundEndOff := curEndOff
+                        
+                expand2 := expand2 + 1
+                
+            if found2
+                int xBar2 = bar_index - foundEndOff
+                searchLine2 := line.new(x1=xBar2, y1=low[foundEndOff]*0.995, x2=xBar2, y2=high[foundEndOff]*1.005, color=color.fuchsia, width=2, extend=extend.none)
+                searchLabel2 := label.new(x=xBar2, y=low[foundEndOff]*0.992, text="“„«‰ œÊ„", color=color.fuchsia, style=label.style_label_up, textcolor=color.white, size=size.small)

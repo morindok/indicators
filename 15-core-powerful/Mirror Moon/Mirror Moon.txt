@@ -1,0 +1,89 @@
+//@version=5
+indicator("TMoon Mirror{Morindok}", overlay=true, max_bars_back=5000)
+
+show_candles = input.bool(true, title="Show Overlay Candles")
+use_ma_mirror = input.bool(true, title="Mirror on Moving Average")
+use_inv_ma = input.bool(true, title="Use Inverted MA")
+decay_slope = input.bool(true, title="Decay MA Slope (Flatten)")
+ma_type = input.string("EMA", title="MA Type", options=["EMA", "SMA", "WMA", "HMA"])
+
+ma_mult = input.float(1.1, title="MA Length Multiplier (Decay Factor)", minval=0.0)
+
+lvl_top = input.price(150.0, "Top Level", confirm=true)
+lvl_mid = input.price(100.0, "Middle Level", confirm=true)
+lvl_bot = input.price(50.0, "Bottom Level", confirm=true)
+t_start = input.time(0, "Range Start", confirm=true)
+t_end = input.time(0, "Range End", confirm=true)
+
+// ãÍÇÓÈå Øæá ÈÇÒå
+range_bars = math.min(4900, math.max(1, math.round((t_end - t_start) / timeframe.in_seconds(timeframe.period) / 1000)))
+
+bars_passed = ta.barssince(time > t_end and time[1] <= t_end)
+
+// ÖÑíÈ ˜ÇåÔ ˜å åã ÈÑÇí Øæá æ åã ÈÑÇí ÔíÈ ÇÓÊÝÇÏå ãíÔæÏ
+decay_ratio = time > t_end ? math.pow(ma_mult, math.floor(nz(bars_passed) / range_bars)) : 1.0
+
+// ÇÚãÇá ÖÑíÈ Ñæí Øæá
+eff_len = math.min(4900, math.max(1, int(math.round(range_bars * decay_ratio))))
+
+// ãÍÇÓÈå ÏÇíäÇãí˜ EMA
+float dyn_ema = na
+dyn_ema := nz(dyn_ema[1], close) + (close - nz(dyn_ema[1], close)) * (2 / (eff_len + 1))
+
+// ãÍÇÓÈå ÏÇíäÇãí˜ HMA
+dyn_hma = ta.wma(2 * ta.wma(close, math.max(1, math.floor(eff_len / 2))) - ta.wma(close, eff_len), math.max(1, math.floor(math.sqrt(eff_len))))
+
+ma_raw = ma_type == "EMA" ? dyn_ema : ma_type == "SMA" ? ta.sma(close, eff_len) : ma_type == "WMA" ? ta.wma(close, eff_len) : dyn_hma
+
+// ÇÚãÇá ˜ÇåÔ ÔíÈ (ÏÑ ÕæÑÊ ÝÚÇá ÈæÏä Òíäå)
+float final_ma = na
+ma_step = ma_raw - nz(ma_raw[1], ma_raw)
+final_ma := nz(final_ma[1], ma_raw) + (decay_slope ? ma_step * decay_ratio : ma_step)
+
+ma_inv = 2 * lvl_mid - final_ma
+eff_ma = use_inv_ma ? ma_inv : final_ma
+
+show_ma = use_ma_mirror or use_inv_ma
+
+plot(show_ma ? final_ma : na, color=color.new(color.yellow, 0), linewidth=2, title="MA")
+plot(show_ma ? ma_inv : na, color=color.new(color.orange, 0), linewidth=2, title="MA Inverted")
+
+eff_top = use_ma_mirror ? eff_ma + (lvl_top - lvl_mid) : lvl_top
+eff_mid = use_ma_mirror ? eff_ma : lvl_mid
+eff_bot = use_ma_mirror ? eff_ma - (lvl_mid - lvl_bot) : lvl_bot
+
+plot(eff_top, color=color.new(color.red, 0), linewidth=2, title="Top Line")
+plot(eff_mid, color=color.new(color.gray, 0), linewidth=2, title="Middle Line")
+plot(eff_bot, color=color.new(color.green, 0), linewidth=2, title="Bottom Line")
+
+plot(use_ma_mirror ? lvl_top : na, color=color.new(color.red, 60), linewidth=1, style=plot.style_circles, title="Static Top")
+plot(use_ma_mirror ? lvl_mid : na, color=color.new(color.gray, 60), linewidth=1, style=plot.style_circles, title="Static Mid")
+plot(use_ma_mirror ? lvl_bot : na, color=color.new(color.green, 60), linewidth=1, style=plot.style_circles, title="Static Bot")
+
+o1 = 2 * eff_top - open
+h1 = 2 * eff_top - low
+l1 = 2 * eff_top - high
+c1 = 2 * eff_top - close
+col1 = show_candles ? (c1 >= o1 ? color.new(color.teal, 20) : color.new(color.maroon, 20)) : na
+plotcandle(o1, h1, l1, c1, title="Overlay Top", color=col1, wickcolor=col1, bordercolor=col1)
+
+o2 = 2 * eff_bot - open
+h2 = 2 * eff_bot - low
+l2 = 2 * eff_bot - high
+c2 = 2 * eff_bot - close
+col2 = show_candles ? (c2 >= o2 ? color.new(color.green, 20) : color.new(color.red, 20)) : na
+plotcandle(o2, h2, l2, c2, title="Overlay Bottom", color=col2, wickcolor=col2, bordercolor=col2)
+
+o3 = 2 * eff_mid - o1
+h3 = 2 * eff_mid - l1
+l3 = 2 * eff_mid - h1
+c3 = 2 * eff_mid - c1
+col3 = show_candles ? (c3 >= o3 ? color.new(color.blue, 20) : color.new(color.orange, 20)) : na
+plotcandle(o3, h3, l3, c3, title="Overlay Mid A", color=col3, wickcolor=col3, bordercolor=col3)
+
+o4 = 2 * eff_mid - o2
+h4 = 2 * eff_mid - l2
+l4 = 2 * eff_mid - h2
+c4 = 2 * eff_mid - c2
+col4 = show_candles ? (c4 >= o4 ? color.new(color.purple, 20) : color.new(color.fuchsia, 20)) : na
+plotcandle(o4, h4, l4, c4, title="Overlay Mid B", color=col4, wickcolor=col4, bordercolor=col4)

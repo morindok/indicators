@@ -1,0 +1,227 @@
+//@version=6
+indicator("Fractals + Dual Mirror Intersection Signals", overlay=true, max_bars_back=4000)
+
+// ÿÊ· »«“Â «’·Ì ›—«ò «·ùÂ«
+n = input.int(100, title="Periods (n)", minval=2)
+
+// ---  ‰ŸÌ„«   ⁄ÌÌ‰ ÿÊ· „ÊÊÌ‰êùÂ« ---
+lengthMode = input.string("Auto (n)", title="MA Length Mode", options=["Auto (n)", "Manual", "Dynamic (Fractal Distance)"])
+centralMultiplier = input.float(0.5, title="Central Multiplier (for Auto/Dynamic)", step=0.1)
+
+manualLenCenter = input.int(50, title="Manual Central MA Length", minval=1)
+manualLen1 = input.int(100, title="Manual P1 MA Length", minval=1)
+manualLen2 = input.int(100, title="Manual P2 MA Length", minval=1)
+
+// ---  ‰ŸÌ„«  „ÊÊÌ‰ê „⁄òÊ” (Symmetric MA) ---
+phi = input.float(1.618, title="Golden Ratio Value (phi)", step=0.001)
+modeCenter = input.string("Normal", title="Central MA Mode", options=["Normal", "Reverse (Mid)", "Reverse (Golden Ratio)"])
+modeP1 = input.string("Normal", title="P1 MA Mode", options=["Normal", "Reverse (Mid)", "Reverse (Golden Ratio)"])
+modeP2 = input.string("Normal", title="P2 MA Mode", options=["Normal", "Reverse (Mid)", "Reverse (Golden Ratio)"])
+
+// ---  »œÌ· ò· ”Ì” „ »Â »Ì” „ÊÊÌ‰ê «Ê—ÌÃ ---
+baseMaLen = input.int(5, title="Base Price MA Length (For Smooth Fractals & Mirrors)")
+pOpen  = ta.sma(open, baseMaLen)
+pHigh  = ta.sma(high, baseMaLen)
+pLow   = ta.sma(low, baseMaLen)
+pClose = ta.sma(close, baseMaLen)
+
+//  ‰ŸÌ„«  „‰»⁄ „ÊÊÌ‰ê «Ê—ÌÃ „—ò“Ì
+srcCenter = input.source(close, title="Central MA Source")
+
+//  ‰ŸÌ„«  „‰»⁄ Ê “„«‰ P1
+src1 = input.source(close, title="P1 MA Source")
+selectedTime1 = input.time(0, title="P1 Reference Time", confirm=true)
+
+//  ‰ŸÌ„«  „‰»⁄ Ê “„«‰ P2
+src2 = input.source(close, title="P2 MA Source")
+selectedTime2 = input.time(0, title="P2 Reference Time", confirm=true)
+
+// --- „Õ«”»Â ÿÊ· œ«Ì‰«„Ìò »— «”«” ›—«ò «· Œ«„ ---
+bool dyn_upDnFront = true, bool dyn_upUp0 = true, bool dyn_upUp1 = true, bool dyn_upUp2 = true, bool dyn_upUp3 = true, bool dyn_upUp4 = true
+bool dyn_dnDnFront = true, bool dyn_dnUp0 = true, bool dyn_dnUp1 = true, bool dyn_dnUp2 = true, bool dyn_dnUp3 = true, bool dyn_dnUp4 = true
+
+for i = 1 to n
+    dyn_upDnFront := dyn_upDnFront and (high[n-i] < high[n])
+    dyn_upUp0 := dyn_upUp0 and (high[n+i] < high[n])
+    dyn_upUp1 := dyn_upUp1 and (high[n+1] <= high[n] and high[n+i+1] < high[n])
+    dyn_upUp2 := dyn_upUp2 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i+2] < high[n])
+    dyn_upUp3 := dyn_upUp3 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i+3] < high[n])
+    dyn_upUp4 := dyn_upUp4 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i+4] < high[n])
+    
+    dyn_dnDnFront := dyn_dnDnFront and (low[n-i] > low[n])
+    dyn_dnUp0 := dyn_dnUp0 and (low[n+i] > low[n])
+    dyn_dnUp1 := dyn_dnUp1 and (low[n+1] >= low[n] and low[n+i+1] > low[n])
+    dyn_dnUp2 := dyn_dnUp2 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i+2] > low[n])
+    dyn_dnUp3 := dyn_dnUp3 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i+3] > low[n])
+    dyn_dnUp4 := dyn_dnUp4 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i+4] > low[n])
+
+bool rawUpFractal = (dyn_upDnFront and (dyn_upUp0 or dyn_upUp1 or dyn_upUp2 or dyn_upUp3 or dyn_upUp4))
+bool rawDownFractal = (dyn_dnDnFront and (dyn_dnUp0 or dyn_dnUp1 or dyn_dnUp2 or dyn_dnUp3 or dyn_dnUp4))
+
+var int lastUpBar = na
+var int lastDownBar = na
+if rawUpFractal
+    lastUpBar := bar_index - n
+if rawDownFractal
+    lastDownBar := bar_index - n
+
+int base_dyn_length = 14 
+if not na(lastUpBar) and not na(lastDownBar)
+    base_dyn_length := math.max(1, math.abs(lastUpBar - lastDownBar))
+
+// --- „Õ«”»Â ÿÊ· ‰Â«ÌÌ „ÊÊÌ‰êùÂ« »— «”«” „‰ÊÌ Mode ---
+int finalMaLenCenter = lengthMode == "Dynamic (Fractal Distance)" ? math.max(1, int(base_dyn_length * centralMultiplier)) : (lengthMode == "Auto (n)" ? math.max(1, int(n * centralMultiplier)) : manualLenCenter)
+int finalMaLen1      = lengthMode == "Dynamic (Fractal Distance)" ? base_dyn_length : (lengthMode == "Auto (n)" ? n : manualLen1)
+int finalMaLen2      = lengthMode == "Dynamic (Fractal Distance)" ? base_dyn_length : (lengthMode == "Auto (n)" ? n : manualLen2)
+
+// „Õ«”»Â „ÊÊÌ‰ê «Ê—ÌÃùÂ«Ì Å«ÌÂ
+smaCenter = ta.sma(srcCenter, finalMaLenCenter)
+sma1      = ta.sma(src1, finalMaLen1)
+sma2      = ta.sma(src2, finalMaLen2)
+
+// ---  «»⁄ „Õ«”»Â „ÊÊÌ‰ê „⁄òÊ” »— «”«” Õ«·  «‰ Œ«» ‘œÂ ---
+calc_sym_ma(ma_src, len, mode, phi_val) =>
+    float final_ma = ma_src
+    if mode != "Normal"
+        h_ma = ta.highest(ma_src, len)
+        l_ma = ta.lowest(ma_src, len)
+        mid = mode == "Reverse (Golden Ratio)" ? ma_src + (h_ma - ma_src) / phi_val : (h_ma + l_ma) / 2.0
+        final_ma := 2.0 * mid - ma_src
+    final_ma
+
+// «⁄„«· „‰ÿﬁ „ÊÊÌ‰ê „⁄òÊ”
+centralMirrorLevel = calc_sym_ma(smaCenter, finalMaLenCenter, modeCenter, phi)
+mirrorLevel1       = calc_sym_ma(sma1, finalMaLen1, modeP1, phi)
+mirrorLevel2       = calc_sym_ma(sma2, finalMaLen2, modeP2, phi)
+
+// —”„ „ÊÊÌ‰ê «Ê—ÌÃùÂ« —ÊÌ ç«— 
+plot(centralMirrorLevel, color=color.gray, title="Central MA")
+plot(mirrorLevel1, color=color.blue, title="MA 1")
+plot(mirrorLevel2, color=color.orange, title="MA 2")
+
+// --- „—Õ·Â «Ê·:  ﬁ«—‰ „ÊÊÌ‰ê ﬁÌ„  ‰”»  »Â „ÊÊÌ‰ê „—ò“Ì œ«Ì‰«„Ìò ---
+cOpen  = float(2.0 * centralMirrorLevel - pOpen)
+cHigh  = float(2.0 * centralMirrorLevel - pLow)
+cLow   = float(2.0 * centralMirrorLevel - pHigh)
+cClose = float(2.0 * centralMirrorLevel - pClose)
+
+// --- „—Õ·Â œÊ„:  ﬁ«—‰ ò‰œ· „—ò“Ì ‰”»  »Â „ÊÊÌ‰ê «Ê—ÌÃùÂ«Ì P1 Ê P2 ---
+mHigh1 = float(2.0 * mirrorLevel1 - cLow)
+mLow1  = float(2.0 * mirrorLevel1 - cHigh)
+mHigh2 = float(2.0 * mirrorLevel2 - cLow)
+mLow2  = float(2.0 * mirrorLevel2 - cHigh)
+
+// „Õ«”»«  Å«ÌÂ ›—«ò «·ùÂ« —ÊÌ „ÊÊÌ‰êùÂ«Ì pHigh Ê pLow
+bool u_dn = true, bool u_u0 = true, bool u_u1 = true, bool u_u2 = true, bool u_u3 = true, bool u_u4 = true
+bool d_dn = true, bool d_u0 = true, bool d_u1 = true, bool d_u2 = true, bool d_u3 = true, bool d_u4 = true
+
+for i = 1 to n
+    u_dn := u_dn and (pHigh[n-i] < pHigh[n])
+    u_u0 := u_u0 and (pHigh[n+i] < pHigh[n])
+    u_u1 := u_u1 and (pHigh[n+1] <= pHigh[n] and pHigh[n+i+1] < pHigh[n])
+    u_u2 := u_u2 and (pHigh[n+1] <= pHigh[n] and pHigh[n+2] <= pHigh[n] and pHigh[n+i+2] < pHigh[n])
+    u_u3 := u_u3 and (pHigh[n+1] <= pHigh[n] and pHigh[n+2] <= pHigh[n] and pHigh[n+3] <= pHigh[n] and pHigh[n+i+3] < pHigh[n])
+    u_u4 := u_u4 and (pHigh[n+1] <= pHigh[n] and pHigh[n+2] <= pHigh[n] and pHigh[n+3] <= pHigh[n] and pHigh[n+4] <= pHigh[n] and pHigh[n+i+4] < pHigh[n])
+    
+    d_dn := d_dn and (pLow[n-i] > pLow[n])
+    d_u0 := d_u0 and (pLow[n+i] > pLow[n])
+    d_u1 := d_u1 and (pLow[n+1] >= pLow[n] and pLow[n+i+1] > pLow[n])
+    d_u2 := d_u2 and (pLow[n+1] >= pLow[n] and pLow[n+2] >= pLow[n] and pLow[n+i+2] > pLow[n])
+    d_u3 := d_u3 and (pLow[n+1] >= pLow[n] and pLow[n+2] >= pLow[n] and pLow[n+3] >= pLow[n] and pLow[n+i+3] > pLow[n])
+    d_u4 := d_u4 and (pLow[n+1] >= pLow[n] and pLow[n+2] >= pLow[n] and pLow[n+3] >= pLow[n] and pLow[n+4] >= pLow[n] and pLow[n+i+4] > pLow[n])
+
+flagUp = u_u0 or u_u1 or u_u2 or u_u3 or u_u4
+flagDn = d_u0 or d_u1 or d_u2 or d_u3 or d_u4
+
+upFractal1 = u_dn and flagUp and time[n] < selectedTime1
+downFractal1 = d_dn and flagDn and time[n] < selectedTime1
+upFractal2 = u_dn and flagUp and time[n] < selectedTime2
+downFractal2 = d_dn and flagDn and time[n] < selectedTime2
+
+var int refBarIndex1 = na
+var int refBarIndex2 = na
+if time <= selectedTime1
+    refBarIndex1 := bar_index
+if time <= selectedTime2
+    refBarIndex2 := bar_index
+
+var upFracIdx1 = array.new_int(0)
+var dnFracIdx1 = array.new_int(0)
+if upFractal1
+    array.push(upFracIdx1, int(bar_index - n))
+if downFractal1
+    array.push(dnFracIdx1, int(bar_index - n))
+
+var upFracIdx2 = array.new_int(0)
+var dnFracIdx2 = array.new_int(0)
+if upFractal2
+    array.push(upFracIdx2, int(bar_index - n))
+if downFractal2
+    array.push(dnFracIdx2, int(bar_index - n))
+
+bool p1Up = not na(refBarIndex1) and bar_index > refBarIndex1 and array.indexof(upFracIdx1, 2 * refBarIndex1 - bar_index) >= 0
+bool p1Dn = not na(refBarIndex1) and bar_index > refBarIndex1 and array.indexof(dnFracIdx1, 2 * refBarIndex1 - bar_index) >= 0
+bool p2Up = not na(refBarIndex2) and bar_index > refBarIndex2 and array.indexof(upFracIdx2, 2 * refBarIndex2 - bar_index) >= 0
+bool p2Dn = not na(refBarIndex2) and bar_index > refBarIndex2 and array.indexof(dnFracIdx2, 2 * refBarIndex2 - bar_index) >= 0
+
+// --- ¬—«ÌÂ »—«Ì –ŒÌ—Â ”ÿÊÕ »—ŒÊ—œ ---
+var float[] activeWhiteLines = array.new_float()
+
+// --- „Ê Ê— „Õ«”»Â  ﬁ«ÿ⁄ œ— Å”ù“„Ì‰Â ---
+var int yPrevX = na, var float yPrevY = na
+var int yCurrX = na, var float yCurrY = na
+var int gPrevX = na, var float gPrevY = na
+var int gCurrX = na, var float gCurrY = na
+bool triggerIntersectionCheck = false
+
+if p1Up
+    yPrevX := yCurrX, yPrevY := yCurrY, yCurrX := bar_index, yCurrY := mHigh1
+    triggerIntersectionCheck := true
+if p2Up
+    yPrevX := yCurrX, yPrevY := yCurrY, yCurrX := bar_index, yCurrY := mHigh2
+    triggerIntersectionCheck := true
+
+if p1Dn
+    gPrevX := gCurrX, gPrevY := gCurrY, gCurrX := bar_index, gCurrY := mLow1
+    triggerIntersectionCheck := true
+if p2Dn
+    gPrevX := gCurrX, gPrevY := gCurrY, gCurrX := bar_index, gCurrY := mLow2
+    triggerIntersectionCheck := true
+
+// „Õ«”»Â  ﬁ«ÿ⁄ —Ì«÷Ì Ê –ŒÌ—Â ”ÿÕ
+if triggerIntersectionCheck and not na(yPrevX) and not na(yCurrX) and not na(gPrevX) and not na(gCurrX)
+    if (yCurrX != yPrevX) and (gCurrX != gPrevX)
+        float m1 = (yCurrY - yPrevY) / (yCurrX - yPrevX)
+        float m2 = (gCurrY - gPrevY) / (gCurrX - gPrevX)
+        if m1 != m2
+            float ix = (m1 * yPrevX - m2 * gPrevX + gPrevY - yPrevY) / (m1 - m2)
+            if ix >= math.max(yPrevX, gPrevX) and ix <= math.min(yCurrX, gCurrX)
+                float iy = m1 * (ix - yPrevX) + yPrevY
+                array.push(activeWhiteLines, iy) 
+
+// --- ”Ì” „ »——”Ì ”Ìê‰«· ---
+bool buySignal = false
+bool sellSignal = false
+
+if array.size(activeWhiteLines) > 0
+    int idx = array.size(activeWhiteLines) - 1
+    while idx >= 0
+        float lineLevel = array.get(activeWhiteLines, idx)
+        
+        if high >= lineLevel and low <= lineLevel
+            if close[1] < lineLevel or (close[1] == lineLevel and open < lineLevel)
+                sellSignal := true
+            else if close[1] > lineLevel or (close[1] == lineLevel and open > lineLevel)
+                buySignal := true
+            
+            array.remove(activeWhiteLines, idx)
+        
+        idx -= 1
+
+plotshape(buySignal, title="Buy Signal", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.normal)
+plotshape(sellSignal, title="Sell Signal", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.normal)
+
+if buySignal
+    alert("Buy Signal", alert.freq_once_per_bar)
+if sellSignal
+    alert("Sell Signal", alert.freq_once_per_bar)

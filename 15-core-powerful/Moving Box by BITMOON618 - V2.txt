@@ -1,0 +1,118 @@
+//@version=5
+indicator("Moving Box {Morindok}", overlay=true, max_polylines_count=100)
+
+// --- ÊäÙíãÇÊ ÇÕáí æ ÇÔ˜Çá ---
+shape_type = input.string("Box", title="Shape Type", options=["Box", "Rhombus", "Ellipse", "Spiral"])
+ma_source = input.string("Main MA", title="Target MA for Box & Levels", options=["Main MA", "Mid Line", "Symmetric MA"])
+len = input.int(21, title="Chunk Size / MA Length")
+hl_len = input.int(1, title="High/Low Lookback Length")
+src = input.source(close, "Source")
+
+// --- ÊäÙíãÇÊ ÞÑíäåÓÇÒí æ ãææíäåÇ ---
+useGoldenRatio = input.bool(false, "Use Golden Ratio (Mid)")
+phi = input.float(1.618, "Golden Ratio Value")
+verticalOffset = input.float(0, "Vertical Offset")
+hOffset = input.int(0, "Horizontal Offset", minval=0)
+
+// --- ÓæÆíåÇí äãÇíÔ ---
+center_ma = input.bool(true, title="Center Box on Selected MA")
+calc_at_start = input.bool(true, title="Calc at Start & Project Forward")
+align_slope = input.bool(false, title="Align Shapes with MA Slope")
+sym_candles = input.bool(false, title="Mirror Candles (on Mid)")
+show_lvl_ma = input.bool(true, title="Show >0.618 and <0.382 MAs")
+
+// --- ãÍÇÓÈÇÊ ãææíäåÇ ---
+base_ma = ta.sma(src, len)
+highest_ma = ta.highest(base_ma, len)
+lowest_ma = ta.lowest(base_ma, len)
+
+mid = useGoldenRatio ? base_ma + (highest_ma - base_ma) / phi : (highest_ma + lowest_ma) / 2
+symmetric_ma = 2 * mid - base_ma
+
+// --- ÇäÊÎÇÈ ãææíä åÏÝ ÈÑÇí ÑÓã ÈÇ˜Ó æ ÓØæÍ ---
+target_ma = ma_source == "Main MA" ? base_ma : ma_source == "Mid Line" ? mid : symmetric_ma
+
+// --- ãÍÇÓÈå ÈÇ˜Ó æ ÇÔ˜Çá ---
+hh = ta.highest(high, hl_len)
+ll = ta.lowest(low, hl_len)
+
+use_ma = calc_at_start ? target_ma[1] : target_ma
+use_hh = calc_at_start ? hh[1] : hh
+use_ll = calc_at_start ? ll[1] : ll
+
+dev = math.max(math.abs(use_hh - use_ma), math.abs(use_ma - use_ll))
+box_top = center_ma ? use_ma + dev : use_hh
+box_bot = center_ma ? use_ma - dev : use_ll
+
+left_bar = calc_at_start ? bar_index : bar_index - len + 1
+right_bar = calc_at_start ? bar_index + len - 1 : bar_index
+
+// ÑÓã ÇÔ˜Çá ÈÇ Polyline
+if bar_index % len == 0
+    cx = (left_bar + right_bar) / 2
+    cy = (box_top + box_bot) / 2
+    rx = (right_bar - left_bar) / 2
+    ry = (box_top - box_bot) / 2
+
+    // ãÍÇÓÈå ÔíÈ ÎÇã ãææíä ÌåÊ ÊÚííä Ñä
+    raw_slope = use_ma - nz(use_ma[len], use_ma)
+    shape_color = raw_slope > 0 ? color.teal : raw_slope < 0 ? color.red : color.gray
+    
+    // ãÍÇÓÈå ÖÑíÈ ÔíÈ ÈÑÇí ˜Ì ˜ÑÏä ÇÔ˜Çá (ÏÑ ÕæÑÊ ÝÚÇá ÈæÏä)
+    slope = align_slope ? raw_slope / (right_bar - left_bar) : 0
+
+    pts = array.new<chart.point>()
+
+    if shape_type == "Box"
+        array.push(pts, chart.point.from_index(left_bar, box_top + slope * (left_bar - cx)))
+        array.push(pts, chart.point.from_index(right_bar, box_top + slope * (right_bar - cx)))
+        array.push(pts, chart.point.from_index(right_bar, box_bot + slope * (right_bar - cx)))
+        array.push(pts, chart.point.from_index(left_bar, box_bot + slope * (left_bar - cx)))
+    else if shape_type == "Rhombus"
+        array.push(pts, chart.point.from_index(math.round(cx), box_top))
+        array.push(pts, chart.point.from_index(right_bar, cy + slope * (right_bar - cx)))
+        array.push(pts, chart.point.from_index(math.round(cx), box_bot))
+        array.push(pts, chart.point.from_index(left_bar, cy + slope * (left_bar - cx)))
+    else if shape_type == "Ellipse"
+        for i = 0 to 32
+            angle = i * 2 * math.pi / 32
+            x_val = cx + rx * math.cos(angle)
+            y_val = cy + ry * math.sin(angle)
+            array.push(pts, chart.point.from_index(math.round(x_val), y_val + slope * (x_val - cx)))
+    else if shape_type == "Spiral"
+        for i = 0 to 64
+            angle = i * 4 * math.pi / 64
+            radius_ratio = i / 64
+            x_val = cx + rx * radius_ratio * math.cos(angle)
+            y_val = cy + ry * radius_ratio * math.sin(angle)
+            array.push(pts, chart.point.from_index(math.round(x_val), y_val + slope * (x_val - cx)))
+
+    // ÇÚãÇá Ñä ÏÇíäÇãí˜ ÏÑ ÊÑÓíã
+    polyline.new(pts, closed=(shape_type != "Spiral"), line_color=shape_color, fill_color=color.new(shape_color, 90))
+
+// --- ÑÓã ˜äÏáåÇí ãÊÞÇÑä ---
+m_o = sym_candles ? (2 * mid - open) : na
+m_h = sym_candles ? (2 * mid - low) : na 
+m_l = sym_candles ? (2 * mid - high) : na
+m_c = sym_candles ? (2 * mid - close) : na
+
+c_color = m_c > m_o ? color.new(color.teal, 30) : color.new(color.orange, 30)
+plotcandle(m_o[hOffset] + verticalOffset, m_h[hOffset] + verticalOffset, m_l[hOffset] + verticalOffset, m_c[hOffset] + verticalOffset, title="Mirrored Candles", color=c_color, wickcolor=c_color, bordercolor=c_color)
+
+// --- ÑÓã ãææíä ÇäÊÎÇÈ ÔÏå ---
+plot(ma_source == "Main MA" ? (base_ma[hOffset] + verticalOffset) : na, color=color.blue, title="Main MA", linewidth=2)
+plot(ma_source == "Symmetric MA" ? (symmetric_ma[hOffset] + verticalOffset) : na, color=color.red, title="Symmetric MA", linewidth=2)
+plot(ma_source == "Mid Line" ? (mid[hOffset] + verticalOffset) : na, color=color.gray, title="Mid Line", linewidth=2)
+
+// --- ãÍÇÓÈå ÓØæÍ 0.618 æ 0.382 ---
+lvl_618 = box_bot + 0.618 * (box_top - box_bot)
+lvl_382 = box_bot + 0.382 * (box_top - box_bot)
+
+src_up = ta.valuewhen(close > lvl_618, close, 0)
+src_dn = ta.valuewhen(close < lvl_382, close, 0)
+
+ma_up = ta.sma(src_up, len)
+ma_dn = ta.sma(src_dn, len)
+
+plot(show_lvl_ma ? ma_up : na, color=color.green, title="MA > 0.618", linewidth=2)
+plot(show_lvl_ma ? ma_dn : na, color=color.maroon, title="MA < 0.382", linewidth=2)

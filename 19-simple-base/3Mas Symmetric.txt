@@ -1,0 +1,83 @@
+//@version=5
+indicator("Symmetric Price Around Mid Level", overlay=true)
+
+// ????? Inputs ?????
+t1 = input.time(0, title="Point 1", confirm=true, inline="p1")
+p1 = input.price(0, title="", confirm=true, inline="p1")
+
+t2 = input.time(0, title="Point 2", confirm=true, inline="p2")
+p2 = input.price(0, title="", confirm=true, inline="p2")
+
+t3 = input.time(0, title="Center Point", confirm=true, inline="p3")
+p3 = input.price(0, title="", confirm=true, inline="p3")
+
+ma_length_manual = input.int(14, title="Manual MA Length")
+auto_length = input.bool(true, title="Auto Length = P1 ? P2")
+
+scale_by_dist = input.bool(false, title="Scale Distance")
+shift_by_center = input.bool(true, title="Forward Shift")
+
+// ????? Bar duration ?????
+bar_ms = time - time[1]
+
+// ????? Auto MA length ?????
+range_length = int(math.abs(t2 - t1) / bar_ms)
+ma_length = auto_length and range_length > 1 ? range_length : ma_length_manual
+
+// ????? Levels ?????
+mid_level  = p3 != 0 ? p3 : (p1 + p2) / 2
+high_level = math.max(p1, p2)
+low_level  = math.min(p1, p2)
+
+// ????? Symmetric Price ?????
+price_sym = (2 * mid_level) - close
+
+// ????? Moving averages ?????
+ma_orig = ta.sma(close, ma_length)
+ma_sym  = ta.sma(price_sym, ma_length)
+
+// ????? Mirrored MAs ?????
+final_ma_high   = (2 * high_level) - ma_sym
+final_ma_low    = (2 * low_level)  - ma_orig
+reverse_ma_high = (2 * high_level) - ma_orig
+reverse_ma_low  = (2 * low_level)  - ma_sym
+
+// ????? Optional scaling ?????
+dist_ratio = mid_level != 0 ? (high_level - mid_level) / mid_level : 1
+
+if scale_by_dist
+    upper_mid  = (final_ma_high + reverse_ma_high) / 2
+    upper_diff = (final_ma_high - reverse_ma_high) / 2
+    final_ma_high   := upper_mid + (upper_diff * dist_ratio)
+    reverse_ma_high := upper_mid - (upper_diff * dist_ratio)
+
+    lower_mid  = (final_ma_low + reverse_ma_low) / 2
+    lower_diff = (final_ma_low - reverse_ma_low) / 2
+    final_ma_low    := lower_mid + (lower_diff * dist_ratio)
+    reverse_ma_low  := lower_mid - (lower_diff * dist_ratio)
+
+// ????? Forward shift ?????
+shift_bars = shift_by_center ? int(math.abs(t3 - t1) / bar_ms) : 0
+
+// ????? Plots ?????
+plot(final_ma_high,   color=color.red,    linewidth=2, offset=shift_bars)
+plot(final_ma_low,    color=color.green,  linewidth=2, offset=shift_bars)
+plot(reverse_ma_high, color=color.orange, linewidth=1, offset=shift_bars)
+plot(reverse_ma_low,  color=color.blue,   linewidth=1, offset=shift_bars)
+
+// ﬁÌ„  „ ﬁ«—‰
+plot(price_sym, color=color.purple, linewidth=2, title="Symmetric Price")
+
+// ”ÿÕ Ê”ÿ
+plot(mid_level, color=color.gray, linewidth=1, title="Mid Level")
+
+// ????? Visual helpers ?????
+if barstate.islast
+    line.new(t1, p1, t2, p2, xloc.bar_time, extend.none,
+         color=color.new(color.gray, 50), style=line.style_dashed)
+
+    label.new(t3, p3, "ï",
+         xloc=xloc.bar_time,
+         style=label.style_none,
+         textcolor=color.yellow,
+         size=size.tiny)

@@ -1,0 +1,540 @@
+# -*- coding: utf-8 -*-
+"""
+Footprint / Order-Flow Approximation Chart ó Dash + yfinance
+--------------------------------------------------------------
+Ì«ÂÊ ›«Ì‰‰” œ«œÂùÌ Ê«ﬁ⁄Ì »Ìœ/«”ò (Order Flow Ê«ﬁ⁄Ì) ‰„ÌùœÂœ.
+«Ì‰ «Å »« ê—› ‰ œÌ «Ì —Ì“ «Ì„ù›—Ì„ (sub-interval) œ«Œ· Â— ò‰œ· «’·Ì°
+Ê ÿ»ﬁÂù»‰œÌ Â— »«— Œ—œ »Â Buy/Sell »— «”«” ÃÂ  close ‰”»  »Â open°
+ÕÃ„ —« œ— ”ÿÊÕ ﬁÌ„ Ì (tick size) ÅŒ‘ „Ìùò‰œ Ê Ìò ›Ê ùÅ—Ì‰   ﬁ—Ì»Ì „Ìù”«“œ.
+«Ì‰ Ìò APPROXIMATION «”  ‰Â Order Flow Ê«ﬁ⁄Ì (òÂ ‰Ì«“ »Â œÌ «Ì  Ìò »Ìœ/«”ò œ«—œ).
+
+‰’» ÅÌ‘ù‰Ì«“Â«:
+    pip install dash yfinance pandas numpy plotly
+«Ã—«:
+    python footprint_dash_app.py
+"""
+
+import numpy as np
+import pandas as pd
+import yfinance as yf
+import plotly.graph_objects as go
+from dash import Dash, dcc, html, Input, Output, State, no_update
+
+# ----------------------------------------------------------------------
+# ‰ê«‘   «Ì„ù›—Ì„ «’·Ì -> »Â —Ì‰ sub-interval ÅÌ‘‰Â«œÌ »—«Ì ”«Œ  ›Ê ùÅ—Ì‰ 
+# ----------------------------------------------------------------------
+MAIN_INTERVALS = [
+    "1m", "2m", "5m", "15m", "30m", "60m", "90m", "1d"
+]
+
+SUGGESTED_SUB = {
+    "1m": "1m",
+    "2m": "1m",
+    "5m": "1m",
+    "15m": "1m",
+    "30m": "5m",
+    "60m": "5m",
+    "90m": "15m",
+    "1d": "5m",
+}
+
+# yfinance „ÕœÊœÌ  period »— «”«” interval œ«—œ
+DEFAULT_PERIOD = {
+    "1m": "5d", "2m": "5d", "5m": "5d", "15m": "5d",
+    "30m": "1mo", "60m": "1mo", "90m": "1mo", "1d": "1y",
+}
+
+
+def fetch(symbol: str, interval: str, period: str) -> pd.DataFrame:
+    df = yf.download(
+        tickers=symbol,
+        interval=interval,
+        period=period,
+        progress=False,
+        auto_adjust=False,
+        group_by="column",
+    )
+    if df.empty:
+        return df
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df = df.dropna(subset=["Open", "High", "Low", "Close"])
+    if "Volume" in df.columns:
+        df["Volume"] = df["Volume"].fillna(0)
+    df.index = pd.to_datetime(df.index)
+    if df.index.tz is not None:
+        df.index = df.index.tz_convert(None)
+    return df
+
+
+def build_footprint(main_df: pd.DataFrame, sub_df: pd.DataFrame,
+                     main_interval: str, tick_size: float,
+                     max_candles: int):
+    """
+    »—«Ì Â— ò‰œ· «’·Ì° »«—Â«Ì sub_df œ«Œ· »«“Â “„«‰Ì ¬‰ —« ÅÌœ« „Ìùò‰œ°
+    ÕÃ„ Â— »«— Œ—œ —« ÿ»ﬁ ÃÂ ‘ (Buy «ê— Close>=Open° Êê—‰Â Sell) œ—
+    ”ÿÊÕ ﬁÌ„ Ì (Low..High »«— Œ—œ »« ê«„ tick_size) ÅŒ‘ „Ìùò‰œ Ê œ— ‰Â«Ì 
+    œÌò‘‰—Ì {price_level: (buy_vol, sell_vol)} »—«Ì Â— ò‰œ· «’·Ì »—„Ìùê—œ«‰œ.
+    """
+    main_df = main_df.tail(max_candles).copy()
+    freq = pd.tseries.frequencies.to_offset(main_interval.replace("m", "min").replace("60min", "60min"))
+
+    candles = []
+    idx_list = list(main_df.index)
+    for i, ts in enumerate(idx_list):
+        start = ts
+        end = idx_list[i + 1] if i + 1 < len(idx_list) else ts + pd.Timedelta(freq)
+        window = sub_df[(sub_df.index >= start) & (sub_df.index < end)]
+
+        levels = {}
+        if not window.empty:
+            for _, row in window.iterrows():
+                lo, hi = row["Low"], row["High"]
+                vol = row["Volume"]
+                is_buy = row["Close"] >= row["Open"]
+                if hi < lo or tick_size <= 0:
+                    continue
+                lo_lvl = np.floor(lo / tick_size) * tick_size
+                hi_lvl = np.floor(hi / tick_size) * tick_size
+                n_levels = int(round((hi_lvl - lo_lvl) / tick_size)) + 1
+                n_levels = max(n_levels, 1)
+                vol_per_level = vol / n_levels
+                for k in range(n_levels):
+                    lvl = round(lo_lvl + k * tick_size, 8)
+                    b, s = levels.get(lvl, (0.0, 0.0))
+                    if is_buy:
+                        b += vol_per_level
+                    else:
+                        s += vol_per_level
+                    levels[lvl] = (b, s)
+        else:
+            # «ê— œ«œÂùÌ Œ—œ œ— »«“Â ‰»Êœ° ò· ÕÃ„ ò‰œ· «’·Ì —« —ÊÌ ”ÿÕ close »ê–«—
+            main_row = main_df.loc[ts]
+            lvl = round(np.floor(main_row["Close"] / tick_size) * tick_size, 8)
+            vol = main_row["Volume"]
+            is_buy = main_row["Close"] >= main_row["Open"]
+            levels[lvl] = (float(vol), 0.0) if is_buy else (0.0, float(vol))
+
+        candles.append({
+            "time": ts,
+            "open": main_df.loc[ts, "Open"],
+            "high": main_df.loc[ts, "High"],
+            "low": main_df.loc[ts, "Low"],
+            "close": main_df.loc[ts, "Close"],
+            "levels": levels,
+        })
+    return candles
+
+
+def compute_signals(candles, imbalance_ratio=3.0, stacked_min=3, delta_ratio_min=1.3):
+    """
+    ”Ìê‰«·ùœÂÌ ﬁ«‰Ê‰ù„ÕÊ— »— Å«ÌÂùÌ „›«ÂÌ„  ’ÊÌ— ( ﬁ—Ì»Ì° ‰Â Order Flow Ê«ﬁ⁄Ì):
+      1) Delta €«·»: „Ã„Ê⁄ Buy œ— »—«»— Sell ò· ò‰œ· (›‘«— Œ—Ìœ/›—Ê‘ ò·Ì)
+      2) Stacked Imbalance: ç‰œ ”ÿÕ ﬁÌ„ Ì Å‘  ”— Â„ òÂ Ìò ÿ—› (Buy Ì« Sell)
+         ‰”»  »Â ”ÿÕ „Ê—» „Ã«Ê—° Õœ«ﬁ· imbalance_ratio »—«»— »“—êù — «” 
+         (—Ê‘ ò·«”Ìò footprint diagonal imbalance)
+      3) Absorption œ— HVN: ÕÃ„ »”Ì«— »«·« œ— Ìò ”ÿÕ Ê·Ì ﬁÌ„  œ— Â„«‰ ÃÂ 
+         Õ—ò  ‰ò—œÂ -> ‰‘«‰ÂùÌ Ã–» ”›«—‘  Ê”ÿ ÿ—› „ﬁ«»· (”Ìê‰«· »—ê‘ Ì)
+    Œ—ÊÃÌ: Â— ⁄‰’— candles Ìò ò·Ìœ 'signal' (None/'BUY'/'SELL') Ê 'reason' „ÌùêÌ—œ.
+    «Ì‰ Ìò ÂÌÊ—Ì” Ìò ”«œÂ «” ∫ ÅÌ‘ «“ «” ›«œÂùÌ Ê«ﬁ⁄Ì Õ „« —ÊÌ œÌ «Ì
+     «—ÌŒÌ »« walk-forward / permutation test «⁄ »«—”‰ÃÌ ‘Êœ.
+    """
+    for c in candles:
+        levels = c["levels"]
+        c["signal"] = None
+        c["reason"] = ""
+        if not levels:
+            continue
+
+        sorted_lvls = sorted(levels.keys())
+        buy_total = sum(b for b, s in levels.values())
+        sell_total = sum(s for b, s in levels.values())
+        c["buy_total"] = buy_total
+        c["sell_total"] = sell_total
+        c["delta"] = buy_total - sell_total
+
+        # --- Stacked diagonal imbalance ---
+        bull_streak, bear_streak = 0, 0
+        max_bull_streak, max_bear_streak = 0, 0
+        for i in range(1, len(sorted_lvls)):
+            buy_here = levels[sorted_lvls[i]][0]
+            sell_below = levels[sorted_lvls[i - 1]][1]
+            sell_here = levels[sorted_lvls[i]][1]
+            buy_above = levels[sorted_lvls[i - 1]][0]
+
+            if sell_below > 0 and buy_here / sell_below >= imbalance_ratio:
+                bull_streak += 1
+                max_bull_streak = max(max_bull_streak, bull_streak)
+            else:
+                bull_streak = 0
+
+            if buy_above > 0 and sell_here / buy_above >= imbalance_ratio:
+                bear_streak += 1
+                max_bear_streak = max(max_bear_streak, bear_streak)
+            else:
+                bear_streak = 0
+
+        c["stacked_bull"] = max_bull_streak
+        c["stacked_bear"] = max_bear_streak
+
+        # --- Absorption œ— HVN ---
+        totals = {lvl: b + s for lvl, (b, s) in levels.items()}
+        hvn_level = max(totals, key=totals.get)
+        hvn_buy, hvn_sell = levels[hvn_level]
+        is_bull_candle = c["close"] >= c["open"]
+        # ÕÃ„ ›—Ê‘ ŒÌ·Ì »«·« œ— HVN Ê·Ì ò‰œ· ’⁄ÊœÌ »” Â ‘œÂ -> Ã–» ›—Ê‘ (bullish)
+        buy_absorption = hvn_sell > hvn_buy * 1.5 and is_bull_candle
+        # ÕÃ„ Œ—Ìœ ŒÌ·Ì »«·« œ— HVN Ê·Ì ò‰œ· ‰“Ê·Ì »” Â ‘œÂ -> Ã–» Œ—Ìœ (bearish)
+        sell_absorption = hvn_buy > hvn_sell * 1.5 and not is_bull_candle
+
+        # ---  —òÌ» ﬁÊ«‰Ì‰ ---
+        reasons = []
+        bull_score = 0
+        bear_score = 0
+
+        if sell_total > 0 and buy_total / max(sell_total, 1e-9) >= delta_ratio_min:
+            bull_score += 1
+            reasons.append(f"Delta „À»  (Buy/Sell?{buy_total / max(sell_total,1e-9):.2f})")
+        if buy_total > 0 and sell_total / max(buy_total, 1e-9) >= delta_ratio_min:
+            bear_score += 1
+            reasons.append(f"Delta „‰›Ì (Sell/Buy?{sell_total / max(buy_total,1e-9):.2f})")
+
+        if max_bull_streak >= stacked_min:
+            bull_score += 1
+            reasons.append(f"Stacked Buy Imbalance x{max_bull_streak}")
+        if max_bear_streak >= stacked_min:
+            bear_score += 1
+            reasons.append(f"Stacked Sell Imbalance x{max_bear_streak}")
+
+        if buy_absorption:
+            bull_score += 1
+            reasons.append("Absorption ›—Ê‘ œ— HVN")
+        if sell_absorption:
+            bear_score += 1
+            reasons.append("Absorption Œ—Ìœ œ— HVN")
+
+        if is_bull_candle:
+            bull_score += 0.5
+        else:
+            bear_score += 0.5
+
+        if bull_score >= 2 and bull_score > bear_score:
+            c["signal"] = "BUY"
+            c["reason"] = " + ".join(reasons)
+        elif bear_score >= 2 and bear_score > bull_score:
+            c["signal"] = "SELL"
+            c["reason"] = " + ".join(reasons)
+
+    return candles
+
+
+def render_footprint_figure(candles, tick_size):
+    fig = go.Figure()
+    shapes = []
+    annotations = []
+
+    all_lows = [c["low"] for c in candles]
+    all_highs = [c["high"] for c in candles]
+    y_min = min(all_lows) if all_lows else 0
+    y_max = max(all_highs) if all_highs else 1
+    y_pad = max((y_max - y_min) * 0.08, tick_size)
+
+    for i, c in enumerate(candles):
+        x0, x1 = i - 0.4, i + 0.4
+        is_bull = c["close"] >= c["open"]
+        color = "#1f9e5b" if is_bull else "#c0392b"
+
+        # »œ‰Â ò‰œ· »Â ⁄‰Ê«‰ —«Â‰„«Ì Å”ù“„Ì‰Â (ò„ù—‰ê)
+        shapes.append(dict(
+            type="rect", xref="x", yref="y",
+            x0=x0 - 0.02, x1=x1 + 0.02, y0=c["low"], y1=c["high"],
+            line=dict(color=color, width=1.5),
+            fillcolor=color, opacity=0.06,
+        ))
+
+        levels = c["levels"]
+        if not levels:
+            continue
+        totals = {lvl: b + s for lvl, (b, s) in levels.items()}
+        hvn_level = max(totals, key=totals.get) if totals else None
+
+        for lvl, (b, s) in sorted(levels.items()):
+            txt = f"{int(round(b))}x{int(round(s))}"
+            annotations.append(dict(
+                x=i, y=lvl, text=txt, showarrow=False,
+                font=dict(size=9, color="#222"),
+                align="center",
+            ))
+            if lvl == hvn_level:
+                shapes.append(dict(
+                    type="rect", xref="x", yref="y",
+                    x0=x0 - 0.02, x1=x1 + 0.02,
+                    y0=lvl - tick_size * 0.45, y1=lvl + tick_size * 0.45,
+                    line=dict(color="#e0a800", width=2),
+                    fillcolor="#e0a800", opacity=0.12,
+                ))
+
+        # Œÿ »«—Ìò ⁄„ÊœÌ —‰êÌ ”„  çÅ ò‰œ· ‰‘«‰ùœÂ‰œÂ ÃÂ 
+        shapes.append(dict(
+            type="line", xref="x", yref="y",
+            x0=x0 - 0.05, x1=x0 - 0.05, y0=c["low"], y1=c["high"],
+            line=dict(color=color, width=4),
+        ))
+
+    # Ìò trace ‰«„—∆Ì ›ﬁÿ »—«Ì «Ì‰ùòÂ Plotly „ÕœÊœÂùÌ „ÕÊ—Â« —« œ—”  autorange ò‰œ
+    # (‰„Êœ«— ›ﬁÿ »« shapes/annotations Ê »œÊ‰ ÂÌç trace „„ò‰ «”  œ— „—Ê—ê— Œ«·Ì œÌœÂ ‘Êœ)
+    fig.add_trace(go.Scatter(
+        x=list(range(len(candles))),
+        y=[c["close"] for c in candles],
+        mode="markers",
+        marker=dict(size=1, opacity=0),
+        showlegend=False,
+        hoverinfo="skip",
+    ))
+
+    # --- ‰‘«‰ê—Â«Ì ”Ìê‰«· BUY/SELL ---
+    buy_x, buy_y, buy_txt = [], [], []
+    sell_x, sell_y, sell_txt = [], [], []
+    for i, c in enumerate(candles):
+        sig = c.get("signal")
+        if sig == "BUY":
+            buy_x.append(i)
+            buy_y.append(c["low"] - y_pad * 0.35)
+            buy_txt.append(c.get("reason", ""))
+        elif sig == "SELL":
+            sell_x.append(i)
+            sell_y.append(c["high"] + y_pad * 0.35)
+            sell_txt.append(c.get("reason", ""))
+
+    if buy_x:
+        fig.add_trace(go.Scatter(
+            x=buy_x, y=buy_y, mode="markers", name="BUY",
+            marker=dict(symbol="triangle-up", size=14, color="#1f9e5b",
+                        line=dict(color="#0b3d24", width=1)),
+            text=buy_txt, hovertemplate="BUY<br>%{text}<extra></extra>",
+        ))
+    if sell_x:
+        fig.add_trace(go.Scatter(
+            x=sell_x, y=sell_y, mode="markers", name="SELL",
+            marker=dict(symbol="triangle-down", size=14, color="#c0392b",
+                        line=dict(color="#5a1a10", width=1)),
+            text=sell_txt, hovertemplate="SELL<br>%{text}<extra></extra>",
+        ))
+
+    fig.update_layout(
+        shapes=shapes,
+        annotations=annotations,
+        plot_bgcolor="#faf6ec",
+        paper_bgcolor="#faf6ec",
+        xaxis=dict(
+            tickmode="array",
+            tickvals=list(range(len(candles))),
+            ticktext=[c["time"].strftime("%H:%M\n%m-%d") for c in candles],
+            showgrid=False,
+            zeroline=False,
+            range=[-1, len(candles)],
+        ),
+        yaxis=dict(
+            title="Price", showgrid=True, gridcolor="#e5ddc8",
+            range=[y_min - y_pad, y_max + y_pad],
+        ),
+        margin=dict(l=60, r=30, t=30, b=60),
+        height=750,
+    )
+    return fig
+
+
+# ----------------------------------------------------------------------
+# Dash App
+# ----------------------------------------------------------------------
+app = Dash(__name__)
+app.title = "Footprint Order Flow ó yfinance"
+
+app.layout = html.Div(style={"fontFamily": "Tahoma, sans-serif", "padding": "16px",
+                              "backgroundColor": "#faf6ec"}, children=[
+    html.H2("Footprint / Order Flow Approximation", style={"textAlign": "center", "color": "#1a2e6e"}),
+    html.Div(style={"display": "flex", "gap": "12px", "flexWrap": "wrap",
+                     "justifyContent": "center", "marginBottom": "16px"}, children=[
+        html.Div([
+            html.Label("‰„«œ (Symbol)"),
+            dcc.Input(id="symbol", type="text", value="BTC-USD", debounce=True,
+                       style={"width": "130px"}),
+        ]),
+        html.Div([
+            html.Label(" «Ì„ù›—Ì„ «’·Ì"),
+            dcc.Dropdown(id="main-interval",
+                         options=[{"label": tf, "value": tf} for tf in MAIN_INTERVALS],
+                         value="15m", clearable=False, style={"width": "120px"}),
+        ]),
+        html.Div([
+            html.Label("Period"),
+            dcc.Input(id="period", type="text", value="5d", debounce=True,
+                       style={"width": "90px"}),
+        ]),
+        html.Div([
+            html.Label("Tick Size (ê«„ ﬁÌ„ Ì)"),
+            dcc.Input(id="tick-size", type="number", value=10, min=0.0001,
+                       step="any", style={"width": "100px"}),
+        ]),
+        html.Div([
+            html.Label(" ⁄œ«œ ò‰œ· ‰„«Ì‘"),
+            dcc.Input(id="max-candles", type="number", value=25, min=5, max=80, step=1,
+                       style={"width": "90px"}),
+        ]),
+        html.Div([
+            html.Label(" "),
+            html.Button("—”„ ‰„Êœ«—", id="run-btn", n_clicks=0,
+                        style={"backgroundColor": "#1a2e6e", "color": "white",
+                               "border": "none", "padding": "8px 18px",
+                               "borderRadius": "6px", "cursor": "pointer"}),
+        ]),
+    ]),
+    html.Div(style={"display": "flex", "gap": "12px", "flexWrap": "wrap",
+                     "justifyContent": "center", "marginBottom": "16px",
+                     "borderTop": "1px dashed #ccc", "paddingTop": "10px"}, children=[
+        html.Div([
+            html.Label("‰”»  Imbalance"),
+            dcc.Input(id="imb-ratio", type="number", value=3.0, min=1.1, step=0.1,
+                       style={"width": "90px"}),
+        ]),
+        html.Div([
+            html.Label("Õœ«ﬁ· ”ÿÊÕ Stacked"),
+            dcc.Input(id="stacked-min", type="number", value=3, min=2, step=1,
+                       style={"width": "90px"}),
+        ]),
+        html.Div([
+            html.Label("Õœ«ﬁ· ‰”»  Delta"),
+            dcc.Input(id="delta-ratio", type="number", value=1.3, min=1.0, step=0.1,
+                       style={"width": "90px"}),
+        ]),
+        html.Div([
+            html.Label("·«ÌÊ"),
+            dcc.Checklist(id="live-toggle", options=[{"label": " ›⁄«·", "value": "on"}],
+                          value=[], style={"marginTop": "6px"}),
+        ]),
+        html.Div([
+            html.Label("»«“Â —›—‘ (À«‰ÌÂ)"),
+            dcc.Input(id="live-seconds", type="number", value=30, min=5, step=5,
+                       style={"width": "90px"}),
+        ]),
+    ]),
+    dcc.Interval(id="live-interval", interval=30 * 1000, disabled=True, n_intervals=0),
+    dcc.Loading(children=[
+        html.Div(id="error-msg", style={"color": "#c0392b", "textAlign": "center"}),
+        dcc.Graph(id="footprint-graph"),
+    ]),
+    html.Div("⁄œœ Â— ”ÿÕ »Â ‘ò· Buy x Sell «” . ò«œ— ÿ·«ÌÌ = High Volume Node (HVN) Â„«‰ ò‰œ·.",
+              style={"textAlign": "center", "color": "#555", "fontSize": "13px", "marginTop": "8px"}),
+    html.Div(id="signal-log", style={"marginTop": "16px", "maxWidth": "700px",
+                                      "marginLeft": "auto", "marginRight": "auto"}),
+    html.Div("?? «Ì‰ ”Ìê‰«·ùÂ« Ìò ÂÌÊ—Ì” Ìò ﬁ«‰Ê‰ù„ÕÊ— —ÊÌ ›Ê ùÅ—Ì‰   ﬁ—Ì»Ì Â” ‰œ Ê "
+             "—ÊÌ œ«œÂùÌ Ê«ﬁ⁄Ì »Ìœ/«”ò «⁄ »«—”‰ÃÌ ‰‘œÂù«‰œ. ﬁ»· «“ „⁄«„·ÂùÌ Ê«ﬁ⁄Ì Õ „« "
+             "»« walk-forward / permutation test »òù ”  ‘Ê‰œ.",
+              style={"textAlign": "center", "color": "#8a6d1a", "fontSize": "12px",
+                     "marginTop": "12px", "maxWidth": "700px", "marginLeft": "auto",
+                     "marginRight": "auto"}),
+])
+
+
+@app.callback(
+    Output("live-interval", "disabled"),
+    Output("live-interval", "interval"),
+    Input("live-toggle", "value"),
+    Input("live-seconds", "value"),
+)
+def toggle_live(live_toggle, live_seconds):
+    disabled = "on" not in (live_toggle or [])
+    secs = int(live_seconds) if live_seconds else 30
+    return disabled, max(secs, 5) * 1000
+
+
+@app.callback(
+    Output("footprint-graph", "figure"),
+    Output("error-msg", "children"),
+    Output("signal-log", "children"),
+    Input("run-btn", "n_clicks"),
+    Input("live-interval", "n_intervals"),
+    State("symbol", "value"),
+    State("main-interval", "value"),
+    State("period", "value"),
+    State("tick-size", "value"),
+    State("max-candles", "value"),
+    State("imb-ratio", "value"),
+    State("stacked-min", "value"),
+    State("delta-ratio", "value"),
+    prevent_initial_call=False,
+)
+def update_chart(n_clicks, n_intervals, symbol, main_interval, period, tick_size,
+                  max_candles, imb_ratio, stacked_min, delta_ratio):
+    try:
+        symbol = (symbol or "BTC-USD").strip().upper()
+        main_interval = main_interval or "15m"
+        period = period or DEFAULT_PERIOD.get(main_interval, "5d")
+        tick_size = float(tick_size) if tick_size else 10.0
+        max_candles = int(max_candles) if max_candles else 25
+        imb_ratio = float(imb_ratio) if imb_ratio else 3.0
+        stacked_min = int(stacked_min) if stacked_min else 3
+        delta_ratio = float(delta_ratio) if delta_ratio else 1.3
+
+        sub_interval = SUGGESTED_SUB.get(main_interval, main_interval)
+
+        main_df = fetch(symbol, main_interval, period)
+        if main_df.empty:
+            msg = f"œ«œÂù«Ì »—«Ì {symbol} »« interval={main_interval}, period={period} Ì«›  ‰‘œ."
+            return go.Figure(), msg, ""
+
+        if sub_interval == main_interval:
+            sub_df = main_df
+        else:
+            sub_period = DEFAULT_PERIOD.get(sub_interval, "5d")
+            sub_df = fetch(symbol, sub_interval, sub_period)
+            if sub_df.empty:
+                sub_df = main_df
+
+        candles = build_footprint(main_df, sub_df, main_interval, tick_size, max_candles)
+        candles = compute_signals(candles, imbalance_ratio=imb_ratio,
+                                   stacked_min=stacked_min, delta_ratio_min=delta_ratio)
+        fig = render_footprint_figure(candles, tick_size)
+
+        # --- ”«Œ  ·«ê ”Ìê‰«· (ÃœÌœ —Ì‰ùÂ« »«·«) ---
+        log_rows = []
+        for c in reversed(candles):
+            if c.get("signal"):
+                color = "#1f9e5b" if c["signal"] == "BUY" else "#c0392b"
+                log_rows.append(html.Div([
+                    html.Span(c["time"].strftime("%Y-%m-%d %H:%M"),
+                               style={"color": "#555", "marginRight": "10px"}),
+                    html.Span(c["signal"], style={"color": color, "fontWeight": "bold",
+                                                   "marginRight": "10px"}),
+                    html.Span(f"Close: {c['close']:.2f}", style={"marginRight": "10px"}),
+                    html.Span(c.get("reason", ""), style={"color": "#333", "fontSize": "12px"}),
+                ], style={"padding": "6px 10px", "borderBottom": "1px solid #e5ddc8"}))
+
+        last = candles[-1] if candles else None
+        if last and last.get("signal"):
+            header = html.Div(
+                f"¬Œ—Ì‰ ”Ìê‰«·: {last['signal']} ó {last['time'].strftime('%Y-%m-%d %H:%M')}",
+                style={"fontWeight": "bold", "fontSize": "16px", "textAlign": "center",
+                       "color": "#1f9e5b" if last["signal"] == "BUY" else "#c0392b",
+                       "marginBottom": "8px"}
+            )
+        else:
+            header = html.Div("œ— Õ«· Õ«÷— ”Ìê‰«· ›⁄«·Ì —ÊÌ ¬Œ—Ì‰ ò‰œ· ‰Ì” .",
+                               style={"textAlign": "center", "color": "#555",
+                                      "marginBottom": "8px"})
+
+        log_children = [header] + (log_rows if log_rows else [
+            html.Div("”Ìê‰«·Ì »« Å«—«„ —Â«Ì ›⁄·Ì Ì«›  ‰‘œ.",
+                      style={"textAlign": "center", "color": "#888"})
+        ])
+
+        return fig, "", log_children
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(tb)
+        return go.Figure(), f"Œÿ«: {e}", ""
+
+
+if __name__ == "__main__":
+    app.run(debug=True)

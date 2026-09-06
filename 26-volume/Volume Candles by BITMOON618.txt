@@ -1,0 +1,145 @@
+//@version=5
+indicator("Volume Candles{Moindok} by BITMOON618", overlay=true, max_boxes_count=500, max_lines_count=500)
+
+// --- œ—Ì«›   ‰ŸÌ„«  «“ ò«—»— ---
+vol_thresh = input.float(1000, title="Volume Threshold (ÕÃ„ Â— ò‰œ·)")
+ma_length = input.int(14, title="ZLEMA Length (ÿÊ· „ÊÊÌ‰ê »œÊ‰ ·ê)")
+ma_color = input.color(color.blue, title="MA Color (—‰ê „ÊÊÌ‰ê)")
+tb_pos = input.string(defval="Top Right", title="„Êﬁ⁄Ì  ÃœÊ·", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"])
+
+//  »œÌ· „Êﬁ⁄Ì  ÃœÊ· 
+get_pos(pos) =>
+    pos == "Top Right" ? position.top_right :
+     pos == "Top Left" ? position.top_left :
+     pos == "Bottom Right" ? position.bottom_right : position.bottom_left
+
+// --- „ €Ì—Â«Ì Å«ÌÂ ò‰œ· ---
+var float c_open = na
+var float c_high = na
+var float c_low  = na
+var float cum_vol = 0.0
+var int start_idx = na
+
+// ¬—«ÌÂ »—«Ì –ŒÌ—Â ò·Ê“ ò‰œ·ùÂ«Ì »” Â ‘œÂ
+var float[] custom_closes = array.new_float(0)
+
+// „ €Ì—Â«Ì „Õ«”»« Ì ZLEMA (Zero-Lag EMA)
+var float current_zlema = na
+var float last_zlema = na
+var int last_mid_idx = na
+float ema_alpha = 2.0 / (ma_length + 1.0)
+int ma_lag = math.floor((ma_length - 1) / 2)
+
+// --- «ÌÃ«œ ⁄‰«’— ê—«›ÌòÌ ·«ÌÊ ---
+var box live_box = box.new(na, na, na, na, border_width=2)
+var line live_wick = line.new(na, na, na, na, width=2)
+var line live_ma_line = line.new(na, na, na, na, width=3, style=line.style_solid)
+
+// --- «ÌÃ«œ ÃœÊ· —Ê‰œ ---
+var table trend_tb = table.new(get_pos(tb_pos), columns=2, rows=1, border_color=color.new(color.gray, 50), border_width=1)
+
+// „ﬁœ«—œÂÌ «Ê·ÌÂ »—«Ì «Ê·Ì‰ ò‰œ·
+if na(c_open)
+    c_open := open
+    c_high := high
+    c_low := low
+    start_idx := bar_index
+    cum_vol := 0.0
+
+// ¬ÅœÌ  œÌ « »« Â—  Ìò
+cum_vol += volume
+c_high := math.max(c_high, high)
+c_low := math.min(c_low, low)
+
+// ---------------------------------------------------------
+// »Œ‘ ¬ÅœÌ  ê—«›Ìò Ê „Õ«”»«  ·«ÌÊ
+// ---------------------------------------------------------
+is_live_bullish = close >= c_open
+live_c_color = is_live_bullish ? color.new(color.green, 70) : color.new(color.red, 70)
+live_b_color = is_live_bullish ? color.new(color.green, 30) : color.new(color.red, 30)
+current_mid = math.round((start_idx + bar_index) / 2)
+
+// ¬ÅœÌ  »«ò” Ê ”«ÌÂ ·«ÌÊ
+box.set_lefttop(live_box, start_idx, c_open)
+box.set_rightbottom(live_box, bar_index, close)
+box.set_bgcolor(live_box, live_c_color)
+box.set_border_color(live_box, live_b_color)
+
+line.set_xy1(live_wick, current_mid, c_high)
+line.set_xy2(live_wick, current_mid, c_low)
+line.set_color(live_wick, live_b_color)
+
+// „Õ«”»Â ZLEMA ·«ÌÊ
+int arr_size = array.size(custom_closes)
+float data_lag_live = close
+
+if arr_size >= ma_lag and ma_lag > 0
+    data_lag_live := array.get(custom_closes, arr_size - ma_lag)
+
+float val_live = close + (close - data_lag_live)
+float live_zlema = na(current_zlema) ? close : (ema_alpha * val_live) + ((1.0 - ema_alpha) * current_zlema)
+
+if not na(last_zlema)
+    line.set_xy1(live_ma_line, last_mid_idx, last_zlema)
+    line.set_xy2(live_ma_line, current_mid, live_zlema)
+    line.set_color(live_ma_line, color.new(ma_color, 40))
+
+// ---------------------------------------------------------
+// ¬ÅœÌ  ÃœÊ· —Ê‰œ »— «”«” ‘Ì» „ÊÊÌ‰ê «Ê—ÌÃ
+// ---------------------------------------------------------
+if barstate.islast
+    bool is_uptrend = false
+    bool is_downtrend = false
+    
+    if not na(last_zlema) and not na(live_zlema)
+        is_uptrend := live_zlema > last_zlema
+        is_downtrend := live_zlema < last_zlema
+        
+    string trend_txt = is_uptrend ? "’⁄ÊœÌ (Bullish)" : (is_downtrend ? "‰“Ê·Ì (Bearish)" : "Œ‰ÀÌ (Flat)")
+    color trend_bg = is_uptrend ? color.new(color.green, 20) : (is_downtrend ? color.new(color.red, 20) : color.new(color.gray, 20))
+    
+    // Å— ò—œ‰ ”·Ê·ùÂ«Ì ÃœÊ·
+    table.cell(trend_tb, 0, 0, "‘Ì» MA:", text_color=color.gray, bgcolor=color.new(color.black, 10), text_size=size.normal)
+    table.cell(trend_tb, 1, 0, trend_txt, text_color=color.white, bgcolor=trend_bg, text_halign=text.align_center, text_size=size.normal)
+
+// ---------------------------------------------------------
+// »Œ‘ À»  œ«∆„ (Â‰ê«„ Å— ‘œ‰ ÕÃ„)
+// ---------------------------------------------------------
+if cum_vol >= vol_thresh
+    c_close = close
+    
+    is_bullish = c_close >= c_open
+    c_color = is_bullish ? color.new(color.green, 60) : color.new(color.red, 60)
+    b_color = is_bullish ? color.green : color.red
+    
+    // —”„ œ«∆„ —ÊÌ ç«— 
+    box.new(left=start_idx, top=c_open, right=bar_index, bottom=c_close, border_color=b_color, border_width=2, bgcolor=c_color)
+    line.new(x1=current_mid, y1=c_high, x2=current_mid, y2=c_low, color=b_color, width=2)
+    
+    array.push(custom_closes, c_close)
+    int new_size = array.size(custom_closes)
+    
+    //  À»Ì  ZLEMA
+    float data_lag = c_close
+    if new_size > ma_lag and ma_lag > 0
+        data_lag := array.get(custom_closes, new_size - 1 - ma_lag)
+        
+    float val = c_close + (c_close - data_lag)
+    current_zlema := na(current_zlema) ? c_close : (ema_alpha * val) + ((1.0 - ema_alpha) * current_zlema)
+    
+    if not na(last_zlema)
+        line.new(x1=last_mid_idx, y1=last_zlema, x2=current_mid, y2=current_zlema, color=ma_color, width=3)
+        
+    last_zlema := current_zlema
+    last_mid_idx := current_mid
+    
+    // „œÌ—Ì  Õ«›ŸÂ ¬—«ÌÂ
+    if array.size(custom_closes) > ma_length * 2
+        array.shift(custom_closes)
+        
+    // —Ì”  »—«Ì ò‰œ· »⁄œÌ
+    c_open := close
+    c_high := close
+    c_low := close
+    start_idx := bar_index
+    cum_vol := 0.0

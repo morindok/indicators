@@ -1,0 +1,156 @@
+//@version=5
+indicator("Fibo Wave MA - Auto Path (Plot)", overlay=true)
+
+// =============================================================================
+//                             INPUTS
+// =============================================================================
+t1 = input.time(0, title="‰ﬁÿÂ „ÊÃ 1 (“„«‰)", confirm=true, inline="p1", group="‰ﬁ«ÿ „—Ã⁄ „ÊÃ")
+p1 = input.price(0, title="‰ﬁÿÂ 1 (ﬁÌ„ )", confirm=true, inline="p1", group="‰ﬁ«ÿ „—Ã⁄ „ÊÃ")
+t2 = input.time(0, title="‰ﬁÿÂ „ÊÃ 2 (“„«‰)", confirm=true, inline="p2", group="‰ﬁ«ÿ „—Ã⁄ „ÊÃ")
+p2 = input.price(0, title="‰ﬁÿÂ 2 (ﬁÌ„ )", confirm=true, inline="p2", group="‰ﬁ«ÿ „—Ã⁄ „ÊÃ")
+
+sym_center_ratio = input.float(0.5, title="‰”»  „—ò“  ﬁ«—‰ „ÊÃ", step=0.1, group=" ‰ŸÌ„«  „ÊÃ")
+reset_wave       = input.bool(true,  title="—Ì”  „ÊÃ Å” «“ n œÊ—Â", group=" ‰ŸÌ„«  „ÊÃ")
+use_hh_ll_amp    = input.bool(false, title="«— ›«⁄ „ÊÃ »— «”«” ›«’·Â  « HH/LL", group=" ‰ŸÌ„«  „ÊÃ")
+hh_ll_len        = input.int(50, title="œÊ—Â HH/LL »—«Ì «— ›«⁄ „ÊÃ", minval=1, group=" ‰ŸÌ„«  „ÊÃ")
+
+ma_type          = input.string("SMA", title="‰Ê⁄ „ÊÊÌ‰ê «Ê—ÌÃ", options=["SMA", "EMA", "WMA"], group=" ‰ŸÌ„«  „ÊÊÌ‰ê «Ê—ÌÃ")
+ma_src           = input.source(close, title="„‰»⁄ „ÊÊÌ‰ê «Ê—ÌÃ", group=" ‰ŸÌ„«  „ÊÊÌ‰ê «Ê—ÌÃ")
+
+show_fibo_ma     = input.bool(true, title="‰„«Ì‘ „ÊÊÌ‰ê ›Ì»Ê", group="„ÊÊÌ‰ê ›Ì»Ê")
+use_ma_gap_amp   = input.bool(true, title="«— ›«⁄ „ÊÃ = ›«’·Â œÊ „ÊÊÌ‰ê", group="„ÊÊÌ‰ê ›Ì»Ê")
+
+//  ﬁ«—‰ ﬁÌ„  ‰”»  »Â „ÊÃ ›Ì»Ê
+use_price_mirror = input.bool(true, title=" ﬁ«—‰ ﬁÌ„  ‰”»  »Â „ÊÃ ›Ì»Ê", group=" ﬁ«—‰ ﬁÌ„ ")
+mirror_src       = input.source(close, title="„‰»⁄ ﬁÌ„  »—«Ì  ﬁ«—‰", group=" ﬁ«—‰ ﬁÌ„ ")
+
+// =============================================================================
+//                             CALCULATIONS - Å«—«„ —Â«Ì „‘ —ò
+// =============================================================================
+bar_ms           = timeframe.in_seconds(timeframe.period) * 1000
+mid_time         = math.round(t1 + (t2 - t1) * sym_center_ratio)
+
+int wave_period      = math.max(1, math.round(math.abs(t2 - t1) / bar_ms))
+int wave_period_fibo = math.max(1, math.round(wave_period * 1.618))
+
+// =============================================================================
+//                             CALCULATIONS - „ÊÊÌ‰ê Â« Ê „ÊÃ
+// =============================================================================
+float base_ma = na
+float fibo_ma = na
+
+if ma_type == "SMA"
+    base_ma := ta.sma(ma_src, wave_period)
+    fibo_ma := ta.sma(ma_src, wave_period_fibo)
+else if ma_type == "EMA"
+    base_ma := ta.ema(ma_src, wave_period)
+    fibo_ma := ta.ema(ma_src, wave_period_fibo)
+else if ma_type == "WMA"
+    base_ma := ta.wma(ma_src, wave_period)
+    fibo_ma := ta.wma(ma_src, wave_period_fibo)
+
+float hh          = ta.highest(high, hh_ll_len)
+float ll          = ta.lowest(low,   hh_ll_len)
+float hh_ll_range = hh - ll
+float mid_hh_ll   = (hh + ll) / 2
+float dist_to_mid = math.abs(close - mid_hh_ll)
+float ma_gap      = math.abs(base_ma - fibo_ma)
+
+float base_amp = na
+if use_ma_gap_amp
+    base_amp := ma_gap > 0 ? ma_gap : ta.atr(14)
+else if use_hh_ll_amp
+    base_amp := hh_ll_range > 0 ? dist_to_mid : ta.atr(14)
+else
+    base_amp := math.abs(p2 - p1) != 0 ? math.abs(p2 - p1) / 2 : ta.atr(14)
+
+float relative_x  = (time - mid_time) / bar_ms
+float dist_bars   = math.abs(relative_x)
+int   max_cycles  = 5
+int   cycle_index = reset_wave ? math.floor((dist_bars % (wave_period * max_cycles)) / wave_period) : math.floor(dist_bars / wave_period)
+float max_fibo    = math.pow(1.618, max_cycles - 1)
+float fibo_amp    = (math.pow(1.618, cycle_index) / max_fibo) * base_amp
+float wave        = math.sin(relative_x * 2 * math.pi / wave_period) * fibo_amp
+
+float wavy_ma = base_ma + wave
+float mirrored_price = 2.0 * wavy_ma - mirror_src
+
+// =============================================================================
+//                     AUTO PATH LOGIC („”Ì— Õ—ò  « Ê„« Ìò 2 ‰ﬁÿÂ)
+// =============================================================================
+var int   mode       = 0  
+var float temp_high  = na
+var int   temp_h_bar = na
+var float temp_low   = na
+var int   temp_l_bar = na
+
+// —ÂêÌ—Ì ò„ —Ì‰ Ê »Ì‘ —Ì‰ „ﬁœ«— Œÿ ﬁ—„“
+if use_price_mirror and time >= t2 
+    if mirrored_price > wavy_ma
+        if mode != 1
+            mode := 1
+            temp_high  := mirrored_price
+            temp_h_bar := bar_index
+        else
+            if mirrored_price > temp_high
+                temp_high  := mirrored_price
+                temp_h_bar := bar_index
+
+    if mirrored_price < wavy_ma
+        if mode != -1
+            mode := -1
+            temp_low   := mirrored_price
+            temp_l_bar := bar_index
+        else
+            if mirrored_price < temp_low
+                temp_low   := mirrored_price
+                temp_l_bar := bar_index
+
+    //  ‘ŒÌ’ ò—«”
+    cross_up = ta.crossover(mirrored_price, wavy_ma)
+    cross_dn = ta.crossunder(mirrored_price, wavy_ma)
+
+    // ”—ÌùÂ«Ì „”Ì— »—«Ì —”„ »« plot
+    float path1 = na  // ‰ﬁÿÂ «Ê· (¬ÅœÌ  —ÊÌ ò—«” ’⁄ÊœÌ)
+    float path2 = na  // ‰ﬁÿÂ œÊ„ (¬ÅœÌ  —ÊÌ ò—«” ‰“Ê·Ì)
+
+    if cross_up
+        path1 := temp_low
+        path2 := na
+    if cross_dn
+        path2 := temp_high
+        path1 := na
+
+    // —”„ „”Ì—Â« »« plot (›ﬁÿ œ— «”òÊÅ ‘—ÿÌ ﬁ«»· ›—«ŒÊ«‰Ì ‰Ì” ° 
+    // »‰«»—«Ì‰ »«Ìœ œ— »Œ‘ «’·Ì òœ »Ì—Ê‰ «“ if „ﬁœ«—œÂÌ ‘Ê‰œ)
+    // («œ«„Â œ— »Œ‘ PLOTTING)
+
+// =============================================================================
+//                             PLOTTING
+// =============================================================================
+plot(base_ma, color=color.new(color.gray, 50), linewidth=1, title="„ÊÊÌ‰ê «Ê—ÌÃ Å«ÌÂ")
+plot(show_fibo_ma or use_ma_gap_amp ? fibo_ma : na, color=color.new(color.blue, 40), linewidth=1, title="„ÊÊÌ‰ê ›Ì»Ê")
+plot(wavy_ma, color=color.orange, linewidth=2, title="„ÊÊÌ‰ê «Ê—ÌÃ „ÊÃùœ«— (Fibo)")
+plot(use_price_mirror ? mirror_src     : na, color=color.new(color.gray,  30), linewidth=1, title="ﬁÌ„  «’·Ì")
+plot(use_price_mirror ? mirrored_price : na, color=color.new(color.red,   20), linewidth=2, title="ﬁÌ„  „ ﬁ«—‰")
+
+// =============================================================================
+//                —”„ „”Ì— Õ—ò  œÊ ‰ﬁÿÂ (Ã«Ìê“Ì‰ line.new »« plot)
+// =============================================================================
+//  ⁄—Ì› ”—ÌùÂ« œ— ”ÿÕ ê·Ê»«· (»—«Ì «Ì‰òÂ ﬁ«»· plot ‘œ‰ »«‘‰œ)
+// œ—Ê‰ if ‰„Ìù Ê«‰ plot ò—œ° Å” „ €Ì—Â« —« »Ì—Ê‰  ⁄—Ì› „Ìùò‰Ì„
+var float global_path1 = na
+var float global_path2 = na
+
+if use_price_mirror and time >= t2
+    cross_up = ta.crossover(mirrored_price, wavy_ma)
+    cross_dn = ta.crossunder(mirrored_price, wavy_ma)
+    if cross_up
+        global_path1 := temp_low
+        global_path2 := na
+    if cross_dn
+        global_path2 := temp_high
+        global_path1 := na
+
+plot(global_path1, color=color.aqua, linewidth=2, title="„”Ì— ‰ﬁÿÂ 1 (plot)")
+plot(global_path2, color=color.yellow, linewidth=2, title="„”Ì— ‰ﬁÿÂ 2 (plot)")

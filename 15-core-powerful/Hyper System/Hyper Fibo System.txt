@@ -1,0 +1,164 @@
+//@version=5
+indicator("Hyper Fibo System{Morindok}", overlay=true)
+
+// ÏÑíÇÝÊ äÞÇØ
+t1 = input.time(0, title="Point 1", confirm=true, inline="p1")
+p1 = input.price(0, title="", confirm=true, inline="p1")
+t2 = input.time(0, title="Point 2", confirm=true, inline="p2")
+p2 = input.price(0, title="", confirm=true, inline="p2")
+
+// ÒíäååÇí ÇÚãÇá ãæÌ
+apply_wave_to_line = input.bool(false, title="Apply Fibo Wave to Trend Line")
+apply_wave_to_gray = input.bool(false, title="Apply Fibo Wave to Gray Line (Cross Level)")
+apply_wave_to_price = input.bool(false, title="Apply Fibo Wave to Main Price Candles")
+
+// ÒíäååÇí ÎØ ÎÇ˜ÓÊÑí
+use_slope_for_gray = input.bool(false, title="Apply Overall Slope to Gray Line")
+inverse_gray_slope = input.bool(false, title="Inverse Slope for Gray Line")
+
+// ÒíäååÇí ÞÑíäåÓÇÒí äÞØå ÈÇáÇ æ Çííä
+show_high_sym = input.bool(false, title="Show High Point Symmetry Candles")
+apply_wave_to_high = input.bool(false, title="Apply Fibo Wave to High Point Level")
+
+show_low_sym = input.bool(false, title="Show Low Point Symmetry Candles")
+apply_wave_to_low = input.bool(false, title="Apply Fibo Wave to Low Point Level")
+
+// Òíäå ÑíÓÊ ÔÏä ãæÌ
+reset_wave = input.bool(true, title="Reset Wave After 5 Cycles (Disable for Infinite Growth)")
+
+// ãÍÇÓÈå ÔíÈ¡ ÒãÇä ãíÇäí æ ÞíãÊ ãíÇäí Çíå
+slope = (t2 - t1) != 0 ? (p2 - p1) / (t2 - t1) : 0
+mid_time = math.round((t1 + t2) / 2)
+cross_level = (p1 + p2) / 2
+
+// ÓØæÍ ÈÇáÇ æ Çííä
+high_level = math.max(p1, p2)
+low_level = math.min(p1, p2)
+
+// ãÍÇÓÈå Øæá ÈÇÒå
+bar_ms = timeframe.in_seconds(timeframe.period) * 1000
+ma_len = math.max(1, math.round(math.abs(t2 - t1) / bar_ms))
+
+// ãÍÇÓÈå ãÞíÇÓ ãæÌ ÈÑ ÇÓÇÓ ÇÎÊáÇÝ ÞíãÊ Ïæ äÞØå
+base_amp = math.abs(p2 - p1) != 0 ? math.abs(p2 - p1) / 2 : ta.atr(14)
+
+// ÝÇÕáå ˜äÏá ÝÚáí ÇÒ äÞØå ãÑ˜Òí
+relative_x = (time - mid_time) / bar_ms
+dist_bars = math.abs(relative_x)
+
+int max_cycles = 5
+
+// ãÍÇÓÈå ÇíäÏ˜Ó ÑÎå ÈÇ ÔÑØ ÑíÓÊ ÔÏä íÇ äÔÏä
+int cycle_index = reset_wave ? math.floor((dist_bars % (ma_len * max_cycles)) / ma_len) : math.floor(dist_bars / ma_len)
+
+// ãÎÑÌ ˜ÓÑ ÈÑÇí ÊäÙíã ÓÇíÒ Çæáíå
+float max_fibo = math.pow(1.618, max_cycles - 1)
+
+// ÏÇãäå ãæÌ ˜å ÇÒ ãÑ˜Ò Èå åÑ Ïæ ÓãÊ ÈÒÑÊÑ ãíÔæÏ
+float fibo_amp = (math.pow(1.618, cycle_index) / max_fibo) * base_amp
+
+// ãÍÇÓÈå ãæÌ ÓíäæÓí ÈÇ ãÈÏÃ ÞÑÇÑ ÏÇÏä äÞØå ãÑ˜Òí
+float wave = math.sin(relative_x * 2 * math.pi / ma_len) * fibo_amp
+
+// ----------------------------------------------------
+// ÑÓã ˜äÏáåÇí ÞíãÊ ÇÕáí Èå ÕæÑÊ ãæÌÏÇÑ (ÏÑ ÕæÑÊ ÝÚÇá ÈæÏä Òíäå)
+wavy_open  = apply_wave_to_price ? open + wave : na
+wavy_high  = apply_wave_to_price ? high + wave : na
+wavy_low   = apply_wave_to_price ? low + wave : na
+wavy_close = apply_wave_to_price ? close + wave : na
+
+wavy_color = close >= open ? color.new(#26A69A, 0) : color.new(#EF5350, 0)
+plotcandle(wavy_open, wavy_high, wavy_low, wavy_close, title="Wavy Main Price Candles", color=wavy_color, wickcolor=wavy_color, bordercolor=wavy_color)
+
+// ----------------------------------------------------
+// ãÍÇÓÈå ÎØ ÑæäÏ Çíå æ äåÇíí
+base_trend_line = cross_level + (slope * (time - mid_time))
+final_trend_line = apply_wave_to_line ? base_trend_line + wave : base_trend_line
+plot(final_trend_line, color=color.fuchsia, linewidth=2, title="Extended Trend Line")
+// ----------------------------------------------------
+
+// ãææíä Çíå Èå åãÑÇå ãæÌ ÝíÈæäÇí
+ma = ta.sma(close, ma_len) + wave
+
+// ÇÚãÇá ÔíÈ ÇÕáí æ ãÚ˜æÓ
+ma_slope = ma + (slope * (time - mid_time))
+ma_inverse = ma - (slope * (time - mid_time))
+
+plot(ma_slope, color=color.blue, title="MA Normal Slope (Fibo Wave)")
+plot(ma_inverse, color=color.red, title="MA Inverse Slope (Fibo Wave)")
+
+// ----------------------------------------------------
+// ÇÚãÇá ÔíÈ Ñæí ÎØ ÎÇ˜ÓÊÑí
+float gray_slope = use_slope_for_gray ? (inverse_gray_slope ? -slope : slope) : 0
+float base_gray_line = cross_level + (gray_slope * (time - mid_time))
+
+// ãÍÇÓÈå ÎØ ÎÇ˜ÓÊÑí äåÇíí (ÇÑ Òíäå ÝÚÇá ÈÇÔÏ¡ ãæÌ Èå Âä ÇÖÇÝå ãíÔæÏ)
+final_cross_level = apply_wave_to_gray ? base_gray_line + wave : base_gray_line
+plot(final_cross_level, color=color.gray, style=plot.style_line, title="Cross Level (Gray Line)")
+
+// ?. ÞÑíäåÓÇÒí ˜äÏáåÇ äÓÈÊ Èå ÓØÍ äåÇíí ÎÇ˜ÓÊÑí
+sym_open  = (2 * final_cross_level) - open
+sym_high  = (2 * final_cross_level) - low  
+sym_low   = (2 * final_cross_level) - high 
+sym_close = (2 * final_cross_level) - close
+
+candle_color = sym_close >= sym_open ? color.new(color.orange, 50) : color.orange
+plotcandle(sym_open, sym_high, sym_low, sym_close, title="Symmetrical Candles", color=candle_color, wickcolor=color.orange, bordercolor=color.orange)
+
+// ?. ÞÑíäåÓÇÒí ãÌÏÏ ˜äÏáåÇí äÇÑäÌí äÓÈÊ Èå ãææíä ÔíÈÏÇÑ ÇÕáí (ÓÈÒ)
+final_slope_open  = (2 * ma_slope) - sym_open
+final_slope_high  = (2 * ma_slope) - sym_low   
+final_slope_low   = (2 * ma_slope) - sym_high  
+final_slope_close = (2 * ma_slope) - sym_close
+
+slope_candle_color = final_slope_close >= final_slope_open ? color.new(color.green, 50) : color.green
+plotcandle(final_slope_open, final_slope_high, final_slope_low, final_slope_close, title="Final Symmetrical Candles (Normal MA)", color=slope_candle_color, wickcolor=color.green, bordercolor=color.green)
+
+// ?. ÞÑíäåÓÇÒí ãÌÏÏ ˜äÏáåÇí äÇÑäÌí äÓÈÊ Èå ãææíä ÔíÈÏÇÑ ãÚ˜æÓ (ÈäÝÔ)
+final_inv_open  = (2 * ma_inverse) - sym_open
+final_inv_high  = (2 * ma_inverse) - sym_low   
+final_inv_low   = (2 * ma_inverse) - sym_high  
+final_inv_close = (2 * ma_inverse) - sym_close
+
+inv_candle_color = final_inv_close >= final_inv_open ? color.new(color.purple, 50) : color.purple
+plotcandle(final_inv_open, final_inv_high, final_inv_low, final_inv_close, title="Final Symmetrical Candles (Inverse MA)", color=inv_candle_color, wickcolor=color.purple, bordercolor=color.purple)
+
+// ----------------------------------------------------
+// ?. ÞÑíäåÓÇÒí ˜äÏáåÇí ÞíãÊ ÇÕáí äÓÈÊ Èå ÓØÍ ÈÇáÇ (High Point)
+final_high_level = apply_wave_to_high ? high_level + wave : high_level
+
+high_sym_open  = show_high_sym ? (2 * final_high_level) - open  : na
+high_sym_high  = show_high_sym ? (2 * final_high_level) - low   : na
+high_sym_low   = show_high_sym ? (2 * final_high_level) - high  : na
+high_sym_close = show_high_sym ? (2 * final_high_level) - close : na
+
+high_sym_color = high_sym_close >= high_sym_open ? color.new(color.teal, 50) : color.teal
+plotcandle(high_sym_open, high_sym_high, high_sym_low, high_sym_close, title="High Point Symmetry", color=high_sym_color, wickcolor=color.teal, bordercolor=color.teal)
+
+// ?. ÞÑíäåÓÇÒí ˜äÏáåÇí ÞíãÊ ÇÕáí äÓÈÊ Èå ÓØÍ Çííä (Low Point)
+final_low_level = apply_wave_to_low ? low_level + wave : low_level
+
+low_sym_open  = show_low_sym ? (2 * final_low_level) - open  : na
+low_sym_high  = show_low_sym ? (2 * final_low_level) - low   : na
+low_sym_low   = show_low_sym ? (2 * final_low_level) - high  : na
+low_sym_close = show_low_sym ? (2 * final_low_level) - close : na
+
+low_sym_color = low_sym_close >= low_sym_open ? color.new(color.maroon, 50) : color.maroon
+plotcandle(low_sym_open, low_sym_high, low_sym_low, low_sym_close, title="Low Point Symmetry", color=low_sym_color, wickcolor=color.maroon, bordercolor=color.maroon)
+
+// --- [START] Signal Logic: Blue Line crosses Trend Line ---
+
+long_signal = ta.crossover(ma_slope, final_trend_line)
+short_signal = ta.crossunder(ma_slope, final_trend_line)
+
+plotshape(long_signal, title="Long Signal",
+          location=location.belowbar, color=color.new(color.green, 0), 
+          style=shape.triangleup, size=size.small, 
+          text="LONG")
+
+plotshape(short_signal, title="Short Signal",
+          location=location.abovebar, color=color.new(color.red, 0), 
+          style=shape.triangledown, size=size.small, 
+          text="SHORT")
+
+// --- [END] Signal Logic ---

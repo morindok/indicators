@@ -1,0 +1,365 @@
+# -*- coding: utf-8 -*-
+"""
+Bybit Spiral Timeframes Dashboard
+----------------------------------------------------------------------
+اجرا:
+    python bybit_spiral_dash.py
+"""
+
+import json
+import threading
+import time
+from collections import deque
+from datetime import datetime, timezone
+
+import numpy as np
+import requests
+import websocket  # pip install websocket-client
+import dash
+from dash import dcc, html, Input, Output
+import dash_bootstrap_components as dbc
+import plotly.graph_objects as go
+
+# ==============================================================================
+# 1) اتصال پایدار: چند دامنه/میرور برای REST و WebSocket + Watchdog
+# ==============================================================================
+REST_CANDIDATES = [
+    "https://api.bybit.com",
+    "https://api.bytick.com",
+    "https://api.bybit.kz",
+]
+WS_CANDIDATES = [
+    "wss://stream.bybit.com",
+    "wss://stream.bytick.com",
+]
+
+SESSION = requests.Session()
+SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
+    "Referer": "https://www.bybit.com/",
+})
+
+_ACTIVE_REST_BASE = {"url": None}
+STALE_SEC = 25
+WATCHDOG_INTERVAL = 5
+
+
+def bybit_get(path, params, timeout=10):
+    candidates = [_ACTIVE_REST_BASE["url"]] if _ACTIVE_REST_BASE["url"] else []
+    candidates += [b for b in REST_CANDIDATES if b != _ACTIVE_REST_BASE["url"]]
+    for base in candidates:
+        try:
+            resp = SESSION.get(f"{base}{path}", params=params, timeout=timeout)
+            if resp.status_code in (403, 451): continue
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("retCode") == 0:
+                _ACTIVE_REST_BASE["url"] = base
+                return data
+        except Exception:
+            continue
+    return None
+
+
+# ==============================================================================
+# 2) CONFIG و وضعیت‌های جهانی
+# ==============================================================================
+DEFAULT_SYMBOL = "BTCUSDT"
+DEFAULT_CATEGORY = "linear"
+
+CONN_STATUS = {"connected": False, "symbol": DEFAULT_SYMBOL, "category": DEFAULT_CATEGORY, "ws_host": "-"}
+LAST_MSG_TS = {"t": 0.0}
+STATE_LOCK = threading.RLock()
+
+KLINE_DATA = {
+    '1D': {'open': 0, 'close': 0, 'T': 86400, 'base_color': '#FFD700', 'R': 6.0, 'width': 4},
+    '4H': {'open': 0, 'close': 0, 'T': 14400, 'base_color': '#00FFFF', 'R': 4.0, 'width': 3},
+    '15m': {'open': 0, 'close': 0, 'T': 900, 'base_color': '#FF00FF', 'R': 2.5, 'width': 2},
+    '1m': {'open': 0, 'close': 0, 'T': 60, 'base_color': '#FFFFFF', 'R': 1.5, 'width': 1.5},
+}
+
+TIP_HISTORY = deque(maxlen=4000)
+
+
+# ==============================================================================
+# 3) WebSocket Stream + Watchdog
+# ==============================================================================
+class BybitStream:
+    def __init__(self, symbol: str, category: str = "linear"):
+        self.symbol = symbol.upper()
+        self.category = category
+        self.ws = None
+        self.thread = None
+        self.stop_flag = threading.Event()
+        self.host_idx = 0
+        self.fail_count = 0
+
+    def _url(self) -> str:
+        host = WS_CANDIDATES[self.host_idx % len(WS_CANDIDATES)]
+        return f"{host}/v5/public/{self.category}"
+
+    def start(self):
+        self.stop_flag.clear()
+        self.thread = threading.Thread(target=self._run_forever, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self.stop_flag.set()
+        if self.ws: self.ws.close()
+
+    def force_reconnect(self):
+        if self.ws: self.ws.close()
+
+    def _run_forever(self):
+        while not self.stop_flag.is_set():
+            try:
+                with STATE_LOCK:
+                    CONN_STATUS["ws_host"] = self._url()
+                self.ws = websocket.WebSocketApp(
+                    self._url(),
+                    on_open=self._on_open, on_message=self._on_message,
+                    on_error=self._on_error, on_close=self._on_close,
+                )
+                self.ws.run_forever(ping_interval=20, ping_payload=json.dumps({"op": "ping"}))
+            except Exception:
+                pass
+
+            with STATE_LOCK:
+                CONN_STATUS["connected"] = False
+            if self.stop_flag.is_set(): break
+            self.fail_count += 1
+            if self.fail_count >= 2:
+                self.host_idx += 1
+                self.fail_count = 0
+            time.sleep(min(3 * (self.fail_count + 1), 12))
+
+    def _on_open(self, ws):
+        sub = {"op": "subscribe", "args": [f"publicTrade.{self.symbol}"]}
+        ws.send(json.dumps(sub))
+        with STATE_LOCK: CONN_STATUS["connected"] = True
+        LAST_MSG_TS["t"] = time.time()
+        self.fail_count = 0
+
+    def _on_error(self, ws, error):
+        with STATE_LOCK: CONN_STATUS["connected"] = False
+
+    def _on_close(self, ws, code, msg):
+        with STATE_LOCK: CONN_STATUS["connected"] = False
+
+    def _on_message(self, ws, raw):
+        LAST_MSG_TS["t"] = time.time()
+
+
+CURRENT_STREAM = None
+
+
+def restart_stream(symbol: str, category: str):
+    global CURRENT_STREAM
+    if CURRENT_STREAM is not None: CURRENT_STREAM.stop()
+    CURRENT_STREAM = BybitStream(symbol, category)
+    CURRENT_STREAM.start()
+
+
+def watchdog_loop():
+    while True:
+        time.sleep(WATCHDOG_INTERVAL)
+        with STATE_LOCK:
+            connected = CONN_STATUS["connected"]
+        if connected and (time.time() - LAST_MSG_TS["t"] > STALE_SEC) and CURRENT_STREAM is not None:
+            CURRENT_STREAM.force_reconnect()
+
+
+threading.Thread(target=watchdog_loop, daemon=True).start()
+restart_stream(DEFAULT_SYMBOL, DEFAULT_CATEGORY)
+
+
+# ==============================================================================
+# 4) دریافت Klines برای محاسبه قیمت Open/Close و جهت کندل
+# ==============================================================================
+def kline_updater(stop_flag):
+    intervals = {'1D': 'D', '4H': '240', '15m': '15', '1m': '1'}
+    while not stop_flag.is_set():
+        for tf, interval in intervals.items():
+            try:
+                data = bybit_get("/v5/market/kline",
+                                 {"category": DEFAULT_CATEGORY, "symbol": DEFAULT_SYMBOL, "interval": interval,
+                                  "limit": 1})
+                if data and data.get("result") and data["result"].get("list"):
+                    k = data["result"]["list"][0]
+                    KLINE_DATA[tf]['open'] = float(k[1])
+                    KLINE_DATA[tf]['close'] = float(k[4])
+            except Exception:
+                pass
+        time.sleep(2)
+
+
+threading.Thread(target=kline_updater, args=(threading.Event(),), daemon=True).start()
+
+
+# ==============================================================================
+# 5) محاسبات هندسی اسپیرال‌ها (Spiral Math)
+# ==============================================================================
+def compute_spiral_traces(t_now):
+    traces = []
+    CX, CY = 0.0, 0.0
+    Phi = 0.0
+
+    for tf_name, tf in KLINE_DATA.items():
+        T = tf['T']
+        R = tf['R']
+
+        t_start = (t_now // T) * T
+        dt = t_now - t_start
+        p = min(dt / T, 1.0)  # Progress from 0 to 1
+
+        N = max(int(100 * p), 2)
+        u = np.linspace(0, p, N)
+
+        theta = 2 * np.pi * u
+        r = R * u
+
+        x_local = r * np.cos(theta)
+        y_local = r * np.sin(theta)
+
+        open_p = tf.get('open', 0)
+        close_p = tf.get('close', 0)
+
+        if open_p > 0:
+            pct_change = (close_p - open_p) / open_p
+            modulation = 1.0 + np.clip(pct_change * 25, -0.6, 0.6)  # Expand/Contract based on momentum
+            x_local *= modulation
+            y_local *= modulation
+            color = '#00FF88' if close_p >= open_p else '#FF3366'  # Green / Red
+            faint_color = tf['base_color']
+        else:
+            modulation = 1.0
+            color = tf['base_color']
+            faint_color = tf['base_color']
+
+        cos_Phi = np.cos(Phi)
+        sin_Phi = np.sin(Phi)
+        x_rot = x_local * cos_Phi - y_local * sin_Phi
+        y_rot = x_local * sin_Phi + y_local * cos_Phi
+
+        X = CX + x_rot
+        Y = CY + y_rot
+
+        # --- Faint Future Path (مسیر کاملی که کندل تا انتهای دوره طی خواهد کرد) ---
+        u_full = np.linspace(0, 1, 100)
+        theta_full = 2 * np.pi * u_full
+        r_full = R * u_full
+        x_local_full = r_full * np.cos(theta_full) * modulation
+        y_local_full = r_full * np.sin(theta_full) * modulation
+
+        x_rot_full = x_local_full * cos_Phi - y_local_full * sin_Phi
+        y_rot_full = x_local_full * sin_Phi + y_local_full * cos_Phi
+        X_full = CX + x_rot_full
+        Y_full = CY + y_rot_full
+
+        traces.append(go.Scatter(
+            x=X_full, y=Y_full, mode='lines',
+            line=dict(color=faint_color, width=1, dash='dot'),
+            opacity=0.2, showlegend=False, hoverinfo='skip'
+        ))
+
+        # --- Bright Current Path (مسیر طی شده تا این لحظه) ---
+        traces.append(go.Scatter(
+            x=X, y=Y, mode='lines',
+            line=dict(color=color, width=tf['width'], shape='spline'),
+            name=f"Candle {tf_name}", hoverinfo='name'
+        ))
+
+        # Update Base & Rotation for the NEXT lower timeframe
+        CX = X[-1]
+        CY = Y[-1]
+        Phi = Phi + theta[-1]
+
+    return traces, CX, CY
+
+
+# ==============================================================================
+# 6) Dash App Layout & Callbacks
+# ==============================================================================
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
+app.title = "Bybit Spiral Market"
+
+app.layout = html.Div([
+    html.Div([
+        html.H2("🌌 Bybit Spiral Timeframes", className="text-light text-center my-2",
+                style={"fontFamily": "monospace", "letterSpacing": "3px", "textShadow": "0 0 10px #FFD700"}),
+        html.Div(id="status-bar", className="text-center text-info mb-2", style={"fontFamily": "monospace"})
+    ], style={"position": "absolute", "top": "10px", "left": "0", "width": "100%", "zIndex": "10",
+              "pointerEvents": "none"}),
+
+    dcc.Graph(
+        id="spiral-graph",
+        config={'displayModeBar': False, 'scrollZoom': True},
+        style={'height': '100vh', 'width': '100vw', 'backgroundColor': '#0a0a12'}
+    ),
+    dcc.Interval(id="interval-component", interval=500, n_intervals=0)
+], style={"height": "100vh", "overflow": "hidden", "backgroundColor": "#0a0a12"})
+
+
+@app.callback(
+    [Output("spiral-graph", "figure"),
+     Output("status-bar", "children")],
+    [Input("interval-component", "n_intervals")]
+)
+def update_figure(n):
+    t_now_utc = datetime.now(timezone.utc).timestamp()
+    traces, tip_x, tip_y = compute_spiral_traces(t_now_utc)
+
+    # Append to Market Path History
+    TIP_HISTORY.append((tip_x, tip_y))
+
+    if len(TIP_HISTORY) > 2:
+        hx, hy = zip(*TIP_HISTORY)
+        traces.insert(0, go.Scatter(
+            x=hx, y=hy, mode='lines',
+            line=dict(color='#FFD700', width=2.5),
+            opacity=0.6, name="Market Micro-Path", hoverinfo='skip'
+        ))
+
+    # Glowing Dot at the very tip
+    traces.append(go.Scatter(
+        x=[tip_x], y=[tip_y], mode='markers',
+        marker=dict(color='#FFFFFF', size=12, symbol='circle', line=dict(color='#FFD700', width=2)),
+        showlegend=False, hoverinfo='skip'
+    ))
+
+    fig = go.Figure(data=traces)
+
+    # Grid Shapes for Radar/Spiral feel
+    shapes = [
+        dict(type="circle", xref="x", yref="y", x0=-r, y0=-r, x1=r, y1=r,
+             line=dict(color="#1f2937", width=1, dash="dot"))
+        for r in [5, 10, 15]
+    ]
+
+    fig.update_layout(
+        plot_bgcolor='#0a0a12',
+        paper_bgcolor='#0a0a12',
+        font=dict(color='#f5efe0'),
+        showlegend=False,
+        shapes=shapes,
+        xaxis=dict(visible=False, scaleanchor="y", scaleratio=1, range=[-18, 18], constrain='domain'),
+        yaxis=dict(visible=False, scaleanchor="x", scaleratio=1, range=[-18, 18], constrain='domain'),
+        margin=dict(l=0, r=0, t=0, b=0),
+        hovermode='closest',
+        transition={'duration': 0},
+        uirevision='constant'  # Prevent zoom reset on update
+    )
+
+    with STATE_LOCK:
+        connected = CONN_STATUS["connected"]
+        symbol = CONN_STATUS["symbol"]
+
+    sec_left_1m = 60 - (t_now_utc % 60)
+    status_text = f"Status: {'🟢 Connected' if connected else '🔴 Disconnected'} | Symbol: {symbol} | Next 1m Candle: {int(sec_left_1m)}s"
+
+    return fig, status_text
+
+
+if __name__ == '__main__':
+    app.run(debug=True, port=8050)

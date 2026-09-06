@@ -1,0 +1,118 @@
+//@version=5
+indicator("Live Encompassing Golden Tangent Circles", overlay=true, max_polylines_count=100, max_lines_count=100)
+
+t1 = input.time(0, title="Time Point 1 (Start)", confirm=true)
+t2 = input.time(0, title="Time Point 2 (Fixed End)", confirm=true)
+blue_mult = input.float(1.0, title="÷—Ì» «‰œ«“Â œ«Ì—Â ¬»Ì", step=0.1, minval=0.1)
+use_golden_ratio = input.bool(false, title="«” ›«œÂ «“ —‘œ »« ‰”»  ÿ·«ÌÌ")
+start_from_bottom = input.bool(false, title="‘—Ê⁄ —‘œ «“ Å«ÌÌ‰")
+
+// „ €Ì—Â«Ì „Õ«”»Â ”ﬁ› Ê ò›
+var float max_h_fixed = na
+var float min_l_fixed = na
+var float max_h_live = na
+var float min_l_live = na
+
+start_t = math.min(t1, t2)
+end_t_fixed = math.max(t1, t2)
+
+// „Õ«”»Â ”ﬁ› Ê ò› »—«Ì »«“Â À«»  (Set 1)
+if time >= start_t and time <= end_t_fixed
+    max_h_fixed := na(max_h_fixed) ? high : math.max(max_h_fixed, high)
+    min_l_fixed := na(min_l_fixed) ? low : math.min(min_l_fixed, low)
+
+// „Õ«”»Â ”ﬁ› Ê ò› »—«Ì »«“Â ·«ÌÊ (Set 2 - «“ ‘—Ê⁄  « ò‰œ· ›⁄·Ì)
+if time >= start_t
+    max_h_live := na(max_h_live) ? high : math.max(max_h_live, high)
+    min_l_live := na(min_l_live) ? low : math.min(min_l_live, low)
+
+var polys = array.new<polyline>()
+var lines = array.new<line>()
+
+//  «»⁄ —”„ œ«Ì—ÂùÂ«
+draw_circles(start_time, end_time, mx_p, mn_p, is_live) =>
+    if not na(mx_p) and not na(mn_p) and end_time > start_time
+        float dt = float(end_time - start_time)
+        float dp = mx_p - mn_p
+        
+        float ct = float(start_time) + dt / 2.0
+        float cp = mn_p + dp / 2.0
+        
+        float rt = (dt / 2.0) * blue_mult
+        float rp = (dp / 2.0) * blue_mult
+        
+        int N = 100 
+        
+        // —”„ œ«Ì—Â «’·Ì
+        main_pts = array.new<chart.point>()
+        for i = 0 to N - 1
+            float angle = 2.0 * math.pi * i / N
+            array.push(main_pts, chart.point.from_time(int(ct + rt * math.cos(angle)), cp + rp * math.sin(angle)))
+        
+        color main_color = is_live ? color.new(color.aqua, 0) : color.blue
+        array.push(polys, polyline.new(main_pts, closed=true, xloc=xloc.bar_time, line_color=main_color, line_width=2))
+        
+        // —”„ ŒÿÊÿ «›ﬁÌ œ«Ì—Â «’·Ì
+        array.push(lines, line.new(x1=int(start_time), y1=cp + rp, x2=int(end_time), y2=cp + rp, xloc=xloc.bar_time, color=main_color, width=1, style=line.style_dashed, extend=is_live ? extend.none : extend.right))
+        array.push(lines, line.new(x1=int(start_time), y1=cp - rp, x2=int(end_time), y2=cp - rp, xloc=xloc.bar_time, color=main_color, width=1, style=line.style_dashed, extend=is_live ? extend.none : extend.right))
+        
+        // „„«”ùÂ«Ì »Ì—Ê‰Ì
+        int M = 8 
+        float base_rho = math.sin(math.pi / M) / (1.0 - math.sin(math.pi / M)) 
+        float phi = 1.6180339887 
+        
+        float current_angle = 0.0
+        float prev_rho = base_rho
+        
+        for j = 0 to M - 1
+            float growth_factor = use_golden_ratio ? math.pow(phi, j / 2.0) : 1.0
+            float current_rho = base_rho * growth_factor
+            
+            if j == 0
+                if use_golden_ratio
+                    current_angle := start_from_bottom ? -(math.pi / 2.0) : (math.pi / 2.0)
+                else
+                    current_angle := 0.0
+            else
+                float num = 1.0 + prev_rho + current_rho - (current_rho * prev_rho)
+                float den = (1.0 + prev_rho) * (1.0 + current_rho)
+                float delta_theta = math.acos(math.max(-1.0, math.min(1.0, num / den))) 
+                float direction = use_golden_ratio ? -1.0 : 1.0
+                current_angle += direction * delta_theta
+                
+            prev_rho := current_rho
+            
+            float srt = rt * current_rho
+            float srp = rp * current_rho
+            
+            float d_t = rt + srt
+            float d_p = rp + srp
+            
+            float sct = ct + d_t * math.cos(current_angle)
+            float scp = cp + d_p * math.sin(current_angle)
+            
+            small_pts = array.new<chart.point>()
+            for i = 0 to N - 1
+                float angle = 2.0 * math.pi * i / N
+                array.push(small_pts, chart.point.from_time(int(sct + srt * math.cos(angle)), scp + srp * math.sin(angle)))
+            
+            color circle_color = is_live ? ((j % 2 == 0) ? color.new(color.fuchsia,0) : color.new(color.yellow,0)) : ((j % 2 == 0) ? color.red : color.orange)
+            array.push(polys, polyline.new(small_pts, closed=true, xloc=xloc.bar_time, line_color=circle_color, line_width=1))
+
+// «Ã—«Ì —”„ ›ﬁÿ —ÊÌ ò‰œ· ¬Œ— »—«Ì Ã·ÊêÌ—Ì «“ Å—œ«“‘ «÷«›Ì
+if barstate.islast
+    // Å«ò ò—œ‰ —”„ùÂ«Ì ﬁ»·Ì (»—«Ì ò‰œ· ·«ÌÊ)
+    if array.size(polys) > 0
+        for p in polys
+            polyline.delete(p)
+        array.clear(polys)
+    if array.size(lines) > 0
+        for l in lines
+            line.delete(l)
+        array.clear(lines)
+
+    // —”„ ”  «Ê· (»«“Â À«»  ò«—»—)
+    draw_circles(start_t, end_t_fixed, max_h_fixed, min_l_fixed, false)
+    
+    // —”„ ”  œÊ„ (»«“Â ·«ÌÊ «“ “„«‰ «Ê·  « ò‰œ· ›⁄·Ì)
+    draw_circles(start_t, time, max_h_live, min_l_live, true)

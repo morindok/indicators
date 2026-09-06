@@ -1,0 +1,98 @@
+//@version=5
+indicator("Symmetric Candles + Zone Boxes", overlay=true, max_boxes_count=500)
+
+level = input.price(0, "Level", confirm=true)
+
+crossed = ta.cross(close, level)
+
+prevGreenHigh = ta.valuewhen(close[1] > open[1], high[1], 0)
+prevRedLow    = ta.valuewhen(close[1] < open[1], low[1],  0)
+
+isRedAboveGreenHigh = close < open and high > prevGreenHigh
+isGreenBelowRedLow  = close > open and low  < prevRedLow
+
+symRedHigh   = level + (level - low)
+symRedOpen   = level + (level - close)
+symRedClose  = level + (level - open)
+symRedLow    = level + (level - high)
+
+symGreenHigh  = level + (level - low)
+symGreenOpen  = level + (level - close)
+symGreenClose = level + (level - open)
+symGreenLow   = level + (level - high)
+
+symRedAboveLevel   = isRedAboveGreenHigh and close < level
+symRedBelowLevel   = isRedAboveGreenHigh and close > level
+symGreenAboveLevel = isGreenBelowRedLow  and close < level
+symGreenBelowLevel = isGreenBelowRedLow  and close > level
+
+var float zoneHighestSymRed   = na
+var float zoneHighestSymGreen = na
+var float zoneLowestSymRed    = na
+var float zoneLowestSymGreen  = na
+var int   zoneHighestSymRedBar   = na
+var int   zoneHighestSymGreenBar = na
+var int   zoneLowestSymRedBar    = na
+var int   zoneLowestSymGreenBar  = na
+var int   zoneStart           = na
+
+var box[] activeBoxes = array.new_box()
+
+currentlyAbove = close > level
+
+if array.size(activeBoxes) > 0
+    for i = array.size(activeBoxes) - 1 to 0
+        b       = array.get(activeBoxes, i)
+        bTop    = box.get_top(b)
+        bBottom = box.get_bottom(b)
+        if high >= bBottom and low <= bTop
+            box.set_extend(b, extend.none)
+            box.set_right(b, bar_index)
+            array.remove(activeBoxes, i)
+
+if crossed
+    if not na(zoneStart)
+        if not na(zoneHighestSymRed)
+            b = box.new(zoneHighestSymRedBar, zoneHighestSymRed, bar_index, zoneHighestSymRed - (zoneHighestSymRed * 0.0001), border_color=color.new(color.red, 20), bgcolor=color.new(color.red, 80), extend=extend.right)
+            array.push(activeBoxes, b)
+        if not na(zoneHighestSymGreen)
+            b = box.new(zoneHighestSymGreenBar, zoneHighestSymGreen, bar_index, zoneHighestSymGreen - (zoneHighestSymGreen * 0.0001), border_color=color.new(color.green, 20), bgcolor=color.new(color.green, 80), extend=extend.right)
+            array.push(activeBoxes, b)
+        if not na(zoneLowestSymRed)
+            b = box.new(zoneLowestSymRedBar, zoneLowestSymRed + (zoneLowestSymRed * 0.0001), bar_index, zoneLowestSymRed, border_color=color.new(color.red, 20), bgcolor=color.new(color.red, 80), extend=extend.right)
+            array.push(activeBoxes, b)
+        if not na(zoneLowestSymGreen)
+            b = box.new(zoneLowestSymGreenBar, zoneLowestSymGreen + (zoneLowestSymGreen * 0.0001), bar_index, zoneLowestSymGreen, border_color=color.new(color.green, 20), bgcolor=color.new(color.green, 80), extend=extend.right)
+            array.push(activeBoxes, b)
+
+    zoneStart              := bar_index
+    zoneHighestSymRed      := na
+    zoneHighestSymGreen    := na
+    zoneLowestSymRed       := na
+    zoneLowestSymGreen     := na
+    zoneHighestSymRedBar   := na
+    zoneHighestSymGreenBar := na
+    zoneLowestSymRedBar    := na
+    zoneLowestSymGreenBar  := na
+
+if not na(zoneStart)
+    if symRedAboveLevel
+        if na(zoneHighestSymRed) or symRedHigh > zoneHighestSymRed
+            zoneHighestSymRed    := symRedHigh
+            zoneHighestSymRedBar := bar_index
+    if symRedBelowLevel
+        if na(zoneLowestSymRed) or symRedLow < zoneLowestSymRed
+            zoneLowestSymRed    := symRedLow
+            zoneLowestSymRedBar := bar_index
+    if symGreenAboveLevel
+        if na(zoneHighestSymGreen) or symGreenHigh > zoneHighestSymGreen
+            zoneHighestSymGreen    := symGreenHigh
+            zoneHighestSymGreenBar := bar_index
+    if symGreenBelowLevel
+        if na(zoneLowestSymGreen) or symGreenLow < zoneLowestSymGreen
+            zoneLowestSymGreen    := symGreenLow
+            zoneLowestSymGreenBar := bar_index
+
+plot(level, "Level", color.orange, 2, plot.style_line)
+plotcandle(isRedAboveGreenHigh ? symRedOpen : na, isRedAboveGreenHigh ? symRedHigh : na, isRedAboveGreenHigh ? symRedLow : na, isRedAboveGreenHigh ? symRedClose : na, "Sym Red", color.new(color.red, 40), color.new(color.red, 40))
+plotcandle(isGreenBelowRedLow ? symGreenOpen : na, isGreenBelowRedLow ? symGreenHigh : na, isGreenBelowRedLow ? symGreenLow : na, isGreenBelowRedLow ? symGreenClose : na, "Sym Green", color.new(color.green, 40), color.new(color.green, 40))

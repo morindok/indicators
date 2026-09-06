@@ -1,0 +1,131 @@
+//@version=5
+indicator("Interactive Two Points & Levels Fibo Wave", overlay=true)
+
+t1 = input.time(0, title="Point 1", confirm=true, inline="p1")
+p1 = input.price(0, title="Level 1", confirm=true, inline="p1")
+t2 = input.time(0, title="Point 2", confirm=true, inline="p2")
+p2 = input.price(0, title="Level 2", confirm=true, inline="p2")
+
+wave_mode = input.string("Fibo Wave", title="Wave Mode", options=["Fibo Wave", "Normal Wave", "Flat (No Wave)"])
+reset_fibo = input.bool(true, title="Reset Fibo Wave (After 5 Cycles)")
+is_stepped = input.bool(false, title="Stepped/Flat Waves")
+steps_per_wave = input.float(10.0, title="Steps per Wavelength")
+show_inv_wave_lines = input.bool(true, title="Show Inverse Wave Lines (-wave)")
+
+slope = (t2 - t1) != 0 ? (p2 - p1) / (t2 - t1) : 0
+mid_time = math.round((t1 + t2) / 2)
+cross_level = (p1 + p2) / 2
+
+bar_ms = timeframe.in_seconds(timeframe.period) * 1000
+ma_len = math.max(1, math.round(math.abs(t2 - t1) / bar_ms))
+
+base_amp = math.abs(p2 - p1) != 0 ? math.abs(p2 - p1) / 2 : ta.atr(14)
+
+relative_x = (time - mid_time) / bar_ms
+dist_bars_raw = math.abs(relative_x)
+
+int max_cycles = 5
+int cycle_index = reset_fibo ? math.floor((dist_bars_raw % (ma_len * max_cycles)) / ma_len) : math.floor(dist_bars_raw / ma_len)
+float max_fibo = math.pow(1.618, max_cycles - 1)
+
+float fibo_amp = (math.pow(1.618, cycle_index) / max_fibo) * base_amp
+
+float final_amp = wave_mode == "Fibo Wave" ? fibo_amp : (wave_mode == "Normal Wave" ? base_amp : 0.0)
+
+float step_size = math.max(0.000001, ma_len / steps_per_wave)
+float stepped_x = is_stepped ? math.floor(relative_x / step_size) * step_size : relative_x
+
+float wave = math.sin(stepped_x * 2 * math.pi / ma_len) * final_amp
+
+base_trend_line = cross_level + (slope * (time - mid_time))
+wavy_blue_line = base_trend_line + wave
+wavy_blue_line_inv = show_inv_wave_lines ? base_trend_line - wave : na
+
+inv_base_trend_line = cross_level - (slope * (time - mid_time))
+wavy_inv_blue_line = inv_base_trend_line + wave
+wavy_inv_blue_line_inv = show_inv_wave_lines ? inv_base_trend_line - wave : na
+
+wavy_level1 = p1 + wave
+wavy_level1_inv = show_inv_wave_lines ? p1 - wave : na
+
+wavy_level2 = p2 + wave
+wavy_level2_inv = show_inv_wave_lines ? p2 - wave : na
+
+plot(wavy_blue_line, color=color.blue, linewidth=2, title="Fibo Wavy Trend Line")
+plot(wavy_blue_line_inv, color=color.new(color.blue, 50), linewidth=1, title="Inverse Fibo Wavy Trend Line (-wave)")
+
+plot(wavy_inv_blue_line, color=color.orange, linewidth=2, title="Cross Fibo Wavy Trend Line")
+plot(wavy_inv_blue_line_inv, color=color.new(color.orange, 50), linewidth=1, title="Inverse Cross Fibo Wavy Trend Line (-wave)")
+
+plot(wavy_level1, color=color.green, linewidth=2, title="Fibo Wavy Level 1")
+plot(wavy_level1_inv, color=color.new(color.green, 50), linewidth=1, title="Inverse Fibo Wavy Level 1 (-wave)")
+
+plot(wavy_level2, color=color.red, linewidth=2, title="Fibo Wavy Level 2")
+plot(wavy_level2_inv, color=color.new(color.red, 50), linewidth=1, title="Inverse Fibo Wavy Level 2 (-wave)")
+
+apply_wave_to_price = input.bool(true, title="Apply Fibo Wave to Main Price")
+show_high_sym = input.bool(true, title="Show Symmetry relative to High Level")
+show_low_sym = input.bool(true, title="Show Symmetry relative to Low Level")
+show_lvl1_sym = input.bool(true, title="Show Symmetry relative to Level 1")
+show_lvl2_sym = input.bool(true, title="Show Symmetry relative to Level 2")
+show_blue_sym = input.bool(true, title="Show Symmetry relative to Blue Line")
+show_inv_sym = input.bool(true, title="Show Symmetry relative to Orange Line")
+
+wavy_open = apply_wave_to_price ? open + wave : na
+wavy_high = apply_wave_to_price ? high + wave : na
+wavy_low = apply_wave_to_price ? low + wave : na
+wavy_close = apply_wave_to_price ? close + wave : na
+
+col_wavy_price = wavy_close >= wavy_open ? color.new(color.green, 0) : color.new(color.red, 0)
+plotcandle(wavy_open, wavy_high, wavy_low, wavy_close, title="Wavy Main Price", color=col_wavy_price, wickcolor=col_wavy_price, bordercolor=col_wavy_price)
+
+high_level = math.max(p1, p2)
+low_level = math.min(p1, p2)
+
+sym_h_open = show_high_sym ? 2 * high_level - (open + wave) : na
+sym_h_high = show_high_sym ? 2 * high_level - (low + wave) : na
+sym_h_low = show_high_sym ? 2 * high_level - (high + wave) : na
+sym_h_close = show_high_sym ? 2 * high_level - (close + wave) : na
+
+col_high_sym = sym_h_close >= sym_h_open ? color.new(color.teal, 30) : color.new(color.maroon, 30)
+plotcandle(sym_h_open, sym_h_high, sym_h_low, sym_h_close, title="High Level Symmetry", color=col_high_sym, wickcolor=col_high_sym, bordercolor=col_high_sym)
+
+sym_l_open = show_low_sym ? 2 * low_level - (open + wave) : na
+sym_l_high = show_low_sym ? 2 * low_level - (low + wave) : na
+sym_l_low = show_low_sym ? 2 * low_level - (high + wave) : na
+sym_l_close = show_low_sym ? 2 * low_level - (close + wave) : na
+
+col_low_sym = sym_l_close >= sym_l_open ? color.new(color.fuchsia, 30) : color.new(color.navy, 30)
+plotcandle(sym_l_open, sym_l_high, sym_l_low, sym_l_close, title="Low Level Symmetry", color=col_low_sym, wickcolor=col_low_sym, bordercolor=col_low_sym)
+
+sym_1_open = show_lvl1_sym ? 2 * p1 - (open + wave) : na
+sym_1_high = show_lvl1_sym ? 2 * p1 - (low + wave) : na
+sym_1_low = show_lvl1_sym ? 2 * p1 - (high + wave) : na
+sym_1_close = show_lvl1_sym ? 2 * p1 - (close + wave) : na
+
+col_1_sym = sym_1_close >= sym_1_open ? color.new(color.yellow, 40) : color.new(color.purple, 40)
+plotcandle(sym_1_open, sym_1_high, sym_1_low, sym_1_close, title="Level 1 Symmetry", color=col_1_sym, wickcolor=col_1_sym, bordercolor=col_1_sym)
+
+sym_2_open = show_lvl2_sym ? 2 * p2 - (open + wave) : na
+sym_2_high = show_lvl2_sym ? 2 * p2 - (low + wave) : na
+sym_2_low = show_lvl2_sym ? 2 * p2 - (high + wave) : na
+sym_2_close = show_lvl2_sym ? 2 * p2 - (close + wave) : na
+
+col_2_sym = sym_2_close >= sym_2_open ? color.new(color.aqua, 40) : color.new(color.orange, 40)
+plotcandle(sym_2_open, sym_2_high, sym_2_low, sym_2_close, title="Level 2 Symmetry", color=col_2_sym, wickcolor=col_2_sym, bordercolor=col_2_sym)
+
+sym_blue_open = show_blue_sym ? 2 * wavy_blue_line - (open + wave) : na
+sym_blue_high = show_blue_sym ? 2 * wavy_blue_line - (low + wave) : na
+sym_blue_low = show_blue_sym ? 2 * wavy_blue_line - (high + wave) : na
+sym_blue_close = show_blue_sym ? 2 * wavy_blue_line - (close + wave) : na
+
+col_blue_sym = sym_blue_close >= sym_blue_open ? color.new(color.blue, 50) : color.new(color.blue, 70)
+plotcandle(sym_blue_open, sym_blue_high, sym_blue_low, sym_blue_close, title="Blue Line Symmetry", color=col_blue_sym, wickcolor=col_blue_sym, bordercolor=col_blue_sym)
+
+sym_inv_open = show_inv_sym ? 2 * wavy_inv_blue_line - (open + wave) : na
+sym_inv_high = show_inv_sym ? 2 * wavy_inv_blue_line - (low + wave) : na
+sym_inv_low = show_inv_sym ? 2 * wavy_inv_blue_line - (high + wave) : na
+sym_inv_close = show_inv_sym ? 2 * wavy_inv_blue_line - (close + wave) : na
+
+col_inv_sym = sym_inv_close >= sym_inv_open ? color.new(color.orange, 50) : color.new(color.orange, 70)
+plotcandle(sym_inv_open, sym_inv_high, sym_inv_low, sym_inv_close, title="Orange Line Symmetry", color=col_inv_sym, wickcolor=col_inv_sym, bordercolor=col_inv_sym)

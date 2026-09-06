@@ -1,0 +1,26 @@
+//@version=6
+indicator("Mirror Oscillator{Morindok}", overlay=false)
+
+n = input.int(100, title="Periods", minval=2)
+
+centralMirrorLevel = ta.highest(high, 500) / 2 + ta.lowest(low, 500) / 2
+mirrorLevel1 = ta.highest(high, n * 2)
+mirrorLevel2 = ta.lowest(low, n * 2)
+
+d0 = (close - centralMirrorLevel) / centralMirrorLevel * 100
+d1 = (close - mirrorLevel1)       / mirrorLevel1       * 100
+d2 = (close - mirrorLevel2)       / mirrorLevel2       * 100
+
+rawDist = (d0 + d1 + d2) / 3
+
+osc   = ta.ema(rawDist, 3)
+sig   = ta.ema(osc, 9)
+histo = osc - sig
+
+oscColor   = osc   >= 0 ? color.new(color.teal,   20) : color.new(color.red,    20)
+histoColor = histo >= 0 ? color.new(color.lime,   40) : color.new(color.orange, 40)
+
+plot(osc,   title="Osc",       color=oscColor,linewidth=2)
+plot(sig,   title="Signal",    color=color.new(color.yellow, 30),       linewidth=1)
+plot(histo, title="Histogram", style=plot.style_columns, color=histoColor)
+hline(0, color=color.new(color.white, 60), linestyle=hline.style_dashed)

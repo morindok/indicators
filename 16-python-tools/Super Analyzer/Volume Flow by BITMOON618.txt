@@ -1,0 +1,841 @@
+"""
+================================================================================
+ Bybit Volume Flow Monitor  |  Morindok
+================================================================================
+Ìò «Å·ÌòÌ‘‰ Dash »—«Ì —’œ ·ÕŸÂù«Ì Ã—Ì«‰ ÕÃ„ Œ—Ìœ/›—Ê‘ ?? «—“ »— — »«Ì»Ì .
+
+ﬁ«»·Ì ùÂ«:
+  - œ—Ì«›  ?? ‰„«œ »— — USDT-Spot »— «”«” ê—œ‘ „«·Ì ?? ”«⁄ Â (turnover24h)
+  - œ—Ì«›  „⁄«„·«  ·ÕŸÂù«Ì (recent-trade) Ê  Ã„Ì⁄ ¬‰ùÂ« œ— »«ò ùÂ«Ì ? œﬁÌﬁÂù«Ì
+    »Â  ›òÌò ÕÃ„ Œ—Ìœ (Taker Buy) Ê ÕÃ„ ›—Ê‘ (Taker Sell)
+  - „Õ«”»ÂùÌ ´Ã—Ì«‰ Œ«·’ª (Net Flow = Buy - Sell) œ— Ê«Õœ USDT »—«Ì Â— «—“/œﬁÌﬁÂ
+  - — »Âù»‰œÌ «—“Â« »— «”«” Ê—ÊœÌ/Œ—ÊÃÌ  Ã„⁄Ì ÕÃ„
+  - ‰„Êœ«— Sankey »—«Ì ‰„«Ì‘ ç—Œ‘ ”—„«ÌÂ: Œ—ÊÃ «“ «—“Â«Ì ﬁ—„“ -> «” Œ— USDT -> Ê—Êœ »Â «—“Â«Ì ”»“
+  - Heatmap Ã—Ì«‰ ÕÃ„ »Â «“«Ì Â— «—“ œ— ÿÊ· “„«‰
+  - Z-Score ¬„«—Ì »—«Ì ‘‰«”«ÌÌ ÃÂ‘ùÂ«Ì €Ì—⁄«œÌ ÕÃ„
+  - »Œ‘ ÅÌ‘‰Â«œ (Signal) Œ—Ìœ/›—Ê‘ »— Å«ÌÂ  —òÌ» z-score + ›‘«— Œ—Ìœ + ‘Ì» —Ê‰œ
+    («Ì‰ »Œ‘ ’—›« Ìò ”Ìê‰«· ¬„«—Ì «”  Ê  Ê’ÌÂ „«·Ì „Õ”Ê» ‰„Ìù‘Êœ)
+
+«Ã—«:
+    pip install dash dash-bootstrap-components plotly pandas numpy requests
+    python bybit_volume_flow_dash.py
+”Å” „—Ê—ê— —« —ÊÌ http://127.0.0.1:8050 »«“ ò‰Ìœ.
+================================================================================
+"""
+
+import threading
+import time
+import traceback
+from collections import defaultdict, deque
+from datetime import datetime, timezone
+
+import numpy as np
+import pandas as pd
+import requests
+
+import dash
+from dash import dcc, html, Input, Output, State
+import dash_bootstrap_components as dbc
+import plotly.graph_objects as go
+
+# ==============================================================================
+# CONFIG
+# ==============================================================================
+# »«Ì»Ì  ç‰œ œ«„‰ÂùÌ ¬Ì‰Â (mirror) œ«—œ∫ «ê— œ«„‰Â «’·Ì œ— ò‘Ê—/‘»òÂ ‘„« »·«ò Ì«
+# ”«‰”Ê— ‘œÂ »«‘œ (Œÿ«Ì 403 / connection reset)° »Âù — Ì» œ«„‰ÂùÂ«Ì »⁄œÌ «„ Õ«‰ „Ìù‘Ê‰œ.
+BYBIT_BASE_CANDIDATES = [
+    "https://api.bybit.com",
+    "https://api.bytick.com",     # ¬Ì‰Â —”„Ì »«Ì»Ì  »—«Ì „‰«ÿﬁ „ÕœÊœ‘œÂ
+    "https://api.bybit.kz",       # ¬Ì‰Â „‰ÿﬁÂù«Ì
+]
+CATEGORY_DEFAULT = "spot"          # "spot" Ì« "linear" (›ÌÊç—“ Å—ÅçÊ«· USDT)
+TOP_N = 20
+TRADE_POLL_SEC = 4                 # ›«’·Â œ—Ì«›  „⁄«„·«  Â— ‰„«œ
+TICKER_REFRESH_SEC = 90            # ›«’·Â »—Ê“—”«‰Ì — »Âù»‰œÌ ?? «—“ »— —
+BIN_SECONDS = 60                   # ÿÊ· Â— »«ò  “„«‰Ì (? œﬁÌﬁÂ)
+HISTORY_MINUTES = 90                # ⁄„ﬁ  «—ÌŒçÂ ‰êÂùœ«—Ì ‘œÂ
+ZSCORE_WINDOW = 20                  #  ⁄œ«œ œﬁ«Ìﬁ »—«Ì „Õ«”»Â »Ì”ù·«Ì‰ z-score
+REQUEST_TIMEOUT = 8
+TRADE_LIMIT = 60                    # Õœ«òÀ— „Ã«“ «”Å«  »«Ì»Ì  »—«Ì recent-trade
+
+SESSION = requests.Session()
+SESSION.headers.update({
+    # Âœ—Â«Ì ‘»ÌÂ „—Ê—ê— »—«Ì ⁄»Ê— «“ ›Ì· —Â«Ì ”«œÂùÌ ÷œ—»« /Cloudflare
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"),
+    "Accept": "application/json",
+})
+
+# œ«„‰Âù«Ì òÂ œ— Õ«· Õ«÷— ò«— „Ìùò‰œ∫ »⁄œ «“ «Ê·Ì‰ „Ê›ﬁÌ  À«»  „Ìù„«‰œ  « ”—⁄  »êÌ—œ
+_ACTIVE_BASE = {"url": None}
+
+
+def _bybit_get(path, params):
+    """
+     ·«‘ »—«Ì ê—› ‰ Ìò endpoint «“ »«Ì»Ì  »« «„ Õ«‰ œ«„‰ÂùÂ«Ì „Œ ·› (fallback).
+    Â— Œÿ« (DNS°  «Ì„ù«Ê ° 403° JSON ‰«„⁄ »— Ê ...) ÅÌ«„ Ê«÷Õ »—„Ìùê—œ«‰œ  « œ—
+    ‰Ê«— Ê÷⁄Ì  «Å ‰„«Ì‘ œ«œÂ ‘Êœ Ê ò«—»— »œ«‰œ œﬁÌﬁ« „‘ò· òÃ«” .
+    """
+    candidates = [_ACTIVE_BASE["url"]] if _ACTIVE_BASE["url"] else []
+    candidates += [b for b in BYBIT_BASE_CANDIDATES if b != _ACTIVE_BASE["url"]]
+
+    last_exc = None
+    for base in candidates:
+        try:
+            resp = SESSION.get(f"{base}{path}", params=params, timeout=REQUEST_TIMEOUT)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("retCode") != 0:
+                raise RuntimeError(f"Bybit API error ({base}): retCode={data.get('retCode')} "
+                                    f"retMsg={data.get('retMsg')}")
+            _ACTIVE_BASE["url"] = base
+            return data
+        except requests.exceptions.SSLError as exc:
+            last_exc = f"Œÿ«Ì SSL —ÊÌ {base}: {exc}"
+        except requests.exceptions.ConnectionError as exc:
+            last_exc = (f"⁄œ„ œ” —”Ì ‘»òÂ »Â {base} ó «Õ „«·« »«Ì»Ì  œ— ‘»òÂ/ò‘Ê— ‘„« "
+                        f"»·«ò ‘œÂ Ì« ‰Ì«“ »Â VPN œ«—Ìœ. ({exc.__class__.__name__})")
+        except requests.exceptions.Timeout:
+            last_exc = f" «Ì„ù«Ê  œ— « ’«· »Â {base}"
+        except requests.exceptions.HTTPError as exc:
+            code = exc.response.status_code if exc.response is not None else "?"
+            last_exc = f"HTTP {code} «“ {base} («Õ „«· »·«ò „‰ÿﬁÂù«Ì/Cloudflare)"
+        except ValueError as exc:
+            last_exc = f"Å«”Œ JSON ‰«„⁄ »— «“ {base}: {exc}"
+        except Exception as exc:  # noqa: BLE001
+            last_exc = f"Œÿ«Ì ‰«‘‰«Œ Â —ÊÌ {base}: {exc}"
+    raise RuntimeError(last_exc or "« ’«· »Â ÂÌçùòœ«„ «“ œ«„‰ÂùÂ«Ì »«Ì»Ì  »—ﬁ—«— ‰‘œ")
+
+
+def _now_minute(ts=None):
+    ts = ts if ts is not None else time.time()
+    return int(ts // BIN_SECONDS) * BIN_SECONDS
+
+
+# ==============================================================================
+# DATA STORE (thread-safe)
+# ==============================================================================
+class FlowStore:
+    def __init__(self):
+        self.lock = threading.RLock()
+        self.category = CATEGORY_DEFAULT
+        self.symbols = []                 # ·Ì”  — »Âù»‰œÌù‘œÂ ?? ‰„«œ »— —
+        self.last_trade_time = {}         # symbol -> ¬Œ—Ì‰ timestamp œÌœÂ ‘œÂ (ms)
+        # bins[symbol][minute_ts] = {"buy": float, "sell": float}
+        self.bins = defaultdict(lambda: defaultdict(lambda: {"buy": 0.0, "sell": 0.0}))
+        self.ticker_snapshot = {}         # symbol -> {"turnover24h", "price", "pcnt24h"}
+        self.status = {"connected": False, "last_update": None, "last_error": None}
+
+    def set_category(self, category):
+        with self.lock:
+            if category != self.category:
+                self.category = category
+                self.symbols = []
+                self.bins.clear()
+                self.last_trade_time.clear()
+                self.ticker_snapshot.clear()
+
+    def refresh_top_symbols(self):
+        try:
+            data = _bybit_get("/v5/market/tickers", {"category": self.category})
+            rows = data["result"]["list"]
+            usdt_rows = [r for r in rows if r.get("symbol", "").endswith("USDT")]
+
+            def turnover(r):
+                try:
+                    return float(r.get("turnover24h", 0) or 0)
+                except (TypeError, ValueError):
+                    return 0.0
+
+            usdt_rows.sort(key=turnover, reverse=True)
+            top = usdt_rows[:TOP_N]
+            with self.lock:
+                self.symbols = [r["symbol"] for r in top]
+                for r in top:
+                    try:
+                        price = float(r.get("lastPrice", 0) or 0)
+                        pcnt = float(r.get("price24hPcnt", 0) or 0) * 100
+                    except (TypeError, ValueError):
+                        price, pcnt = 0.0, 0.0
+                    self.ticker_snapshot[r["symbol"]] = {
+                        "turnover24h": turnover(r),
+                        "price": price,
+                        "pcnt24h": pcnt,
+                    }
+                self.status["connected"] = True
+                self.status["last_error"] = None
+            return True
+        except Exception as exc:  # noqa: BLE001
+            with self.lock:
+                self.status["connected"] = False
+                self.status["last_error"] = str(exc)
+            print(f"[refresh_top_symbols] {exc}")
+            return False
+
+    def poll_symbol_trades(self, symbol):
+        try:
+            data = _bybit_get(
+                "/v5/market/recent-trade",
+                {"category": self.category, "symbol": symbol, "limit": TRADE_LIMIT},
+            )
+            trades = data["result"]["list"]
+            if not trades:
+                return
+
+            with self.lock:
+                last_seen = self.last_trade_time.get(symbol, 0)
+
+            parsed = []
+            for t in trades:
+                try:
+                    t_ms = int(t.get("time", 0))
+                    price = float(t.get("price", 0) or 0)
+                    size = float(t.get("size", t.get("qty", 0)) or 0)
+                    side = str(t.get("side", "")).lower()
+                except (TypeError, ValueError):
+                    continue
+                if t_ms <= last_seen:
+                    continue
+                parsed.append((t_ms, price, size, side))
+
+            if not parsed:
+                return
+
+            parsed.sort(key=lambda x: x[0])
+            new_last_seen = parsed[-1][0]
+
+            with self.lock:
+                for t_ms, price, size, side in parsed:
+                    minute_ts = _now_minute(t_ms / 1000.0)
+                    notional = price * size
+                    bucket = self.bins[symbol][minute_ts]
+                    if side == "buy":
+                        bucket["buy"] += notional
+                    elif side == "sell":
+                        bucket["sell"] += notional
+                self.last_trade_time[symbol] = new_last_seen
+                self.status["last_update"] = datetime.now(timezone.utc)
+        except Exception as exc:  # noqa: BLE001
+            # ‰ÊÌ“ ‘»òÂ Ìò ‰„«œ ‰»«Ìœ ò· „Ê Ê— Ã„⁄ù¬Ê—Ì —« „ Êﬁ› ò‰œ° Ê·Ì »—«Ì œÌ»«ê ç«Å „Ìù‘Êœ
+            print(f"[poll_symbol_trades:{symbol}] {exc}")
+
+    def prune_old_bins(self):
+        cutoff = _now_minute() - HISTORY_MINUTES * BIN_SECONDS
+        with self.lock:
+            for symbol in list(self.bins.keys()):
+                for minute_ts in list(self.bins[symbol].keys()):
+                    if minute_ts < cutoff:
+                        del self.bins[symbol][minute_ts]
+
+    def snapshot_dataframe(self, lookback_minutes):
+        """»—„Ìùê—œ«‰œ DataFrame »« «Ì‰œò” œﬁÌﬁÂ Ê ” Ê‰ùÂ«Ì MultiIndex (symbol, buy/sell)."""
+        with self.lock:
+            symbols = list(self.symbols)
+            bins_copy = {s: dict(self.bins.get(s, {})) for s in symbols}
+            ticker_copy = dict(self.ticker_snapshot)
+            status_copy = dict(self.status)
+
+        end_minute = _now_minute()
+        minute_range = list(range(end_minute - (lookback_minutes - 1) * BIN_SECONDS,
+                                   end_minute + BIN_SECONDS, BIN_SECONDS))
+
+        records = []
+        for symbol in symbols:
+            sym_bins = bins_copy.get(symbol, {})
+            for m in minute_range:
+                b = sym_bins.get(m, {"buy": 0.0, "sell": 0.0})
+                records.append({"symbol": symbol, "minute": m, "buy": b["buy"], "sell": b["sell"]})
+
+        df = pd.DataFrame(records)
+        if df.empty:
+            df = pd.DataFrame(columns=["symbol", "minute", "buy", "sell"])
+        df["net"] = df["buy"] - df["sell"]
+        df["dt"] = pd.to_datetime(df["minute"], unit="s")
+        return df, ticker_copy, status_copy, minute_range
+
+
+STORE = FlowStore()
+
+
+# ==============================================================================
+# BACKGROUND COLLECTOR THREAD
+# ==============================================================================
+def collector_loop():
+    last_ticker_refresh = 0
+    last_trade_poll = {}
+    while True:
+        try:
+            now = time.time()
+            if now - last_ticker_refresh > TICKER_REFRESH_SEC or not STORE.symbols:
+                STORE.refresh_top_symbols()
+                last_ticker_refresh = now
+
+            symbols = list(STORE.symbols)
+            for symbol in symbols:
+                last_poll = last_trade_poll.get(symbol, 0)
+                if now - last_poll >= TRADE_POLL_SEC:
+                    STORE.poll_symbol_trades(symbol)
+                    last_trade_poll[symbol] = now
+
+            STORE.prune_old_bins()
+            time.sleep(0.5)
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+            time.sleep(2)
+
+
+collector_thread = threading.Thread(target=collector_loop, daemon=True)
+collector_thread.start()
+
+
+# ==============================================================================
+# STATISTICS
+# ==============================================================================
+def compute_rankings(df, lookback_minutes):
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "symbol", "cum_net", "cum_buy", "cum_sell", "buy_ratio",
+            "zscore", "trend_slope", "score"
+        ])
+
+    agg = df.groupby("symbol").agg(
+        cum_buy=("buy", "sum"),
+        cum_sell=("sell", "sum"),
+    ).reset_index()
+    agg["cum_net"] = agg["cum_buy"] - agg["cum_sell"]
+    total = (agg["cum_buy"] + agg["cum_sell"]).replace(0, np.nan)
+    agg["buy_ratio"] = (agg["cum_buy"] / total).fillna(0.5)
+
+    zscores, slopes = {}, {}
+    for symbol, g in df.groupby("symbol"):
+        g = g.sort_values("minute")
+        net_series = g["net"].values
+        baseline = net_series[-ZSCORE_WINDOW:] if len(net_series) >= 3 else net_series
+        mean, std = np.mean(baseline), np.std(baseline)
+        latest = net_series[-1] if len(net_series) else 0.0
+        zscores[symbol] = 0.0 if std < 1e-9 else (latest - mean) / std
+
+        tail = net_series[-5:] if len(net_series) >= 2 else net_series
+        if len(tail) >= 2:
+            x = np.arange(len(tail))
+            cum = np.cumsum(tail)
+            slope = np.polyfit(x, cum, 1)[0]
+        else:
+            slope = 0.0
+        slopes[symbol] = slope
+
+    agg["zscore"] = agg["symbol"].map(zscores).fillna(0.0)
+    agg["trend_slope"] = agg["symbol"].map(slopes).fillna(0.0)
+
+    def _norm(series):
+        s = series.astype(float)
+        rng = s.max() - s.min()
+        if rng < 1e-9:
+            return s * 0.0
+        return (s - s.min()) / rng * 2 - 1  # ‰—„«·ù”«“Ì »Â »«“Â [-1, 1]
+
+    agg["z_norm"] = _norm(agg["zscore"])
+    agg["trend_norm"] = _norm(agg["trend_slope"])
+    agg["pressure_dev"] = (agg["buy_ratio"] - 0.5) * 2  # »«“Â [-1, 1]
+
+    agg["score"] = (0.4 * agg["z_norm"] + 0.3 * agg["pressure_dev"] + 0.3 * agg["trend_norm"])
+
+    agg = agg.sort_values("cum_net", ascending=False).reset_index(drop=True)
+    return agg
+
+
+def build_suggestion(ranking_df, ticker_snapshot, min_minutes_ok):
+    if ranking_df.empty or not min_minutes_ok:
+        return {
+            "buy": None, "sell": None,
+            "note": "œ— Õ«· Ã„⁄ù¬Ê—Ì œ«œÂùÂ«Ì ò«›Ì »—«Ì  Ê·Ìœ ”Ìê‰«· ¬„«—Ì... (ç‰œ œﬁÌﬁÂ ’»— ò‰Ìœ)",
+        }
+    ranked_by_score = ranking_df.sort_values("score", ascending=False)
+    top = ranked_by_score.iloc[0]
+    bottom = ranked_by_score.iloc[-1]
+
+    def pack(row):
+        info = ticker_snapshot.get(row["symbol"], {})
+        return {
+            "symbol": row["symbol"],
+            "score": round(float(row["score"]), 3),
+            "cum_net": float(row["cum_net"]),
+            "buy_ratio": float(row["buy_ratio"]),
+            "zscore": float(row["zscore"]),
+            "trend_slope": float(row["trend_slope"]),
+            "price": info.get("price"),
+            "pcnt24h": info.get("pcnt24h"),
+        }
+
+    return {"buy": pack(top), "sell": pack(bottom), "note": None}
+
+
+# ==============================================================================
+# CHART BUILDERS
+# ==============================================================================
+DARK_BG = "#0e1117"
+CARD_BG = "#161b24"
+GRID_COLOR = "#232935"
+GREEN = "#26d07c"
+RED = "#f0466a"
+ACCENT = "#4f8cff"
+
+BASE_LAYOUT = dict(
+    paper_bgcolor=CARD_BG,
+    plot_bgcolor=CARD_BG,
+    font=dict(color="#e6e9ef", family="Vazirmatn, Segoe UI, sans-serif"),
+    margin=dict(l=10, r=10, t=40, b=10),
+)
+
+
+def empty_figure(message):
+    fig = go.Figure()
+    fig.update_layout(**BASE_LAYOUT)
+    fig.add_annotation(text=message, showarrow=False, font=dict(size=15, color="#9aa4b2"))
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False)
+    return fig
+
+
+def build_ranking_bar(ranking_df):
+    if ranking_df.empty:
+        return empty_figure("œ— Õ«· œ—Ì«›  œ«œÂ «“ »«Ì»Ì ...")
+    df = ranking_df.sort_values("cum_net", ascending=True)
+    colors = [GREEN if v >= 0 else RED for v in df["cum_net"]]
+    fig = go.Figure(go.Bar(
+        x=df["cum_net"], y=df["symbol"], orientation="h",
+        marker_color=colors,
+        text=[f"{v:,.0f}$" for v in df["cum_net"]],
+        textposition="outside",
+        hovertemplate="%{y}<br>Ã—Ì«‰ Œ«·’: %{x:,.0f} USDT<extra></extra>",
+    ))
+    fig.update_layout(**BASE_LAYOUT, title="— »Âù»‰œÌ «—“Â« »— «”«” Ã—Ì«‰ Œ«·’ ÕÃ„ (Ê—Êœ/Œ—ÊÃ)")
+    fig.update_xaxes(gridcolor=GRID_COLOR, zerolinecolor="#4a5265")
+    fig.update_yaxes(gridcolor=GRID_COLOR)
+    return fig
+
+
+def build_heatmap(df, minute_range):
+    if df.empty:
+        return empty_figure("œ— Õ«· œ—Ì«›  œ«œÂ «“ »«Ì»Ì ...")
+    pivot = df.pivot_table(index="symbol", columns="minute", values="net", fill_value=0.0)
+    pivot = pivot.reindex(columns=minute_range, fill_value=0.0)
+    order = pivot.sum(axis=1).sort_values(ascending=False).index
+    pivot = pivot.reindex(order)
+    x_labels = [datetime.fromtimestamp(m, tz=timezone.utc).strftime("%H:%M") for m in pivot.columns]
+
+    zmax = np.nanpercentile(np.abs(pivot.values), 95) if pivot.size else 1
+    zmax = zmax if zmax > 0 else 1
+
+    fig = go.Figure(go.Heatmap(
+        z=pivot.values, x=x_labels, y=pivot.index,
+        colorscale=[[0, RED], [0.5, "#1a1f29"], [1, GREEN]],
+        zmid=0, zmin=-zmax, zmax=zmax,
+        colorbar=dict(title="Net $"),
+        hovertemplate="%{y} | %{x}<br>Ã—Ì«‰ Œ«·’: %{z:,.0f} USDT<extra></extra>",
+    ))
+    fig.update_layout(**BASE_LAYOUT, title="‰ﬁ‘Â Õ—«— Ì Ã—Ì«‰ ÕÃ„ œﬁÌﬁÂù«Ì Â— «—“")
+    return fig
+
+
+def build_rotation_sankey(ranking_df):
+    if ranking_df.empty:
+        return empty_figure("œ— Õ«· œ—Ì«›  œ«œÂ «“ »«Ì»Ì ...")
+
+    outflow = ranking_df[ranking_df["cum_net"] < 0].sort_values("cum_net").head(10)
+    inflow = ranking_df[ranking_df["cum_net"] > 0].sort_values("cum_net", ascending=False).head(10)
+
+    if outflow.empty and inflow.empty:
+        return empty_figure("Ã—Ì«‰ ﬁ«»·ù ÊÃÂÌ »—«Ì ‰„«Ì‘ ÊÃÊœ ‰œ«—œ")
+
+    labels = list(outflow["symbol"]) + ["«” Œ— ‰ﬁœÌ‰êÌ USDT"] + list(inflow["symbol"])
+    pool_idx = len(outflow)
+    node_colors = [RED] * len(outflow) + [ACCENT] + [GREEN] * len(inflow)
+
+    sources, targets, values, link_colors = [], [], [], []
+    for i, row in enumerate(outflow.itertuples()):
+        sources.append(i)
+        targets.append(pool_idx)
+        values.append(abs(row.cum_net))
+        link_colors.append("rgba(240,70,106,0.45)")
+
+    offset = pool_idx + 1
+    for i, row in enumerate(inflow.itertuples()):
+        sources.append(pool_idx)
+        targets.append(offset + i)
+        values.append(abs(row.cum_net))
+        link_colors.append("rgba(38,208,124,0.45)")
+
+    fig = go.Figure(go.Sankey(
+        arrangement="snap",
+        node=dict(
+            label=labels, color=node_colors, pad=18, thickness=18,
+            line=dict(color="#0e1117", width=1),
+        ),
+        link=dict(source=sources, target=targets, value=values, color=link_colors),
+    ))
+    fig.update_layout(**BASE_LAYOUT, title="ç—Œ‘ ”—„«ÌÂ: Œ—ÊÃ «“ «—“Â«Ì ﬁ—„“ ? «” Œ— ? Ê—Êœ »Â «—“Â«Ì ”»“")
+    return fig
+
+
+def build_pressure_gauge(top_symbol_info):
+    if not top_symbol_info:
+        return empty_figure("œ— «‰ Ÿ«— œ«œÂ")
+    ratio = top_symbol_info["buy_ratio"] * 100
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number+delta",
+        value=ratio,
+        number={"suffix": "%", "font": {"color": "#e6e9ef"}},
+        delta={"reference": 50, "increasing": {"color": GREEN}, "decreasing": {"color": RED}},
+        gauge={
+            "axis": {"range": [0, 100], "tickcolor": "#9aa4b2"},
+            "bar": {"color": ACCENT},
+            "steps": [
+                {"range": [0, 40], "color": "#3a1523"},
+                {"range": [40, 60], "color": "#232935"},
+                {"range": [60, 100], "color": "#123626"},
+            ],
+            "threshold": {"line": {"color": "white", "width": 3}, "value": ratio},
+        },
+        title={"text": f"›‘«— Œ—Ìœ | {top_symbol_info['symbol']}"},
+    ))
+    fig.update_layout(**BASE_LAYOUT)
+    return fig
+
+
+# ==============================================================================
+# DASH APP
+# ==============================================================================
+FONT_URL = "https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap"
+TELEGRAM_URL = "https://t.me/BITMOON618"
+
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.CYBORG, FONT_URL])
+app.title = "Bybit Volume Flow Monitor | Morindok"
+server = app.server
+
+# --- CSS ”›«—‘Ì: ›Ê‰  ›«—”Ì° «›ò  ‘Ì‘Âù«Ì ò«— ùÂ«° «‰Ì„Ì‘‰ »‰— Ê ... -----------
+app.index_string = """
+<!DOCTYPE html>
+<html>
+<head>
+    {%metas%}
+    <title>{%title%}</title>
+    {%favicon%}
+    {%css%}
+    <style>
+        * { font-family: 'Vazirmatn', 'Segoe UI', sans-serif !important; }
+        body {
+            background: radial-gradient(circle at 15% 0%, #14202e 0%, #0a0d13 55%, #060709 100%);
+            background-attachment: fixed;
+        }
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: #0a0d13; }
+        ::-webkit-scrollbar-thumb { background: #2a3444; border-radius: 8px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3d4d66; }
+
+        .telegram-banner {
+            background: linear-gradient(100deg, #1b8dd9 0%, #2aa9e0 35%, #26d0ce 100%);
+            background-size: 200% 200%;
+            animation: bannerShift 6s ease infinite;
+            border: none !important;
+            border-radius: 16px !important;
+            padding: 14px 22px !important;
+            box-shadow: 0 6px 24px rgba(38, 169, 224, 0.35);
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
+            color: #ffffff !important;
+        }
+        .telegram-banner:hover {
+            transform: translateY(-2px) scale(1.005);
+            box-shadow: 0 10px 32px rgba(38, 169, 224, 0.5);
+        }
+        @keyframes bannerShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .app-title {
+            background: linear-gradient(90deg, #7ab8ff, #26d07c 60%, #4f8cff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            font-weight: 800 !important;
+            letter-spacing: 0.5px;
+        }
+
+        .glass-card {
+            background: rgba(22, 27, 36, 0.72) !important;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.06) !important;
+            border-radius: 18px !important;
+            box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+            padding: 10px;
+            transition: box-shadow 0.2s ease, transform 0.2s ease;
+        }
+        .glass-card:hover {
+            box-shadow: 0 12px 36px rgba(0,0,0,0.5);
+        }
+
+        .control-card {
+            background: rgba(22, 27, 36, 0.55) !important;
+            border: 1px solid rgba(255,255,255,0.06) !important;
+            border-radius: 16px !important;
+            padding: 16px 20px !important;
+        }
+
+        table.table-dark td, table.table-dark th { border-color: rgba(255,255,255,0.06) !important; }
+        .Select-control, .dash-dropdown .Select-control { border-radius: 10px !important; }
+    </style>
+</head>
+<body>
+    {%app_entry%}
+    <footer>
+        {%config%}
+        {%scripts%}
+        {%renderer%}
+    </footer>
+</body>
+</html>
+"""
+
+telegram_banner = html.A(
+    dbc.Alert(
+        dbc.Row(
+            [
+                dbc.Col(html.Span("??", style={"fontSize": "1.8rem"}), width="auto",
+                        className="d-flex align-items-center"),
+                dbc.Col([
+                    html.Div("»—«Ì œ—Ì«›  «‰œÌò« Ê—Â«Ì «Œ ’«’Ì",
+                             style={"fontWeight": 600, "fontSize": "1.02rem"}),
+                    html.Div("»Â ò«‰«·  ·ê—«„ »ÅÌÊ‰œÌœ", style={"opacity": 0.9, "fontSize": "0.9rem"}),
+                ], className="d-flex flex-column justify-content-center"),
+                dbc.Col(
+                    html.Div(
+                        ["@BITMOON618 ", html.Span("?", style={"fontSize": "1.2rem"})],
+                        style={
+                            "fontWeight": 800, "fontSize": "1.15rem",
+                            "background": "rgba(255,255,255,0.18)",
+                            "padding": "6px 18px", "borderRadius": "999px",
+                            "whiteSpace": "nowrap",
+                        },
+                    ),
+                    width="auto", className="d-flex align-items-center ms-auto",
+                ),
+            ],
+            align="center", className="g-2",
+        ),
+        color=None, className="telegram-banner mb-3",
+    ),
+    href=TELEGRAM_URL, target="_blank", style={"textDecoration": "none"},
+)
+
+controls = dbc.Row(
+    [
+        dbc.Col([
+            html.Label("»«“«—", className="text-muted small"),
+            dcc.Dropdown(
+                id="category-dd",
+                options=[
+                    {"label": "«”Å«  (Spot)", "value": "spot"},
+                    {"label": "›ÌÊç—“ Å—ÅçÊ«· (Linear)", "value": "linear"},
+                ],
+                value=CATEGORY_DEFAULT, clearable=False,
+                style={"color": "#0e1117"},
+            ),
+        ], width=3),
+        dbc.Col([
+            html.Label("»«“Â “„«‰Ì  Õ·Ì·", className="text-muted small"),
+            dcc.Dropdown(
+                id="lookback-dd",
+                options=[
+                    {"label": "? œﬁÌﬁÂ", "value": 5},
+                    {"label": "?? œﬁÌﬁÂ", "value": 15},
+                    {"label": "?? œﬁÌﬁÂ", "value": 30},
+                    {"label": "?? œﬁÌﬁÂ", "value": 60},
+                ],
+                value=15, clearable=False,
+                style={"color": "#0e1117"},
+            ),
+        ], width=3),
+        dbc.Col([
+            html.Div(id="status-badge", className="mt-4"),
+        ], width=6, className="d-flex align-items-end justify-content-end"),
+    ],
+    className="control-card mb-4 g-3",
+)
+
+
+def graph_card(graph_id, height):
+    return dbc.Card(
+        dcc.Graph(id=graph_id, style={"height": height}, config={"displaylogo": False}),
+        className="glass-card h-100",
+    )
+
+
+app.layout = dbc.Container(
+    fluid=True,
+    style={"minHeight": "100vh", "paddingTop": "20px", "paddingBottom": "40px", "paddingInline": "28px"},
+    children=[
+        telegram_banner,
+        html.Div([
+            html.H2("?? Bybit Volume Flow Monitor", className="app-title mb-1"),
+            html.P("—’œ ·ÕŸÂù«Ì Ã—Ì«‰ ÕÃ„ Œ—Ìœ/›—Ê‘ ?? «—“ »— — »«Ì»Ì  ó Morindok",
+                   className="text-muted mb-4"),
+        ]),
+        controls,
+        dbc.Row([
+            dbc.Col(graph_card("ranking-bar", "520px"), width=5),
+            dbc.Col(graph_card("heatmap", "520px"), width=7),
+        ], className="mb-4 g-3"),
+        dbc.Row([
+            dbc.Col(graph_card("sankey", "460px"), width=7),
+            dbc.Col(graph_card("gauge", "460px"), width=5),
+        ], className="mb-4 g-3"),
+        dbc.Row([
+            dbc.Col(html.Div(id="suggestion-card"), width=12),
+        ], className="mb-4"),
+        dbc.Row([
+            dbc.Col(dbc.Card(html.Div(id="ranking-table"), className="glass-card"), width=12),
+        ]),
+        dcc.Interval(id="interval", interval=6000, n_intervals=0),
+        html.Div(id="dummy-category-trigger", style={"display": "none"}),
+    ],
+)
+
+
+def status_badge_content(status):
+    connected = status.get("connected")
+    last_update = status.get("last_update")
+    last_error = status.get("last_error")
+    color = GREEN if connected else RED
+    text = "„ ’· »Â »«Ì»Ì " if connected else "ﬁÿ⁄ / Œÿ« œ— « ’«·"
+    ts_text = last_update.strftime("%H:%M:%S UTC") if last_update else "ó"
+    children = [
+        dbc.Badge(
+            [html.Span("? ", style={"color": color}), f"{text} | ¬Œ—Ì‰ »—Ê“—”«‰Ì: {ts_text}"],
+            color="dark", className="p-2", style={"fontSize": "0.85rem"},
+        )
+    ]
+    if not connected and last_error:
+        children.append(
+            html.Div(last_error, className="text-danger small mt-1", style={"maxWidth": "480px"})
+        )
+    return html.Div(children, className="text-end")
+
+
+def suggestion_card_content(suggestion):
+    if suggestion["note"]:
+        return dbc.Alert(suggestion["note"], color="secondary")
+
+    buy, sell = suggestion["buy"], suggestion["sell"]
+
+    def make_col(item, is_buy):
+        color = GREEN if is_buy else RED
+        label = "ÅÌ‘‰Â«œ —’œ »—«Ì Œ—Ìœ (Ã—Ì«‰ Ê—ÊœÌ ﬁÊÌ)" if is_buy else "ÅÌ‘‰Â«œ —’œ »—«Ì ›—Ê‘/«Õ Ì«ÿ (Ã—Ì«‰ Œ—ÊÃÌ ﬁÊÌ)"
+        pcnt = item.get("pcnt24h")
+        pcnt_txt = f"{pcnt:+.2f}%" if pcnt is not None else "ó"
+        price_txt = f"{item['price']:,.4f}" if item.get("price") else "ó"
+        return dbc.Col(
+            dbc.Card(
+                dbc.CardBody([
+                    html.H5(label, style={"color": color}),
+                    html.H3(item["symbol"], className="mb-2"),
+                    html.P([
+                        f"ﬁÌ„ : {price_txt}   |    €ÌÌ— ??”«⁄ Â: {pcnt_txt}",
+                    ], className="text-muted mb-1"),
+                    html.P([
+                        f"Ã—Ì«‰ Œ«·’ œ— »«“Â: {item['cum_net']:,.0f} USDT   |   ",
+                        f"›‘«— Œ—Ìœ: {item['buy_ratio']*100:.1f}%   |   ",
+                        f"z-score: {item['zscore']:.2f}",
+                    ], className="mb-1"),
+                    html.P(f"«„ Ì«“  —òÌ»Ì ”Ìê‰«·: {item['score']:.3f}", className="mb-0 fw-bold"),
+                ]),
+                style={"backgroundColor": CARD_BG, "borderColor": color, "borderWidth": "1.5px"},
+            ),
+            width=6,
+        )
+
+    return dbc.Row([
+        make_col(buy, True),
+        make_col(sell, False),
+        dbc.Col(
+            html.P(
+                "?? «Ì‰  Õ·Ì· ’—›« Ìò ”Ìê‰«· ¬„«—Ì »— Å«ÌÂ Ã—Ì«‰ ÕÃ„ „⁄«„·«  «ŒÌ— «”  Ê  Ê’ÌÂ „«·Ì „Õ”Ê» ‰„Ìù‘Êœ. "
+                " ’„Ì„ùêÌ—Ì ‰Â«ÌÌ „⁄«„·« Ì »— ⁄ÂœÂ ‘„«” .",
+                className="text-muted small mt-2",
+            ),
+            width=12,
+        ),
+    ])
+
+
+def ranking_table_content(ranking_df, ticker_snapshot):
+    if ranking_df.empty:
+        return html.Div()
+    rows = []
+    for i, r in enumerate(ranking_df.itertuples(), start=1):
+        info = ticker_snapshot.get(r.symbol, {})
+        net_color = GREEN if r.cum_net >= 0 else RED
+        rows.append(html.Tr([
+            html.Td(i),
+            html.Td(r.symbol, className="fw-bold"),
+            html.Td(f"{r.cum_net:,.0f}", style={"color": net_color}),
+            html.Td(f"{r.cum_buy:,.0f}"),
+            html.Td(f"{r.cum_sell:,.0f}"),
+            html.Td(f"{r.buy_ratio*100:.1f}%"),
+            html.Td(f"{r.zscore:.2f}"),
+            html.Td(f"{info.get('pcnt24h', 0):+.2f}%" if info else "ó"),
+        ]))
+    header = html.Thead(html.Tr([
+        html.Th("#"), html.Th("‰„«œ"), html.Th("Ã—Ì«‰ Œ«·’ ($)"), html.Th("ÕÃ„ Œ—Ìœ ($)"),
+        html.Th("ÕÃ„ ›—Ê‘ ($)"), html.Th("›‘«— Œ—Ìœ"), html.Th("Z-Score"), html.Th(" €ÌÌ— ??”"),
+    ]))
+    table = dbc.Table([header, html.Tbody(rows)], bordered=False, hover=True, color="dark", responsive=True, striped=True)
+    return html.Div([html.H5("·Ì”  ò«„· «—“Â« »Â  — Ì» Ã—Ì«‰ Ê—ÊœÌ/Œ—ÊÃÌ"), table])
+
+
+@app.callback(Output("dummy-category-trigger", "children"), Input("category-dd", "value"))
+def on_category_change(category):
+    STORE.set_category(category)
+    return category
+
+
+@app.callback(
+    [
+        Output("ranking-bar", "figure"),
+        Output("heatmap", "figure"),
+        Output("sankey", "figure"),
+        Output("gauge", "figure"),
+        Output("suggestion-card", "children"),
+        Output("ranking-table", "children"),
+        Output("status-badge", "children"),
+    ],
+    [Input("interval", "n_intervals"), Input("lookback-dd", "value")],
+)
+def refresh_dashboard(_n, lookback_minutes):
+    df, ticker_snapshot, status, minute_range = STORE.snapshot_dataframe(lookback_minutes)
+    ranking_df = compute_rankings(df, lookback_minutes)
+
+    non_empty_minutes = df[df["net"] != 0]["minute"].nunique() if not df.empty else 0
+    min_minutes_ok = non_empty_minutes >= min(5, lookback_minutes)
+
+    top_info = None
+    if not ranking_df.empty:
+        top_row = ranking_df.sort_values("score", ascending=False).iloc[0]
+        top_info = {"symbol": top_row["symbol"], "buy_ratio": top_row["buy_ratio"]}
+
+    suggestion = build_suggestion(ranking_df, ticker_snapshot, min_minutes_ok)
+
+    return (
+        build_ranking_bar(ranking_df),
+        build_heatmap(df, minute_range),
+        build_rotation_sankey(ranking_df),
+        build_pressure_gauge(top_info),
+        suggestion_card_content(suggestion),
+        ranking_table_content(ranking_df, ticker_snapshot),
+        status_badge_content(status),
+    )
+
+
+if __name__ == "__main__":
+    app.run(debug=False, host="127.0.0.1", port=8050)

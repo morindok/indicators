@@ -1,0 +1,137 @@
+//@version=5
+indicator("Iterative Symmetric MA - Zero Lag Method", overlay=true, max_lines_count=500)
+
+// --- Inputs ---
+src = input.source(close, title="Source („‰»⁄)")
+base_len = input.int(10, title="Base MA Length (œÊ—Â „ÊÊÌ‰ê Å«ÌÂ)", minval=1)
+
+use_fibo = input.bool(true, title="Use Fibo Ratios („Õ«”»Â ŒÊœò«— »— «”«” ›Ì»Ê)")
+
+//  ‰ŸÌ„«  ”  «Ê·
+input_len1 = input.int(2, title="MA Length Set 1 (œ” Ì)", minval=1)
+n1 = input.int(2, title="Iterations Set 1 ( ò—«— ”  1)", minval=1, maxval=10)
+
+//  ‰ŸÌ„«  ”  œÊ„
+input_len2 = input.int(3, title="MA Length Set 2 (œ” Ì)", minval=1)
+n2 = input.int(3, title="Iterations Set 2 ( ò—«— ”  2)", minval=1, maxval=10)
+
+// --- Length Calculations ---
+// „Õ«”»Â ÿÊ· »— «”«” ê“Ì‰Â ›Ì»Ê
+int len1 = use_fibo ? math.max(1, int(math.round(base_len * 0.618))) : input_len1
+int len2 = use_fibo ? math.max(1, int(math.round(base_len * 1.618))) : input_len2
+
+// --- Base MA ---
+base_ma = ta.sma(src, base_len)
+
+// „Õ«”»Â  «ŒÌ— (Lag) »— «”«” œÊ—Â Â— ” 
+int lag1 = int(math.round((len1 - 1) / 2.0))
+int lag2 = int(math.round((len2 - 1) / 2.0))
+
+// ==========================================
+// --- Calculations Set 1 (using len1 & lag1) ---
+// ==========================================
+p0_1 = base_ma
+ma0_1 = ta.sma(p0_1, len1)
+
+p1_1 = 2 * ma0_1 - p0_1[lag1]
+ma1_1 = ta.sma(p1_1, len1)
+
+p2_1 = 2 * ma1_1 - p1_1[lag1]
+ma2_1 = ta.sma(p2_1, len1)
+
+p3_1 = 2 * ma2_1 - p2_1[lag1]
+ma3_1 = ta.sma(p3_1, len1)
+
+p4_1 = 2 * ma3_1 - p3_1[lag1]
+ma4_1 = ta.sma(p4_1, len1)
+
+p5_1 = 2 * ma4_1 - p4_1[lag1]
+ma5_1 = ta.sma(p5_1, len1)
+
+p6_1 = 2 * ma5_1 - p5_1[lag1]
+ma6_1 = ta.sma(p6_1, len1)
+
+p7_1 = 2 * ma6_1 - p6_1[lag1]
+ma7_1 = ta.sma(p7_1, len1)
+
+p8_1 = 2 * ma7_1 - p7_1[lag1]
+ma8_1 = ta.sma(p8_1, len1)
+
+p9_1 = 2 * ma8_1 - p8_1[lag1]
+ma9_1 = ta.sma(p9_1, len1)
+
+p10_1 = 2 * ma9_1 - p9_1[lag1]
+ma10_1 = ta.sma(p10_1, len1)
+
+// --- Selection Set 1 ---
+[final_p1, final_ma1] = switch n1
+    1 => [p1_1, ma1_1]
+    2 => [p2_1, ma2_1]
+    3 => [p3_1, ma3_1]
+    4 => [p4_1, ma4_1]
+    5 => [p5_1, ma5_1]
+    6 => [p6_1, ma6_1]
+    7 => [p7_1, ma7_1]
+    8 => [p8_1, ma8_1]
+    9 => [p9_1, ma9_1]
+    10 => [p10_1, ma10_1]
+    => [p0_1, ma0_1]
+
+// ==========================================
+// --- Calculations Set 2 (using len2 & lag2) ---
+// ==========================================
+p0_2 = base_ma
+ma0_2 = ta.sma(p0_2, len2)
+
+p1_2 = 2 * ma0_2 - p0_2[lag2]
+ma1_2 = ta.sma(p1_2, len2)
+
+p2_2 = 2 * ma1_2 - p1_2[lag2]
+ma2_2 = ta.sma(p2_2, len2)
+
+p3_2 = 2 * ma2_2 - p2_2[lag2]
+ma3_2 = ta.sma(p3_2, len2)
+
+p4_2 = 2 * ma3_2 - p3_2[lag2]
+ma4_2 = ta.sma(p4_2, len2)
+
+p5_2 = 2 * ma4_2 - p4_2[lag2]
+ma5_2 = ta.sma(p5_2, len2)
+
+p6_2 = 2 * ma5_2 - p5_2[lag2]
+ma6_2 = ta.sma(p6_2, len2)
+
+p7_2 = 2 * ma6_2 - p6_2[lag2]
+ma7_2 = ta.sma(p7_2, len2)
+
+p8_2 = 2 * ma7_2 - p7_2[lag2]
+ma8_2 = ta.sma(p8_2, len2)
+
+p9_2 = 2 * ma8_2 - p8_2[lag2]
+ma9_2 = ta.sma(p9_2, len2)
+
+p10_2 = 2 * ma9_2 - p9_2[lag2]
+ma10_2 = ta.sma(p10_2, len2)
+
+// --- Selection Set 2 ---
+[final_p2, final_ma2] = switch n2
+    1 => [p1_2, ma1_2]
+    2 => [p2_2, ma2_2]
+    3 => [p3_2, ma3_2]
+    4 => [p4_2, ma4_2]
+    5 => [p5_2, ma5_2]
+    6 => [p6_2, ma6_2]
+    7 => [p7_2, ma7_2]
+    8 => [p8_2, ma8_2]
+    9 => [p9_2, ma9_2]
+    10 => [p10_2, ma10_2]
+    => [p0_2, ma0_2]
+
+// --- Plotting ---
+// ”  «Ê·
+plot(final_ma1, title="Final MA Set 1", color=color.blue, linewidth=2)
+plot(final_p1, title="Final Price Set 1", color=color.aqua, style=plot.style_line, linewidth=1)
+
+// ”  œÊ„
+plot(final_ma2, title="Final MA Set 2", color=color.red, linewidth=2)
+plot(final_p2, title="Final Price Set 2", color=color.orange, style=plot.style_line, linewidth=1)

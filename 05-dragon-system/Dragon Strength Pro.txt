@@ -1,0 +1,173 @@
+//@version=5
+indicator("Dragon Strength Pro{Morindok}", overlay=true, max_lines_count=500)
+
+leftLen = input.int(5, "Left Length")
+rightLen = input.int(5, "Right Length")
+
+tf_s = input.timeframe("15", "Short-Term TF")
+tf_m = input.timeframe("60", "Medium-Term TF")
+tf_l = input.timeframe("240", "Long-Term TF")
+
+ph = ta.pivothigh(high, leftLen, rightLen)
+pl = ta.pivotlow(low, leftLen, rightLen)
+
+var ph_x = array.new_int(0)
+var ph_y = array.new_float(0)
+var ph_b = array.new_int(0)
+
+var pl_x = array.new_int(0)
+var pl_y = array.new_float(0)
+var pl_b = array.new_int(0)
+
+if not na(ph)
+    array.push(ph_x, time[rightLen])
+    array.push(ph_y, ph)
+    array.push(ph_b, bar_index[rightLen])
+    if array.size(ph_x) > 50
+        array.shift(ph_x)
+        array.shift(ph_y)
+        array.shift(ph_b)
+        
+if not na(pl)
+    array.push(pl_x, time[rightLen])
+    array.push(pl_y, pl)
+    array.push(pl_b, bar_index[rightLen])
+    if array.size(pl_x) > 50
+        array.shift(pl_x)
+        array.shift(pl_y)
+        array.shift(pl_b)
+        
+var float power_up = 0.0
+var float power_down = 0.0
+var float trend_strength = 0.0
+
+if array.size(ph_x) > 0 and array.size(pl_x) > 0
+    // ?? ÈåíäåÓÇÒí ÇÕáí: ÇÓÊÝÇÏå ÇÒ ÒãÇä æ ÞíãÊ ˜äÏá ÌÇÑí Èå ÌÇí ÂÎÑíä íæÊ ÊÇííÏ ÔÏå
+    // Çíä ˜ÇÑ ÈÇÚË ãíÔæÏ ÔÇÎÕ Èå ÌÇí äÔÇä ÏÇÏä ÇäÊåÇí í˜ ÑæäÏ¡ ãæãäÊæã ÑæäÏ ÌÇÑí ÑÇ ÈÓäÌÏ
+    curr_x = time
+    curr_y = close
+    curr_b = bar_index
+    
+    total_impact_up = 0.0
+    total_impact_down = 0.0
+    
+    sum_slope_up = 0.0
+    sum_slope_down = 0.0
+    count_up = 0
+    count_down = 0
+    
+    // ãÍÇÓÈå ãíÇäíä ÔíÈåÇ ÈÑÇí ÍÑ˜ÇÊ ÕÚæÏí (ÇÒ íæÊåÇí ÐÔÊå Èå ÞíãÊ ÌÇÑí)
+    for i = 0 to array.size(pl_x) - 1
+        p_y = array.get(pl_y, i)
+        p_b = array.get(pl_b, i)
+        dy = curr_y - p_y
+        if dy > 0 // ÝÞØ ÇÑ ÞíãÊ ÌÇÑí ÈÇáÇÊÑ ÇÒ íæÊ ÈÇÔÏ
+            dx_bars = math.max(curr_b - p_b, 1)
+            sum_slope_up += (dy / dx_bars)
+            count_up += 1
+            
+    // ãÍÇÓÈå ãíÇäíä ÔíÈåÇ ÈÑÇí ÍÑ˜ÇÊ äÒæáí
+    for i = 0 to array.size(ph_x) - 1
+        p_y = array.get(ph_y, i)
+        p_b = array.get(ph_b, i)
+        dy = p_y - curr_y
+        if dy > 0 // ÝÞØ ÇÑ ÞíãÊ ÌÇÑí ÇííäÊÑ ÇÒ íæÊ ÈÇÔÏ
+            dx_bars = math.max(curr_b - p_b, 1)
+            sum_slope_down += (dy / dx_bars)
+            count_down += 1
+            
+    avg_slope_up = count_up > 0 ? (sum_slope_up / count_up) : 0.0001
+    avg_slope_down = count_down > 0 ? (sum_slope_down / count_down) : 0.0001
+    if avg_slope_up == 0
+        avg_slope_up := 0.0001
+    if avg_slope_down == 0
+        avg_slope_down := 0.0001
+
+    // ÇÑÒíÇÈí åæÔãäÏÇäå ÎØæØ ÕÚæÏí ÈÇ ÏÑ äÙÑ ÑÝÊä ÔÊÇÈ
+    for i = 0 to array.size(pl_x) - 1
+        p_y = array.get(pl_y, i)
+        p_b = array.get(pl_b, i)
+        dy = curr_y - p_y
+        if dy > 0
+            dx_bars = math.max(curr_b - p_b, 1)
+            m_i = dy / dx_bars
+            momentum_accel = m_i / avg_slope_up
+            line_impact = dy * math.sqrt(dx_bars) * 0.382 * momentum_accel
+            total_impact_up += line_impact
+            
+    // ÇÑÒíÇÈí åæÔãäÏÇäå ÎØæØ äÒæáí
+    for i = 0 to array.size(ph_x) - 1
+        p_y = array.get(ph_y, i)
+        p_b = array.get(ph_b, i)
+        dy = p_y - curr_y
+        if dy > 0
+            dx_bars = math.max(curr_b - p_b, 1)
+            m_i = dy / dx_bars
+            momentum_accel = m_i / avg_slope_down
+            line_impact = dy * math.sqrt(dx_bars) * 0.382 * momentum_accel
+            total_impact_down += line_impact
+            
+    power_up := total_impact_up
+    power_down := total_impact_down
+    total_power = power_up + power_down
+    trend_strength := total_power > 0 ? ((power_up - power_down) / total_power) * 100 : 0
+
+str_s = request.security(syminfo.tickerid, tf_s, trend_strength, lookahead=barmerge.lookahead_off)
+str_m = request.security(syminfo.tickerid, tf_m, trend_strength, lookahead=barmerge.lookahead_off)
+str_l = request.security(syminfo.tickerid, tf_l, trend_strength, lookahead=barmerge.lookahead_off)
+str_c = trend_strength
+
+// ÑÓã ÎØæØ ÑæäÏ (ÈÇ ÇÕáÇÍ ÑíÇÖí ÈÑÇí ÇãÊÏÇÏ ÕÍíÍ ÔíÈåÇ)
+if barstate.islast and array.size(ph_x) > 0 and array.size(pl_x) > 0
+    curr_x_last = time
+    curr_y_last = close
+    
+    for i = 0 to array.size(pl_x) - 1
+        p_x = array.get(pl_x, i)
+        p_y = array.get(pl_y, i)
+        dy = curr_y_last - p_y
+        if dy > 0
+            dx = curr_x_last - p_x
+            line.new(math.round(p_x - (0.382 * dx)), p_y - (0.382 * dy), curr_x_last, curr_y_last, xloc=xloc.bar_time, color=color.new(color.green, 60))
+            
+    for i = 0 to array.size(ph_x) - 1
+        p_x = array.get(ph_x, i)
+        p_y = array.get(ph_y, i)
+        dy = p_y - curr_y_last
+        if dy > 0
+            dx = curr_x_last - p_x
+            // ÇÕáÇÍ ÝÑãæá ÇãÊÏÇÏ ÎØ ÞÑãÒ ÈÑÇí ÍÝÙ ÔíÈ ãÓÊÞíã
+            line.new(math.round(p_x - (0.382 * dx)), p_y + (0.382 * dy), curr_x_last, curr_y_last, xloc=xloc.bar_time, color=color.new(color.red, 60))
+
+// ãÍÇÓÈå äÊíÌå ˜áí ÈÑ ÇÓÇÓ åãå ÊÇíã ÝÑíã åÇ
+overall_strength = (str_c + str_s + str_m + str_l) / 4
+
+var table statTable = table.new(position.top_right, 4, 6, bgcolor=color.black, border_color=color.white, border_width=1)
+
+get_status(strength) =>
+    strength > 40 ? "Strong Bull" : (strength > 0 ? "Weak Bull" : (strength < -40 ? "Strong Bear" : "Weak Bear"))
+
+get_color(strength) =>
+    strength > 40 ? color.rgb(0, 255, 0) : (strength > 0 ? color.rgb(150, 255, 150) : (strength < -40 ? color.rgb(255, 0, 0) : color.rgb(255, 150, 150)))
+
+fill_stat_row(tbl, row, category, tf_name, strength) =>
+    status_str = get_status(strength)
+    c = get_color(strength)
+    table.cell(tbl, 0, row, category, text_color=color.white)
+    table.cell(tbl, 1, row, tf_name, text_color=color.gray)
+    table.cell(tbl, 2, row, str.tostring(math.round(strength, 1)) + "%", text_color=c)
+    table.cell(tbl, 3, row, status_str, text_color=c)
+
+if barstate.islast
+    table.cell(statTable, 0, 0, "Category", text_color=color.white, bgcolor=color.rgb(30, 30, 30))
+    table.cell(statTable, 1, 0, "TF", text_color=color.white, bgcolor=color.rgb(30, 30, 30))
+    table.cell(statTable, 2, 0, "Strength Index", text_color=color.white, bgcolor=color.rgb(30, 30, 30))
+    table.cell(statTable, 3, 0, "Status", text_color=color.white, bgcolor=color.rgb(30, 30, 30))
+    
+    fill_stat_row(statTable, 1, "Micro (Current)", timeframe.period, str_c)
+    fill_stat_row(statTable, 2, "Short-Term", tf_s, str_s)
+    fill_stat_row(statTable, 3, "Medium-Term", tf_m, str_m)
+    fill_stat_row(statTable, 4, "Long-Term", tf_l, str_l)
+    
+    fill_stat_row(statTable, 5, "OVERALL CONFLUENCE", "All", overall_strength)
+    table.cell(statTable, 0, 5, "OVERALL RESULT", text_color=color.yellow, bgcolor=color.rgb(20, 20, 20))

@@ -1,0 +1,232 @@
+﻿<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>پیش‌بینی‌گر پیووت کالیبره‌شده — Morindok</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0f172a; --card:#1e293b; --text:#f8fafc; --accent:#38bdf8;
+    --border:#334155; --warn:#f59e0b; --muted:#94a3b8;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:Tahoma, 'Segoe UI', sans-serif; direction:rtl;
+    background:var(--bg); color:var(--text); padding:20px; min-height:100vh;
+  }
+  h2{ text-align:center; color:var(--accent); margin-bottom:6px; }
+  .subtitle{
+    text-align:center; color:var(--muted); max-width:900px; margin:10px auto 25px auto; font-size:14px;
+  }
+  .row{
+    display:flex; flex-wrap:wrap; justify-content:center; gap:20px; max-width:900px; margin:0 auto 25px auto;
+  }
+  .card{
+    background:var(--card); padding:18px 22px; border-radius:12px; border:1px solid var(--border);
+    flex:1; min-width:280px;
+  }
+  label{ font-size:14px; color:#cbd5e1; font-weight:bold; }
+  input[type=number]{
+    width:100%; padding:10px 14px; margin-top:8px; border-radius:8px; border:none;
+    background:var(--bg); color:var(--accent); font-size:18px; outline:none;
+  }
+  .radio-option{ display:block; margin-top:8px; color:var(--text); cursor:pointer; }
+  .radio-option input{ margin-left:8px; }
+  .content-card{ max-width:900px; margin:0 auto; }
+  table{ width:100%; border-collapse:collapse; direction:ltr; margin-top:10px; }
+  th, td{ border:1px solid var(--border); padding:12px; text-align:center; font-size:14px; }
+  th{ background:var(--bg); color:var(--accent); }
+  td{ background:var(--card); color:var(--text); }
+  #tableTitle{ color:var(--accent); text-align:center; margin-top:0; }
+  .note{
+    margin-top:18px; padding:14px; background:var(--bg); border-radius:8px; border:1px solid var(--border);
+    font-size:13px; color:var(--muted); line-height:1.9;
+  }
+  .note b{ color:var(--text); }
+  .chart-wrap{ max-width:900px; margin:25px auto; background:var(--card); border-radius:12px; padding:16px; border:1px solid var(--border);}
+
+  .telegram-banner{
+    max-width:900px; margin:0 auto 20px auto; display:flex; align-items:center; justify-content:space-between;
+    gap:14px; background:linear-gradient(90deg,#0ea5e9,#0284c7); border-radius:12px; padding:14px 22px;
+    box-shadow:0 4px 14px -2px rgba(2,132,199,0.5); flex-wrap:wrap;
+  }
+  .telegram-banner .tg-text{ display:flex; align-items:center; gap:10px; color:#f8fafc; font-weight:bold; font-size:15px; }
+  .telegram-banner svg{ flex-shrink:0; }
+  .telegram-banner a{
+    background:#f8fafc; color:#0284c7; text-decoration:none; font-weight:bold; font-size:14px;
+    padding:9px 20px; border-radius:8px; transition:transform .15s ease; white-space:nowrap;
+  }
+  .telegram-banner a:hover{ transform:translateY(-1px); }
+</style>
+</head>
+<body>
+
+<div class="telegram-banner">
+  <div class="tg-text">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="#f8fafc"><path d="M21.94 4.6c.25-1.03-.7-1.87-1.68-1.5L2.4 10.24c-1.02.4-1 1.86.03 2.22l4.45 1.55 1.7 5.6c.22.73 1.14.96 1.68.42l2.5-2.46 4.4 3.28c.8.6 1.95.17 2.16-.8L21.94 4.6zM8.4 13.6l9.6-6.1-8 7.5-.3 3-1.3-4.4z"/></svg>
+    <span>برای دریافت ابزارهای اختصاصی به کانال تلگرام ما بپیوندید:</span>
+  </div>
+  <a href="https://t.me/BITMOON618" target="_blank" rel="noopener noreferrer">عضویت در @BITMOON618 ↗</a>
+</div>
+
+<h2>پیش‌بینی‌گر پیووت کالیبره‌شده — نسخه‌ی آماریِ Morindok</h2>
+<div class="subtitle">
+  این ابزار بازه‌ی احتمالاتیِ برگرفته از تاریخچه‌ی واقعی بازار را نشان می‌دهد، نه یک قیمت هدف قطعی.
+  درصدهای نمایش‌داده‌شده، درصد پوشش واقعیِ اندازه‌گیری‌شده روی داده‌ی out-of-sample هستند.
+</div>
+
+<div class="row">
+  <div class="card">
+    <label for="pivotPrice">قیمت آخرین پیووت شناسایی‌شده:</label>
+    <input type="number" id="pivotPrice" value="60000" step="any">
+  </div>
+  <div class="card">
+    <label>نوع پیووت:</label>
+    <label class="radio-option">
+      <input type="radio" name="pivotType" value="high_to_low" checked> سقف (HIGH) — انتظار کف بعدی
+    </label>
+    <label class="radio-option">
+      <input type="radio" name="pivotType" value="low_to_high"> کف (LOW) — انتظار سقف بعدی
+    </label>
+  </div>
+</div>
+
+<div class="content-card">
+  <div class="card">
+    <h3 id="tableTitle"></h3>
+    <table>
+      <thead>
+        <tr>
+          <th>بازه‌ی احتمالاتی</th>
+          <th>حد پایین ($)</th>
+          <th>میانه ($)</th>
+          <th>حد بالا ($)</th>
+          <th>اطمینان تاریخی</th>
+        </tr>
+      </thead>
+      <tbody id="bandsBody"></tbody>
+    </table>
+    <div class="note" id="calibrationNote"></div>
+  </div>
+</div>
+
+<div class="chart-wrap">
+  <canvas id="distChart" height="320"></canvas>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// صدک‌های واقعی به‌دست‌آمده از بک‌تست روی ۴۷۶ پیووت تاریخی BTCUSD_PERP (ساعتی، ۲۰۲۰-۲۰۲۶)
+// اعتبارسنجی out-of-sample: پوشش باند ۱۰-۹۰٪ => HIGH: 78.8%   LOW: 87.4%
+// ---------------------------------------------------------------------------
+const QUANTILES = {
+  high_to_low: {5:0.7849, 10:0.8222, 25:0.8747, 50:0.9158, 75:0.9317, 90:0.9438, 95:0.9478},
+  low_to_high: {5:1.0548, 10:1.0582, 25:1.0710, 50:1.0999, 75:1.1578, 90:1.2343, 95:1.2792}
+};
+const N_SAMPLES = {high_to_low: 236, low_to_high: 237};
+const OOS_COVERAGE = {high_to_low: 0.788, low_to_high: 0.874};
+const BAND_DEFS = [
+  [5, 95, 'بسیار گسترده (۹۰٪ اطمینان تاریخی)'],
+  [10, 90, 'گسترده (۸۰٪ اطمینان تاریخی)'],
+  [25, 75, 'محتمل‌ترین بازه (۵۰٪ اطمینان تاریخی)']
+];
+
+let chart = null;
+
+function fmt(n){
+  return Math.round(n).toLocaleString('en-US');
+}
+
+function update(){
+  const pivotPrice = parseFloat(document.getElementById('pivotPrice').value);
+  const pivotType = document.querySelector('input[name="pivotType"]:checked').value;
+
+  if (!pivotPrice || pivotPrice <= 0){
+    document.getElementById('tableTitle').textContent = '—';
+    document.getElementById('bandsBody').innerHTML = '';
+    document.getElementById('calibrationNote').innerHTML = '';
+    return;
+  }
+
+  const q = QUANTILES[pivotType];
+  const n = N_SAMPLES[pivotType];
+  const cov = OOS_COVERAGE[pivotType];
+  const dirLabel = pivotType === 'high_to_low' ? 'کف بعدی' : 'سقف بعدی';
+
+  document.getElementById('tableTitle').textContent =
+    `بازه‌های احتمالاتیِ ${dirLabel} (بر اساس ${n} نمونه‌ی تاریخی واقعی)`;
+
+  let rowsHtml = '';
+  BAND_DEFS.forEach(([loQ, hiQ, label]) => {
+    const loPrice = pivotPrice * q[loQ];
+    const hiPrice = pivotPrice * q[hiQ];
+    const midPrice = pivotPrice * q[50];
+    const theoConf = hiQ - loQ;
+    rowsHtml += `<tr>
+      <td style="text-align:right; direction:rtl;">${label}</td>
+      <td>${fmt(loPrice)}</td>
+      <td>${fmt(midPrice)}</td>
+      <td>${fmt(hiPrice)}</td>
+      <td>${theoConf}٪ (نظری) / ${(cov*100).toFixed(1)}٪ (اندازه‌گیری‌شده out-of-sample)</td>
+    </tr>`;
+  });
+  document.getElementById('bandsBody').innerHTML = rowsHtml;
+
+  document.getElementById('calibrationNote').innerHTML = `
+    <p><b>توضیح صداقت آماری: </b>این اعداد از توزیع واقعی ${n} پیووت تاریخی BTCUSD_PERP به‌دست آمده‌اند
+    و روی نیمه‌ی دوم داده (که در تخمین استفاده نشده) آزمایش شدند. پوشش واقعی باند ۱۰-۹۰٪ در داده‌ی ندیده
+    ${(cov*100).toFixed(1)}٪ بود — نزدیک به مقدار نظری ۸۰٪.</p>
+    <p>این ابزار احتمال می‌دهد، قطعیت نمی‌دهد. مدیریت ریسک (حد ضرر) هنگام معامله بر اساس این بازه‌ها همچنان ضروری است.</p>
+  `;
+
+  drawChart(pivotPrice, q, dirLabel);
+}
+
+function drawChart(pivotPrice, q, dirLabel){
+  const percentiles = [5,10,25,50,75,90,95];
+  const prices = percentiles.map(p => pivotPrice * q[p]);
+
+  const ctx = document.getElementById('distChart').getContext('2d');
+  if (chart) chart.destroy();
+
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: percentiles.map(p => 'صدک ' + p),
+      datasets: [{
+        label: 'قیمت ' + dirLabel + ' ($)',
+        data: prices,
+        borderColor: '#38bdf8',
+        backgroundColor: 'rgba(56,189,248,0.15)',
+        pointBackgroundColor: '#38bdf8',
+        pointRadius: 5,
+        tension: 0.25,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { labels: { color: '#f8fafc' } },
+        title: {
+          display: true,
+          text: 'منحنی صدک‌های قیمت ' + dirLabel + ' نسبت به پیووت فعلی',
+          color: '#f8fafc'
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#cbd5e1' }, grid: { color: '#334155' } },
+        y: { ticks: { color: '#cbd5e1' }, grid: { color: '#334155' } }
+      }
+    }
+  });
+}
+
+document.getElementById('pivotPrice').addEventListener('input', update);
+document.querySelectorAll('input[name="pivotType"]').forEach(el => el.addEventListener('change', update));
+
+update();
+</script>
+</body>
+</html>

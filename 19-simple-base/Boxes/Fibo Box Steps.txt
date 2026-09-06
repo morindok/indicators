@@ -1,0 +1,100 @@
+//@version=5
+indicator("Fibo Boxes{Morindok} by BITMOON618", overlay=true, max_boxes_count=500)
+
+target_time = input.time(timestamp("2024-01-01"), title="«‰ Œ«» “„«‰ ‰ﬁÿÂ ‘—Ê⁄", confirm=true)
+initial_bars = input.int(144, title=" ⁄œ«œ ò‰œ· «Ê·ÌÂ", minval=1)
+step_multiplier = input.float(1.1, title="÷—Ì»", step=0.001, minval=0.001)
+max_steps = input.int(20, title="Õœ«òÀ— „—«Õ·", minval=1, maxval=100)
+mirror_time = input.bool(false, title="¬Ì‰Â ò—œ‰ ‰”»  »Â “„«‰ (Mirror)")
+
+//  ‰ŸÌ„«  „Ì«‰êÌ‰ „ Õ—ò
+show_sma = input.bool(true, title="‰„«Ì‘ „Ì«‰êÌ‰ „ Õ—ò (SMA)")
+sma_length = input.int(20, title="ÿÊ· SMA", minval=1)
+sma_source = input.source(close, title="„‰»⁄ SMA")
+
+// „Õ«”»Â Ê —”„ „Ì«‰êÌ‰ „ Õ—ò
+sma_val = ta.sma(sma_source, sma_length)
+plot(show_sma ? sma_val : na, color=color.orange, title="SMA", linewidth=2)
+
+var int start_bar_index = na
+var int[] hist_bars = array.new_int(0)
+var int[] hist_times = array.new_int(0)
+var float[] hist_highs = array.new_float(0)
+var float[] hist_lows = array.new_float(0)
+
+array.push(hist_bars, bar_index)
+array.push(hist_times, time)
+array.push(hist_highs, high)
+array.push(hist_lows, low)
+
+if time == target_time
+    start_bar_index := bar_index
+
+get_data(int pos, int[] h_bars, int[] h_times) =>
+    int t = na
+    int idx = array.indexof(h_bars, pos)
+    if idx != -1
+        t := array.get(h_times, idx)
+    else
+        t := time + ((pos - bar_index) * (time - nz(time[1], time)))
+    t
+
+if barstate.islast and not na(start_bar_index)
+    // Å«ò ò—œ‰ »«ò”ùÂ«Ì —”„ ‘œÂ œ—  ÌòùÂ«Ì ﬁ»·Ì ò‰œ· ·«ÌÊ
+    if array.size(box.all) > 0
+        for b in box.all
+            box.delete(b)
+
+    int[] directions = array.from(1, -1)
+    
+    for dir in directions
+        int[] positions = array.new_int(0)
+        array.push(positions, start_bar_index)
+        
+        float current_step = initial_bars
+        int current_pos = start_bar_index
+        int direction = dir 
+        int iter_count = 0
+        
+        while current_step >= 1 and iter_count < max_steps
+            iter_count += 1
+            current_pos := int(math.round(current_pos + (current_step * direction)))
+            if current_pos < 0
+                break
+            array.push(positions, current_pos)
+            current_step := current_step * step_multiplier
+            direction := direction * -1
+            
+        array.sort(positions)
+        
+        int num_pos = array.size(positions)
+        if num_pos > 1
+            for i = 0 to num_pos - 2
+                int p1 = array.get(positions, i)
+                int p2 = array.get(positions, i + 1)
+                
+                color base_color = dir == 1 ? color.green : color.red
+                color bg_color = color.new(base_color, 85)
+                color b_color = color.new(base_color, 20)
+                
+                // „Õ«”»Â ”ﬁ› Ê ò› »— «”«” œ«œÂùÂ«Ì «’·Ì
+                int idx1 = array.indexof(hist_bars, p1)
+                int idx2 = array.indexof(hist_bars, p2)
+                float local_max = close
+                float local_min = close
+                
+                if idx1 != -1 and idx2 != -1
+                    local_max := array.max(array.slice(hist_highs, idx1, idx2 + 1))
+                    local_min := array.min(array.slice(hist_lows, idx1, idx2 + 1))
+                
+                // «⁄„«· ﬁ—Ì‰Â ”«“Ì œ— ’Ê—  ›⁄«· »Êœ‰ ê“Ì‰Â
+                int draw_p1 = mirror_time ? start_bar_index - (p1 - start_bar_index) : p1
+                int draw_p2 = mirror_time ? start_bar_index - (p2 - start_bar_index) : p2
+                
+                int t1 = get_data(draw_p1, hist_bars, hist_times)
+                int t2 = get_data(draw_p2, hist_bars, hist_times)
+                
+                if not na(t1) and not na(t2)
+                    int left_t = math.min(t1, t2)
+                    int right_t = math.max(t1, t2)
+                    box.new(left=left_t, top=local_max, right=right_t, bottom=local_min, xloc=xloc.bar_time, border_color=b_color, border_width=1, border_style=line.style_solid, bgcolor=bg_color)

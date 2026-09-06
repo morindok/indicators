@@ -1,0 +1,136 @@
+import dash
+from dash import dcc, html
+import plotly.graph_objects as go
+import plotly.express as px
+import yfinance as yf
+import pandas as pd
+import numpy as np
+
+# ---  ‰ŸÌ„«  «Ê·ÌÂ ---
+SYMBOL = "BTC-USD"
+INTERVAL = "5m"
+PERIOD = "5d"
+TIME_STEP_DEG = 2.0  # ê«„ ç—Œ‘ “«ÊÌÂù«Ì »—«Ì Â— ò‰œ·
+
+
+def fetch_data():
+    df = yf.download(SYMBOL, period=PERIOD, interval=INTERVAL)
+
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.droplevel(1)
+
+    df.reset_index(inplace=True)
+    time_col = 'Datetime' if 'Datetime' in df.columns else 'Date'
+
+    if pd.api.types.is_datetime64_any_dtype(df[time_col]):
+        if df[time_col].dt.tz is not None:
+            df[time_col] = df[time_col].dt.tz_convert('UTC')
+        else:
+            df[time_col] = df[time_col].dt.tz_localize('UTC')
+
+    df['Time_UTC_Str'] = df[time_col].dt.strftime('%Y-%m-%d %H:%M:%S UTC')
+    df.dropna(subset=['Close'], inplace=True)
+
+    # „Õ«”»Â “«ÊÌÂ  Ã„⁄Ì Ê ‘„«—Â œÊ—
+    time_indices = np.arange(len(df))
+    df['Raw_Angle'] = time_indices * TIME_STEP_DEG
+    df['Angle'] = df['Raw_Angle'] % 360
+    df['Lap'] = (df['Raw_Angle'] // 360).astype(int)  # „Õ«”»Â ‘„«—Â œÊ—
+
+    return df
+
+
+def build_figure():
+    df = fetch_data()
+    fig = go.Figure()
+
+    hover_template = (
+        "<b>Time (UTC):</b> %{customdata[1]}<br>"
+        "<b>Price:</b> $%{customdata[0]:.2f}<br>"
+        "<b>Angle:</b> %{customdata[2]:.1f}∞<extra></extra>"
+    )
+
+    # Å«·  —‰êÌ »—«Ì œÊ—Â«Ì „Œ ·›
+    color_palette = px.colors.qualitative.Light24
+    laps = df['Lap'].unique()
+
+    # —”„ Â— œÊ— »« —‰ê „Ã“«
+    for i, lap in enumerate(laps):
+        lap_df = df[df['Lap'] == lap].copy()
+
+        # « ’«· ‰ﬁÿÂ «‰ Â«ÌÌ «Ì‰ œÊ— »Â ‰ﬁÿÂ «» œ«ÌÌ œÊ— »⁄œÌ »—«Ì Ã·ÊêÌ—Ì «“ »—ÌœêÌ Œÿ
+        if lap < laps[-1]:
+            next_point = df[df['Lap'] == lap + 1].iloc[0:1]
+            lap_df = pd.concat([lap_df, next_point])
+
+        hover_custom_data = np.stack((lap_df['Close'], lap_df['Time_UTC_Str'], lap_df['Angle']), axis=-1)
+
+        fig.add_trace(go.Scatterpolar(
+            r=lap_df['Close'],
+            theta=lap_df['Angle'],
+            mode='lines',
+            line=dict(width=1.5, color=color_palette[i % len(color_palette)]),
+            name=f'Lap {lap + 1}',
+            customdata=hover_custom_data,
+            hovertemplate=hover_template
+        ))
+
+    # „‘Œ’ ò—œ‰ ¬Œ—Ì‰ ﬁÌ„  ·«ÌÊ
+    last_row = df.iloc[-1]
+    fig.add_trace(go.Scatterpolar(
+        r=[last_row['Close']],
+        theta=[last_row['Angle']],
+        mode='markers+text',
+        marker=dict(color='yellow', size=10, symbol='circle'),
+        text=[f"Live: ${last_row['Close']:.2f}"],
+        textposition="top center",
+        textfont=dict(color='yellow', size=12),
+        name='Live Price',
+        hovertemplate=(
+            f"<b>Live Time:</b> {last_row['Time_UTC_Str']}<br>"
+            f"<b>Live Price:</b> ${last_row['Close']:.2f}<br>"
+            f"<b>Current Angle:</b> {last_row['Angle']:.1f}∞<extra></extra>"
+        )
+    ))
+
+    min_price = df['Close'].min() * 0.98
+    max_price = df['Close'].max() * 1.02
+
+    fig.update_layout(
+        template="plotly_dark",
+        title=f"{SYMBOL} Polar View (Colored by Laps)",
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[min_price, max_price],
+                gridcolor='rgba(255, 255, 255, 0.2)',
+                title="Price ($)"
+            ),
+            angularaxis=dict(
+                direction="counterclockwise",
+                period=360,
+                dtick=30,
+                gridcolor='rgba(255, 255, 255, 0.3)',
+                rotation=0
+            )
+        ),
+        margin=dict(l=60, r=60, t=60, b=60),
+        legend=dict(x=0.01, y=0.99),
+        hovermode='closest'
+    )
+
+    return fig
+
+
+app = dash.Dash(__name__)
+
+app.layout = html.Div([
+    dcc.Graph(
+        id='front-view-graph',
+        figure=build_figure(),
+        style={'height': '95vh'}
+    )
+])
+
+if __name__ == '__main__':
+    app.run(debug=True)

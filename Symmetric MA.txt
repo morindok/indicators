@@ -1,0 +1,27 @@
+//@version=5
+indicator("Symmetric Price with MA", overlay=false)
+length = input.int(20, "Length")
+src = input.source(close, "Source")
+verticalOffset = input.float(0, "Vertical Offset")
+horizontalOffset = input.int(0, "Horizontal Offset")
+useGoldenRatio = input.bool(false, "Use Golden Ratio")
+phi = input.float(1.618, "Golden Ratio Value")
+
+ma = ta.sma(src, length)
+highest = ta.highest(ma, length)
+lowest = ta.lowest(ma, length)
+range_ma = highest - lowest
+
+mid = useGoldenRatio ? ma + (highest - ma) / phi : (highest + lowest) / 2
+
+symmetric_ma = 2 * mid - ma
+sym_open = 2 * mid - open
+sym_high = 2 * mid - high
+sym_low = 2 * mid - low
+sym_close = 2 * mid - close
+
+plotcandle(sym_open[horizontalOffset] + verticalOffset, sym_high[horizontalOffset] + verticalOffset, sym_low[horizontalOffset] + verticalOffset, sym_close[horizontalOffset] + verticalOffset, "Symmetric Price", color.red, color.green)
+plotcandle(open[horizontalOffset] + verticalOffset, high[horizontalOffset] + verticalOffset, low[horizontalOffset] + verticalOffset, close[horizontalOffset] + verticalOffset, "Original Price", color.blue, color.orange)
+plot(ma[horizontalOffset] + verticalOffset, "MA", color.blue, 2)
+plot(symmetric_ma[horizontalOffset] + verticalOffset, "Symmetric MA", color.red, 2)
+plot(mid[horizontalOffset] + verticalOffset, "Mid", color.gray, 2)

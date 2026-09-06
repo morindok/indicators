@@ -1,0 +1,55 @@
+//@version=5
+indicator("Symmetric Stacked Candles with MA", overlay=false)
+
+int length = input.int(20, "Length")
+float verticalOffset = input.float(0, "Vertical Offset")
+int horizontalOffset = input.int(0, "Horizontal Offset")
+bool useGoldenRatio = input.bool(false, "Use Golden Ratio")
+float phi = input.float(1.618, "Golden Ratio Value")
+
+var float current_level = na
+if na(current_level)
+    current_level := close 
+
+float c_height = high - low
+bool is_bull = close >= open
+
+float syn_open = na
+float syn_high = na
+float syn_low = na
+float syn_close = na
+
+if is_bull
+    syn_low := current_level
+    syn_high := current_level + c_height
+    syn_open := syn_low + (open - low)
+    syn_close := syn_low + (close - low)
+    current_level := syn_high 
+else
+    syn_high := current_level
+    syn_low := current_level - c_height
+    syn_open := syn_high - (high - open)
+    syn_close := syn_high - (high - close)
+    current_level := syn_low 
+
+float ma = ta.sma(syn_close, length)
+float highest_ma = ta.highest(ma, length)
+float lowest_ma = ta.lowest(ma, length)
+
+float mid = useGoldenRatio ? ma + (highest_ma - ma) / phi : (highest_ma + lowest_ma) / 2
+
+float symmetric_ma = 2 * mid - ma
+float sym_syn_open = 2 * mid - syn_open
+float sym_syn_high = 2 * mid - syn_high
+float sym_syn_low = 2 * mid - syn_low
+float sym_syn_close = 2 * mid - syn_close
+
+color col_orig = is_bull ? color.new(color.blue, 0) : color.new(color.orange, 0)
+color col_sym = is_bull ? color.new(color.green, 0) : color.new(color.red, 0)
+
+plotcandle(syn_open[horizontalOffset] + verticalOffset, syn_high[horizontalOffset] + verticalOffset, syn_low[horizontalOffset] + verticalOffset, syn_close[horizontalOffset] + verticalOffset, "Original Stacked", color=col_orig, bordercolor=col_orig, wickcolor=col_orig)
+plotcandle(sym_syn_open[horizontalOffset] + verticalOffset, sym_syn_high[horizontalOffset] + verticalOffset, sym_syn_low[horizontalOffset] + verticalOffset, sym_syn_close[horizontalOffset] + verticalOffset, "Symmetric Stacked", color=col_sym, bordercolor=col_sym, wickcolor=col_sym)
+
+plot(ma[horizontalOffset] + verticalOffset, "MA", color.blue, 2)
+plot(symmetric_ma[horizontalOffset] + verticalOffset, "Symmetric MA", color.red, 2)
+plot(mid[horizontalOffset] + verticalOffset, "Mid", color.gray, 2)

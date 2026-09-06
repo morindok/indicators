@@ -1,0 +1,213 @@
+//@version=5
+indicator("Time Analyzer{Morindok}", overlay=true, max_lines_count=500)
+
+source = input.source(close, "Source")
+pivot_len = input.int(10, "Pivot Length")
+use_zigzag = input.bool(true, "Use ZigZag Baseline (Alternating High/Low)")
+reverse_mapping = input.bool(false, "Reverse Mapping (White=High, Blue=Low)")
+
+// ÊäÙíãÇÊ ãÍÇÓÈå ÎØ Çíå (ÈÑÇí ÊÔÎíÕ ÊŞÇØÚ)
+white_weight = input.float(1.618, "White Line Level", step=0.5)
+blue_weight = input.float(-0.618, "Blue Line Level",  step=0.5)
+use_slope = input.bool(false, "Use Sloped Baseline")
+
+// --- Pivot Detections (For Baseline) ---
+pivot_low_val = ta.pivotlow(low, pivot_len, pivot_len)
+pivot_high_val = ta.pivothigh(high, pivot_len, pivot_len)
+is_new_low = not na(pivot_low_val)
+is_new_high = not na(pivot_high_val)
+
+// --- ZigZag Logic ---
+var int last_pivot_type = na
+var int last_zz_high_idx = na
+var int last_zz_low_idx = na
+
+var float zz_low_val = na
+var float prev_zz_low_val = na
+var int prev_zz_low_idx = na
+
+var float zz_high_val = na
+var float prev_zz_high_val = na
+var int prev_zz_high_idx = na
+
+if is_new_low and (na(last_pivot_type) or last_pivot_type != -1)
+    prev_zz_low_val := not na(zz_low_val) ? zz_low_val : pivot_low_val
+    prev_zz_low_idx := not na(last_zz_low_idx) ? last_zz_low_idx : bar_index[pivot_len]
+    zz_low_val := pivot_low_val
+    last_pivot_type := -1
+    last_zz_low_idx := bar_index[pivot_len]
+
+if is_new_high and (na(last_pivot_type) or last_pivot_type != 1)
+    prev_zz_high_val := not na(zz_high_val) ? zz_high_val : pivot_high_val
+    prev_zz_high_idx := not na(last_zz_high_idx) ? last_zz_high_idx : bar_index[pivot_len]
+    zz_high_val := pivot_high_val
+    last_pivot_type := 1
+    last_zz_high_idx := bar_index[pivot_len]
+
+// --- Independent Logic (Non-Zigzag) ---
+var int last_low_idx = na
+var int prev_low_idx = na
+var float h_line_low = na
+var float prev_h_line_low = na
+
+if is_new_low
+    prev_low_idx := last_low_idx
+    last_low_idx := bar_index[pivot_len]
+    prev_h_line_low := not na(h_line_low) ? h_line_low : pivot_low_val
+    h_line_low := pivot_low_val
+
+var int last_high_idx = na
+var int prev_high_idx = na
+var float h_line_high = na
+var float prev_h_line_high = na
+
+if is_new_high
+    prev_high_idx := last_high_idx
+    last_high_idx := bar_index[pivot_len]
+    prev_h_line_high := not na(h_line_high) ? h_line_high : pivot_high_val
+    h_line_high := pivot_high_val
+
+// --- Selection Based on User Input ---
+float cur_val_low = h_line_low
+float prv_val_low = prev_h_line_low
+int cur_idx_low = last_low_idx
+int prv_idx_low = prev_low_idx
+
+float cur_val_high = h_line_high
+float prv_val_high = prev_h_line_high
+int cur_idx_high = last_high_idx
+int prv_idx_high = prev_high_idx
+
+if use_zigzag
+    if not reverse_mapping
+        cur_val_low := zz_low_val
+        prv_val_low := prev_zz_low_val
+        cur_idx_low := last_zz_low_idx
+        prv_idx_low := prev_zz_low_idx
+        cur_val_high := zz_high_val
+        prv_val_high := prev_zz_high_val
+        cur_idx_high := last_zz_high_idx
+        prv_idx_high := prev_zz_high_idx
+    else
+        cur_val_low := zz_high_val
+        prv_val_low := prev_zz_high_val
+        cur_idx_low := last_zz_high_idx
+        prv_idx_low := prev_zz_high_idx
+        cur_val_high := zz_low_val
+        prv_val_high := prev_zz_low_val
+        cur_idx_high := last_zz_low_idx
+        prv_idx_high := prev_zz_low_idx
+
+// --- Baseline Calculation ---
+float slope_low = na(prv_val_low) or na(prv_idx_low) ? 0 : (cur_val_low - prv_val_low) / math.max(1, cur_idx_low - prv_idx_low)
+float static_h_low = na(prv_val_low) ? cur_val_low : (prv_val_low * (1.0 - white_weight) + cur_val_low * white_weight)
+float final_h_low = use_slope ? (cur_val_low + slope_low * (bar_index - cur_idx_low)) : static_h_low
+
+float slope_high = na(prv_val_high) or na(prv_idx_high) ? 0 : (cur_val_high - prv_val_high) / math.max(1, cur_idx_high - prv_idx_high)
+float static_h_high = na(prv_val_high) ? cur_val_high : (prv_val_high * (1.0 - blue_weight) + cur_val_high * blue_weight)
+float final_h_high = use_slope ? (cur_val_high + slope_high * (bar_index - cur_idx_high)) : static_h_high
+
+// --- Intersection Detection ---
+cross_condition = ta.cross(final_h_low, final_h_high)
+bgcolor(cross_condition ? color.new(color.yellow, 80) : na)
+plotshape(cross_condition, style=shape.diamond, location=location.abovebar, color=color.yellow, size=size.small)
+
+// --- Arrays for Trendline Pivots (period = 2) ---
+var float[] window_ph_vals = array.new_float(0)
+var int[]   window_ph_idxs = array.new_int(0)
+var float[] window_pl_vals = array.new_float(0)
+var int[]   window_pl_idxs = array.new_int(0)
+
+float ph_local = ta.pivothigh(high, 5, 5)
+float pl_local = ta.pivotlow(low, 5, 5)
+
+if not na(ph_local)
+    array.push(window_ph_vals, ph_local)
+    array.push(window_ph_idxs, bar_index[2])
+
+if not na(pl_local)
+    array.push(window_pl_vals, pl_local)
+    array.push(window_pl_idxs, bar_index[2])
+
+if cross_condition
+    if array.size(window_ph_vals) >= 2 and array.size(window_pl_vals) >= 2
+        
+        // íÏÇ ˜ÑÏä Ïæ ÓŞİ ÈÇáÇÊÑíä
+        float max1_v = -999999.0
+        int max1_idx = -1
+        int max1_x = 0
+        for i = 0 to array.size(window_ph_vals) - 1
+            float val = array.get(window_ph_vals, i)
+            if val > max1_v
+                max1_v := val
+                max1_idx := i
+                max1_x := array.get(window_ph_idxs, i)
+                
+        float max2_v = -999999.0
+        int max2_x = 0
+        for i = 0 to array.size(window_ph_vals) - 1
+            if i != max1_idx
+                float val = array.get(window_ph_vals, i)
+                if val > max2_v
+                    max2_v := val
+                    max2_x := array.get(window_ph_idxs, i)
+
+        // íÏÇ ˜ÑÏä Ïæ ˜İ ÇííäÊÑíä
+        float min1_v = 999999.0
+        int min1_idx = -1
+        int min1_x = 0
+        for i = 0 to array.size(window_pl_vals) - 1
+            float val = array.get(window_pl_vals, i)
+            if val < min1_v
+                min1_v := val
+                min1_idx := i
+                min1_x := array.get(window_pl_idxs, i)
+                
+        float min2_v = 999999.0
+        int min2_x = 0
+        for i = 0 to array.size(window_pl_vals) - 1
+            if i != min1_idx
+                float val = array.get(window_pl_vals, i)
+                if val < min2_v
+                    min2_v := val
+                    min2_x := array.get(window_pl_idxs, i)
+
+        // --- ãÍÇÓÈÇÊ ÎØæØ ---
+        if max1_x != max2_x and min1_x != min2_x
+            float m_h = (max2_v - max1_v) / (max2_x - max1_x)
+            float b_h = max1_v - m_h * max1_x
+            
+            float m_l = (min2_v - min1_v) / (min2_x - min1_x)
+            float b_l = min1_v - m_l * min1_x
+            
+            if m_h != m_l
+                float x_int = (b_l - b_h) / (m_h - m_l)
+                
+                int target_x = math.round(x_int)
+                int max_future = bar_index + 500
+                int max_past = bar_index - 500
+                
+                if target_x > max_future
+                    target_x := max_future
+                else if target_x < max_past
+                    target_x := max_past
+                if target_x < 0
+                    target_x := 0
+                
+                float target_y_h = m_h * target_x + b_h
+                float target_y_l = m_l * target_x + b_l
+                
+                // íÏÇ ˜ÑÏä äŞØåÇí ˜å ÇÒ ÊŞÇØÚ ÏæÑÊÑ ÇÓÊ ÊÇ ÎØ ÇÒ åÑ Ïæ íæÊ ÚÈæÑ ˜äÏ
+                int start_h_x = math.abs(max1_x - target_x) > math.abs(max2_x - target_x) ? max1_x : max2_x
+                float start_h_y = start_h_x == max1_x ? max1_v : max2_v
+                line.new(x1=start_h_x, y1=start_h_y, x2=target_x, y2=target_y_h, color=color.red, width=2)
+                
+                int start_l_x = math.abs(min1_x - target_x) > math.abs(min2_x - target_x) ? min1_x : min2_x
+                float start_l_y = start_l_x == min1_x ? min1_v : min2_v
+                line.new(x1=start_l_x, y1=start_l_y, x2=target_x, y2=target_y_l, color=color.green, width=2)
+
+    // Ç˜ÓÇÒí ÂÑÇíååÇ ÈÑÇí ÈÇÒå Èíä ÊŞÇØÚåÇí ÈÚÏí
+    array.clear(window_ph_vals)
+    array.clear(window_ph_idxs)
+    array.clear(window_pl_vals)
+    array.clear(window_pl_idxs)

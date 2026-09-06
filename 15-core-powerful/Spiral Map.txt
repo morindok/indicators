@@ -1,0 +1,562 @@
+//@version=5
+indicator("Spiral Map{Morindok}", overlay=false, max_polylines_count=100, max_labels_count=500, max_lines_count=100)
+max_bars_back(time, 4000)
+max_bars_back(close, 4000)
+max_bars_back(high, 4000)
+max_bars_back(low, 4000)
+
+// --- ﬁ›· ò—œ‰ „ﬁÌ«” Å‰Ã—Â ---
+plot(100, color=color.new(color.white, 100))
+plot(-100, color=color.new(color.white, 100))
+plot(0, color=color.new(color.gray, 70))
+
+inputStart = input.time(0, "Start Time", confirm=true)
+inputEnd = input.time(0, "End Time", confirm=true)
+inputPrice = input.price(0.0, "Symmetric Price Level", confirm=true)
+
+spType = input.string("Archimedean", "Spiral Type", options=["Archimedean", "Logarithmic", "Fibonacci"])
+userAngle = input.float(90.0, "Target Angle (Degrees)")
+scaleX = input.float(1.0, "Width Scale")
+scaleY = input.float(1.0, "Height Scale")
+
+tableOpt = input.string("Both Tables", "Select Tables to Display", options=["None", "Last Angles Only", "Intersections Only", "Both Tables"])
+showPreSpirals = input.bool(true, "Show Pre-Range Spirals")
+showPostSpirals = input.bool(true, "Show Post-Range Spirals")
+showIntersections = input.bool(true, "Draw Angle Ray & Intersections")
+
+actualStart = inputStart == 0 ? time[100] : inputStart
+actualEnd = inputEnd == 0 ? time : inputEnd
+actualSymPrice = inputPrice == 0.0 ? close[100] : inputPrice
+
+beforeRange = time < math.min(actualStart, actualEnd)
+inRange = time >= math.min(actualStart, actualEnd) and time <= math.max(actualStart, actualEnd)
+afterRange = time > math.max(actualStart, actualEnd)
+
+var line symLine = na
+if inRange and not inRange[1]
+    if not na(symLine)
+        line.delete(symLine)
+    symLine := line.new(bar_index, actualSymPrice, bar_index + 10, actualSymPrice, color=color.blue, width=2, style=line.style_dashed, extend=extend.right, force_overlay=true)
+
+// --- ¬—«ÌÂùÂ«Ì Œ«„ »—«Ì «”ÅÌ—«·ùÂ«Ì ﬁ»· «“ »«“Â ---
+var int[] rawPreRedIdx = array.new_int()
+var float[] rawPreRedPrice = array.new_float()
+var float[] rawPreRedHeight = array.new_float()
+var float[] rawPreRedDist = array.new_float()
+
+var int[] rawPreGreenIdx = array.new_int()
+var float[] rawPreGreenPrice = array.new_float()
+var float[] rawPreGreenHeight = array.new_float()
+var float[] rawPreGreenDist = array.new_float()
+
+// --- ¬—«ÌÂùÂ«Ì œ«Œ· »«“Â Ê »⁄œ «“ »«“Â ---
+var int[] redIdx = array.new_int()
+var float[] redPrice = array.new_float()
+var float[] redCumD = array.new_float()
+var int[] greenIdx = array.new_int()
+var float[] greenPrice = array.new_float()
+var float[] greenCumD = array.new_float()
+var float sumRedHeight = 0.0
+var float sumGreenHeight = 0.0
+var float sumRedDist = 0.0
+var float sumGreenDist = 0.0
+
+var int[] postRedIdx = array.new_int()
+var float[] postRedPrice = array.new_float()
+var float[] postRedCumD = array.new_float()
+var int[] postGreenIdx = array.new_int()
+var float[] postGreenPrice = array.new_float()
+var float[] postGreenCumD = array.new_float()
+var float postSumRedHeight = 0.0
+var float postSumGreenHeight = 0.0
+var float postSumRedDist = 0.0
+var float postSumGreenDist = 0.0
+
+var int startCenter = na
+float candleHeight = high - low
+float priceDist = math.abs(close - actualSymPrice)
+
+if inRange and not inRange[1]
+    startCenter := bar_index
+    array.clear(redIdx)
+    array.clear(redPrice)
+    array.clear(redCumD)
+    array.clear(greenIdx)
+    array.clear(greenPrice)
+    array.clear(greenCumD)
+    sumRedHeight := 0.0
+    sumGreenHeight := 0.0
+    sumRedDist := 0.0
+    sumGreenDist := 0.0
+    
+if afterRange and not afterRange[1]
+    array.clear(postRedIdx)
+    array.clear(postRedPrice)
+    array.clear(postRedCumD)
+    array.clear(postGreenIdx)
+    array.clear(postGreenPrice)
+    array.clear(postGreenCumD)
+    postSumRedHeight := 0.0
+    postSumGreenHeight := 0.0
+    postSumRedDist := 0.0
+    postSumGreenDist := 0.0
+
+// --- Ã„⁄ù¬Ê—Ì œ«œÂùÂ« ---
+if beforeRange
+    if close < open
+        array.push(rawPreRedIdx, bar_index)
+        array.push(rawPreRedPrice, close)
+        array.push(rawPreRedHeight, candleHeight)
+        array.push(rawPreRedDist, priceDist)
+        if array.size(rawPreRedIdx) > 1000
+            array.shift(rawPreRedIdx)
+            array.shift(rawPreRedPrice)
+            array.shift(rawPreRedHeight)
+            array.shift(rawPreRedDist)
+    else
+        array.push(rawPreGreenIdx, bar_index)
+        array.push(rawPreGreenPrice, close)
+        array.push(rawPreGreenHeight, candleHeight)
+        array.push(rawPreGreenDist, priceDist)
+        if array.size(rawPreGreenIdx) > 1000
+            array.shift(rawPreGreenIdx)
+            array.shift(rawPreGreenPrice)
+            array.shift(rawPreGreenHeight)
+            array.shift(rawPreGreenDist)
+
+if inRange
+    if close < open
+        sumRedHeight := sumRedHeight + candleHeight
+        sumRedDist := sumRedDist + priceDist
+        array.push(redIdx, bar_index)
+        array.push(redPrice, close)
+        array.push(redCumD, sumRedDist)
+    else
+        sumGreenHeight := sumGreenHeight + candleHeight
+        sumGreenDist := sumGreenDist + priceDist
+        array.push(greenIdx, bar_index)
+        array.push(greenPrice, close)
+        array.push(greenCumD, sumGreenDist)
+
+if afterRange
+    if close < open
+        postSumRedHeight := postSumRedHeight + candleHeight
+        postSumRedDist := postSumRedDist + priceDist
+        array.push(postRedIdx, bar_index)
+        array.push(postRedPrice, close)
+        array.push(postRedCumD, postSumRedDist)
+    else
+        postSumGreenHeight := postSumGreenHeight + candleHeight
+        postSumGreenDist := postSumGreenDist + priceDist
+        array.push(postGreenIdx, bar_index)
+        array.push(postGreenPrice, close)
+        array.push(postGreenCumD, postSumGreenDist)
+
+var label[] intersectLabels = array.new_label()
+
+showAnglesTable = tableOpt == "Last Angles Only" or tableOpt == "Both Tables"
+showIntersectsTable = tableOpt == "Intersections Only" or tableOpt == "Both Tables"
+
+var table angleTable = na
+var table intersectTable = na
+
+// --- Custom atan2 Function ---
+custom_atan2(y, x) =>
+    float angle = 0.0
+    if x > 0
+        angle := math.atan(y / x)
+    else if x < 0 and y >= 0
+        angle := math.atan(y / x) + math.pi
+    else if x < 0 and y < 0
+        angle := math.atan(y / x) - math.pi
+    else if x == 0 and y > 0
+        angle := math.pi / 2
+    else if x == 0 and y < 0
+        angle := -math.pi / 2
+    angle
+
+// ---  «»⁄ «” Œ—«Ã œﬁÌﬁ “«ÊÌÂ  ﬁ«ÿ⁄ œÊ «”ÅÌ—«· ---
+findIntersection(float[] x1Arr, float[] y1Arr, float[] x2Arr, float[] y2Arr, int cx, float cy) =>
+    float intersectAngle = na
+    bool found = false
+    int s1 = array.size(x1Arr)
+    int s2 = array.size(x2Arr)
+    if s1 > 10 and s2 > 10
+        for i = 5 to s1 - 2
+            if found
+                break
+            float xA = array.get(x1Arr, i)
+            float yA = array.get(y1Arr, i)
+            float xB = array.get(x1Arr, i+1)
+            float yB = array.get(y1Arr, i+1)
+            for j = 5 to s2 - 2
+                float xC = array.get(x2Arr, j)
+                float yC = array.get(y2Arr, j)
+                float xD = array.get(x2Arr, j+1)
+                float yD = array.get(y2Arr, j+1)
+                
+                float den = (xA - xB) * (yC - yD) - (yA - yB) * (xC - xD)
+                if den != 0
+                    float t = ((xA - xC) * (yC - yD) - (yA - yC) * (xC - xD)) / den
+                    float u = -((xA - xB) * (yA - yC) - (yA - yB) * (xA - xC)) / den
+                    if t >= 0 and t <= 1 and u >= 0 and u <= 1
+                        float px = xA + t * (xB - xA)
+                        float py = yA + t * (yB - yA)
+                        
+                        float angRad = custom_atan2(py - cy, px - cx)
+                        float angDeg = angRad * 180.0 / math.pi
+                        if angDeg < 0
+                            angDeg += 360.0
+                        intersectAngle := angDeg
+                        found := true
+                        break
+    intersectAngle
+
+// ---  «»⁄ —”„ «”ÅÌ—«· »ÂÌ‰Âù‘œÂ »« Å«—«„ — ÃÂ  X ---
+drawSmoothMappedSpiral(float targetRadius, float targetArcLen, int cx, float cy, bool isCw, color c, polyline oldPoly, float targetDeg, int[] idxArr, float[] priceArr, float[] cumDArr, bool findIntersects, color lblColor, string lblPrefix, float dirX) =>
+    polyline newPoly = na
+    float labelX = na
+    float labelY = na
+    int chartBarIdx = na
+    float chartCandlePrice = na
+    float targetRad = targetDeg * math.pi / 180.0
+    float thetaEnd = 0.0
+    float[] xCoords = array.new_float()
+    float[] yCoords = array.new_float()
+    
+    if targetRadius > 0 and targetArcLen > 0 and array.size(idxArr) > 0
+        float targetRatio = targetArcLen / targetRadius
+        float baseArcLen = 0.0
+        float lastPx = 0.0
+        float lastPy = 0.0
+        float finalBaseRadius = 1.0
+        float stepCalc = 0.01
+        
+        for i = 1 to 10000
+            float theta = i * stepCalc
+            float r = spType == "Archimedean" ? theta : (spType == "Logarithmic" ? math.pow(1.1, theta) : math.pow(1.05, theta))
+            float px = r * math.cos(theta)
+            float py = r * math.sin(theta)
+            if i > 1
+                baseArcLen := baseArcLen + math.sqrt(math.pow(px - lastPx, 2) + math.pow(py - lastPy, 2))
+            float baseRadius = math.sqrt(px*px + py*py)
+            thetaEnd := theta
+            finalBaseRadius := baseRadius
+            if baseRadius > 0 and (baseArcLen / baseRadius) >= targetRatio
+                break
+            lastPx := px
+            lastPy := py
+
+        float visualScale = 80.0 / finalBaseRadius
+        
+        var pts = array.new<chart.point>()
+        array.clear(pts)
+        int drawSteps = 250
+        float drawStep = thetaEnd / drawSteps
+        
+        for i = 0 to drawSteps
+            float t = i * drawStep
+            float r = spType == "Archimedean" ? t : (spType == "Logarithmic" ? math.pow(1.1, t) : math.pow(1.05, t))
+            float aDir = isCw ? -t : t
+            
+            float rawX = (r * math.cos(aDir)) * visualScale * scaleX * dirX
+            float rawY = (r * math.sin(aDir)) * visualScale * scaleY
+            
+            int pX_coord = cx + int(math.round(rawX))
+            float pY_coord = cy + rawY
+            
+            array.push(xCoords, float(pX_coord))
+            array.push(yCoords, pY_coord)
+            
+            if pX_coord > bar_index + 450
+                pX_coord := bar_index + 450
+                
+            array.push(pts, chart.point.from_index(pX_coord, pY_coord))
+            
+        if not na(oldPoly)
+            polyline.delete(oldPoly)
+        newPoly := polyline.new(pts, curved=true, line_color=c, line_width=2)
+        
+        float closestThetaDiff = 999999.0
+        for i = 0 to array.size(idxArr) - 1
+            float targetD = array.get(cumDArr, i)
+            float mappedTheta = (targetD / targetArcLen) * thetaEnd
+            
+            if math.abs(mappedTheta - targetRad) < closestThetaDiff
+                closestThetaDiff := math.abs(mappedTheta - targetRad)
+                float rMap = spType == "Archimedean" ? mappedTheta : (spType == "Logarithmic" ? math.pow(1.1, mappedTheta) : math.pow(1.05, mappedTheta))
+                float aMapDir = isCw ? -mappedTheta : mappedTheta
+                
+                float rLblX = (rMap * math.cos(aMapDir)) * visualScale * scaleX * dirX
+                float rLblY = (rMap * math.sin(aMapDir)) * visualScale * scaleY
+                
+                int finalLblX = cx + int(math.round(rLblX))
+                if finalLblX > bar_index + 450
+                    finalLblX := bar_index + 450
+                    
+                labelX := finalLblX
+                labelY := cy + rLblY
+                chartBarIdx := array.get(idxArr, i)
+                chartCandlePrice := array.get(priceArr, i)
+
+        if findIntersects and showIntersections
+            float baseRad = targetRad % (2 * math.pi)
+            int k = 0
+            while true
+                float tk = baseRad + k * 2 * math.pi
+                if tk > thetaEnd
+                    break
+                
+                float expectedD = tk * (targetArcLen / thetaEnd)
+                float minDist = 999999.0
+                int bestI = -1
+                for i = 0 to array.size(cumDArr) - 1
+                    float d = array.get(cumDArr, i)
+                    if math.abs(d - expectedD) < minDist
+                        minDist := math.abs(d - expectedD)
+                        bestI := i
+                
+                if bestI != -1
+                    int intersectBar = array.get(idxArr, bestI)
+                    float intersectPrice = array.get(priceArr, bestI)
+                    label lbl = label.new(intersectBar, intersectPrice, text=lblPrefix + " Ray Int (" + str.tostring(k) + ")\n" + str.tostring(intersectPrice, "#.##"), color=color.new(lblColor, 50), textcolor=color.white, style=label.style_label_left, force_overlay=true)
+                    array.push(intersectLabels, lbl)
+                k := k + 1
+
+    [newPoly, labelX, labelY, chartBarIdx, chartCandlePrice, thetaEnd, xCoords, yCoords]
+
+// --- „ €Ì—Â«Ì –ŒÌ—Â Œ—ÊÃÌ ê—«›ÌòÌ ---
+var polyline redPoly = na
+var polyline greenPoly = na
+var label spLabelRed = na
+var label chLabelRed = na
+var label spLabelGreen = na
+var label chLabelGreen = na
+
+var polyline postRedPoly = na
+var polyline postGreenPoly = na
+var label postSpLabelRed = na
+var label postChLabelRed = na
+var label postSpLabelGreen = na
+var label postChLabelGreen = na
+
+var polyline preRedPoly = na
+var polyline preGreenPoly = na
+var label preSpLabelRed = na
+var label preChLabelRed = na
+var label preSpLabelGreen = na
+var label preChLabelGreen = na
+
+var line connectRayRed = na
+var line connectRayGreen = na
+var line connectRayPreRed = na
+var line connectRayPreGreen = na
+
+// --- „Õ«”»Â „⁄òÊ” œ«œÂùÂ«Ì Pre-Range —ÊÌ ¬Œ—Ì‰ ò‰œ· ---
+var int[] preRedIdx = array.new_int()
+var float[] preRedPrice = array.new_float()
+var float[] preRedCumD = array.new_float()
+var float preSumRedHeight = 0.0
+var float preSumRedDist = 0.0
+
+var int[] preGreenIdx = array.new_int()
+var float[] preGreenPrice = array.new_float()
+var float[] preGreenCumD = array.new_float()
+var float preSumGreenHeight = 0.0
+var float preSumGreenDist = 0.0
+
+if barstate.islast
+    // Å«ò ò—œ‰ œ«œÂùÂ«Ì ﬁ»·Ì »—«Ì Ã·ÊêÌ—Ì «“ —ÊÌ Â„ «› «œ‰ œ— ¬ÅœÌ ùÂ«Ì “‰œÂ »«“«—
+    array.clear(preRedIdx)
+    array.clear(preRedPrice)
+    array.clear(preRedCumD)
+    preSumRedHeight := 0.0
+    preSumRedDist := 0.0
+    
+    array.clear(preGreenIdx)
+    array.clear(preGreenPrice)
+    array.clear(preGreenCumD)
+    preSumGreenHeight := 0.0
+    preSumGreenDist := 0.0
+
+    // „Õ«”»Â  Ã„⁄Ì ﬁ—„“Â« »Â ’Ê—  „⁄òÊ”
+    if array.size(rawPreRedIdx) > 0
+        for i = array.size(rawPreRedIdx) - 1 to 0
+            preSumRedHeight += array.get(rawPreRedHeight, i)
+            preSumRedDist += array.get(rawPreRedDist, i)
+            array.push(preRedIdx, array.get(rawPreRedIdx, i))
+            array.push(preRedPrice, array.get(rawPreRedPrice, i))
+            array.push(preRedCumD, preSumRedDist)
+            
+    // „Õ«”»Â  Ã„⁄Ì ”»“Â« »Â ’Ê—  „⁄òÊ”
+    if array.size(rawPreGreenIdx) > 0
+        for i = array.size(rawPreGreenIdx) - 1 to 0
+            preSumGreenHeight += array.get(rawPreGreenHeight, i)
+            preSumGreenDist += array.get(rawPreGreenDist, i)
+            array.push(preGreenIdx, array.get(rawPreGreenIdx, i))
+            array.push(preGreenPrice, array.get(rawPreGreenPrice, i))
+            array.push(preGreenCumD, preSumGreenDist)
+
+    int centerX = not na(startCenter) ? startCenter : bar_index - 100
+    int preCenterX = not na(startCenter) ? startCenter - 1 : centerX - 1
+    float centerY = 0.0
+    
+    if array.size(intersectLabels) > 0
+        for i = 0 to array.size(intersectLabels) - 1
+            label.delete(array.get(intersectLabels, i))
+        array.clear(intersectLabels)
+        
+    if not na(connectRayRed)
+        line.delete(connectRayRed)
+    if not na(connectRayGreen)
+        line.delete(connectRayGreen)
+    if not na(connectRayPreRed)
+        line.delete(connectRayPreRed)
+    if not na(connectRayPreGreen)
+        line.delete(connectRayPreGreen)
+        
+    if showAnglesTable and na(angleTable)
+        angleTable := table.new(position.top_right, 2, 2, bgcolor=color.new(color.black, 80), border_color=color.gray, border_width=1)
+    if not showAnglesTable and not na(angleTable)
+        table.delete(angleTable)
+        angleTable := na
+        
+    if showIntersectsTable and na(intersectTable)
+        intersectTable := table.new(position.bottom_right, 2, 3, bgcolor=color.new(color.navy, 80), border_color=color.gray, border_width=1)
+    if not showIntersectsTable and not na(intersectTable)
+        table.delete(intersectTable)
+        intersectTable := na
+    
+    float finalRedAngle = 0.0
+    float finalGreenAngle = 0.0
+    
+    float[] rX = array.new_float()
+    float[] rY = array.new_float()
+    float[] gX = array.new_float()
+    float[] gY = array.new_float()
+    
+    float inRedLx = na
+    float inRedLy = na
+    
+    // --- —”„ «”ÅÌ—«·ùÂ«Ì »«“Â (In-Range) ---
+    if sumRedHeight > 0 and sumRedDist > 0
+        [rP, rLx, rLy, rBar, rPrice, rThetaEnd, rxOut, ryOut] = drawSmoothMappedSpiral(sumRedHeight, sumRedDist, centerX, centerY, false, color.red, redPoly, userAngle, redIdx, redPrice, redCumD, false, color.red, "", 1.0)
+        redPoly := rP
+        inRedLx := rLx
+        inRedLy := rLy
+        finalRedAngle := rThetaEnd * 180.0 / math.pi
+        rX := rxOut
+        rY := ryOut
+        
+        if not na(rLx)
+            if not na(spLabelRed)
+                label.delete(spLabelRed)
+            if not na(chLabelRed)
+                label.delete(chLabelRed)
+            spLabelRed := label.new(int(rLx), rLy, text=str.tostring(userAngle)+"∞", color=color.new(color.red, 70), textcolor=color.white, style=label.style_label_center)
+            chLabelRed := label.new(rBar, rPrice, text="In-Range Red @ "+str.tostring(userAngle)+"∞\n"+str.tostring(rPrice, "#.##"), color=color.new(color.red, 70), textcolor=color.white, style=label.style_label_down, force_overlay=true)
+            
+    float inGreenLx = na
+    float inGreenLy = na
+    if sumGreenHeight > 0 and sumGreenDist > 0
+        [gP, gLx, gLy, gBar, gPrice, gThetaEnd, gxOut, gyOut] = drawSmoothMappedSpiral(sumGreenHeight, sumGreenDist, centerX, centerY, true, color.green, greenPoly, userAngle, greenIdx, greenPrice, greenCumD, false, color.green, "", 1.0)
+        greenPoly := gP
+        inGreenLx := gLx
+        inGreenLy := gLy
+        finalGreenAngle := gThetaEnd * 180.0 / math.pi
+        gX := gxOut
+        gY := gyOut
+        
+        if not na(gLx)
+            if not na(spLabelGreen)
+                label.delete(spLabelGreen)
+            if not na(chLabelGreen)
+                label.delete(chLabelGreen)
+            spLabelGreen := label.new(int(gLx), gLy, text=str.tostring(userAngle)+"∞", color=color.new(color.green, 70), textcolor=color.white, style=label.style_label_center)
+            chLabelGreen := label.new(gBar, gPrice, text="In-Range Green @ "+str.tostring(userAngle)+"∞\n"+str.tostring(gPrice, "#.##"), color=color.new(color.green, 70), textcolor=color.white, style=label.style_label_up, force_overlay=true)
+
+    if showAnglesTable
+        table.cell(angleTable, 0, 0, "Last Red Angle", text_color=color.red, text_halign=text.align_left)
+        table.cell(angleTable, 1, 0, str.tostring(finalRedAngle, "#.##") + "∞", text_color=color.white, text_halign=text.align_right)
+        table.cell(angleTable, 0, 1, "Last Green Angle", text_color=color.green, text_halign=text.align_left)
+        table.cell(angleTable, 1, 1, str.tostring(finalGreenAngle, "#.##") + "∞", text_color=color.white, text_halign=text.align_right)
+
+    // --- —”„ «”ÅÌ—«·ùÂ«Ì »⁄œ «“ »«“Â (Post-Range) ---
+    if showPostSpirals
+        float[] prX = array.new_float()
+        float[] prY = array.new_float()
+        float[] pgX = array.new_float()
+        float[] pgY = array.new_float()
+        
+        if postSumRedHeight > 0 and postSumRedDist > 0
+            [prP, prLx, prLy, prBar, prPriceOut, prThetaEndOut, prxOut, pryOut] = drawSmoothMappedSpiral(postSumRedHeight, postSumRedDist, centerX, centerY, false, color.new(color.maroon, 20), postRedPoly, userAngle, postRedIdx, postRedPrice, postRedCumD, true, color.red, "Post Red", 1.0)
+            postRedPoly := prP
+            prX := prxOut
+            prY := pryOut
+            if not na(prLx)
+                if not na(postSpLabelRed)
+                    label.delete(postSpLabelRed)
+                if not na(postChLabelRed)
+                    label.delete(postChLabelRed)
+                postSpLabelRed := label.new(int(prLx), prLy, text=str.tostring(userAngle)+"∞ (Post)", color=color.new(color.maroon, 50), textcolor=color.white, style=label.style_label_center)
+                postChLabelRed := label.new(prBar, prPriceOut, text="Post Red @ "+str.tostring(userAngle)+"∞\n"+str.tostring(prPriceOut, "#.##"), color=color.new(color.maroon, 50), textcolor=color.white, style=label.style_label_down, force_overlay=true)
+                if showIntersections and not na(inRedLx)
+                    connectRayRed := line.new(int(inRedLx), inRedLy, int(prLx), prLy, color=color.new(color.red, 30), style=line.style_dotted, width=2)
+
+        if postSumGreenHeight > 0 and postSumGreenDist > 0
+            [pgP, pgLx, pgLy, pgBar, pgPriceOut, pgThetaEndOut, pgxOut, pgyOut] = drawSmoothMappedSpiral(postSumGreenHeight, postSumGreenDist, centerX, centerY, true, color.new(color.teal, 20), postGreenPoly, userAngle, postGreenIdx, postGreenPrice, postGreenCumD, true, color.green, "Post Green", 1.0)
+            postGreenPoly := pgP
+            pgX := pgxOut
+            pgY := pgyOut
+            if not na(pgLx)
+                if not na(postSpLabelGreen)
+                    label.delete(postSpLabelGreen)
+                if not na(postChLabelGreen)
+                    label.delete(postChLabelGreen)
+                postSpLabelGreen := label.new(int(pgLx), pgLy, text=str.tostring(userAngle)+"∞ (Post)", color=color.new(color.teal, 50), textcolor=color.white, style=label.style_label_center)
+                postChLabelGreen := label.new(pgBar, pgPriceOut, text="Post Green @ "+str.tostring(userAngle)+"∞\n"+str.tostring(pgPriceOut, "#.##"), color=color.new(color.teal, 50), textcolor=color.white, style=label.style_label_up, force_overlay=true)
+                if showIntersections and not na(inGreenLx)
+                    connectRayGreen := line.new(int(inGreenLx), inGreenLy, int(pgLx), pgLy, color=color.new(color.green, 30), style=line.style_dotted, width=2)
+
+        if showIntersectsTable
+            float rAng = findIntersection(rX, rY, prX, prY, centerX, centerY)
+            float gAng = findIntersection(gX, gY, pgX, pgY, centerX, centerY)
+            
+            table.cell(intersectTable, 0, 0, "Spiral Crossings", text_color=color.yellow, text_halign=text.align_center)
+            table.cell(intersectTable, 1, 0, "Angle (∞)", text_color=color.yellow, text_halign=text.align_center)
+            
+            string rAngStr = not na(rAng) ? str.tostring(rAng, "#.##") + "∞" : "No Intersect"
+            table.cell(intersectTable, 0, 1, "Red Intersection", text_color=color.red, text_halign=text.align_left)
+            table.cell(intersectTable, 1, 1, rAngStr, text_color=color.white, text_halign=text.align_right)
+            
+            string gAngStr = not na(gAng) ? str.tostring(gAng, "#.##") + "∞" : "No Intersect"
+            table.cell(intersectTable, 0, 2, "Green Intersection", text_color=color.green, text_halign=text.align_left)
+            table.cell(intersectTable, 1, 2, gAngStr, text_color=color.white, text_halign=text.align_right)
+
+    // --- —”„ «”ÅÌ—«·ùÂ«Ì ﬁ»· «“ »«“Â (Pre-Range) ---
+    if showPreSpirals
+        if preSumRedHeight > 0 and preSumRedDist > 0
+            [preRP, preRLx, preRLy, preRBar, preRPriceOut, preRThetaEndOut, preRxOut, preRyOut] = drawSmoothMappedSpiral(preSumRedHeight, preSumRedDist, preCenterX, centerY, false, color.new(color.purple, 20), preRedPoly, userAngle, preRedIdx, preRedPrice, preRedCumD, true, color.red, "Pre Red", -1.0)
+            preRedPoly := preRP
+            if not na(preRLx)
+                if not na(preSpLabelRed)
+                    label.delete(preSpLabelRed)
+                if not na(preChLabelRed)
+                    label.delete(preChLabelRed)
+                preSpLabelRed := label.new(int(preRLx), preRLy, text=str.tostring(userAngle)+"∞ (Pre)", color=color.new(color.purple, 50), textcolor=color.white, style=label.style_label_center)
+                preChLabelRed := label.new(preRBar, preRPriceOut, text="Pre Red @ "+str.tostring(userAngle)+"∞\n"+str.tostring(preRPriceOut, "#.##"), color=color.new(color.purple, 50), textcolor=color.white, style=label.style_label_down, force_overlay=true)
+                if showIntersections and not na(inRedLx)
+                    connectRayPreRed := line.new(int(inRedLx), inRedLy, int(preRLx), preRLy, color=color.new(color.red, 30), style=line.style_dotted, width=2)
+                    
+        if preSumGreenHeight > 0 and preSumGreenDist > 0
+            [preGP, preGLx, preGLy, preGBar, preGPriceOut, preGThetaEndOut, preGxOut, preGyOut] = drawSmoothMappedSpiral(preSumGreenHeight, preSumGreenDist, preCenterX, centerY, true, color.new(color.orange, 20), preGreenPoly, userAngle, preGreenIdx, preGreenPrice, preGreenCumD, true, color.green, "Pre Green", -1.0)
+            preGreenPoly := preGP
+            if not na(preGLx)
+                if not na(preSpLabelGreen)
+                    label.delete(preSpLabelGreen)
+                if not na(preChLabelGreen)
+                    label.delete(preChLabelGreen)
+                preSpLabelGreen := label.new(int(preGLx), preGLy, text=str.tostring(userAngle)+"∞ (Pre)", color=color.new(color.orange, 50), textcolor=color.white, style=label.style_label_center)
+                preChLabelGreen := label.new(preGBar, preGPriceOut, text="Pre Green @ "+str.tostring(userAngle)+"∞\n"+str.tostring(preGPriceOut, "#.##"), color=color.new(color.orange, 50), textcolor=color.white, style=label.style_label_up, force_overlay=true)
+                if showIntersections and not na(inGreenLx)
+                    connectRayPreGreen := line.new(int(inGreenLx), inGreenLy, int(preGLx), preGLy, color=color.new(color.green, 30), style=line.style_dotted, width=2)

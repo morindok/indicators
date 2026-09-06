@@ -1,0 +1,148 @@
+//@version=5
+
+indicator("Painting Of Price{Morindok} by BITMOON618", overlay=true)
+
+// --- تنظیمات ---
+
+leftBars = input.int(5, title="پایه‌های چپ پیووت (Left Bars)")
+
+rightBars = input.int(5, title="پایه‌های راست پیووت (Right Bars)")
+
+pathLength = input.int(50, title="طول مسیر پلی‌لاین تقاطع (تعداد کندل)")
+
+// --- شناسایی پیووت‌ها ---
+
+p_high = ta.pivothigh(high, leftBars, rightBars)
+
+p_low = ta.pivotlow(low, leftBars, rightBars)
+
+var int last_ph_bar = na
+
+var float last_ph_price = na
+
+var int last_pl_bar = na
+
+var float last_pl_price = na
+
+if not na(p_high)
+
+    last_ph_bar := bar_index - rightBars
+
+    last_ph_price := p_high
+
+if not na(p_low)
+
+    last_pl_bar := bar_index - rightBars
+
+    last_pl_price := p_low
+
+// --- خطوط امتداد یافته اصلی (سبز و قرمز) ---
+
+var line line_low_ext = line.new(na, na, na, na, color=color.green, width=2, style=line.style_solid)
+
+var line line_high_ext = line.new(na, na, na, na, color=color.red, width=2, style=line.style_solid)
+
+// --- پلی‌لاین مسیر تقاطع ---
+
+var polyline intersection_poly = na
+
+var pointArrayIntersection = array.new<chart.point>()
+
+int end_x_l = na
+
+float end_y_l = na
+
+int end_x_h = na
+
+float end_y_h = na
+
+// محاسبات برای پیووت دره (Low)
+
+if not na(last_pl_bar) and not na(last_pl_price)
+
+    int dx_l = bar_index - last_pl_bar
+
+    float dy_l = low - last_pl_price
+
+    end_x_l := last_pl_bar + math.round(1.618 * dx_l)
+
+    end_y_l := last_pl_price + 1.618 * dy_l
+
+// محاسبات برای پیووت قله (High)
+
+if not na(last_ph_bar) and not na(last_ph_price)
+
+    int dx_h = bar_index - last_ph_bar
+
+    float dy_h = high - last_ph_price
+
+    end_x_h := last_ph_bar + math.round(1.618 * dx_h)
+
+    end_y_h := last_ph_price + 1.618 * dy_h
+
+// --- محاسبه نقطه تقاطع دو خط امتدادیافته ---
+
+if not na(last_pl_bar) and not na(last_pl_price) and not na(last_ph_bar) and not na(last_ph_price)
+
+    float denom_l = bar_index - last_pl_bar
+
+    float denom_h = bar_index - last_ph_bar
+
+    
+
+    if denom_l != 0 and denom_h != 0
+
+        float m_l = (low - last_pl_price) / denom_l
+
+        float m_h = (high - last_ph_price) / denom_h
+
+        
+
+        if m_l != m_h
+
+            float inter_x_float = ((m_l * last_pl_bar - last_pl_price) - (m_h * last_ph_bar - last_ph_price)) / (m_l - m_h)
+
+            float inter_y = m_l * (inter_x_float - last_pl_bar) + last_pl_price
+
+            int inter_x = math.round(inter_x_float)
+
+            
+
+            array.push(pointArrayIntersection, chart.point.from_index(index = inter_x, price = inter_y))
+
+            if array.size(pointArrayIntersection) > pathLength
+
+                array.shift(pointArrayIntersection)
+
+// --- رسم نهایی در آخرین کندل ---
+
+if barstate.islast
+
+    // آپدیت خط امتدادیافته پیووت دره
+
+    if not na(last_pl_bar) and not na(last_pl_price)
+
+        line.set_xy1(line_low_ext, last_pl_bar, last_pl_price)
+
+        line.set_xy2(line_low_ext, end_x_l, end_y_l)
+
+        
+
+    // آپدیت خط امتدادیافته پیووت قله
+
+    if not na(last_ph_bar) and not na(last_ph_price)
+
+        line.set_xy1(line_high_ext, last_ph_bar, last_ph_price)
+
+        line.set_xy2(line_high_ext, end_x_h, end_y_h)
+
+    // آپدیت مسیر تقاطع
+
+    if not na(intersection_poly)
+
+        polyline.delete(intersection_poly)
+
+        
+
+    intersection_poly := polyline.new(pointArrayIntersection, line_color = color.orange, line_style = line.style_solid) 
+

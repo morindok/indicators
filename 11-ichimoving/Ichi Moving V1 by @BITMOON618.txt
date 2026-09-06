@@ -1,0 +1,173 @@
+//@version=5
+indicator("Ichimoku + Dynamic MA + Cloud Middle Lines (Toggleable)", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ===== Inputs: Lengths & Settings =====
+tenkanLen    = input.int(9, minval=1, title="Tenkan Length")
+kijunLen     = input.int(26, minval=1, title="Kijun Length")
+senkouBLen   = input.int(52, minval=1, title="Senkou B Length")
+displacement = input.int(26, minval=1, title="Displacement")
+maType       = input.string("EMA", title="Dynamic MA Type", options=["SMA", "EMA"])
+maxDynLen    = input.int(300, minval=10, maxval=2000, title="Max Dynamic MA Length")
+
+// ===== Inputs: Visibility Toggles =====
+showTenkan      = input.bool(false, title="Show Tenkan-sen")
+showKijun       = input.bool(false, title="Show Kijun-sen")
+showChikou      = input.bool(false, title="Show Chikou Span")
+showCloud       = input.bool(false, title="Show Ichimoku Cloud (Kumo)")
+showMA          = input.bool(false, title="Show Dynamic MA")
+showSymmetric   = input.bool(false, title="Show Symmetric Price")
+showMidMaTop    = input.bool(true,  title="Show Mid MA & Cloud Top (Default)")
+showMidMaBottom = input.bool(true,  title="Show Mid MA & Cloud Bottom (Default)")
+showVLines      = input.bool(false, title="Show Cloud Flip Vertical Lines")
+showLabels      = input.bool(false, title="Show Cloud Candle Count Labels")
+
+// ===== Ichimoku calculations =====
+tenkan  = (ta.highest(high, tenkanLen) + ta.lowest(low, tenkanLen)) / 2.0
+kijun   = (ta.highest(high, kijunLen) + ta.lowest(low, kijunLen)) / 2.0
+senkouA = (tenkan + kijun) / 2.0
+senkouB = (ta.highest(high, senkouBLen) + ta.lowest(low, senkouBLen)) / 2.0
+chikou  = close
+
+// Cloud limits
+cloudTop    = math.max(senkouA, senkouB)
+cloudBottom = math.min(senkouA, senkouB)
+
+// Cloud state
+cloudBull  = senkouA > senkouB
+cloudBear  = senkouA < senkouB
+cloudValid = not na(senkouA) and not na(senkouB) and (cloudBull or cloudBear)
+cloudFlip  = cloudValid and cloudValid[1] and (cloudBull != cloudBull[1])
+
+// Count candles in current same-color cloud segment
+var int segmentLen = na
+var bool segmentBull = na
+
+if barstate.isfirst
+    segmentLen := cloudValid ? 1 : na
+    segmentBull := cloudBull
+
+if cloudValid
+    if na(segmentLen) or na(segmentBull)
+        segmentLen := 1
+        segmentBull := cloudBull
+    else if cloudFlip
+        segmentLen := 1
+        segmentBull := cloudBull
+    else
+        segmentLen += 1
+else
+    segmentLen := na
+    segmentBull := na
+
+// Cap dynamic MA length
+dynLen = na(segmentLen) ? na : math.min(segmentLen, maxDynLen)
+
+// Dynamic SMA function
+dynamic_sma(src, length, maxLen) =>
+    float sum = 0.0
+    int count = 0
+    for i = 0 to 1999
+        if i < maxLen
+            if not na(length) and i < length and not na(src[i])
+                sum += src[i]
+                count += 1
+    count > 0 ? sum / count : na
+
+// Dynamic EMA
+var float dynamicEma = na
+alpha = not na(dynLen) ? 2.0 / (dynLen + 1.0) : na
+dynamicEma := na(alpha) ? na : na(dynamicEma[1]) ? close : alpha * close + (1.0 - alpha) * dynamicEma[1]
+
+// Dynamic MA
+dynamicSma = dynamic_sma(close, dynLen, maxDynLen)
+ma = maType == "EMA" ? dynamicEma : dynamicSma
+
+// Symmetric price
+symmetricPrice = not na(ma) ? 2.0 * ma - close : na
+
+// Calculate Middle Lines
+midMaTop    = not na(ma) and not na(cloudTop) ? (ma + cloudTop) / 2.0 : na
+midMaBottom = not na(ma) and not na(cloudBottom) ? (ma + cloudBottom) / 2.0 : na
+
+// ===== Plots with Conditional Colors based on Toggles =====
+plot(showTenkan ? tenkan : na, title="Tenkan-sen", color=color.blue, linewidth=2)
+plot(showKijun ? kijun : na, title="Kijun-sen", color=color.red, linewidth=2)
+plot(showChikou ? chikou : na, title="Chikou Span", color=color.green, offset=-displacement, linewidth=2)
+
+plot(showCloud ? senkouA : na, title="Senkou Span A", color=color.lime, offset=displacement, linewidth=2)
+plot(showCloud ? senkouB : na, title="Senkou Span B", color=color.maroon, offset=displacement, linewidth=2)
+
+p1 = plot(showCloud ? senkouA : na, title="Cloud Top Plot", color=color.new(color.green, 80), offset=displacement)
+p2 = plot(showCloud ? senkouB : na, title="Cloud Bottom Plot", color=color.new(color.red, 80), offset=displacement)
+fill(p1, p2, color=showCloud ? (cloudBull ? color.new(color.green, 85) : color.new(color.red, 85)) : color.new(color.black, 100), title="Kumo")
+
+plot(showMA ? ma : na, title="Dynamic MA", color=color.orange, linewidth=2)
+plot(showSymmetric ? symmetricPrice : na, title="Symmetric Price", color=color.purple, linewidth=2, offset=displacement)
+
+// ===== The Two Main Middle Lines =====
+plot(showMidMaTop ? midMaTop : na, title="Mid MA & Cloud Top", color=color.blue, linewidth=2, offset=displacement)
+plot(showMidMaBottom ? midMaBottom : na, title="Mid MA & Cloud Bottom", color=color.fuchsia, linewidth=2, offset=displacement)
+
+// ===== Vertical Line (Toggleable) =====
+atr = ta.atr(14)
+lineTop = high + atr * 3.0
+lineBot = low  - atr * 3.0
+
+if cloudFlip and showVLines
+    flipColor = cloudBull ? color.green : color.red
+    line.new(
+         bar_index + displacement, lineBot,
+         bar_index + displacement, lineTop,
+         xloc=xloc.bar_index, extend=extend.both,
+         color=flipColor, width=1, style=line.style_dashed)
+
+// ===== Labels (Toggleable) =====
+var int segmentStart = na
+var label liveLabel = na
+
+if barstate.isfirst
+    segmentStart := cloudValid ? bar_index : na
+
+if cloudValid and showLabels
+    if na(segmentStart)
+        segmentStart := bar_index
+    if cloudFlip
+        prevLen = nz(segmentLen[1])
+        prevMidAgo = math.floor((prevLen - 1) / 2)
+        prevX = (bar_index - 1 - prevMidAgo) + displacement
+        prevY = (senkouA[1 + prevMidAgo] + senkouB[1 + prevMidAgo]) / 2.0
+        prevColor = segmentBull[1] ? color.green : color.red
+
+        label.new(
+             x=prevX,
+             y=prevY,
+             text=str.tostring(prevLen),
+             xloc=xloc.bar_index,
+             style=label.style_label_center,
+             color=prevColor,
+             textcolor=color.white,
+             size=size.small)
+
+        segmentStart := bar_index
+else
+    segmentStart := na
+
+// Live label logic
+if not na(liveLabel)
+    label.delete(liveLabel)
+
+if cloudValid and not na(segmentLen) and segmentLen > 0 and showLabels
+    liveMidAgo = math.floor((segmentLen - 1) / 2)
+    liveX = (bar_index - liveMidAgo) + displacement
+    liveY = (senkouA[liveMidAgo] + senkouB[liveMidAgo]) / 2.0
+    liveColor = segmentBull ? color.green : color.red
+
+    liveLabel := label.new(
+         x=liveX,
+         y=liveY,
+         text=str.tostring(segmentLen),
+         xloc=xloc.bar_index,
+         style=label.style_label_center,
+         color=liveColor,
+         textcolor=color.white,
+         size=size.small)

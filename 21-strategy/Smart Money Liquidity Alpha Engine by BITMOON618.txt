@@ -1,0 +1,603 @@
+//@version=6
+indicator("Smart Money Liquidity Alpha Engine{Morindok} by BITMOON618", overlay = true, max_boxes_count = 500, max_labels_count = 100, max_lines_count = 500)
+
+// ─────────────────────────────────────────────
+var string GRP_RISK    = "📊 مدیریت سرمایه"
+var string GRP_HEAT    = "🔥 هیت‌مپ لیکوییدیتی"
+var string GRP_FP      = "📊 Footprint"
+var string GRP_VOL     = "🕯 Volume Candle"
+var string GRP_IMB     = "⚡ Imbalance"
+var string GRP_SMC     = "🧠 Smart Money (OPT-IN)"
+var string GRP_SESSION = "⏰ Session Filter"
+var string GRP_PTP     = "🎯 Partial TP"
+var string GRP_DEBUG   = "🔍 Debug"
+var string GRP_DSP     = "🎨 Display"
+
+// ── مدیریت سرمایه ──
+float init_cap = input.float(1000.0, "سرمایه اولیه ($)", group=GRP_RISK)
+float risk_pct = input.float(1.0, "ریسک هر معامله (%)", group=GRP_RISK)
+
+// ── هیت‌مپ ──
+int lookback = input.int(120, "Lookback", minval=20, maxval=1000, group=GRP_HEAT)
+int nCols = input.int(16, "Columns", minval=2, maxval=50, group=GRP_HEAT)
+int nRows = input.int(15, "Rows", minval=2, maxval=50, group=GRP_HEAT)
+float wickW = input.float(2.5, "Wick Weight", group=GRP_HEAT)
+float bodyW = input.float(0.5, "Body Weight", group=GRP_HEAT)
+float sweepPct = input.float(0.75, "Sweep Pct", group=GRP_HEAT)
+int transp = input.int(85, "Transparency", minval=50, maxval=95, group=GRP_HEAT)
+
+// ── Footprint ──
+int BINS = input.int(8, "Bins", minval=4, maxval=12, group=GRP_FP)
+int BARS_SHOW = input.int(5, "Footprint Bars", minval=1, maxval=8, group=GRP_FP)
+
+// ── Imbalance ──
+float IMB_RATIO = input.float(3.0, "Imbalance Ratio", minval=1.5, maxval=10.0, step=0.5, group=GRP_IMB)
+bool SHOW_IMB = input.bool(true, "Show Imbalance", group=GRP_IMB)
+
+// ── Volume Candle ──
+bool USE_VOLCVOL = input.bool(true, "Volume Candle Delta", group=GRP_VOL)
+
+// ═══════════════════════════════════════════════
+// 🔥 مهم‌ترین بخش: فیلترها همه پیش‌فرض خاموش
+// ═══════════════════════════════════════════════
+
+// ── Session Filter (FIXED) ──
+bool use_session = input.bool(false, "فعال‌سازی Session Filter", group=GRP_SESSION, tooltip="پیش‌فرض خاموش - فقط در صورت نیاز روشن کن")
+int session_start = input.int(8, "ساعت شروع (UTC)", minval=0, maxval=23, group=GRP_SESSION)
+int session_end = input.int(17, "ساعت پایان (UTC)", minval=0, maxval=23, group=GRP_SESSION)
+
+// ── SMC Filters (همه پیش‌فرض خاموش) ──
+bool use_fvg = input.bool(false, "FVG Filter", group=GRP_SMC, tooltip="Fair Value Gap - پیش‌فرض خاموش")
+bool use_ob = input.bool(false, "Order Block Filter", group=GRP_SMC, tooltip="پیش‌فرض خاموش")
+bool use_displacement = input.bool(false, "Displacement Filter", group=GRP_SMC, tooltip="پیش‌فرض خاموش")
+bool use_cum_delta = input.bool(false, "Cumulative Delta Filter", group=GRP_SMC, tooltip="پیش‌فرض خاموش")
+
+// ── تنظیمات Base Sweep (بسیار ملایم‌تر) ──
+int swing_lookback = input.int(5, "Swing Lookback", minval=3, maxval=15, group=GRP_SMC)
+float vol_threshold = input.float(0.8, "آستانه حجم (ضریب SMA)", step=0.1, minval=0.5, maxval=2.0, group=GRP_SMC, tooltip="0.8 = فقط 80% میانگین کافیست")
+float displacement_mult = input.float(1.5, "Displacement Multiplier", step=0.1, minval=1.0, maxval=3.0, group=GRP_SMC)
+int cum_delta_len = input.int(5, "Cumulative Delta Length", minval=3, maxval=10, group=GRP_SMC)
+
+// ── Partial TP ──
+bool use_partial_tp = input.bool(true, "Partial TP", group=GRP_PTP, tooltip="60% در TP1")
+float tp1_ratio = input.float(1.0, "TP1 (R)", step=0.1, minval=0.5, maxval=2.0, group=GRP_PTP)
+float tp2_ratio = input.float(2.5, "TP2 (R)", step=0.1, minval=1.5, maxval=5.0, group=GRP_PTP)
+float partial_pct = input.float(60.0, "Partial %", step=5.0, minval=30.0, maxval=80.0, group=GRP_PTP) / 100.0
+bool be_after_tp1 = input.bool(true, "BEP after TP1", group=GRP_PTP)
+
+// ── Debug ──
+bool show_debug = input.bool(true, "نمایش سیگنال‌های رد شده", group=GRP_DEBUG, tooltip="نشان می‌دهد کدام فیلتر سیگنال را مسدود کرد")
+bool show_all_signals = input.bool(false, "نمایش همه سیگنال‌های پایه (بدون فیلتر)", group=GRP_DEBUG, tooltip="برای تست - همه sweepها را نشان می‌دهد")
+
+// ── رنگ‌ها ──
+color COL_BUY = input.color(color.new(color.lime, 60), "Buy", inline="c", group=GRP_DSP)
+color COL_SELL = input.color(color.new(color.red, 60), "Sell", inline="c", group=GRP_DSP)
+color COL_IMB_B = input.color(color.new(color.lime, 75), "Imb Buy", inline="c3", group=GRP_DSP)
+color COL_IMB_S = input.color(color.new(color.red, 75), "Imb Sell", inline="c3", group=GRP_DSP)
+
+// ═══════════════════════════════════════════════
+// 🔧 محاسبات پایه
+// ═══════════════════════════════════════════════
+float effective_vol = nz(volume) == 0 ? ta.tr * 1000 : nz(volume)
+float hl_range = high - low
+
+float close_vc = ta.cum(math.sign(ta.change(close)) * effective_vol)
+float open_vc = close_vc[1]
+
+float bar_delta_real = close_vc - close_vc[1]
+float bar_delta_est = (close - open) / (hl_range + 0.0001) * effective_vol
+float current_delta = USE_VOLCVOL ? bar_delta_real : bar_delta_est
+float cum_delta = math.sum(current_delta, cum_delta_len)
+
+// ═══════════════════════════════════════════════
+// 🔧 Session Filter (FIXED - استفاده از hour)
+// ═══════════════════════════════════════════════
+int current_hour = hour(time, "UTC")
+bool in_session = use_session ? (current_hour >= session_start and current_hour < session_end) : true
+
+// ═══════════════════════════════════════════════
+// 🔧 Swing High/Low با fallback
+// ═══════════════════════════════════════════════
+float swing_high = ta.highest(high, swing_lookback)[1]
+float swing_low = ta.lowest(low, swing_lookback)[1]
+
+// Fallback اگر NA شد
+float safe_swing_high = na(swing_high) ? high[1] : swing_high
+float safe_swing_low = na(swing_low) ? low[1] : swing_low
+
+// ═══════════════════════════════════════════════
+// 🔧 FVG Detection (Fixed)
+// ═══════════════════════════════════════════════
+bool fvg_bull = bar_index >= 2 and low > high[2] and close[1] > open[1]
+bool fvg_bear = bar_index >= 2 and high < low[2] and close[1] < open[1]
+
+var float fvg_bull_top = na
+var float fvg_bull_bot = na
+var float fvg_bear_top = na
+var float fvg_bear_bot = na
+var int fvg_bull_bar = na
+var int fvg_bear_bar = na
+
+if fvg_bull
+    fvg_bull_top := low
+    fvg_bull_bot := high[2]
+    fvg_bull_bar := bar_index
+if fvg_bear
+    fvg_bear_top := low[2]
+    fvg_bear_bot := high
+    fvg_bear_bar := bar_index
+
+// FVG اعتبار: حداکثر 30 کندل
+bool fvg_bull_valid = not na(fvg_bull_top) and (bar_index - fvg_bull_bar) < 30
+bool fvg_bear_valid = not na(fvg_bear_top) and (bar_index - fvg_bear_bar) < 30
+
+// ═══════════════════════════════════════════════
+// 🔧 Order Block Detection
+// ═══════════════════════════════════════════════
+bool bull_ob = bar_index >= 2 and close[1] > open[1] and close[1] > high[2] and close[2] < open[2]
+bool bear_ob = bar_index >= 2 and close[1] < open[1] and close[1] < low[2] and close[2] > open[2]
+
+var float bull_ob_top = na
+var float bull_ob_bot = na
+var float bear_ob_top = na
+var float bear_ob_bot = na
+var int bull_ob_bar = na
+var int bear_ob_bar = na
+
+if bull_ob
+    bull_ob_top := high[2]
+    bull_ob_bot := low[2]
+    bull_ob_bar := bar_index
+if bear_ob
+    bear_ob_top := high[2]
+    bear_ob_bot := low[2]
+    bear_ob_bar := bar_index
+
+bool bull_ob_valid = not na(bull_ob_top) and low <= bull_ob_top and high >= bull_ob_bot and (bar_index - bull_ob_bar) < 50
+bool bear_ob_valid = not na(bear_ob_top) and high >= bear_ob_bot and low <= bear_ob_top and (bar_index - bear_ob_bar) < 50
+
+// ═══════════════════════════════════════════════
+// 🔧 Displacement Detection
+// ═══════════════════════════════════════════════
+float body_size = math.abs(close - open)
+float avg_body = ta.sma(body_size, 20)
+bool bull_displacement = close > open and body_size > avg_body * displacement_mult and close > high[1]
+bool bear_displacement = close < open and body_size > avg_body * displacement_mult and close < low[1]
+
+// ═══════════════════════════════════════════════
+// توابع هیت‌مپ و Footprint
+// ═══════════════════════════════════════════════
+heatColor(float v, float mx) =>
+    float half = mx > 0 ? mx / 2.0 : 1.0
+    color g = v <= half ? color.from_gradient(v, 0, half, color.blue, color.yellow) : color.from_gradient(v, half, mx, color.yellow, color.red)
+    color.new(g, transp)
+
+rowOf(float price, float lo, float cH) =>
+    math.max(0, math.min(nRows - 1, int(math.floor((price - lo) / cH))))
+
+f_bin_vols(bar_v, bar_o, bar_c, bar_h, bar_l, level_lo, level_hi) =>
+    float bar_range = bar_h - bar_l
+    float body_lo = math.min(bar_o, bar_c)
+    float body_hi = math.max(bar_o, bar_c)
+    bool is_bull = bar_c >= bar_o
+    float overlap_lo = math.max(level_lo, bar_l)
+    float overlap_hi = math.min(level_hi, bar_h)
+    float overlap = math.max(0.0, overlap_hi - overlap_lo)
+    float weight = bar_range > 0 ? overlap / bar_range : (1.0 / float(BINS))
+    bool in_body = (level_hi >= body_lo) and (level_lo <= body_hi)
+    bool in_uwk = level_lo >= body_hi
+    bool in_lwk = level_hi <= body_lo
+    float body_mult = in_body ? 1.4 : 0.75
+    float bin_vol = bar_v * weight * body_mult
+    float buy_ratio = is_bull ? 0.62 : 0.38
+    if in_body
+        buy_ratio := is_bull ? 0.70 : 0.30
+    if in_uwk
+        buy_ratio := is_bull ? 0.45 : 0.25
+    if in_lwk
+        buy_ratio := is_bull ? 0.75 : 0.55
+    [bin_vol * buy_ratio, bin_vol * (1.0 - buy_ratio)]
+
+// ─── Arrays & Tables ─────────────────────────
+var array<box> boxes = array.new<box>()
+var array<label> labels = array.new<label>()
+var box[] imbBoxes = array.new_box()
+
+var table fpTable = table.new(position.middle_center, BARS_SHOW + 1, 15, bgcolor=color.new(color.black, 88), border_width=1, border_color=color.new(color.gray, 60))
+var table infoTbl = table.new(position.bottom_right, 2, 7, bgcolor=color.new(color.black, 85), border_width=1, border_color=color.new(color.white, 60))
+var table stat_table = table.new(position.top_right, columns=2, rows=11, bgcolor=color.rgb(10, 15, 25, 10), border_width=1, border_color=color.gray)
+
+// ─── موتور بصری (آخرین کندل) ───────────────────
+if barstate.islast
+    for b in boxes
+        box.delete(b)
+    array.clear(boxes)
+    for lb in labels
+        label.delete(lb)
+    array.clear(labels)
+    if array.size(imbBoxes) > 0
+        for _i = 0 to array.size(imbBoxes) - 1
+            box.delete(array.get(imbBoxes, _i))
+        array.clear(imbBoxes)
+    
+    int len = math.min(lookback, bar_index + 1)
+    float hh = high
+    float ll = low
+    for i = 0 to len - 1
+        hh := math.max(hh, high[i])
+        ll := math.min(ll, low[i])
+    float cellH = (hh - ll) / nRows
+    
+    if cellH > 0
+        array<float> score = array.new<float>(nRows, 0.0)
+        matrix<float> grid = matrix.new<float>(nRows, nCols, 0.0)
+        for p = 0 to len - 1
+            int i = len - 1 - p
+            int c = math.min(nCols - 1, int(math.floor(p * nCols / len)))
+            float vol = nz(effective_vol[i])
+            float bodyTop = math.max(open[i], close[i])
+            float bodyBot = math.min(open[i], close[i])
+            int rbB = rowOf(bodyBot, ll, cellH)
+            int rbT = rowOf(bodyTop, ll, cellH)
+            for r = rbB to rbT
+                array.set(score, r, array.get(score, r) * (1 - sweepPct))
+            float vBody = vol * bodyW / math.max(1, rbT - rbB + 1)
+            for r = rbB to rbT
+                array.set(score, r, array.get(score, r) + vBody)
+            int rwT = rowOf(high[i], ll, cellH)
+            if rwT > rbT
+                float vwU = vol * wickW / math.max(1, rwT - rbT)
+                for r = rbT + 1 to rwT
+                    array.set(score, r, array.get(score, r) + vwU)
+            int rwB = rowOf(low[i], ll, cellH)
+            if rwB < rbB
+                float vwD = vol * wickW / math.max(1, rbB - rwB)
+                for r = rwB to rbB - 1
+                    array.set(score, r, array.get(score, r) + vwD)
+            for r = 0 to nRows - 1
+                matrix.set(grid, r, c, array.get(score, r))
+        float maxV = matrix.max(grid)
+        if maxV > 0
+            for c = 0 to nCols - 1
+                int pS = int(math.floor(c * len / nCols))
+                int pE = int(math.floor((c + 1) * len / nCols)) - 1
+                if pE >= pS
+                    int xL = bar_index - (len - 1) + pS
+                    int xR = bar_index - (len - 1) + pE + 1
+                    for r = 0 to nRows - 1
+                        box bx = box.new(xL, ll + (r + 1) * cellH, xR, ll + r * cellH, xloc=xloc.bar_index, bgcolor=heatColor(matrix.get(grid, r, c), maxV), border_color=na)
+                        array.push(boxes, bx)
+
+    // Footprint calculations
+    float sum_delta = 0.0, sum_vol = 0.0, sum_buy_total = 0.0, sum_sell_total = 0.0
+    float max_bin_vol = 0.0
+    float[] row_max_vol = array.new_float(BINS, 0.0)
+
+    table.cell(fpTable, 0, 0, text="Price", text_color=color.yellow, text_size=size.small, bgcolor=color.new(color.navy, 50))
+    for ci = 0 to BARS_SHOW - 1
+        col_idx = ci + 1
+        lbl = ci == 0 ? "LIVE" : "T-" + str.tostring(ci)
+        hdr_bg = ci == 0 ? color.new(color.blue, 55) : color.new(color.navy, 70)
+        table.cell(fpTable, col_idx, 0, text=lbl, text_color=color.yellow, text_size=size.small, bgcolor=hdr_bg)
+
+    float fp_price_lo = 999999999.0, fp_price_hi = 0.0
+    for ci = 0 to BARS_SHOW - 1
+        fp_price_lo := math.min(fp_price_lo, low[ci])
+        fp_price_hi := math.max(fp_price_hi, high[ci])
+    float global_step = fp_price_hi == fp_price_lo ? 0.0001 : (fp_price_hi - fp_price_lo) / BINS
+
+    for ri = 0 to BINS - 1
+        int row_idx = BINS - ri
+        float lv_lo = fp_price_lo + ri * global_step
+        float lv_hi = lv_lo + global_step
+        string price_lbl = str.tostring(math.round_to_mintick((lv_lo + lv_hi) / 2))
+        table.cell(fpTable, 0, row_idx, text=price_lbl, text_color=color.new(color.white, 30), text_size=size.tiny, bgcolor=color.new(color.black, 80))
+
+    for ci = 0 to BARS_SHOW - 1
+        int col_idx = ci + 1
+        float bh = high[ci], bl = low[ci], bc = close[ci], bo = open[ci], bv = effective_vol[ci]
+        sum_vol += bv
+        float bar_delta = 0.0, bar_buy = 0.0, bar_sell = 0.0
+        float vc_delta = USE_VOLCVOL ? (close_vc[ci] - close_vc[ci + 1]) : 0.0
+
+        for ri = 0 to BINS - 1
+            int row_idx = BINS - ri
+            float lv_lo = fp_price_lo + ri * global_step
+            float lv_hi = lv_lo + global_step
+            [bv_b, bv_s] = f_bin_vols(bv, bo, bc, bh, bl, lv_lo, lv_hi)
+            bar_buy += bv_b
+            bar_sell += bv_s
+            bar_delta += (bv_b - bv_s)
+            float row_vol_now = array.get(row_max_vol, ri)
+            if (bv_b + bv_s) > row_vol_now
+                array.set(row_max_vol, ri, bv_b + bv_s)
+                max_bin_vol := math.max(max_bin_vol, bv_b + bv_s)
+            string cell_txt = str.tostring(math.round(bv_s)) + "×" + str.tostring(math.round(bv_b))
+            bool is_buy_imb = bv_b > bv_s * IMB_RATIO
+            bool is_sell_imb = bv_s > bv_b * IMB_RATIO
+            color cell_bg = is_buy_imb ? COL_BUY : is_sell_imb ? COL_SELL : bv_b > bv_s ? color.new(color.green, 82) : color.new(color.red, 82)
+            table.cell(fpTable, col_idx, row_idx, text=cell_txt, text_color=color.white, text_size=size.tiny, bgcolor=cell_bg)
+            if SHOW_IMB and ci <= 2
+                int bar_left = bar_index[ci]
+                int bar_right = ci == 0 ? bar_index + 1 : bar_index[ci - 1]
+                if is_buy_imb
+                    array.push(imbBoxes, box.new(left=bar_left, top=lv_hi, right=bar_right, bottom=lv_lo, border_color=color.lime, bgcolor=COL_IMB_B, force_overlay=true, border_width=1))
+                else if is_sell_imb
+                    array.push(imbBoxes, box.new(left=bar_left, top=lv_hi, right=bar_right, bottom=lv_lo, border_color=color.red, bgcolor=COL_IMB_S, force_overlay=true, border_width=1))
+
+        float display_delta = USE_VOLCVOL and ((vc_delta > 0 and bar_delta < 0) or (vc_delta < 0 and bar_delta > 0)) ? -bar_delta * 0.5 : bar_delta
+        sum_delta += display_delta
+        sum_buy_total += bar_buy
+        sum_sell_total += bar_sell
+        color delta_col = display_delta > 0 ? color.lime : color.red
+        string delta_txt = (display_delta > 0 ? "▲ Δ " : "▼ Δ ") + str.tostring(math.round(display_delta))
+        table.cell(fpTable, col_idx, BINS + 1, text=delta_txt, text_color=delta_col, text_size=size.tiny)
+
+    for ri = 0 to BINS - 1
+        int row_idx = BINS - ri
+        float rv = array.get(row_max_vol, ri)
+        if max_bin_vol > 0 and rv > max_bin_vol * 0.75
+            float lv_lo = fp_price_lo + ri * global_step
+            float lv_hi = lv_lo + global_step
+            table.cell(fpTable, 0, row_idx, text="★ " + str.tostring(math.round_to_mintick((lv_lo + lv_hi) / 2)), text_color=color.yellow, text_size=size.tiny, bgcolor=color.new(color.orange, 72))
+
+    float buy_pct_total = sum_buy_total + sum_sell_total > 0 ? (sum_buy_total / (sum_buy_total + sum_sell_total)) * 100 : 50.0
+    float sell_pct_total = 100.0 - buy_pct_total
+    bool is_strong = math.abs(sum_delta) > sum_vol * 0.15
+    bool buy_dominant = sum_buy_total > sum_sell_total
+    string control = buy_dominant ? "Buyers (" + str.tostring(math.round(buy_pct_total)) + "%)" : "Sellers (" + str.tostring(math.round(sell_pct_total)) + "%)"
+    string strength = is_strong ? "Strong" : "Weak"
+    color ctrl_col = buy_dominant ? color.lime : color.red
+    color str_col = is_strong ? color.orange : color.gray
+
+    table.cell(infoTbl, 0, 0, text="⚡ Pro Analysis", text_color=color.yellow, text_size=size.small, bgcolor=color.new(color.navy, 55))
+    table.cell(infoTbl, 1, 0, text="Value", text_color=color.yellow, text_size=size.small, bgcolor=color.new(color.navy, 55))
+    table.cell(infoTbl, 0, 1, text="Net Delta", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTbl, 1, 1, text=str.tostring(math.round(sum_delta)), text_color=sum_delta > 0 ? color.lime : color.red, text_size=size.tiny)
+    table.cell(infoTbl, 0, 2, text="Session", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTbl, 1, 2, text=in_session ? "ACTIVE 🟢" : "CLOSED 🔴", text_color=in_session ? color.green : color.red, text_size=size.tiny)
+    table.cell(infoTbl, 0, 3, text="Control", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTbl, 1, 3, text=control, text_color=ctrl_col, text_size=size.tiny)
+
+// ═══════════════════════════════════════════════
+// 🎯 موتور معاملاتی (FIXED)
+// ═══════════════════════════════════════════════
+float highest_liq = ta.highest(high, 20)
+float lowest_liq = ta.lowest(low, 20)
+float avg_vol = ta.sma(effective_vol, 20)
+
+// ─── شرط پایه Sweep (ملایم‌تر) ───
+bool base_sweep_high = bar_index >= 1 and high > highest_liq[1] and close < highest_liq[1] and effective_vol > avg_vol * vol_threshold
+bool base_sweep_low = bar_index >= 1 and low < lowest_liq[1] and close > lowest_liq[1] and effective_vol > avg_vol * vol_threshold
+
+// ─── تأییدیه‌های SMC ───
+bool fvg_ok_long = not use_fvg or fvg_bull_valid
+bool fvg_ok_short = not use_fvg or fvg_bear_valid
+bool ob_ok_long = not use_ob or bull_ob_valid
+bool ob_ok_short = not use_ob or bear_ob_valid
+bool disp_ok_long = not use_displacement or bull_displacement[1] or bull_displacement
+bool disp_ok_short = not use_displacement or bear_displacement[1] or bear_displacement
+bool cum_delta_ok_long = not use_cum_delta or cum_delta > 0
+bool cum_delta_ok_short = not use_cum_delta or cum_delta < 0
+
+// ─── سیگنال نهایی ───
+bool long_signal = base_sweep_low and in_session and fvg_ok_long and ob_ok_long and disp_ok_long and cum_delta_ok_long and barstate.isconfirmed
+bool short_signal = base_sweep_high and in_session and fvg_ok_short and ob_ok_short and disp_ok_short and cum_delta_ok_short and barstate.isconfirmed
+
+// ═══════════════════════════════════════════════
+// 🔍 Debug - نمایش سیگنال‌های رد شده
+// ═══════════════════════════════════════════════
+if show_debug and barstate.isconfirmed
+    if base_sweep_low and not long_signal
+        string reason = ""
+        if not in_session
+            reason := "Session"
+        else if not fvg_ok_long
+            reason := "FVG"
+        else if not ob_ok_long
+            reason := "OB"
+        else if not disp_ok_long
+            reason := "Displacement"
+        else if not cum_delta_ok_long
+            reason := "CumDelta"
+        if reason != ""
+            label.new(bar_index, low, "❌ " + reason, style=label.style_label_up, color=color.new(color.gray, 50), textcolor=color.white, size=size.tiny)
+    
+    if base_sweep_high and not short_signal
+        string reason = ""
+        if not in_session
+            reason := "Session"
+        else if not fvg_ok_short
+            reason := "FVG"
+        else if not ob_ok_short
+            reason := "OB"
+        else if not disp_ok_short
+            reason := "Displacement"
+        else if not cum_delta_ok_short
+            reason := "CumDelta"
+        if reason != ""
+            label.new(bar_index, high, "❌ " + reason, style=label.style_label_down, color=color.new(color.gray, 50), textcolor=color.white, size=size.tiny)
+
+// نمایش همه sweepها برای تست
+if show_all_signals and barstate.isconfirmed
+    if base_sweep_low
+        label.new(bar_index, low, "📍 Sweep Low", style=label.style_label_up, color=color.new(color.orange, 50), textcolor=color.white, size=size.tiny)
+    if base_sweep_high
+        label.new(bar_index, high, "📍 Sweep High", style=label.style_label_down, color=color.new(color.orange, 50), textcolor=color.white, size=size.tiny)
+
+// ═══════════════════════════════════════════════
+// 🎯 سیستم Partial TP
+// ═══════════════════════════════════════════════
+var float cap = init_cap
+var float peak_cap = init_cap
+var float max_dd = 0.0
+var int trades = 0
+var int wins = 0
+var int losses = 0
+var int tp1_hits = 0
+var int tp2_hits = 0
+
+var int pos_dir = 0
+var float pos_qty = 0.0
+var float pos_remaining = 0.0
+var float pos_ep = na
+var float pos_sl = na
+var float pos_tp1 = na
+var float pos_tp2 = na
+var bool pos_tp1_hit = false
+
+// ─── مدیریت خروج ───
+if pos_dir == 1
+    bool sl_hit = low <= pos_sl
+    bool tp1_hit_now = not pos_tp1_hit and high >= pos_tp1
+    bool tp2_hit_now = high >= pos_tp2
+    
+    if tp1_hit_now
+        float close_qty = pos_qty * partial_pct
+        float pnl_tp1 = close_qty * (pos_tp1 - pos_ep)
+        cap += pnl_tp1
+        pos_remaining -= close_qty
+        pos_tp1_hit := true
+        tp1_hits += 1
+        if be_after_tp1
+            pos_sl := pos_ep + 0.0001
+        label.new(bar_index, high, "🎯 TP1", style=label.style_label_down, color=color.green, textcolor=color.white, size=size.small)
+    
+    if tp2_hit_now and pos_remaining > 0
+        float pnl_tp2 = pos_remaining * (pos_tp2 - pos_ep)
+        cap += pnl_tp2
+        trades += 1
+        wins += 1
+        tp2_hits += 1
+        pos_dir := 0
+        pos_remaining := 0.0
+        pos_tp1_hit := false
+        label.new(bar_index, high, "🏆 TP2", style=label.style_label_down, color=color.lime, textcolor=color.white, size=size.normal)
+    
+    else if sl_hit
+        float exit_price = pos_sl
+        float pnl_sl = pos_remaining * (exit_price - pos_ep)
+        cap += pnl_sl
+        trades += 1
+        if pos_tp1_hit
+            wins += 1
+            label.new(bar_index, low, "✅ BEP", style=label.style_label_up, color=color.gray, textcolor=color.white, size=size.small)
+        else
+            losses += 1
+            label.new(bar_index, low, "🔴 SL", style=label.style_label_up, color=color.red, textcolor=color.white, size=size.small)
+        pos_dir := 0
+        pos_remaining := 0.0
+        pos_tp1_hit := false
+
+if pos_dir == -1
+    bool sl_hit = high >= pos_sl
+    bool tp1_hit_now = not pos_tp1_hit and low <= pos_tp1
+    bool tp2_hit_now = low <= pos_tp2
+    
+    if tp1_hit_now
+        float close_qty = pos_qty * partial_pct
+        float pnl_tp1 = close_qty * (pos_ep - pos_tp1)
+        cap += pnl_tp1
+        pos_remaining -= close_qty
+        pos_tp1_hit := true
+        tp1_hits += 1
+        if be_after_tp1
+            pos_sl := pos_ep - 0.0001
+        label.new(bar_index, low, "🎯 TP1", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+    
+    if tp2_hit_now and pos_remaining > 0
+        float pnl_tp2 = pos_remaining * (pos_ep - pos_tp2)
+        cap += pnl_tp2
+        trades += 1
+        wins += 1
+        tp2_hits += 1
+        pos_dir := 0
+        pos_remaining := 0.0
+        pos_tp1_hit := false
+        label.new(bar_index, low, "🏆 TP2", style=label.style_label_up, color=color.lime, textcolor=color.white, size=size.normal)
+    
+    else if sl_hit
+        float exit_price = pos_sl
+        float pnl_sl = pos_remaining * (pos_ep - exit_price)
+        cap += pnl_sl
+        trades += 1
+        if pos_tp1_hit
+            wins += 1
+            label.new(bar_index, high, "✅ BEP", style=label.style_label_down, color=color.gray, textcolor=color.white, size=size.small)
+        else
+            losses += 1
+            label.new(bar_index, high, "🔴 SL", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+        pos_dir := 0
+        pos_remaining := 0.0
+        pos_tp1_hit := false
+
+peak_cap := math.max(peak_cap, cap)
+float cur_dd = peak_cap > 0 ? ((peak_cap - cap) / peak_cap) * 100.0 : 0.0
+max_dd := math.max(max_dd, cur_dd)
+
+// ─── ورود ───
+float risk_amount = cap * (risk_pct / 100.0)
+
+if long_signal and pos_dir == 0
+    pos_dir := 1
+    pos_ep := close
+    pos_sl := math.min(safe_swing_low, low)
+    float risk_dist = math.max(pos_ep - pos_sl, 0.0001)
+    pos_tp1 := use_partial_tp ? pos_ep + (risk_dist * tp1_ratio) : pos_ep + (risk_dist * 2.0)
+    pos_tp2 := use_partial_tp ? pos_ep + (risk_dist * tp2_ratio) : na
+    pos_qty := risk_amount / risk_dist
+    pos_remaining := pos_qty
+    pos_tp1_hit := false
+    label.new(bar_index, low - risk_dist, "⬆️ BUY", style=label.style_label_up, color=color.blue, textcolor=color.white, size=size.small)
+    if use_partial_tp
+        box.new(bar_index, pos_tp1, bar_index + 20, pos_tp1 - risk_dist * 0.05, border_color=color.new(color.green, 30), bgcolor=color.new(color.green, 85), text="TP1")
+        box.new(bar_index, pos_tp2, bar_index + 30, pos_tp2 - risk_dist * 0.05, border_color=color.new(color.lime, 30), bgcolor=color.new(color.lime, 85), text="TP2")
+    else
+        box.new(bar_index, pos_tp1, bar_index + 25, pos_sl, border_color=color.new(color.green, 30), bgcolor=color.new(color.green, 90))
+
+if short_signal and pos_dir == 0
+    pos_dir := -1
+    pos_ep := close
+    pos_sl := math.max(safe_swing_high, high)
+    float risk_dist = math.max(pos_sl - pos_ep, 0.0001)
+    pos_tp1 := use_partial_tp ? pos_ep - (risk_dist * tp1_ratio) : pos_ep - (risk_dist * 2.0)
+    pos_tp2 := use_partial_tp ? pos_ep - (risk_dist * tp2_ratio) : na
+    pos_qty := risk_amount / risk_dist
+    pos_remaining := pos_qty
+    pos_tp1_hit := false
+    label.new(bar_index, high + risk_dist, "⬇️ SELL", style=label.style_label_down, color=color.purple, textcolor=color.white, size=size.small)
+    if use_partial_tp
+        box.new(bar_index, pos_tp1, bar_index + 20, pos_tp1 + risk_dist * 0.05, border_color=color.new(color.red, 30), bgcolor=color.new(color.red, 85), text="TP1")
+        box.new(bar_index, pos_tp2, bar_index + 30, pos_tp2 + risk_dist * 0.05, border_color=color.new(color.orange, 30), bgcolor=color.new(color.orange, 85), text="TP2")
+    else
+        box.new(bar_index, pos_sl, bar_index + 25, pos_tp1, border_color=color.new(color.red, 30), bgcolor=color.new(color.red, 90))
+
+// ─── داشبورد ───
+if barstate.islast
+    float wr = trades > 0 ? (wins / trades) * 100.0 : 0.0
+    float growth = ((cap - init_cap) / init_cap) * 100.0
+    string state_txt = pos_dir == 1 ? "LONG 🟢" : pos_dir == -1 ? "SHORT 🔴" : "WAITING ⚪"
+    string tp_status = pos_tp1_hit ? "TP1 ✅ → BEP" : pos_dir != 0 ? "Active" : "—"
+    
+    table.cell(stat_table, 0, 0, "🧠 SMC Engine FIXED", bgcolor=color.rgb(180, 130, 0), text_color=color.white, text_size=size.small)
+    table.cell(stat_table, 1, 0, "Pro Win-Rate", bgcolor=color.rgb(180, 130, 0), text_color=color.white, text_size=size.small)
+    table.cell(stat_table, 0, 1, "Position", text_color=color.white, text_size=size.tiny)
+    table.cell(stat_table, 1, 1, state_txt, text_color=pos_dir != 0 ? color.yellow : color.silver, text_size=size.tiny)
+    table.cell(stat_table, 0, 2, "TP Status", text_color=color.white, text_size=size.tiny)
+    table.cell(stat_table, 1, 2, tp_status, text_color=pos_tp1_hit ? color.green : color.aqua, text_size=size.tiny)
+    table.cell(stat_table, 0, 3, "Capital", text_color=color.white, text_size=size.tiny)
+    table.cell(stat_table, 1, 3, "$" + str.tostring(cap, "#.##"), text_color=cap >= init_cap ? color.green : color.red, text_size=size.tiny)
+    table.cell(stat_table, 0, 4, "Growth", text_color=color.white, text_size=size.tiny)
+    table.cell(stat_table, 1, 4, str.tostring(growth, "#.##") + "%", text_color=growth >= 0 ? color.green : color.red, text_size=size.tiny)
+    table.cell(stat_table, 0, 5, "Max DD", text_color=color.red, text_size=size.tiny)
+    table.cell(stat_table, 1, 5, "-" + str.tostring(max_dd, "#.##") + "%", text_color=color.red, text_size=size.tiny)
+    table.cell(stat_table, 0, 6, "Trades", text_color=color.white, text_size=size.tiny)
+    table.cell(stat_table, 1, 6, str.tostring(trades), text_color=color.white, text_size=size.tiny)
+    table.cell(stat_table, 0, 7, "W / L", text_color=color.white, text_size=size.tiny)
+    table.cell(stat_table, 1, 7, str.tostring(wins) + " / " + str.tostring(losses), text_color=color.white, text_size=size.tiny)
+    table.cell(stat_table, 0, 8, "🎯 WIN RATE", text_color=color.yellow, text_size=size.tiny)
+    table.cell(stat_table, 1, 8, str.tostring(wr, "#.##") + "%", text_color=wr >= 50 ? color.lime : color.red, text_size=size.small)
+    table.cell(stat_table, 0, 9, "TP1 Hits", text_color=color.green, text_size=size.tiny)
+    table.cell(stat_table, 1, 9, str.tostring(tp1_hits), text_color=color.green, text_size=size.tiny)
+    table.cell(stat_table, 0, 10, "TP2 Hits", text_color=color.lime, text_size=size.tiny)
+    table.cell(stat_table, 1, 10, str.tostring(tp2_hits), text_color=color.lime, text_size=size.tiny)

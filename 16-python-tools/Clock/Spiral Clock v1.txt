@@ -1,0 +1,521 @@
+# -*- coding: utf-8 -*-
+"""
+🌙⏰ UTC Clock on Live Bybit Logarithmic Spiral with Accurate Server Time & S&R
+------------------------------------------------------------------
+• دریافت زمان دقیق UTC از سرور بایبیت (جهت جلوگیری از خطای ساعت سیستم)
+• دریافت پایدار داده‌های کندل از بایبیت (چند دامنه، کش، User-Agent)
+• تشخیص آخرین پیووت تأییدشده با دوره قابل تنظیم
+• توزیع قیمت‌های بسته‌شده از پیووت تا لایو روی اسپیرال لگاریتمی
+• ساعت UTC با دو عقربه (ساعتگرد + پادساعتگرد منطبق در ۲:۰۰)
+• پیش‌بینی و استخراج حرفه‌ای سطوح حمایت و مقاومت از تقاطع‌های عقربه‌ها
+"""
+
+import numpy as np
+import pandas as pd
+import requests
+import plotly.graph_objects as go
+from datetime import datetime, timezone
+
+import dash
+from dash import dcc, html, Input, Output, State
+import dash_bootstrap_components as dbc
+
+# ==============================================================================
+# 0) پالت رنگی
+# ==============================================================================
+BG, CARD, LINE, TXT, MUT = "#0b1220", "#121c30", "#23314d", "#e8ecf4", "#8fa3c0"
+GOLD, UP, DN = "#f0b90b", "#16a085", "#e74c3c"
+SPIRAL_CLR = "#3498db"
+
+DEFAULT_SYMBOL = "BTCUSDT"
+DEFAULT_CATEGORY = "linear"
+DEFAULT_INTERVAL = "15"
+DEFAULT_PIVOT = 5
+DEFAULT_TURNS = 3
+RATIO = 4.0  # نسبت شعاع بیرونی به درونی اسپیرال
+DEG = np.pi / 180.0
+
+# ==============================================================================
+# 1) اتصال REST پایدار به بایبیت (چند دامنه + کش + User-Agent مرورگر)
+# ==============================================================================
+REST_CANDIDATES = [
+    "https://api.bybit.com",
+    "https://api.bytick.com",
+    "https://api.bybit.kz",
+]
+SESSION = requests.Session()
+SESSION.headers.update({
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/120.0 Safari/537.36"),
+    "Accept": "application/json",
+    "Referer": "https://www.bybit.com/",
+})
+_ACTIVE_REST_BASE = {"url": None}
+
+
+def bybit_get(path, params=None, timeout=10):
+    if params is None:
+        params = {}
+    cands = ([_ACTIVE_REST_BASE["url"]] if _ACTIVE_REST_BASE["url"] else []) + \
+            [b for b in REST_CANDIDATES if b != _ACTIVE_REST_BASE["url"]]
+    for base in cands:
+        try:
+            r = SESSION.get(f"{base}{path}", params=params, timeout=timeout)
+            if r.status_code in (403, 451):
+                continue
+            r.raise_for_status()
+            d = r.json()
+            if d.get("retCode") == 0:
+                _ACTIVE_REST_BASE["url"] = base
+                return d
+        except Exception:
+            continue
+    return None
+
+
+def get_bybit_utc_time():
+    """دریافت زمان دقیق UTC مستقیماً از سرور بایبیت"""
+    d = bybit_get("/v5/market/time")
+    if d and "result" in d:
+        res = d["result"]
+        if "timeSecond" in res:
+            return datetime.fromtimestamp(int(res["timeSecond"]), tz=timezone.utc)
+        elif "time" in res:
+            return datetime.fromtimestamp(int(res["time"]) / 1000.0, tz=timezone.utc)
+    # بازگشت به ساعت سیستم در صورت عدم دسترسی به API
+    return datetime.now(timezone.utc)
+
+
+def get_klines(symbol, interval, category="linear", limit=500):
+    d = bybit_get("/v5/market/kline", {
+        "category": category, "symbol": symbol,
+        "interval": interval, "limit": limit,
+    })
+    if not d or "list" not in (d.get("result") or {}):
+        return pd.DataFrame()
+    lst = d["result"]["list"]
+    if not lst:
+        return pd.DataFrame()
+    df = pd.DataFrame(
+        lst,
+        columns=["ts", "open", "high", "low", "close", "volume", "turnover"],
+    )
+    df["ts"] = pd.to_datetime(df["ts"].astype(int), unit="ms")
+    for c in ["open", "high", "low", "close", "volume"]:
+        df[c] = df[c].astype(float)
+    return df.sort_values("ts").reset_index(drop=True)
+
+
+# ==============================================================================
+# 2) تشخیص آخرین پیووت با دوره قابل تنظیم
+# ==============================================================================
+def find_last_pivot(highs, lows, period):
+    highs = np.asarray(highs, dtype=float)
+    lows = np.asarray(lows, dtype=float)
+    n = len(highs)
+    if n < 2 * period + 1:
+        return 0, "none", float(highs[0]) if n > 0 else 0.0
+
+    for i in range(n - period - 1, period - 1, -1):
+        window = lows[i - period:i + period + 1]
+        if lows[i] <= window.min() + 1e-12:
+            return i, "low", float(lows[i])
+
+    for i in range(n - period - 1, period - 1, -1):
+        window = highs[i - period:i + period + 1]
+        if highs[i] >= window.max() - 1e-12:
+            return i, "high", float(highs[i])
+
+    return 0, "none", float(highs[0])
+
+
+# ==============================================================================
+# 3) هندسهٔ اسپیرال، ساعت و استخراج سطوح S&R
+# ==============================================================================
+def spiral_intersections(phi_deg, th_max, b):
+    phi = (phi_deg % 360.0) * DEG
+    kmax = int(np.floor((th_max - phi) / (2 * np.pi) + 1e-9))
+    if kmax < 0:
+        return np.empty(0)
+    return phi + 2 * np.pi * np.arange(kmax + 1)
+
+
+def theta_to_clockstr(theta_deg):
+    t = ((90.0 - theta_deg) / 30.0) % 12.0
+    if t == 0: t = 12.0
+    hh = int(t)
+    mm = int(round((t - hh) * 60))
+    if mm == 60:
+        hh = (hh + 1) % 12 or 12
+        mm = 0
+    return f"{hh:02d}:{mm:02d}"
+
+
+def extract_support_resistance(live_price, cw_p, ccw_p):
+    all_prices = np.concatenate([cw_p, ccw_p]) if len(cw_p) > 0 or len(ccw_p) > 0 else np.empty(0)
+    if len(all_prices) == 0:
+        return [], []
+
+    unique_prices = np.unique(all_prices)
+    supports = sorted([p for p in unique_prices if p < live_price], reverse=True)
+    resistances = sorted([p for p in unique_prices if p > live_price])
+
+    return supports, resistances
+
+
+def build_figure(df, pivot_idx, pivot_type, pivot_price, turns, now_utc):
+    df_closed = df.iloc[:-1] if len(df) > 2 else df
+    seg = df_closed.iloc[pivot_idx:]
+    if len(seg) < 2:
+        return empty_fig("دادهٔ پس از پیووت کافی نیست.")
+
+    prices = seg["close"].values
+    times = seg["ts"].values
+    npts = len(prices)
+    pmin, pmax = float(prices.min()), float(prices.max())
+    if pmax <= pmin:
+        pmax = pmin + 1.0
+
+    th_max = 2 * np.pi * turns
+    th = np.linspace(0, th_max, npts)
+    b = np.log(RATIO) / th_max
+    r = np.exp(b * th)
+    R = r[-1]
+
+    hf = now_utc.hour + now_utc.minute / 60 + now_utc.second / 3600
+    th_cw = (90 - 30 * hf) % 360
+    th_ccw = (30 + 30 * (hf - 2)) % 360
+
+    cw_ths = spiral_intersections(th_cw, th_max, b)
+    ccw_ths = spiral_intersections(th_ccw, th_max, b)
+
+    def ths_to_prices(ths):
+        if len(ths) == 0:
+            return np.empty(0), np.empty(0)
+        idxs = ths / th_max * (npts - 1)
+        idxs_i = np.clip(np.round(idxs).astype(int), 0, npts - 1)
+        return ths, prices[idxs_i]
+
+    cw_r, cw_p = ths_to_prices(cw_ths)
+    ccw_r, ccw_p = ths_to_prices(ccw_ths)
+    cw_x = cw_r * np.cos(cw_ths);
+    cw_y = cw_r * np.sin(cw_ths)
+    ccw_x = ccw_r * np.cos(ccw_ths);
+    ccw_y = ccw_r * np.sin(ccw_ths)
+
+    fig = go.Figure()
+    ang = np.linspace(0, 2 * np.pi, 360)
+
+    for frac in (0.25, 0.5, 0.75):
+        fig.add_trace(go.Scatter(
+            x=frac * R * np.cos(ang), y=frac * R * np.sin(ang),
+            mode="lines", line=dict(color=LINE, width=1),
+            showlegend=False, hoverinfo="skip"))
+    for dd in range(0, 360, 30):
+        fig.add_trace(go.Scatter(
+            x=[0, R * np.cos(dd * DEG)], y=[0, R * np.sin(dd * DEG)],
+            mode="lines", line=dict(color=LINE, width=1, dash="dot"),
+            showlegend=False, hoverinfo="skip"))
+
+    fig.add_trace(go.Scatter(
+        x=R * np.cos(ang), y=R * np.sin(ang), mode="lines",
+        line=dict(color=GOLD, width=3),
+        name="دایره ساعت (محیط بر اسپیرال)"))
+
+    live_price = float(df.iloc[-1]["close"])
+    fig.add_trace(go.Scatter(
+        x=r * np.cos(th), y=r * np.sin(th), mode="lines",
+        line=dict(color=SPIRAL_CLR, width=2, dash="dot"),
+        showlegend=False, hoverinfo="skip"))
+
+    fig.add_trace(go.Scatter(
+        x=r * np.cos(th), y=r * np.sin(th), mode="markers",
+        marker=dict(size=5, color=prices, colorscale="Viridis",
+                    showscale=True,
+                    colorbar=dict(title="قیمت بسته‌شدن",
+                                  thickness=12, len=0.7,
+                                  tickfont=dict(color=TXT, size=10)),
+                    line=dict(width=0.4, color="#000")),
+        customdata=np.column_stack([
+            np.degrees(th),
+            prices,
+            pd.to_datetime(times).strftime("%m-%d %H:%M"),
+        ]),
+        hovertemplate=("θ=%{customdata[0]:.1f}°<br>"
+                       "قیمت=%{customdata[1]:.6g}<br>"
+                       "%{customdata[2]}<extra>کندل</extra>"),
+        name="قیمت از پیووت تا لایو"))
+
+    live_r = np.exp(b * th_max)
+    live_x, live_y = live_r * np.cos(th_max), live_r * np.sin(th_max)
+    fig.add_trace(go.Scatter(
+        x=[live_x], y=[live_y], mode="markers+text",
+        marker=dict(size=14, symbol="star", color=GOLD,
+                    line=dict(width=1.5, color="black")),
+        text=[f"LIVE: {live_price:.4g}"],
+        textposition="top right",
+        textfont=dict(color=GOLD, size=11),
+        name=f"کندل لایو = {live_price:.4g}"))
+
+    piv_x, piv_y = r[0] * np.cos(th[0]), r[0] * np.sin(th[0])
+    fig.add_trace(go.Scatter(
+        x=[piv_x], y=[piv_y], mode="markers+text",
+        marker=dict(size=12, symbol="square", color=UP,
+                    line=dict(width=1.5, color="black")),
+        text=[f"PIVOT ({pivot_type}): {pivot_price:.4g}"],
+        textposition="bottom left",
+        textfont=dict(color=UP, size=11),
+        name="آخرین پیووت"))
+
+    for h in range(1, 13):
+        phi = (90 - 30 * h) * DEG
+        c, s = np.cos(phi), np.sin(phi)
+        fig.add_trace(go.Scatter(
+            x=[0.94 * R * c, R * c], y=[0.94 * R * s, R * s],
+            mode="lines", line=dict(color=GOLD, width=2),
+            showlegend=False, hoverinfo="skip"))
+        fig.add_annotation(x=1.08 * R * c, y=1.08 * R * s, text=f"<b>{h}</b>",
+                           showarrow=False, font=dict(size=14, color=GOLD))
+        fig.add_annotation(x=1.16 * R * c, y=1.16 * R * s,
+                           text=f"{int(round(np.degrees(phi))) % 360}°",
+                           showarrow=False, font=dict(size=9, color=MUT))
+
+    for phi, color, name in (
+            (th_cw, DN, "عقربه ساعتگرد (UTC)"),
+            (th_ccw, UP, "عقربه پادساعتگرد (هماهنگ در ۲:۰۰)"),
+    ):
+        c, s = np.cos(phi * DEG), np.sin(phi * DEG)
+        fig.add_trace(go.Scatter(
+            x=[0, 0.97 * R * c], y=[0, 0.97 * R * s], mode="lines",
+            line=dict(color=color, width=4), name=name))
+        fig.add_annotation(x=0.78 * R * c, y=0.78 * R * s,
+                           text=f"θ = {phi:.1f}°", showarrow=False,
+                           font=dict(size=12, color=color),
+                           bgcolor="rgba(11,18,32,0.8)",
+                           bordercolor=color, borderwidth=1, borderpad=3)
+
+    for xs, ys, ths, pp, color, tag in (
+            (cw_x, cw_y, cw_ths, cw_p, DN, "ساعتگرد"),
+            (ccw_x, ccw_y, ccw_ths, ccw_p, UP, "پادساعتگرد"),
+    ):
+        if len(xs) == 0:
+            continue
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys, mode="markers+text",
+            marker=dict(size=13, symbol="star", color=color,
+                        line=dict(width=1.2, color="white")),
+            text=[f"{p:.4g}" for p in pp],
+            textposition="top center",
+            textfont=dict(color=color, size=10),
+            customdata=np.column_stack([np.degrees(ths), pp]),
+            hovertemplate=(f"تقاطع {tag}<br>θ=%{{customdata[0]:.2f}}°<br>"
+                           f"قیمت=%{{customdata[1]:.6g}}<extra></extra>"),
+            name=f"تقاطع عقربه {tag}"))
+
+    fig.add_trace(go.Scatter(x=[0], y=[0], mode="markers",
+                             marker=dict(size=8, color="white"),
+                             showlegend=False, hoverinfo="skip"))
+
+    lim = 1.35 * R
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor=BG, plot_bgcolor=CARD,
+        xaxis=dict(range=[-lim, lim], visible=False),
+        yaxis=dict(range=[-lim, lim], visible=False,
+                   scaleanchor="x", scaleratio=1),
+        legend=dict(bgcolor="rgba(11,18,32,0.8)", font=dict(size=10),
+                    orientation="h", y=-0.05, x=0.5, xanchor="center"),
+        margin=dict(l=10, r=10, t=50, b=10),
+        title=dict(
+            text=f"🌀 ساعت UTC روی اسپیرال قیمت — {now_utc.strftime('%H:%M:%S')} UTC",
+            x=0.5, font=dict(color=GOLD, size=15),
+        ),
+    )
+    return fig
+
+
+def empty_fig(msg):
+    fig = go.Figure()
+    fig.update_layout(template="plotly_dark",
+                      paper_bgcolor=BG, plot_bgcolor=CARD,
+                      xaxis=dict(visible=False), yaxis=dict(visible=False))
+    fig.add_annotation(x=0.5, y=0.5, xref="paper", yref="paper",
+                       text=msg, showarrow=False,
+                       font=dict(size=18, color=DN))
+    return fig
+
+
+# ==============================================================================
+# 4) اپ Dash
+# ==============================================================================
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.CYBORG])
+app.title = "Bybit Live Spiral Clock & S&R"
+server = app.server
+
+CATEGORY_OPTS = [{"label": v, "value": v} for v in ["linear", "spot", "inverse"]]
+INTERVAL_OPTS = [{"label": lbl, "value": val} for lbl, val in [
+    ("1m", "1"), ("3m", "3"), ("5m", "5"), ("15m", "15"),
+    ("30m", "30"), ("1h", "60"), ("4h", "240"), ("1D", "D"),
+]]
+
+app.layout = html.Div([
+    dbc.Card(dbc.CardBody(dbc.Row([
+        dbc.Col([html.Label("نماد", style={"fontSize": 11, "color": MUT}),
+                 dcc.Input(id="symbol", value=DEFAULT_SYMBOL, type="text",
+                           style={"width": "100%", "padding": 6, "borderRadius": 6})], md=2),
+        dbc.Col([html.Label("بازار", style={"fontSize": 11, "color": MUT}),
+                 dcc.Dropdown(id="category", value=DEFAULT_CATEGORY,
+                              clearable=False, options=CATEGORY_OPTS)], md=2),
+        dbc.Col([html.Label("تایم‌فریم", style={"fontSize": 11, "color": MUT}),
+                 dcc.Dropdown(id="interval", value=DEFAULT_INTERVAL,
+                              clearable=False, options=INTERVAL_OPTS)], md=2),
+        dbc.Col([html.Label("دوره پیووت", style={"fontSize": 11, "color": MUT}),
+                 dcc.Input(id="pivot-period", type="number", value=DEFAULT_PIVOT,
+                           min=2, max=50, step=1,
+                           style={"width": "100%", "padding": 6, "borderRadius": 6})], md=1),
+        dbc.Col([html.Label("دور اسپیرال", style={"fontSize": 11, "color": MUT}),
+                 dcc.Input(id="turns", type="number", value=DEFAULT_TURNS,
+                           min=1, max=12, step=1,
+                           style={"width": "100%", "padding": 6, "borderRadius": 6})], md=1),
+        dbc.Col(dbc.Button("🔄 بروزرسانی", id="refresh-btn", color="warning",
+                           className="mt-3",
+                           style={"fontWeight": "bold", "color": BG, "width": "100%"}), md=1),
+        dbc.Col(html.Div(id="conn-status",
+                         style={"color": MUT, "fontSize": 11,
+                                "marginTop": 22, "textAlign": "center"}), md=1),
+    ])), style={"maxWidth": 1400, "margin": "10px auto"}),
+
+    dbc.Row([
+        dbc.Col(dcc.Graph(id="spiral-plot", style={"height": "78vh"},
+                          config={"displaylogo": False}), width=8),
+        dbc.Col([
+            html.H5("📊 گزارش لحظه‌ای و پیش‌بینی S&R",
+                    style={"color": GOLD, "fontSize": 14, "margin": "8px 0"}),
+            html.Div(id="info-panel",
+                     style={"background": CARD, "border": f"1px solid {LINE}",
+                            "borderRadius": 8, "padding": 12,
+                            "fontFamily": "Consolas, monospace",
+                            "fontSize": 12, "color": TXT,
+                            "whiteSpace": "pre-wrap", "direction": "rtl",
+                            "maxHeight": "70vh", "overflowY": "auto"}),
+        ], width=4),
+    ], style={"maxWidth": 1400, "margin": "0 auto"}),
+
+    dcc.Interval(id="tick", interval=5_000, n_intervals=0),
+], style={"background": BG, "minHeight": "100vh", "padding": "10px"})
+
+
+# ==============================================================================
+# 5) کال‌بک اصلی
+# ==============================================================================
+@app.callback(
+    Output("spiral-plot", "figure"),
+    Output("info-panel", "children"),
+    Output("conn-status", "children"),
+    Input("tick", "n_intervals"),
+    Input("refresh-btn", "n_clicks"),
+    State("symbol", "value"),
+    State("interval", "value"),
+    State("category", "value"),
+    State("pivot-period", "value"),
+    State("turns", "value"),
+)
+def update(_n, _click, symbol, interval, category, pivot_period, turns):
+    try:
+        pivot_period = int(pivot_period or DEFAULT_PIVOT)
+        turns = int(turns or DEFAULT_TURNS)
+    except Exception:
+        pivot_period, turns = DEFAULT_PIVOT, DEFAULT_TURNS
+
+    symbol = (symbol or DEFAULT_SYMBOL).upper().strip()
+    category = category or DEFAULT_CATEGORY
+    interval = interval or DEFAULT_INTERVAL
+
+    # دریافت زمان دقیق UTC از سرور بایبیت
+    now_utc = get_bybit_utc_time()
+
+    df = get_klines(symbol, interval, category, limit=500)
+    if df.empty:
+        status = "🔴 قطع از بایبیت"
+        return empty_fig("دریافت دیتا از بایبیت ناموفق بود."), \
+               "خطا در دریافت کندل.", status
+
+    pivot_idx, pivot_type, pivot_price = find_last_pivot(
+        df["high"].values, df["low"].values, pivot_period
+    )
+
+    fig = build_figure(df, pivot_idx, pivot_type, pivot_price, turns, now_utc)
+
+    # --- استخراج داده‌ها برای گزارش و پیش‌بینی ---
+    df_closed = df.iloc[:-1] if len(df) > 2 else df
+    seg = df_closed.iloc[pivot_idx:]
+    live_price = float(df.iloc[-1]["close"])
+
+    if len(seg) >= 2:
+        prices = seg["close"].values
+        npts = len(prices)
+        th_max = 2 * np.pi * turns
+        b = np.log(RATIO) / th_max
+        hf = now_utc.hour + now_utc.minute / 60 + now_utc.second / 3600
+        th_cw = (90 - 30 * hf) % 360
+        th_ccw = (30 + 30 * (hf - 2)) % 360
+
+        cw_ths = spiral_intersections(th_cw, th_max, b)
+        ccw_ths = spiral_intersections(th_ccw, th_max, b)
+
+        def ths_to_prices_local(ths):
+            if len(ths) == 0:
+                return np.empty(0)
+            idxs = ths / th_max * (npts - 1)
+            idxs_i = np.clip(np.round(idxs).astype(int), 0, npts - 1)
+            return prices[idxs_i]
+
+        cw_p = ths_to_prices_local(cw_ths)
+        ccw_p = ths_to_prices_local(ccw_ths)
+
+        supports, resistances = extract_support_resistance(live_price, cw_p, ccw_p)
+    else:
+        supports, resistances = [], []
+
+    pivot_time = df.iloc[pivot_idx]["ts"].strftime("%Y-%m-%d %H:%M")
+    pivot_label = {"low": "کف", "high": "سقف", "none": "نامشخص"}.get(pivot_type, "—")
+
+    nearest_res = resistances[0] if resistances else float('nan')
+    nearest_sup = supports[0] if supports else float('nan')
+
+    lines = [
+        f"⏰ زمان UTC (بایبیت): {now_utc.strftime('%Y-%m-%d %H:%M:%S')}",
+        f"💹 نماد          : {symbol} | {category} | {interval}",
+        f"📈 قیمت لایو      : {live_price:.6g}",
+        "",
+        f"🔍 آخرین پیووت :",
+        f"   نوع           : {pivot_label} ({pivot_type})",
+        f"   قیمت          : {pivot_price:.6g}",
+        f"   زمان          : {pivot_time} UTC",
+        "",
+        f"🔴 عقربه ساعتگرد  : θ = {th_cw:7.2f}°  ≈ {theta_to_clockstr(th_cw)}",
+        f"🟢 عقربه پادساعتگرد: θ = {th_ccw:7.2f}°  ≈ {theta_to_clockstr(th_ccw)}",
+        "",
+        f"⚡ پیش‌بینی سطوح کلیدی (S&R):",
+        f"   🔒 نزدیک‌ترین مقاومت : {nearest_res:.6g}" if not np.isnan(
+            nearest_res) else "   🔒 نزدیک‌ترین مقاومت : نامشخص",
+        f"   🛡️ نزدیک‌ترین حمایت  : {nearest_sup:.6g}" if not np.isnan(
+            nearest_sup) else "   🛡️ نزدیک‌ترین حمایت  : نامشخص",
+        "",
+        f"📋 مقاومت‌های بالاتر:",
+    ]
+
+    for r_val in resistances[:3]:
+        lines.append(f"   • {r_val:.6g}")
+
+    lines.append(f"📋 حمایت‌های پایین‌تر:")
+    for s_val in supports[:3]:
+        lines.append(f"   • {s_val:.6g}")
+
+    status = f"🟢 متصل | {now_utc.strftime('%H:%M:%S')} UTC"
+    return fig, "\n".join(lines), status
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=8070, use_reloader=False)

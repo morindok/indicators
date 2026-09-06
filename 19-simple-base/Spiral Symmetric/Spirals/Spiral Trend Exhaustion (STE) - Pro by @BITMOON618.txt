@@ -1,0 +1,78 @@
+//@version=5
+indicator("Spiral Trend Exhaustion (STE) - Pro{Morindok} by @BITMOON618", shorttitle="STE Pro", overlay=false, precision=2)
+
+// --- ÊäÙíãÇÊ æÑæÏí ---
+grp_core = "ÊäÙíãÇÊ åÓÊå ÇÓíÑÇá (Spiral Core)"
+len = input.int(21, "ÏæÑå ãÍÇÓÈÇÊí (Lookback)", minval=10, group=grp_core, tooltip="ÏæÑå ÈÑÇí ãÍÇÓÈå ÝÇÕáå ˜äÏáåÇ ÇÒ ÓÞÝ æ ˜Ý. ?? ÈÑÇí Óæííä ÊÑíÏíä Èåíäå ÇÓÊ.")
+smooth = input.int(3, "åãæÇÑÓÇÒí ÎØ ÇÕáí (Smoothing)", minval=1, group=grp_core)
+sig_len = input.int(9, "ÏæÑå ÎØ ÓíäÇá (Signal Line)", minval=1, group=grp_core)
+
+grp_filter = "ÝíáÊÑåÇí ÍÐÝ ÓíäÇá Ýí˜ (Noise Filters)"
+use_trend_filter = input.bool(true, "ÝÚÇáÓÇÒí ÝíáÊÑ ÑæäÏ (Trend Filter)", group=grp_filter, tooltip="ÓíäÇáåÇí ÎáÇÝ ÌåÊ ÑæäÏ ÇÕáí ÑÇ ÍÐÝ ãí˜äÏ.")
+trend_ema_len = input.int(100, "ÏæÑå EMA ÑæäÏ", minval=20, group=grp_filter)
+ob_level = input.float(65.0, "ÓØÍ ÇÔÈÇÚ ÎÑíÏ (Overbought)", group=grp_filter)
+os_level = input.float(-65.0, "ÓØÍ ÇÔÈÇÚ ÝÑæÔ (Oversold)", group=grp_filter)
+
+// --- 1. åÓÊå ÑíÇÖí ÈÑ ãÈäÇí ÇÓ˜ÑíÊ ÇÕáí ÔãÇ ---
+// ãÍÇÓÈå ÝÇÕáå ˜äÏáåÇí ÓÈÒ ÇÒ ˜Ý (ÞÏÑÊ ÕÚæÏí) æ ˜äÏáåÇí ÞÑãÒ ÇÒ ÓÞÝ (ÞÏÑÊ äÒæáí)
+float hh_val = ta.highest(high, len)
+float ll_val = ta.lowest(low, len)
+
+float bull_force = math.sum(close >= open ? (close - ll_val) : 0.0, len)
+float bear_force = math.sum(close < open ? (hh_val - close) : 0.0, len)
+
+// äÑãÇáÓÇÒí Èå ÈÇÒå -100 ÊÇ +100
+float total_force = math.max(bull_force + bear_force, syminfo.mintick)
+float raw_osc = 100.0 * (bull_force - bear_force) / total_force
+
+// åãæÇÑÓÇÒí ÈÑÇí ÌáæíÑí ÇÒ ÑÔåÇí äÇåÇäí
+float osc = ta.ema(raw_osc, smooth)
+float signal = ta.ema(osc, sig_len)
+float hist = osc - signal
+
+// --- 2. ÝíáÊÑ ÑæäÏ ---
+float trend_ema = ta.ema(close, trend_ema_len)
+bool is_uptrend = close > trend_ema
+bool is_downtrend = close < trend_ema
+
+// --- 3. ãäØÞ ÊæáíÏ ÓíäÇá (ÈÓíÇÑ ÓÎÊíÑÇäå) ---
+// ÔÑØ ÎÑíÏ: ÎÑæÌ ÇÒ ÇÔÈÇÚ ÝÑæÔ (Cross above OS) + åãÌåÊ ÈÇ ÑæäÏ ÕÚæÏí
+bool buy_cond = ta.crossover(osc, os_level) and (not use_trend_filter or is_uptrend)
+
+// ÔÑØ ÝÑæÔ: ÎÑæÌ ÇÒ ÇÔÈÇÚ ÎÑíÏ (Cross below OB) + åãÌåÊ ÈÇ ÑæäÏ äÒæáí
+bool sell_cond = ta.crossunder(osc, ob_level) and (not use_trend_filter or is_downtrend)
+
+// --- 4. ÑÓã äãæÏÇÑåÇ ---
+// ÑÓã åíÓÊæÑÇã (ÊÛííÑ Ñä ÈÑ ÇÓÇÓ ÞÏÑÊ)
+color hist_color = hist >= 0 ? (hist > hist[1] ? color.new(color.green, 20) : color.new(color.green, 60)) : 
+                               (hist < hist[1] ? color.new(color.red, 20) : color.new(color.red, 60))
+plot(hist, color=hist_color, style=plot.style_histogram, title="Momentum Histogram")
+
+// ÑÓã ÎØæØ ÇÕáí
+plot(osc, color=color.new(color.blue, 0), linewidth=2, title="STE Line")
+plot(signal, color=color.new(color.orange, 0), linewidth=1, title="Signal Line")
+
+// ÑÓã ÓØæÍ ÇÔÈÇÚ æ ÎØ ÕÝÑ
+hline(ob_level, "OB Level", color=color.new(color.red, 50), linestyle=hline.style_dashed)
+hline(os_level, "OS Level", color=color.new(color.green, 50), linestyle=hline.style_dashed)
+hline(0, "Zero Line", color=color.new(color.gray, 70))
+
+// Ñ ˜ÑÏä äÇÍíå Èíä ÎØ ÇÕáí æ ÓíäÇá
+fill(plot(osc), plot(signal), color=osc > signal ? color.new(color.green, 80) : color.new(color.red, 80), title="Line Fill")
+
+// --- 5. äãÇíÔ ÓíäÇáåÇ (ÝÞØ ÓíäÇáåÇí ÝíáÊÑ ÔÏå) ---
+plotshape(buy_cond, title="Buy Signal", location=location.belowbar, style=shape.triangleup, color=color.green, size=size.small, text="BUY",force_overlay = true)
+plotshape(sell_cond, title="Sell Signal", location=location.abovebar, style=shape.triangledown, color=color.red, size=size.small, text="SELL",force_overlay = true)
+
+// --- 6. Ñä ÓÒãíäå ÈÑÇí ÊÔÎíÕ ÓÑíÚ æÖÚíÊ ---
+bgcolor(is_uptrend ? color.new(color.green, 95) : is_downtrend ? color.new(color.red, 95) : na, title="Trend Background")
+
+// --- ÌÏæá æÖÚíÊ ---
+var table info = table.new(position.bottom_right, 2, 2, bgcolor=color.new(color.black, 80), border_width=1)
+if barstate.islast
+    table.cell(info, 0, 0, "Trend", text_color=color.white)
+    table.cell(info, 1, 0, is_uptrend ? "BULLISH" : "BEARISH", text_color=is_uptrend ? color.green : color.red)
+    table.cell(info, 0, 1, "Status", text_color=color.white)
+    string status_text = osc > ob_level ? "Overbought" : osc < os_level ? "Oversold" : "Neutral"
+    color status_color = osc > ob_level ? color.red : osc < os_level ? color.green : color.gray
+    table.cell(info, 1, 1, status_text, text_color=status_color)

@@ -1,0 +1,464 @@
+//@version=5
+indicator("Price Slope Projection with Elliott Ratios", overlay=true)
+
+t1 = input.time(timestamp("2024-01-01 00:00"), "Time 1", confirm=true)
+t2 = input.time(timestamp("2024-01-02 00:00"), "Time 2", confirm=true)
+t3 = input.time(timestamp("2024-01-03 00:00"), "Time 3", confirm=true)
+t4 = input.time(timestamp("2024-01-04 00:00"), "Time 4", confirm=true)
+t5 = input.time(timestamp("2024-01-05 00:00"), "Time 5", confirm=true)
+t6 = input.time(timestamp("2024-01-06 00:00"), "Time 6", confirm=true)
+t7 = input.time(timestamp("2024-01-07 00:00"), "Time 7", confirm=true)
+t8 = input.time(timestamp("2024-01-08 00:00"), "Time 8", confirm=true)
+t9 = input.time(timestamp("2024-01-09 00:00"), "Time 9", confirm=true)
+t10 = input.time(timestamp("2024-01-10 00:00"), "Time 10", confirm=true)
+
+averageMethod = input.string("Arithmetic", "Average Method", options=["Arithmetic", "Weighted", "Exponential", "Median", "Harmonic"])
+slopeMultiplier = input.float(1.0, "Slope Multiplier", maxval=10.0, step=0.1)
+
+// ê“Ì‰Â ‰”» ùÂ«Ì «·ÌÊ 
+enableElliottRatios = input.bool(false, "‰„«Ì‘ ‰”» ùÂ«Ì «·ÌÊ ", group="Elliott Wave")
+showFib236 = input.bool(true, "0.236", inline="fib1", group="Elliott Wave")
+showFib382 = input.bool(true, "0.382", inline="fib1", group="Elliott Wave")
+showFib500 = input.bool(true, "0.500", inline="fib2", group="Elliott Wave")
+showFib618 = input.bool(true, "0.618", inline="fib2", group="Elliott Wave")
+showFib786 = input.bool(true, "0.786", inline="fib3", group="Elliott Wave")
+showFib1000 = input.bool(true, "1.000", inline="fib3", group="Elliott Wave")
+showFib1272 = input.bool(true, "1.272", inline="fib4", group="Elliott Wave")
+showFib1618 = input.bool(true, "1.618", inline="fib4", group="Elliott Wave")
+showFib2618 = input.bool(true, "2.618", inline="fib5", group="Elliott Wave")
+
+var float p1_high = na
+var float p1_low = na
+var float p2_high = na
+var float p2_low = na
+var float p3_high = na
+var float p3_low = na
+var float p4_high = na
+var float p4_low = na
+var float p5_high = na
+var float p5_low = na
+var float p6_high = na
+var float p6_low = na
+var float p7_high = na
+var float p7_low = na
+var float p8_high = na
+var float p8_low = na
+var float p9_high = na
+var float p9_low = na
+var float p10_high = na
+var float p10_low = na
+
+if time == t1
+    p1_high := high
+    p1_low := low
+if time == t2
+    p2_high := high
+    p2_low := low
+if time == t3
+    p3_high := high
+    p3_low := low
+if time == t4
+    p4_high := high
+    p4_low := low
+if time == t5
+    p5_high := high
+    p5_low := low
+if time == t6
+    p6_high := high
+    p6_low := low
+if time == t7
+    p7_high := high
+    p7_low := low
+if time == t8
+    p8_high := high
+    p8_low := low
+if time == t9
+    p9_high := high
+    p9_low := low
+if time == t10
+    p10_high := high
+    p10_low := low
+
+slope1_high = not na(p1_high) and not na(p2_high) and t2 > t1 ? (p2_high - p1_high) / (t2 - t1) : na
+slope2_high = not na(p2_high) and not na(p3_high) and t3 > t2 ? (p3_high - p2_high) / (t3 - t2) : na
+slope3_high = not na(p3_high) and not na(p4_high) and t4 > t3 ? (p4_high - p3_high) / (t4 - t3) : na
+slope4_high = not na(p4_high) and not na(p5_high) and t5 > t4 ? (p5_high - p4_high) / (t5 - t4) : na
+slope5_high = not na(p5_high) and not na(p6_high) and t6 > t5 ? (p6_high - p5_high) / (t6 - t5) : na
+slope6_high = not na(p6_high) and not na(p7_high) and t7 > t6 ? (p7_high - p6_high) / (t7 - t6) : na
+slope7_high = not na(p7_high) and not na(p8_high) and t8 > t7 ? (p8_high - p7_high) / (t8 - t7) : na
+slope8_high = not na(p8_high) and not na(p9_high) and t9 > t8 ? (p9_high - p8_high) / (t9 - t8) : na
+slope9_high = not na(p9_high) and not na(p10_high) and t10 > t9 ? (p10_high - p9_high) / (t10 - t9) : na
+
+slope1_low = not na(p1_low) and not na(p2_low) and t2 > t1 ? (p2_low - p1_low) / (t2 - t1) : na
+slope2_low = not na(p2_low) and not na(p3_low) and t3 > t2 ? (p3_low - p2_low) / (t3 - t2) : na
+slope3_low = not na(p3_low) and not na(p4_low) and t4 > t3 ? (p4_low - p3_low) / (t4 - t3) : na
+slope4_low = not na(p4_low) and not na(p5_low) and t5 > t4 ? (p5_low - p4_low) / (t5 - t4) : na
+slope5_low = not na(p5_low) and not na(p6_low) and t6 > t5 ? (p6_low - p5_low) / (t6 - t5) : na
+slope6_low = not na(p6_low) and not na(p7_low) and t7 > t6 ? (p7_low - p6_low) / (t7 - t6) : na
+slope7_low = not na(p7_low) and not na(p8_low) and t8 > t7 ? (p8_low - p7_low) / (t8 - t7) : na
+slope8_low = not na(p8_low) and not na(p9_low) and t9 > t8 ? (p9_low - p8_low) / (t9 - t8) : na
+slope9_low = not na(p9_low) and not na(p10_low) and t10 > t9 ? (p10_low - p9_low) / (t10 - t9) : na
+
+calculateAverage(s1, s2, s3, s4, s5, s6, s7, s8, s9, method) =>
+    float result = na
+    
+    if method == "Arithmetic"
+        result := (s1 + s2 + s3 + s4 + s5 + s6 + s7 + s8 + s9) / 9
+    
+    else if method == "Weighted"
+        result := (s1*1 + s2*2 + s3*3 + s4*4 + s5*5 + s6*6 + s7*7 + s8*8 + s9*9) / 45
+    
+    else if method == "Exponential"
+        alpha = 0.3
+        ema = s1
+        ema := alpha * s2 + (1 - alpha) * ema
+        ema := alpha * s3 + (1 - alpha) * ema
+        ema := alpha * s4 + (1 - alpha) * ema
+        ema := alpha * s5 + (1 - alpha) * ema
+        ema := alpha * s6 + (1 - alpha) * ema
+        ema := alpha * s7 + (1 - alpha) * ema
+        ema := alpha * s8 + (1 - alpha) * ema
+        ema := alpha * s9 + (1 - alpha) * ema
+        result := ema
+    
+    else if method == "Median"
+        array<float> slopes = array.new_float(9)
+        array.set(slopes, 0, s1)
+        array.set(slopes, 1, s2)
+        array.set(slopes, 2, s3)
+        array.set(slopes, 3, s4)
+        array.set(slopes, 4, s5)
+        array.set(slopes, 5, s6)
+        array.set(slopes, 6, s7)
+        array.set(slopes, 7, s8)
+        array.set(slopes, 8, s9)
+        array.sort(slopes)
+        result := array.get(slopes, 4)
+    
+    else if method == "Harmonic"
+        sum_reciprocal = 1/s1 + 1/s2 + 1/s3 + 1/s4 + 1/s5 + 1/s6 + 1/s7 + 1/s8 + 1/s9
+        result := 9 / sum_reciprocal
+    
+    result
+
+avgSlope_high = calculateAverage(slope1_high, slope2_high, slope3_high, slope4_high, slope5_high, slope6_high, slope7_high, slope8_high, slope9_high, averageMethod) * slopeMultiplier
+avgSlope_low = calculateAverage(slope1_low, slope2_low, slope3_low, slope4_low, slope5_low, slope6_low, slope7_low, slope8_low, slope9_low, averageMethod) * slopeMultiplier
+
+var line segmentLine1_high = na
+var line segmentLine2_high = na
+var line segmentLine3_high = na
+var line segmentLine4_high = na
+var line segmentLine5_high = na
+var line segmentLine6_high = na
+var line segmentLine7_high = na
+var line segmentLine8_high = na
+var line segmentLine9_high = na
+var line segmentLine1_low = na
+var line segmentLine2_low = na
+var line segmentLine3_low = na
+var line segmentLine4_low = na
+var line segmentLine5_low = na
+var line segmentLine6_low = na
+var line segmentLine7_low = na
+var line segmentLine8_low = na
+var line segmentLine9_low = na
+var line projectionLine_high = na
+var line inverseProjectionLine_high = na
+var line projectionLine_low = na
+var line inverseProjectionLine_low = na
+
+// ¬—«ÌÂùÂ«Ì ŒÿÊÿ ›Ì»Ê‰«çÌ
+var array<line> fibLines_high = array.new_line()
+var array<label> fibLabels_high = array.new_label()
+var array<line> fibLines_low = array.new_line()
+var array<label> fibLabels_low = array.new_label()
+
+if barstate.islast
+    if not na(p1_high) and not na(p2_high)
+        if not na(segmentLine1_high)
+            line.delete(segmentLine1_high)
+        segmentLine1_high := line.new(t1, p1_high, t2, p2_high, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    if not na(p2_high) and not na(p3_high)
+        if not na(segmentLine2_high)
+            line.delete(segmentLine2_high)
+        segmentLine2_high := line.new(t2, p2_high, t3, p3_high, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    if not na(p3_high) and not na(p4_high)
+        if not na(segmentLine3_high)
+            line.delete(segmentLine3_high)
+        segmentLine3_high := line.new(t3, p3_high, t4, p4_high, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    if not na(p4_high) and not na(p5_high)
+        if not na(segmentLine4_high)
+            line.delete(segmentLine4_high)
+        segmentLine4_high := line.new(t4, p4_high, t5, p5_high, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    if not na(p5_high) and not na(p6_high)
+        if not na(segmentLine5_high)
+            line.delete(segmentLine5_high)
+        segmentLine5_high := line.new(t5, p5_high, t6, p6_high, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    if not na(p6_high) and not na(p7_high)
+        if not na(segmentLine6_high)
+            line.delete(segmentLine6_high)
+        segmentLine6_high := line.new(t6, p6_high, t7, p7_high, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    if not na(p7_high) and not na(p8_high)
+        if not na(segmentLine7_high)
+            line.delete(segmentLine7_high)
+        segmentLine7_high := line.new(t7, p7_high, t8, p8_high, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    if not na(p8_high) and not na(p9_high)
+        if not na(segmentLine8_high)
+            line.delete(segmentLine8_high)
+        segmentLine8_high := line.new(t8, p8_high, t9, p9_high, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    if not na(p9_high) and not na(p10_high)
+        if not na(segmentLine9_high)
+            line.delete(segmentLine9_high)
+        segmentLine9_high := line.new(t9, p9_high, t10, p10_high, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    if not na(p1_low) and not na(p2_low)
+        if not na(segmentLine1_low)
+            line.delete(segmentLine1_low)
+        segmentLine1_low := line.new(t1, p1_low, t2, p2_low, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    if not na(p2_low) and not na(p3_low)
+        if not na(segmentLine2_low)
+            line.delete(segmentLine2_low)
+        segmentLine2_low := line.new(t2, p2_low, t3, p3_low, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    if not na(p3_low) and not na(p4_low)
+        if not na(segmentLine3_low)
+            line.delete(segmentLine3_low)
+        segmentLine3_low := line.new(t3, p3_low, t4, p4_low, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    if not na(p4_low) and not na(p5_low)
+        if not na(segmentLine4_low)
+            line.delete(segmentLine4_low)
+        segmentLine4_low := line.new(t4, p4_low, t5, p5_low, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    if not na(p5_low) and not na(p6_low)
+        if not na(segmentLine5_low)
+            line.delete(segmentLine5_low)
+        segmentLine5_low := line.new(t5, p5_low, t6, p6_low, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    if not na(p6_low) and not na(p7_low)
+        if not na(segmentLine6_low)
+            line.delete(segmentLine6_low)
+        segmentLine6_low := line.new(t6, p6_low, t7, p7_low, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    if not na(p7_low) and not na(p8_low)
+        if not na(segmentLine7_low)
+            line.delete(segmentLine7_low)
+        segmentLine7_low := line.new(t7, p7_low, t8, p8_low, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    if not na(p8_low) and not na(p9_low)
+        if not na(segmentLine8_low)
+            line.delete(segmentLine8_low)
+        segmentLine8_low := line.new(t8, p8_low, t9, p9_low, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    if not na(p9_low) and not na(p10_low)
+        if not na(segmentLine9_low)
+            line.delete(segmentLine9_low)
+        segmentLine9_low := line.new(t9, p9_low, t10, p10_low, xloc=xloc.bar_time, color=color.gray, width=1)
+    
+    // Å«ò ò—œ‰ ŒÿÊÿ ›Ì»Ê‰«çÌ ﬁ»·Ì
+    if array.size(fibLines_high) > 0
+        for i = 0 to array.size(fibLines_high) - 1
+            line.delete(array.get(fibLines_high, i))
+        array.clear(fibLines_high)
+    
+    if array.size(fibLabels_high) > 0
+        for i = 0 to array.size(fibLabels_high) - 1
+            label.delete(array.get(fibLabels_high, i))
+        array.clear(fibLabels_high)
+    
+    if array.size(fibLines_low) > 0
+        for i = 0 to array.size(fibLines_low) - 1
+            line.delete(array.get(fibLines_low, i))
+        array.clear(fibLines_low)
+    
+    if array.size(fibLabels_low) > 0
+        for i = 0 to array.size(fibLabels_low) - 1
+            label.delete(array.get(fibLabels_low, i))
+        array.clear(fibLabels_low)
+    
+    if not na(avgSlope_high) and not na(p10_high)
+        if not na(projectionLine_high)
+            line.delete(projectionLine_high)
+        if not na(inverseProjectionLine_high)
+            line.delete(inverseProjectionLine_high)
+        
+        futureTime = t10 + (t10 - t1)
+        
+        if enableElliottRatios
+            // —”„ ŒÿÊÿ ÅÌ‘ù»Ì‰Ì »« ‰”» ùÂ«Ì «·ÌÊ  »—«Ì High
+            if showFib236
+                fibSlope = avgSlope_high * 0.236
+                futurePrice = p10_high + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_high, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(color.purple, 30), width=2, extend=extend.right)
+                array.push(fibLines_high, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "0.236", xloc=xloc.bar_time, color=color.new(color.purple, 80), textcolor=color.purple, style=label.style_label_left, size=size.small)
+                array.push(fibLabels_high, fibLabel)
+            
+            if showFib382
+                fibSlope = avgSlope_high * 0.382
+                futurePrice = p10_high + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_high, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(color.orange, 30), width=2, extend=extend.right)
+                array.push(fibLines_high, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "0.382", xloc=xloc.bar_time, color=color.new(color.orange, 80), textcolor=color.orange, style=label.style_label_left, size=size.small)
+                array.push(fibLabels_high, fibLabel)
+            
+            if showFib500
+                fibSlope = avgSlope_high * 0.500
+                futurePrice = p10_high + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_high, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(color.yellow, 30), width=2, extend=extend.right)
+                array.push(fibLines_high, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "0.500", xloc=xloc.bar_time, color=color.new(color.yellow, 80), textcolor=color.yellow, style=label.style_label_left, size=size.small)
+                array.push(fibLabels_high, fibLabel)
+            
+            if showFib618
+                fibSlope = avgSlope_high * 0.618
+                futurePrice = p10_high + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_high, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(color.green, 30), width=2, extend=extend.right)
+                array.push(fibLines_high, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "0.618", xloc=xloc.bar_time, color=color.new(color.green, 80), textcolor=color.green, style=label.style_label_left, size=size.small)
+                array.push(fibLabels_high, fibLabel)
+            
+            if showFib786
+                fibSlope = avgSlope_high * 0.786
+                futurePrice = p10_high + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_high, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(color.teal, 30), width=2, extend=extend.right)
+                array.push(fibLines_high, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "0.786", xloc=xloc.bar_time, color=color.new(color.teal, 80), textcolor=color.teal, style=label.style_label_left, size=size.small)
+                array.push(fibLabels_high, fibLabel)
+            
+            if showFib1000
+                fibSlope = avgSlope_high * 1.000
+                futurePrice = p10_high + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_high, futureTime, futurePrice, xloc=xloc.bar_time, color=color.blue, width=3, extend=extend.right)
+                array.push(fibLines_high, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "1.000", xloc=xloc.bar_time, color=color.new(color.blue, 80), textcolor=color.blue, style=label.style_label_left, size=size.small)
+                array.push(fibLabels_high, fibLabel)
+            
+            if showFib1272
+                fibSlope = avgSlope_high * 1.272
+                futurePrice = p10_high + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_high, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(color.maroon, 30), width=2, extend=extend.right)
+                array.push(fibLines_high, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "1.272", xloc=xloc.bar_time, color=color.new(color.maroon, 80), textcolor=color.maroon, style=label.style_label_left, size=size.small)
+                array.push(fibLabels_high, fibLabel)
+            
+            if showFib1618
+                fibSlope = avgSlope_high * 1.618
+                futurePrice = p10_high + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_high, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(color.red, 30), width=2, extend=extend.right)
+                array.push(fibLines_high, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "1.618", xloc=xloc.bar_time, color=color.new(color.red, 80), textcolor=color.red, style=label.style_label_left, size=size.small)
+                array.push(fibLabels_high, fibLabel)
+            
+            if showFib2618
+                fibSlope = avgSlope_high * 2.618
+                futurePrice = p10_high + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_high, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(color.fuchsia, 30), width=2, extend=extend.right)
+                array.push(fibLines_high, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "2.618", xloc=xloc.bar_time, color=color.new(color.fuchsia, 80), textcolor=color.fuchsia, style=label.style_label_left, size=size.small)
+                array.push(fibLabels_high, fibLabel)
+        else
+            // ŒÿÊÿ ÅÌ‘ù»Ì‰Ì ⁄«œÌ
+            futurePrice_high = p10_high + avgSlope_high * (futureTime - t10)
+            projectionLine_high := line.new(t10, p10_high, futureTime, futurePrice_high, xloc=xloc.bar_time, color=color.blue, width=2, extend=extend.right)
+            
+            inverseFuturePrice_high = p10_high - avgSlope_high * (futureTime - t10)
+            inverseProjectionLine_high := line.new(t10, p10_high, futureTime, inverseFuturePrice_high, xloc=xloc.bar_time, color=color.red, width=2, extend=extend.right)
+    
+    if not na(avgSlope_low) and not na(p10_low)
+        if not na(projectionLine_low)
+            line.delete(projectionLine_low)
+        if not na(inverseProjectionLine_low)
+            line.delete(inverseProjectionLine_low)
+        
+        futureTime = t10 + (t10 - t1)
+        
+        if enableElliottRatios
+            // —”„ ŒÿÊÿ ÅÌ‘ù»Ì‰Ì »« ‰”» ùÂ«Ì «·ÌÊ  »—«Ì Low
+            if showFib236
+                fibSlope = avgSlope_low * 0.236
+                futurePrice = p10_low + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_low, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(color.purple, 30), width=2, extend=extend.right, style=line.style_dashed)
+                array.push(fibLines_low, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "0.236", xloc=xloc.bar_time, color=color.new(color.purple, 80), textcolor=color.purple, style=label.style_label_right, size=size.small)
+                array.push(fibLabels_low, fibLabel)
+            
+            if showFib382
+                fibSlope = avgSlope_low * 0.382
+                futurePrice = p10_low + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_low, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(color.orange, 30), width=2, extend=extend.right, style=line.style_dashed)
+                array.push(fibLines_low, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "0.382", xloc=xloc.bar_time, color=color.new(color.orange, 80), textcolor=color.orange, style=label.style_label_right, size=size.small)
+                array.push(fibLabels_low, fibLabel)
+            
+            if showFib500
+                fibSlope = avgSlope_low * 0.500
+                futurePrice = p10_low + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_low, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(color.yellow, 30), width=2, extend=extend.right, style=line.style_dashed)
+                array.push(fibLines_low, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "0.500", xloc=xloc.bar_time, color=color.new(color.yellow, 80), textcolor=color.yellow, style=label.style_label_right, size=size.small)
+                array.push(fibLabels_low, fibLabel)
+            
+            if showFib618
+                fibSlope = avgSlope_low * 0.618
+                futurePrice = p10_low + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_low, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(color.green, 30), width=2, extend=extend.right, style=line.style_dashed)
+                array.push(fibLines_low, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "0.618", xloc=xloc.bar_time, color=color.new(color.green, 80), textcolor=color.green, style=label.style_label_right, size=size.small)
+                array.push(fibLabels_low, fibLabel)
+            
+            if showFib786
+                fibSlope = avgSlope_low * 0.786
+                futurePrice = p10_low + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_low, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(color.teal, 30), width=2, extend=extend.right, style=line.style_dashed)
+                array.push(fibLines_low, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "0.786", xloc=xloc.bar_time, color=color.new(color.teal, 80), textcolor=color.teal, style=label.style_label_right, size=size.small)
+                array.push(fibLabels_low, fibLabel)
+            
+            if showFib1000
+                fibSlope = avgSlope_low * 1.000
+                futurePrice = p10_low + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_low, futureTime, futurePrice, xloc=xloc.bar_time, color=color.blue, width=3, extend=extend.right, style=line.style_dashed)
+                array.push(fibLines_low, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "1.000", xloc=xloc.bar_time, color=color.new(color.blue, 80), textcolor=color.blue, style=label.style_label_right, size=size.small)
+                array.push(fibLabels_low, fibLabel)
+            
+            if showFib1272
+                fibSlope = avgSlope_low * 1.272
+                futurePrice = p10_low + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_low, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(color.maroon, 30), width=2, extend=extend.right, style=line.style_dashed)
+                array.push(fibLines_low, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "1.272", xloc=xloc.bar_time, color=color.new(color.maroon, 80), textcolor=color.maroon, style=label.style_label_right, size=size.small)
+                array.push(fibLabels_low, fibLabel)
+            
+            if showFib1618
+                fibSlope = avgSlope_low * 1.618
+                futurePrice = p10_low + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_low, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(color.red, 30), width=2, extend=extend.right, style=line.style_dashed)
+                array.push(fibLines_low, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "1.618", xloc=xloc.bar_time, color=color.new(color.red, 80), textcolor=color.red, style=label.style_label_right, size=size.small)
+                array.push(fibLabels_low, fibLabel)
+            
+            if showFib2618
+                fibSlope = avgSlope_low * 2.618
+                futurePrice = p10_low + fibSlope * (futureTime - t10)
+                fibLine = line.new(t10, p10_low, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(color.fuchsia, 30), width=2, extend=extend.right, style=line.style_dashed)
+                array.push(fibLines_low, fibLine)
+                fibLabel = label.new(futureTime, futurePrice, "2.618", xloc=xloc.bar_time, color=color.new(color.fuchsia, 80), textcolor=color.fuchsia, style=label.style_label_right, size=size.small)
+                array.push(fibLabels_low, fibLabel)
+        else
+            // ŒÿÊÿ ÅÌ‘ù»Ì‰Ì ⁄«œÌ
+            futurePrice_low = p10_low + avgSlope_low * (futureTime - t10)
+            projectionLine_low := line.new(t10, p10_low, futureTime, futurePrice_low, xloc=xloc.bar_time, color=color.blue, width=2, extend=extend.right, style=line.style_dashed)
+            
+            inverseFuturePrice_low = p10_low - avgSlope_low * (futureTime - t10)
+            inverseProjectionLine_low := line.new(t10, p10_low, futureTime, inverseFuturePrice_low, xloc=xloc.bar_time, color=color.red, width=2, extend=extend.right, style=line.style_dashed)

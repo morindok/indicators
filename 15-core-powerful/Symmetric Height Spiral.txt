@@ -1,0 +1,134 @@
+//@version=5
+indicator("Spirals by Candle Heights - Scaled & Options", overlay = true)
+
+t1 = input.time(0, "Start Time", confirm = true)
+t2 = input.time(0, "End Time", confirm = true)
+opt_center = input.bool(false, "Center Both Spirals")
+opt_swap = input.bool(false, "Swap Positions")
+opt_continue = input.bool(false, "Continue Spirals")
+opt_total_sum = input.bool(false, "Use Total Sum for Length")
+
+var float green_sum = 0.0
+var float red_sum = 0.0
+var float max_p = na
+var float min_p = na
+
+var time_arr = array.new_int()
+var price_arr = array.new_float()
+
+in_range = time >= math.min(t1, t2) and time <= math.max(t1, t2)
+
+if in_range
+    float h = high - low
+    if close > open
+        green_sum += h
+    if close < open
+        red_sum += h
+        
+    max_p := na(max_p) ? high : math.max(max_p, high)
+    min_p := na(min_p) ? low : math.min(min_p, low)
+    
+    array.push(time_arr, time)
+    array.push(price_arr, (high + low) / 2.0)
+
+if barstate.islast and array.size(time_arr) > 0
+    int size = array.size(time_arr)
+    
+    float center_start = array.get(price_arr, 0)
+    float center_end = array.get(price_arr, size - 1)
+    
+    int center_idx = math.floor(size / 2)
+    int t_center = array.get(time_arr, center_idx)
+    float p_center = array.get(price_arr, center_idx)
+
+    float dt = math.abs(t2 - t1)
+    float dp = math.abs(max_p - min_p)
+    
+    if dt == 0
+        dt := timeframe.in_seconds("") * 1000.0
+    if dp == 0
+        dp := 1.0
+
+    float b_coeff = math.log(1.618) / (math.pi / 2)
+    float a = 0.02
+    
+    int t_base_r = math.min(t1, t2)
+    float p_base_r = center_start
+    int t_base_g = math.max(t1, t2)
+    float p_base_g = center_end
+    
+    if opt_swap
+        t_base_r := math.max(t1, t2)
+        p_base_r := center_end
+        t_base_g := math.min(t1, t2)
+        p_base_g := center_start
+        
+    if opt_center
+        t_base_r := t_center
+        p_base_r := p_center
+        t_base_g := t_center
+        p_base_g := p_center
+
+    float total_sum = red_sum + green_sum
+    float target_r = opt_total_sum ? total_sum : red_sum
+    float target_g = opt_total_sum ? total_sum : green_sum
+
+    // ÑÓã ÇÓíÑÇá ÞÑãÒ (ÇÏÓÇÚÊÑÏ)
+    if target_r > 0 or opt_continue
+        pts_red = array.new<chart.point>()
+        array.push(pts_red, chart.point.from_time(t_base_r, p_base_r))
+        
+        float acc_len_r = 0.0
+        float prev_t_r = t_base_r
+        float prev_p_r = p_base_r
+        
+        for i = 1 to 2000
+            float theta = i * 0.1
+            float r = a * math.exp(b_coeff * theta)
+            
+            int curr_t = math.round(t_base_r + r * dt * math.cos(theta))
+            float curr_p = p_base_r + r * dp * math.sin(theta)
+            
+            float seg = math.sqrt(math.pow(((curr_t - prev_t_r) / dt) * dp, 2) + math.pow(curr_p - prev_p_r, 2))
+            
+            if opt_continue or acc_len_r <= target_r
+                array.push(pts_red, chart.point.from_time(curr_t, curr_p))
+                acc_len_r += seg
+            else
+                break
+                
+            prev_t_r := curr_t
+            prev_p_r := curr_p
+
+        if array.size(pts_red) > 1
+            polyline.new(pts_red, xloc = xloc.bar_time, line_color = color.red)
+
+    // ÑÓã ÇÓíÑÇá ÓÈÒ (ÓÇÚÊÑÏ)
+    if target_g > 0 or opt_continue
+        pts_green = array.new<chart.point>()
+        array.push(pts_green, chart.point.from_time(t_base_g, p_base_g))
+        
+        float acc_len_g = 0.0
+        float prev_t_g = t_base_g
+        float prev_p_g = p_base_g
+        
+        for i = 1 to 2000
+            float theta = i * 0.1
+            float r = a * math.exp(b_coeff * theta)
+            
+            int curr_t = math.round(t_base_g + r * dt * math.cos(-theta))
+            float curr_p = p_base_g + r * dp * math.sin(-theta)
+            
+            float seg = math.sqrt(math.pow(((curr_t - prev_t_g) / dt) * dp, 2) + math.pow(curr_p - prev_p_g, 2))
+            
+            if opt_continue or acc_len_g <= target_g
+                array.push(pts_green, chart.point.from_time(curr_t, curr_p))
+                acc_len_g += seg
+            else
+                break
+                
+            prev_t_g := curr_t
+            prev_p_g := curr_p
+
+        if array.size(pts_green) > 1
+            polyline.new(pts_green, xloc = xloc.bar_time, line_color = color.green)

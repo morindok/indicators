@@ -1,0 +1,213 @@
+//@version=5
+indicator(title="جدول چرخش سرمایه به ارز فعلی + USDT {Morindok}", shorttitle="Capital Flow & USDT", overlay=true)
+
+// =================== ورودی‌های نمادها (۲۰ ارز برتر) ===================
+grpSymbols = "ارزهای تحت پایش (منبع/مقصد جریان پول)"
+sym1 = input.symbol("BINANCE:BTCUSDT", "۱", group=grpSymbols, inline="1")
+lbl1 = input.string("BTC", "", group=grpSymbols, inline="1")
+sym2 = input.symbol("BINANCE:ETHUSDT", "۲", group=grpSymbols, inline="2")
+lbl2 = input.string("ETH", "", group=grpSymbols, inline="2")
+sym3 = input.symbol("BINANCE:BNBUSDT", "۳", group=grpSymbols, inline="3")
+lbl3 = input.string("BNB", "", group=grpSymbols, inline="3")
+sym4 = input.symbol("BINANCE:SOLUSDT", "۴", group=grpSymbols, inline="4")
+lbl4 = input.string("SOL", "", group=grpSymbols, inline="4")
+sym5 = input.symbol("BINANCE:XRPUSDT", "۵", group=grpSymbols, inline="5")
+lbl5 = input.string("XRP", "", group=grpSymbols, inline="5")
+sym6 = input.symbol("BINANCE:ADAUSDT", "۶", group=grpSymbols, inline="6")
+lbl6 = input.string("ADA", "", group=grpSymbols, inline="6")
+sym7 = input.symbol("BINANCE:DOGEUSDT", "۷", group=grpSymbols, inline="7")
+lbl7 = input.string("DOGE", "", group=grpSymbols, inline="7")
+sym8 = input.symbol("BINANCE:AVAXUSDT", "۸", group=grpSymbols, inline="8")
+lbl8 = input.string("AVAX", "", group=grpSymbols, inline="8")
+sym9 = input.symbol("BINANCE:LINKUSDT", "۹", group=grpSymbols, inline="9")
+lbl9 = input.string("LINK", "", group=grpSymbols, inline="9")
+sym10 = input.symbol("BINANCE:DOTUSDT", "۱۰", group=grpSymbols, inline="10")
+lbl10 = input.string("DOT", "", group=grpSymbols, inline="10")
+sym11 = input.symbol("BINANCE:ATOMUSDT", "۱۱", group=grpSymbols, inline="11")
+lbl11 = input.string("ATOM", "", group=grpSymbols, inline="11")
+sym12 = input.symbol("BINANCE:UNIUSDT", "۱۲", group=grpSymbols, inline="12")
+lbl12 = input.string("UNI", "", group=grpSymbols, inline="12")
+sym13 = input.symbol("BINANCE:LTCUSDT", "۱۳", group=grpSymbols, inline="13")
+lbl13 = input.string("LTC", "", group=grpSymbols, inline="13")
+sym14 = input.symbol("BINANCE:BCHUSDT", "۱۴", group=grpSymbols, inline="14")
+lbl14 = input.string("BCH", "", group=grpSymbols, inline="14")
+sym15 = input.symbol("BINANCE:NEARUSDT", "۱۵", group=grpSymbols, inline="15")
+lbl15 = input.string("NEAR", "", group=grpSymbols, inline="15")
+sym16 = input.symbol("BINANCE:ICPUSDT", "۱۶", group=grpSymbols, inline="16")
+lbl16 = input.string("ICP", "", group=grpSymbols, inline="16")
+sym17 = input.symbol("BINANCE:APTUSDT", "۱۷", group=grpSymbols, inline="17")
+lbl17 = input.string("APT", "", group=grpSymbols, inline="17")
+sym18 = input.symbol("BINANCE:SUIUSDT", "۱۸", group=grpSymbols, inline="18")
+lbl18 = input.string("SUI", "", group=grpSymbols, inline="18")
+sym19 = input.symbol("BINANCE:INJUSDT", "۱۹", group=grpSymbols, inline="19")
+lbl19 = input.string("INJ", "", group=grpSymbols, inline="19")
+sym20 = input.symbol("BINANCE:TRXUSDT", "۲۰", group=grpSymbols, inline="20")
+lbl20 = input.string("TRX", "", group=grpSymbols, inline="20")
+
+// =================== تنظیمات ===================
+grpSettings = "تنظیمات نمایش"
+volLen = input.int(14, "دوره میانگین حجم", minval=2, group=grpSettings)
+flowThreshold = input.float(0.15, "آستانه حساسیت جریان", minval=0.0, step=0.05, group=grpSettings)
+tblPosStr = input.string("وسط-راست", "موقعیت جدول", options=["بالا-راست", "بالا-چپ", "پایین-راست", "پایین-چپ", "وسط-راست"], group=grpSettings)
+txtSize = input.string("small", "اندازه متن", options=["tiny", "small", "normal"], group=grpSettings)
+
+// =================== توابع محاسباتی ===================
+f_flow(sym) =>
+    [o, h, l, c0, c1, c2, v, vAvg] = request.security(sym, timeframe.period, [open, high, low, close, close[1], close[2], volume, ta.sma(volume, volLen)], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+    
+    // محاسبه حجم پولی تقریبی به تتر (Volume * Close Price)
+    usdt_vol = v * c0 
+    
+    pct = c1 != 0 ? (c0 - c1) / c1 * 100 : 0.0
+    volRatio = vAvg > 0 ? v / vAvg : 1.0
+    momentum = c1 != 0 ? (c1 - c2) / c2 * 100 : 0.0
+    
+    range_hl = h - l
+    buy_vol = range_hl != 0 ? v * ((c0 - l) / range_hl) : (c0 >= o ? v : 0)
+    sell_vol = range_hl != 0 ? v * ((h - c0) / range_hl) : (c0 < o ? v : 0)
+    
+    buyer_power = sell_vol > 0 ? (buy_vol / sell_vol) : (buy_vol > 0 ? 5.0 : 1.0)
+    buyer_power := math.round(buyer_power * 10) / 10
+    
+    rawScore = (pct * 0.7 + momentum * 0.3) * volRatio * (buyer_power > 0 ? math.sqrt(buyer_power) : 1.0)
+    
+    [pct, volRatio, rawScore, buyer_power, usdt_vol]
+
+// =================== فراخوانی داده‌های ۲۰ ارز ===================
+[pct1, vr1, sc1, bp1, vol1] = f_flow(sym1)
+[pct2, vr2, sc2, bp2, vol2] = f_flow(sym2)
+[pct3, vr3, sc3, bp3, vol3] = f_flow(sym3)
+[pct4, vr4, sc4, bp4, vol4] = f_flow(sym4)
+[pct5, vr5, sc5, bp5, vol5] = f_flow(sym5)
+[pct6, vr6, sc6, bp6, vol6] = f_flow(sym6)
+[pct7, vr7, sc7, bp7, vol7] = f_flow(sym7)
+[pct8, vr8, sc8, bp8, vol8] = f_flow(sym8)
+[pct9, vr9, sc9, bp9, vol9] = f_flow(sym9)
+[pct10, vr10, sc10, bp10, vol10] = f_flow(sym10)
+[pct11, vr11, sc11, bp11, vol11] = f_flow(sym11)
+[pct12, vr12, sc12, bp12, vol12] = f_flow(sym12)
+[pct13, vr13, sc13, bp13, vol13] = f_flow(sym13)
+[pct14, vr14, sc14, bp14, vol14] = f_flow(sym14)
+[pct15, vr15, sc15, bp15, vol15] = f_flow(sym15)
+[pct16, vr16, sc16, bp16, vol16] = f_flow(sym16)
+[pct17, vr17, sc17, bp17, vol17] = f_flow(sym17)
+[pct18, vr18, sc18, bp18, vol18] = f_flow(sym18)
+[pct19, vr19, sc19, bp19, vol19] = f_flow(sym19)
+[pct20, vr20, sc20, bp20, vol20] = f_flow(sym20)
+
+// =================== تحلیل ارز فعلی چارت ===================
+[curr_pct, curr_vr, curr_sc, curr_bp, curr_vol] = f_flow(syminfo.tickerid)
+curr_name = syminfo.ticker
+
+// =================== آرایه‌ها و منطق چرخش سرمایه ===================
+names = array.from(lbl1, lbl2, lbl3, lbl4, lbl5, lbl6, lbl7, lbl8, lbl9, lbl10, lbl11, lbl12, lbl13, lbl14, lbl15, lbl16, lbl17, lbl18, lbl19, lbl20)
+scores = array.from(sc1, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sc9, sc10, sc11, sc12, sc13, sc14, sc15, sc16, sc17, sc18, sc19, sc20)
+vols = array.from(vol1, vol2, vol3, vol4, vol5, vol6, vol7, vol8, vol9, vol10, vol11, vol12, vol13, vol14, vol15, vol16, vol17, vol18, vol19, vol20)
+
+// آرایه‌ای برای امتیازدهی جهت مرتب‌سازی (بدون فیلتر حذف‌کننده)
+adjusted_scores = array.new_float(20)
+for i = 0 to 19
+    s = array.get(scores, i)
+    v = array.get(vols, i)
+    
+    // منطق جدید: اگر ارز فعلی صعودی است، ارزهای ضعیف‌تر (منفی) منبع پول هستند.
+    // اگر ارز فعلی نزولی است، ارزهای قوی‌تر (مثبت) مقصد پول هستند.
+    float metric = 0.0
+    if curr_sc > 0
+        metric := s < 0 ? v * math.abs(s) : v * 0.05 // اولویت بالا برای ارزهای منفی، اولویت پایین برای بقیه
+    else
+        metric := s > 0 ? v * s : v * 0.05 // اولویت بالا برای ارزهای مثبت، اولویت پایین برای بقیه
+    
+    array.set(adjusted_scores, i, metric)
+
+// مرتب‌سازی نزولی بر اساس امتیاز محاسبه‌شده
+rot_sortedIdx = array.sort_indices(adjusted_scores, order.descending)
+
+// =================== رسم جدول ===================
+tblPos = tblPosStr == "بالا-راست" ? position.top_right : tblPosStr == "بالا-چپ" ? position.top_left : tblPosStr == "پایین-راست" ? position.bottom_right : tblPosStr == "پایین-چپ" ? position.bottom_left : position.middle_right
+sz = txtSize == "tiny" ? size.tiny : txtSize == "small" ? size.small : size.normal
+
+var table flowTable = table.new(position=tblPos, columns=5, rows=20, border_width=1, border_color=color.new(color.gray, 70), frame_width=2, frame_color=color.new(color.blue, 80))
+
+if barstate.islast
+    // هدر جدول
+    table.cell(flowTable, 0, 0, "ارز مرتبط", text_color=color.white, bgcolor=color.new(color.blue, 80), text_size=sz)
+    table.cell(flowTable, 1, 0, "حجم پولی (USDT)", text_color=color.white, bgcolor=color.new(color.blue, 80), text_size=sz)
+    table.cell(flowTable, 2, 0, "امتیاز", text_color=color.white, bgcolor=color.new(color.blue, 80), text_size=sz)
+    table.cell(flowTable, 3, 0, "وضعیت", text_color=color.white, bgcolor=color.new(color.blue, 80), text_size=sz)
+    table.cell(flowTable, 4, 0, "جهت جریان", text_color=color.yellow, bgcolor=color.new(color.blue, 80), text_size=sz)
+    
+    // فرمت‌کردن حجم ارز فعلی
+    curr_vol_fmt = curr_vol > 1000000000 ? str.tostring(curr_vol / 1000000000, "#.##") + "B" : curr_vol > 1000000 ? str.tostring(curr_vol / 1000000, "#.##") + "M" : str.tostring(curr_vol / 1000, "#.##") + "K"
+    curr_status = curr_sc > flowThreshold ? "جذب سرمایه" : (curr_sc < -flowThreshold ? "دفع سرمایه" : "خنثی")
+    curr_status_col = curr_sc > flowThreshold ? color.lime : (curr_sc < -flowThreshold ? color.red : color.gray)
+    
+    // ردیف اول: خلاصه وضعیت ارز فعلی
+    table.cell(flowTable, 0, 1, "➤ " + curr_name, text_color=color.yellow, bgcolor=color.new(color.black, 60), text_size=sz)
+    table.cell(flowTable, 1, 1, curr_vol_fmt, text_color=color.white, bgcolor=color.new(color.black, 60), text_size=sz)
+    table.cell(flowTable, 2, 1, str.tostring(curr_sc, "#.##"), text_color=curr_status_col, bgcolor=color.new(color.black, 60), text_size=sz)
+    table.cell(flowTable, 3, 1, curr_status, text_color=curr_status_col, bgcolor=color.new(color.black, 60), text_size=sz)
+    table.cell(flowTable, 4, 1, "ارز فعلی", text_color=color.white, bgcolor=color.new(color.black, 60), text_size=sz)
+
+    // =================== ردیف ویژه: USDT (منبع/مقصد اصلی نقدینگی) ===================
+    string usdt_status = ""
+    color usdt_status_col = color.silver
+    string usdt_direction = ""
+    float usdt_vol_display = curr_vol * 0.6 // تخمین منطقی حجم جریان تتر بر اساس حجم ارز فعلی
+    
+    if curr_sc > flowThreshold
+        usdt_status := "تأمین نقدینگی"
+        usdt_status_col := color.red // تتر در حال فروش است
+        usdt_direction := "ورود به " + curr_name
+    else if curr_sc < -flowThreshold
+        usdt_status := "پناهگاه امن"
+        usdt_status_col := color.lime // تتر در حال جذب است
+        usdt_direction := "خروج از " + curr_name
+    else
+        usdt_status := "انتظار"
+        usdt_status_col := color.gray
+        usdt_direction := "تراکم در " + curr_name
+
+    usdt_vol_fmt = usdt_vol_display > 1000000000 ? str.tostring(usdt_vol_display / 1000000000, "#.##") + "B" : usdt_vol_display > 1000000 ? str.tostring(usdt_vol_display / 1000000, "#.##") + "M" : str.tostring(usdt_vol_display / 1000, "#.##") + "K"
+
+    table.cell(flowTable, 0, 2, "USDT", text_color=color.white, bgcolor=color.new(color.purple, 70), text_size=sz)
+    table.cell(flowTable, 1, 2, usdt_vol_fmt, text_color=color.white, bgcolor=color.new(color.purple, 70), text_size=sz)
+    table.cell(flowTable, 2, 2, "N/A", text_color=color.gray, bgcolor=color.new(color.purple, 70), text_size=sz)
+    table.cell(flowTable, 3, 2, usdt_status, text_color=usdt_status_col, bgcolor=color.new(color.purple, 70), text_size=sz)
+    table.cell(flowTable, 4, 2, usdt_direction, text_color=color.yellow, bgcolor=color.new(color.purple, 70), text_size=sz)
+
+    // =================== پر کردن ردیف‌های سایر ارزها ===================
+    row_count = 3
+    for i = 0 to 19
+        idx = array.get(rot_sortedIdx, i)
+        metric = array.get(adjusted_scores, idx)
+        
+        // نمایش حداکثر ۹ ارز دیگر (تا جدول از ۱۲ ردیف تجاوز نکند)
+        if metric > 0 and row_count < 12 
+            nm = array.get(names, idx)
+            v = array.get(vols, idx)
+            s = array.get(scores, idx)
+            
+            vol_fmt = v > 1000000000 ? str.tostring(v / 1000000000, "#.##") + "B" : v > 1000000 ? str.tostring(v / 1000000, "#.##") + "M" : str.tostring(v / 1000, "#.##") + "K"
+            
+            status_txt = s < 0 ? "فشار فروش" : "فشار خرید"
+            status_col = s < 0 ? color.red : color.lime
+            
+            direction_txt = curr_sc > 0 ? "ورود به " + curr_name : "خروج از " + curr_name
+            direction_col = color.yellow
+            
+            table.cell(flowTable, 0, row_count, nm, text_color=color.white, bgcolor=color.new(color.gray, 85), text_size=size.tiny)
+            table.cell(flowTable, 1, row_count, vol_fmt, text_color=color.white, bgcolor=color.new(color.gray, 85), text_size=size.tiny)
+            table.cell(flowTable, 2, row_count, str.tostring(s, "#.##"), text_color=status_col, bgcolor=color.new(color.gray, 85), text_size=size.tiny)
+            table.cell(flowTable, 3, row_count, status_txt, text_color=status_col, bgcolor=color.new(color.gray, 85), text_size=size.tiny)
+            table.cell(flowTable, 4, row_count, direction_txt, text_color=direction_col, bgcolor=color.new(color.gray, 85), text_size=size.tiny)
+            
+            row_count := row_count + 1
+            
+    // پر کردن سلول‌های خالی باقیمانده برای حفظ زیبایی
+    for r = row_count to 11
+        table.cell(flowTable, 0, r, "-", text_color=color.gray, bgcolor=color.new(color.black, 90), text_size=size.tiny)
+        table.cell(flowTable, 1, r, "-", text_color=color.gray, bgcolor=color.new(color.black, 90), text_size=size.tiny)
+        table.cell(flowTable, 2, r, "-", text_color=color.gray, bgcolor=color.new(color.black, 90), text_size=size.tiny)
+        table.cell(flowTable, 3, r, "-", text_color=color.gray, bgcolor=color.new(color.black, 90), text_size=size.tiny)
+        table.cell(flowTable, 4, r, "-", text_color=color.gray, bgcolor=color.new(color.black, 90), text_size=size.tiny)

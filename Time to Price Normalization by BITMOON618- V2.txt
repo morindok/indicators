@@ -1,0 +1,26 @@
+//@version=5
+indicator("Time-Normalized Price", overlay=false)
+
+len    = input.int(500,  "Length")
+ma_len = input.int(21,   "MA Length")
+ob_val = input.float(2.0, "Overbought Level", step=0.1)
+os_val = input.float(2.0, "Oversold Level",   step=0.1)
+
+half = math.round(len / 2) + 1
+dpo  = close - ta.sma(close, len)[half]
+atr_n = ta.atr(14)
+val  = dpo / (atr_n * math.sqrt(len))
+
+ma   = ta.ema(val, ma_len)
+
+ob_color = color.new(color.red,   80)
+os_color = color.new(color.green, 80)
+
+plot(val, "DPO Norm",  color=color.new(color.blue,   0), linewidth=1)
+plot(ma,  "Signal MA", color=color.new(color.orange, 0), linewidth=1)
+
+hline(0,       "Center",     color=color.gray,              linestyle=hline.style_solid,  linewidth=1)
+hline( ob_val, "Overbought", color=color.new(color.red,   40), linestyle=hline.style_dashed, linewidth=1)
+hline(-os_val, "Oversold",   color=color.new(color.green, 40), linestyle=hline.style_dashed, linewidth=1)
+
+bgcolor(val >  ob_val ? ob_color : val < -os_val ? os_color : na)

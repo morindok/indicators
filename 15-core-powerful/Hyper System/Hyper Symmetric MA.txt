@@ -1,0 +1,225 @@
+//@version=5
+indicator("Symmetric Price - Invertible System", overlay=true)
+
+// --- Inputs ---
+src = input.source(close, "Source")
+useGoldenRatio = input.bool(false, "Use Golden Ratio")
+phi = input.float(1.618, "Golden Ratio Value")
+
+// Time and Price Points
+t1 = input.time(0, title="Point 1", confirm=true, inline="p1")
+p1 = input.price(0, title="", confirm=true, inline="p1")
+t2 = input.time(0, title="Point 2", confirm=true, inline="p2")
+p2 = input.price(0, title="", confirm=true, inline="p2")
+
+// MA Settings
+use_manual_ma = input.bool(false, "Use Manual MA Length", group="MA Settings")
+manual_ma_len = input.int(20, "Manual MA Length", minval=2, group="MA Settings")
+use_dynamic_ma_pre = input.bool(false, "Use Dynamic MA Length (Pre-Mid)", tooltip="If enabled, MA length changes based on distance between pre-mid crosses", group="MA Settings")
+use_dynamic_ma_post = input.bool(false, "Use Dynamic MA Length (Post-Mid)", tooltip="If enabled, MA length changes based on distance between post-mid crosses", group="MA Settings")
+base_dyn_ma_len = input.int(20, "Base Dynamic MA Length", minval=2, tooltip="„ﬁœ«— «Ê·ÌÂ »—«Ì ÿÊ· œ«Ì‰«„Ìò", group="MA Settings")
+
+// Fibo Wave Settings
+apply_fibo_wave = input.bool(false, "Apply Fibo Wave to MAs", group="Fibo Wave")
+apply_wave_yellow = input.bool(false, "Apply Fibo Wave to Yellow Levels", group="Fibo Wave")
+reset_wave = input.bool(true, "Reset Wave After 5 Cycles", group="Fibo Wave")
+
+// Symmetry & Invert Settings
+show_sym_prices = input.bool(true, "Show Symmetric Prices to Yellow Levels", group="Symmetry")
+show_sym_prices_p1p2 = input.bool(true, "Show Symmetric Prices to p1 & p2", group="Symmetry")
+invert_system = input.bool(false, "Invert Entire System", group="Symmetry")
+
+// --- Base Calculations ---
+slope = (t2 - t1) != 0 ? (p2 - p1) / (t2 - t1) : 0
+mid_time = t1 + (t2 - t1) * 0.5
+cross_level = (p1 + p2) / 2
+bar_ms = timeframe.in_seconds(timeframe.period) * 1000
+
+is_before_mid = time < mid_time
+is_after_mid = time >= mid_time
+
+// --- Dynamic MA Length Logic ---
+var int last_pre_cross_bar = na
+var int dyn_pre_ma_len = base_dyn_ma_len
+
+var int last_post_cross_bar = na
+var int dyn_post_ma_len = base_dyn_ma_len
+
+auto_ma_len = math.max(2, math.round(math.abs(t2 - t1) / bar_ms))
+base_ma_len = use_manual_ma ? manual_ma_len : auto_ma_len
+
+// „Õ«”»Â ÿÊ· ‰Â«ÌÌ „ÊÊÌ‰ê »— «”«” «Ì‰òÂ ﬁ»· Ì« »⁄œ «“ ‰Ì„Â Â” Ì„
+ma_len = base_ma_len
+if use_dynamic_ma_pre and is_before_mid
+    ma_len := math.max(2, dyn_pre_ma_len)
+if use_dynamic_ma_post and is_after_mid
+    ma_len := math.max(2, dyn_post_ma_len)
+
+tilt = cross_level + slope * (time - mid_time)
+base_amp = math.abs(p2 - p1) != 0 ? math.abs(p2 - p1) / 2 : ta.atr(14)
+relative_x = (time - mid_time) / bar_ms
+dist_bars = math.abs(relative_x)
+cycle_index = reset_wave ? math.floor((dist_bars % (ma_len * 5)) / ma_len) : math.floor(dist_bars / ma_len)
+fibo_amp = (math.pow(1.618, cycle_index) / math.pow(1.618, 4)) * base_amp
+
+raw_wave = math.sin(relative_x * 2 * math.pi / ma_len) * fibo_amp
+ma_wave = apply_fibo_wave ? raw_wave : 0.0
+yellow_wave = apply_wave_yellow ? raw_wave : 0.0
+
+flip(val) => invert_system ? 2 * cross_level - val : val
+
+// --- MA and Symmetry Calculations ---
+ma = ta.sma(src, ma_len)
+highest = ta.highest(ma, ma_len)
+lowest = ta.lowest(ma, ma_len)
+mid = useGoldenRatio ? ma + (highest - ma) / phi : (highest + lowest) / 2
+sym_ma = 2 * mid - ma
+
+offset = tilt - mid
+ma_final = ma + offset + ma_wave
+mid_final = mid + offset + ma_wave
+sym_ma_final = sym_ma + offset + ma_wave
+
+// --- Plot MAs ---
+plot(flip(ma_final), "MA", color=color.new(color.blue, 0), linewidth=2)
+plot(flip(mid_final), "Mid", color=color.new(color.gray, 0), linewidth=2)
+plot(flip(sym_ma_final), "Sym MA", color=color.new(color.red, 0), linewidth=2)
+
+// --- Intersection Logic ---
+cross_cond = ta.crossover(ma_final, sym_ma_final) or ta.crossunder(ma_final, sym_ma_final)
+cross_price = flip(ma_final)
+
+var float base_pre = na
+var float base_post = na
+var line line_pre_base = na
+var line line_post_base = na
+
+// „ €Ì—Â«Ì  ﬁ«ÿ⁄ùÂ«Ì ÅÌ‘ «“ ‰Ì„Â
+var int pre_bar1 = na, var int pre_bar2 = na, var int pre_bar3 = na, var int pre_bar4 = na
+var float pre_p1 = na, var float pre_p2 = na, var float pre_p3 = na, var float pre_p4 = na
+
+var line vline_pre1 = na, var line vline_pre2 = na, var line vline_pre3 = na, var line vline_pre4 = na
+var line hline_pre1 = na, var line hline_pre2 = na, var line hline_pre3 = na, var line hline_pre4 = na
+
+// „ €Ì—Â«Ì  ﬁ«ÿ⁄ùÂ«Ì Å” «“ ‰Ì„Â
+var int post_cross_count = 0
+var line vline_post1 = na, var line vline_post2 = na, var line vline_post3 = na, var line vline_post4 = na
+var line hline_post1 = na, var line hline_post2 = na, var line hline_post3 = na, var line hline_post4 = na
+
+current_base_level = math.avg(ma, sym_ma) + offset
+
+// 1. Before Mid Time
+if cross_cond and is_before_mid
+    // ¬ÅœÌ  ÿÊ· œ«Ì‰«„Ìò »—«Ì „ÊÊÌ‰ê ﬁ»· «“ ‰Ì„Â
+    if not na(last_pre_cross_bar)
+        dyn_pre_ma_len := bar_index - last_pre_cross_bar
+    last_pre_cross_bar := bar_index
+
+    base_pre := current_base_level
+    plot_base_pre = flip(base_pre)
+    
+    pre_bar4 := pre_bar3, pre_p4 := pre_p3
+    pre_bar3 := pre_bar2, pre_p3 := pre_p2
+    pre_bar2 := pre_bar1, pre_p2 := pre_p1
+    pre_bar1 := bar_index, pre_p1 := cross_price
+
+    if na(line_pre_base)
+        line_pre_base := line.new(bar_index, plot_base_pre, bar_index + 1, plot_base_pre, color=color.new(color.yellow, 20), style=line.style_solid, width=2, extend=extend.right)
+        
+        vline_pre1 := line.new(bar_index, low, bar_index, high, color=color.new(color.yellow, 15), style=line.style_dashed, width=1, extend=extend.both)
+        hline_pre1 := line.new(bar_index, pre_p1, bar_index + 1, pre_p1, color=color.new(color.yellow, 15), style=line.style_solid, width=2, extend=extend.right)
+        
+        vline_pre2 := line.new(bar_index, low, bar_index, high, color=color.new(color.orange, 15), style=line.style_dashed, width=1, extend=extend.both)
+        hline_pre2 := line.new(bar_index, pre_p2, bar_index + 1, pre_p2, color=color.new(color.orange, 15), style=line.style_solid, width=2, extend=extend.right)
+        
+        vline_pre3 := line.new(bar_index, low, bar_index, high, color=color.new(color.red, 15), style=line.style_dashed, width=1, extend=extend.both)
+        hline_pre3 := line.new(bar_index, pre_p3, bar_index + 1, pre_p3, color=color.new(color.red, 15), style=line.style_solid, width=2, extend=extend.right)
+        
+        vline_pre4 := line.new(bar_index, low, bar_index, high, color=color.new(color.fuchsia, 15), style=line.style_dashed, width=1, extend=extend.both)
+        hline_pre4 := line.new(bar_index, pre_p4, bar_index + 1, pre_p4, color=color.new(color.fuchsia, 15), style=line.style_solid, width=2, extend=extend.right)
+    else
+        line.set_xy1(line_pre_base, bar_index, plot_base_pre), line.set_xy2(line_pre_base, bar_index + 1, plot_base_pre)
+        
+        if not na(pre_bar1)
+            line.set_xy1(vline_pre1, pre_bar1, low), line.set_xy2(vline_pre1, pre_bar1, high)
+            line.set_xy1(hline_pre1, pre_bar1, pre_p1), line.set_xy2(hline_pre1, pre_bar1 + 1, pre_p1)
+        if not na(pre_bar2)
+            line.set_xy1(vline_pre2, pre_bar2, low), line.set_xy2(vline_pre2, pre_bar2, high)
+            line.set_xy1(hline_pre2, pre_bar2, pre_p2), line.set_xy2(hline_pre2, pre_bar2 + 1, pre_p2)
+        if not na(pre_bar3)
+            line.set_xy1(vline_pre3, pre_bar3, low), line.set_xy2(vline_pre3, pre_bar3, high)
+            line.set_xy1(hline_pre3, pre_bar3, pre_p3), line.set_xy2(hline_pre3, pre_bar3 + 1, pre_p3)
+        if not na(pre_bar4)
+            line.set_xy1(vline_pre4, pre_bar4, low), line.set_xy2(vline_pre4, pre_bar4, high)
+            line.set_xy1(hline_pre4, pre_bar4, pre_p4), line.set_xy2(hline_pre4, pre_bar4 + 1, pre_p4)
+
+// 2. After Mid Time
+if cross_cond and is_after_mid
+    post_cross_count += 1
+    
+    // ¬ÅœÌ  ÿÊ· œ«Ì‰«„Ìò »—«Ì „ÊÊÌ‰ê »⁄œ «“ ‰Ì„Â
+    if not na(last_post_cross_bar)
+        dyn_post_ma_len := bar_index - last_post_cross_bar
+    last_post_cross_bar := bar_index
+
+    if post_cross_count == 1
+        base_post := current_base_level
+        plot_base_post = flip(base_post)
+        line_post_base := line.new(bar_index, plot_base_post, bar_index + 1, plot_base_post, color=color.new(color.yellow, 20), style=line.style_solid, width=2, extend=extend.right)
+        vline_post1 := line.new(bar_index, low, bar_index, high, color=color.new(color.yellow, 15), style=line.style_dashed, width=1, extend=extend.both)
+        hline_post1 := line.new(bar_index, cross_price, bar_index + 1, cross_price, color=color.new(color.yellow, 15), style=line.style_solid, width=2, extend=extend.right)
+    else if post_cross_count == 2
+        vline_post2 := line.new(bar_index, low, bar_index, high, color=color.new(color.lime, 15), style=line.style_dashed, width=1, extend=extend.both)
+        hline_post2 := line.new(bar_index, cross_price, bar_index + 1, cross_price, color=color.new(color.lime, 15), style=line.style_solid, width=2, extend=extend.right)
+    else if post_cross_count == 3
+        vline_post3 := line.new(bar_index, low, bar_index, high, color=color.new(color.aqua, 15), style=line.style_dashed, width=1, extend=extend.both)
+        hline_post3 := line.new(bar_index, cross_price, bar_index + 1, cross_price, color=color.new(color.aqua, 15), style=line.style_solid, width=2, extend=extend.right)
+    else if post_cross_count == 4
+        vline_post4 := line.new(bar_index, low, bar_index, high, color=color.new(color.white, 15), style=line.style_dashed, width=1, extend=extend.both)
+        hline_post4 := line.new(bar_index, cross_price, bar_index + 1, cross_price, color=color.new(color.white, 15), style=line.style_solid, width=2, extend=extend.right)
+
+// --- Dynamic Yellow Level ---
+plot_dyn_pre = not na(base_pre) ? flip(base_pre + yellow_wave) : na
+plot_dyn_post = not na(base_post) ? flip(base_post + yellow_wave) : na
+
+plot(plot_dyn_pre, "Wavy Pre-Mid Yellow", color=color.new(color.yellow, 0), linewidth=3)
+plot(plot_dyn_post, "Wavy Post-Mid Yellow", color=color.new(color.yellow, 0), linewidth=3)
+
+// --- Symmetric Candles ---
+sym_pre_o = show_sym_prices and not na(plot_dyn_pre) ? 2 * plot_dyn_pre - open : na
+sym_pre_h = show_sym_prices and not na(plot_dyn_pre) ? 2 * plot_dyn_pre - low : na
+sym_pre_l = show_sym_prices and not na(plot_dyn_pre) ? 2 * plot_dyn_pre - high : na
+sym_pre_c = show_sym_prices and not na(plot_dyn_pre) ? 2 * plot_dyn_pre - close : na
+sym_pre_color = sym_pre_c >= sym_pre_o ? color.new(color.teal, 0) : color.new(color.maroon, 0)
+plotcandle(sym_pre_o, sym_pre_h, sym_pre_l, sym_pre_c, title="Sym (Pre)", color=sym_pre_color, wickcolor=sym_pre_color, bordercolor=sym_pre_color)
+
+sym_post_o = show_sym_prices and not na(plot_dyn_post) ? 2 * plot_dyn_post - open : na
+sym_post_h = show_sym_prices and not na(plot_dyn_post) ? 2 * plot_dyn_post - low : na
+sym_post_l = show_sym_prices and not na(plot_dyn_post) ? 2 * plot_dyn_post - high : na
+sym_post_c = show_sym_prices and not na(plot_dyn_post) ? 2 * plot_dyn_post - close : na
+sym_post_color = sym_post_c >= sym_post_o ? color.new(color.teal, 0) : color.new(color.maroon, 0)
+plotcandle(sym_post_o, sym_post_h, sym_post_l, sym_post_c, title="Sym (Post)", color=sym_post_color, wickcolor=sym_post_color, bordercolor=sym_post_color)
+
+eff_p1 = flip(p1)
+sym_p1_color = close <= open ? color.new(color.green, 20) : color.new(color.red, 20)
+plotcandle(show_sym_prices_p1p2 ? 2 * eff_p1 - open : na, show_sym_prices_p1p2 ? 2 * eff_p1 - low : na, show_sym_prices_p1p2 ? 2 * eff_p1 - high : na, show_sym_prices_p1p2 ? 2 * eff_p1 - close : na, title="Sym p1", color=sym_p1_color, wickcolor=sym_p1_color, bordercolor=sym_p1_color)
+
+eff_p2 = flip(p2)
+sym_p2_color = close <= open ? color.new(color.blue, 20) : color.new(color.orange, 20)
+plotcandle(show_sym_prices_p1p2 ? 2 * eff_p2 - open : na, show_sym_prices_p1p2 ? 2 * eff_p2 - low : na, show_sym_prices_p1p2 ? 2 * eff_p2 - high : na, show_sym_prices_p1p2 ? 2 * eff_p2 - close : na, title="Sym p2", color=sym_p2_color, wickcolor=sym_p2_color, bordercolor=sym_p2_color)
+
+// --- Info Table ---
+// „Õ«”»Â  ⁄œ«œ ò‰œ·ùÂ«Ì »Ì‰ “„«‰ 1 Ê “„«‰ 2
+range_bars = math.round(math.abs(t2 - t1) / bar_ms)
+
+// «ÌÃ«œ ÃœÊ· »« 2 ” Ê‰ Ê 2 ”ÿ—
+var table info_table = table.new(position.bottom_right, 2, 2, bgcolor=color.new(color.black, 40), border_width=1, border_color=color.gray)
+
+if barstate.islast
+    // ”ÿ— «Ê·: ÿÊ· „ÊÊÌ‰ê «Ê—ÌÃ
+    table.cell(info_table, 0, 0, "MA Length (Current):", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 0, str.tostring(ma_len), text_color=color.yellow, text_size=size.small, text_halign=text.align_center)
+    
+    // ”ÿ— œÊ„:  ⁄œ«œ ò‰œ·ùÂ«Ì »«“Â
+    table.cell(info_table, 0, 1, "Bars in Range (p1 to p2):", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 1, str.tostring(range_bars), text_color=color.aqua, text_size=size.small, text_halign=text.align_center)

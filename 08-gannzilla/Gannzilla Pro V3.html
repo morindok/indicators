@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gannzilla Pro - E8 God Mode</title>
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: #000; color: #fff; display: flex; flex-direction: column; height: 100vh; }
+        .header { display: flex; justify-content: space-between; background: #000000; color: #FFD700; padding: 12px 15px; box-shadow: 0 2px 10px rgba(255, 215, 0, 0.2); z-index: 10; border-bottom: 1px solid #FFD700; font-weight: bold; }
+        .main-container { display: flex; flex-direction: row; flex: 1; overflow: hidden; }
+        .chart-panel { flex: 1; overflow: auto; padding: 10px; background: #111; display: flex; flex-direction: column; align-items: center; }
+        .chart-container { width: 720px; height: 720px; margin: 20px auto; box-shadow: 0 0 20px rgba(0, 255, 255, 0.1); border-radius: 8px; overflow: hidden; background: #0a0a0a; }
+        .controls-panel { width: 310px; padding: 15px; background: #050505; border-left: 1px solid #333; overflow-y: auto; box-sizing: border-box; }
+        details { font-size: 13px; padding: 10px; background: #1A1A1A; border-radius: 6px; border: 1px solid #333; margin-bottom: 10px; }
+        summary { cursor: pointer; margin-bottom: 10px; font-weight: bold; }
+        .control-row { margin: 5px 0; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+        label { color: #ccc; width: 100px; }
+        input, select { background: #222; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 3px 5px; width: 140px; }
+        .btn-apply { margin-top: 15px; padding: 12px; background: linear-gradient(90deg, #FF00FF, #00FFFF); color: black; font-weight: bold; border: none; border-radius: 6px; width: 100%; cursor: pointer; box-shadow: 0 0 10px rgba(255, 0, 255, 0.5); }
+        .spiral-settings { margin: 8px 0; padding: 8px; border-radius: 4px; background: #111; box-shadow: 0 1px 2px rgba(0,0,0,0.5); border-left: 4px solid; }
+        table { width: 100%; border-collapse: separate; border-spacing: 0; box-shadow: 0 0 15px rgba(255, 0, 255, 0.2); border-radius: 6px; margin-top: 15px; font-size: 12px; }
+        th, td { padding: 10px; text-align: center; border-bottom: 1px solid #333; }
+        th { background: #222; color: white; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <span>🌌 Gannzilla Pro - E8 God Mode</span>
+    </div>
+
+    <div class="main-container">
+        <!-- Left Panel: Chart & Table -->
+        <div class="chart-panel">
+            <div id="plotly-graph" class="chart-container"></div>
+            <div id="table-container" style="width: 720px; margin: 20px auto;"></div>
+        </div>
+
+        <!-- Right Panel: Controls -->
+        <div class="controls-panel">
+            <details open>
+                <summary style="color: #00FFFF;">Layout Settings</summary>
+                <div class="control-row"><label>Grid Size</label><input type="number" id="inp-layout-size" value="15"></div>
+                <div class="control-row"><label>Data type</label>
+                    <select id="dd-data-type">
+                        <option value="price">Price</option>
+                        <option value="date">Date</option>
+                        <option value="time">Time</option>
+                    </select>
+                </div>
+                <div class="control-row"><label style="width:100%"><input type="checkbox" id="chk-spiral-angles"> Draw Angle Spiral</label></div>
+            </details>
+
+            <details open>
+                <summary style="color: #FF00FF;">God-Tier Math Parameters</summary>
+                <div class="control-row"><label>Start Value</label><input type="text" id="inp-price-value" value="100"></div>
+                <div class="control-row"><label>Step Mode</label>
+                    <select id="dd-step-mode">
+                        <option value="manual">Manual</option>
+                        <option value="e8_lattice" selected>🌌 E8 Lattice 8D Hologram</option>
+                        <option value="calabi_yau">🎻 Calabi-Yau String Vibration</option>
+                        <option value="time_dilation">⏳ Time-Dilation Singularity</option>
+                    </select>
+                </div>
+                <div class="control-row"><label>Step Angle (°)</label><input type="number" id="inp-angle-step" value="45" style="color:#00FFFF; font-weight:bold;"></div>
+                <div class="control-row"><label>Spirals Count</label>
+                    <select id="dd-num-spirals">
+                        <option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4</option>
+                    </select>
+                </div>
+                <div id="spirals-inputs-container"></div>
+            </details>
+
+            <details open>
+                <summary style="color: #39FF14;">Vector/Wave Settings</summary>
+                <div class="control-row"><label>Start Price</label><input type="number" id="inp-w-sy" value="0"></div>
+                <div class="control-row"><label>Candles</label><input type="number" id="inp-w-c" value="5"></div>
+                <div class="control-row"><label>End Price</label><input type="number" id="inp-w-ey" value="5"></div>
+            </details>
+
+            <button class="btn-apply" onclick="renderPlot()">🚀 INIT SINGULARITY</button>
+        </div>
+    </div>
+
+    <script>
+        const COLORS = ['#00FFFF', '#FF00FF', '#39FF14', '#FF3131'];
+        const DIRS = [true, false, true, false];
+        let centers = [[0,0], [0,0], [0,0], [0,0]];
+
+        function updateSpiralInputs() {
+            const container = document.getElementById('spirals-inputs-container');
+            const num = parseInt(document.getElementById('dd-num-spirals').value);
+            container.innerHTML = '';
+            for(let i=0; i<num; i++) {
+                container.innerHTML += `
+                    <div class="spiral-settings" style="border-left-color: ${COLORS[i]}">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                            <label style="color:${COLORS[i]}; width:auto;">Inc ${i+1}</label>
+                            <input type="number" id="inp-inc-${i}" value="1" style="width:50px;">
+                            <label style="color:${COLORS[i]}; width:auto;">Ang ${i+1}</label>
+                            <input type="number" id="inp-ang-${i}" placeholder="0" value="0" style="width:50px;">
+                        </div>
+                        <input type="range" id="slider-rot-${i}" min="0" max="360" value="0" style="width:100%;">
+                    </div>
+                `;
+            }
+        }
+
+        document.getElementById('dd-num-spirals').addEventListener('change', updateSpiralInputs);
+        updateSpiralInputs(); // Init
+
+        function getSpiralData(cx, cy, max_r, angle_deg, clockwise, rotation_offset, points_count=300) {
+            const phi = (1 + Math.sqrt(5)) / 2;
+            const b = Math.log(phi) / (Math.PI / 2);
+            const a = 0.5;
+            const theta_step = (angle_deg ? angle_deg : 45) * Math.PI / 180;
+            const max_theta = max_r > a ? Math.log(max_r / a) / b : 0;
+            
+            let theta_continuous = [];
+            for(let i=0; i<=2000; i++) theta_continuous.push((i/2000)*max_theta);
+            
+            let rot_rad = rotation_offset * Math.PI / 180;
+            let x_lines = [], y_lines = [];
+            
+            theta_continuous.forEach(th => {
+                let r = a * Math.exp(b * th);
+                let angle = clockwise ? (-th + rot_rad) : (th + rot_rad);
+                x_lines.push(cx + r * Math.cos(angle));
+                y_lines.push(cy + r * Math.sin(angle));
+            });
+
+            let x_texts = [], y_texts = [], texts = [];
+            for(let i=0; i<points_count; i++) {
+                let theta = i * theta_step;
+                if(theta > max_theta) break;
+                let r = a * Math.exp(b * theta);
+                let angle = clockwise ? (-theta + rot_rad) : (theta + rot_rad);
+                x_texts.push(cx + r * Math.cos(angle));
+                y_texts.push(cy + r * Math.sin(angle));
+                texts.push(i.toString()); // Simplified text values
+            }
+            return { x_lines, y_lines, x_texts, y_texts, texts };
+        }
+
+        function renderPlot() {
+            const size = parseFloat(document.getElementById('inp-layout-size').value);
+            const w_sy = parseFloat(document.getElementById('inp-w-sy').value);
+            const w_c = parseFloat(document.getElementById('inp-w-c').value);
+            const w_ey = parseFloat(document.getElementById('inp-w-ey').value);
+            const num_spirals = parseInt(document.getElementById('dd-num-spirals').value);
+            const draw_spiral_angles = document.getElementById('chk-spiral-angles').checked;
+            
+            let data = [];
+            let max_r = size / 2;
+            let R = max_r * 0.98;
+
+            // Background circle / spiral
+            if (!draw_spiral_angles) {
+                data.push({
+                    type: 'scatter', x: [0], y: [0], mode: 'markers', hoverinfo: 'skip',
+                    marker: { size: R*2, symbol: 'circle-open', color: '#ccc', sizeref: 0.1, sizemode: 'diameter' }
+                });
+            }
+
+            // Draw Vector
+            let dy = w_ey - w_sy;
+            let wave_angle_rad = w_c == 0 ? (dy >= 0 ? Math.PI/2 : -Math.PI/2) : Math.atan2(dy, w_c);
+            let ix = R * Math.cos(wave_angle_rad);
+            let iy = R * Math.sin(wave_angle_rad);
+            let bx = R * Math.cos(wave_angle_rad + Math.PI);
+            let by = R * Math.sin(wave_angle_rad + Math.PI);
+
+            data.push({ x: [bx, ix], y: [by, iy], mode: 'lines', line: {color: '#FFD700', width: 2}, name: "Wave" });
+            
+            // Draw Spirals
+            let extended_max_r = size * 3;
+            for(let i=0; i<num_spirals; i++) {
+                let rot = parseFloat(document.getElementById(`slider-rot-${i}`).value);
+                let ang_offset = parseFloat(document.getElementById(`inp-ang-${i}`).value) || 0;
+                
+                // Set Center based on angle offset
+                let cx = 0, cy = 0;
+                if(ang_offset !== 0) {
+                    let r_off = draw_spiral_angles ? (ang_offset/360.0)*R : R;
+                    cx = r_off * Math.cos(ang_offset * Math.PI/180);
+                    cy = r_off * Math.sin(ang_offset * Math.PI/180);
+                }
+
+                let s = getSpiralData(cx, cy, extended_max_r, 45, DIRS[i], rot);
+                data.push({ x: s.x_lines, y: s.y_lines, mode: 'lines', line: {color: COLORS[i], width: 2, dash: 'dot'} });
+                data.push({ x: s.x_texts, y: s.y_texts, mode: 'markers+text', marker: {color: COLORS[i], size: 4}, text: s.texts, textposition: "top center", textfont: {size:9, color: '#FFF'} });
+            }
+
+            let axis_lim = (size / 2) + 1.5;
+            let layout = {
+                xaxis: {range: [-axis_lim, axis_lim], showgrid: true, gridcolor: '#333', zeroline: true, zerolinecolor: '#FFD700'},
+                yaxis: {range: [-axis_lim, axis_lim], showgrid: true, gridcolor: '#333', zeroline: true, zerolinecolor: '#FFD700'},
+                margin: {l: 25, r: 25, t: 25, b: 25},
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: '#0a0a0a',
+                showlegend: false,
+                dragmode: 'pan'
+            };
+
+            Plotly.newPlot('plotly-graph', data, layout, {displayModeBar: false});
+        }
+
+        // Initial render
+        setTimeout(renderPlot, 500);
+    </script>
+</body>
+</html>

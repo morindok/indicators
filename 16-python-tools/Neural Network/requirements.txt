@@ -1,0 +1,7 @@
+pybit>=5.16
+pandas>=2.0
+numpy>=1.24
+torch>=2.0
+dash>=2.17
+dash-bootstrap-components>=1.6
+plotly>=5.20

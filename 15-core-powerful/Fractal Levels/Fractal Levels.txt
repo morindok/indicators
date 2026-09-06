@@ -1,0 +1,288 @@
+//@version=6
+indicator("Williams Fractals", shorttitle="Fractals", format=format.price, precision=0, overlay=true)
+
+n= input.int(title="Periods", defval=2, minval=2)
+mirrorTime  = input.time(0, title="Mirror Time", confirm=true)
+maxLines    = input.int(title=" ⁄œ«œ ŒÿÊÿ ‰„«Ì‘", defval=5, minval=1, maxval=50)
+mirrorLevel = input.price(0, title="Mirror Level", confirm=true)
+crossSystem = input.bool(false, title="ŒÿÊÿ „ ﬁ«ÿ⁄ („ ﬁ«—‰ ? «’·Ì)")
+
+// ?? ›—«ò «· ”Ì” „ ? ??
+bool upflagDownFrontier = true
+bool upflagUpFrontier0  = true
+bool upflagUpFrontier1  = true
+bool upflagUpFrontier2  = true
+bool upflagUpFrontier3  = true
+bool upflagUpFrontier4  = true
+for i = 1 to n
+    upflagDownFrontier := upflagDownFrontier and (high[n-i] < high[n])
+    upflagUpFrontier0  := upflagUpFrontier0  and (high[n+i] < high[n])
+    upflagUpFrontier1  := upflagUpFrontier1  and (high[n+1] <= high[n] and high[n+i+1] < high[n])
+    upflagUpFrontier2  := upflagUpFrontier2  and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i+2] < high[n])
+    upflagUpFrontier3  := upflagUpFrontier3  and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i+3] < high[n])
+    upflagUpFrontier4  := upflagUpFrontier4  and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i+4] < high[n])
+flagUpFrontier = upflagUpFrontier0 or upflagUpFrontier1 or upflagUpFrontier2 or upflagUpFrontier3 or upflagUpFrontier4
+upFractal = upflagDownFrontier and flagUpFrontier
+
+bool downflagDownFrontier = true
+bool downflagUpFrontier0  = true
+bool downflagUpFrontier1  = true
+bool downflagUpFrontier2  = true
+bool downflagUpFrontier3  = true
+bool downflagUpFrontier4  = true
+for i = 1 to n
+    downflagDownFrontier := downflagDownFrontier and (low[n-i] > low[n])
+    downflagUpFrontier0  := downflagUpFrontier0  and (low[n+i] > low[n])
+    downflagUpFrontier1  := downflagUpFrontier1  and (low[n+1] >= low[n] and low[n+i+1] > low[n])
+    downflagUpFrontier2  := downflagUpFrontier2  and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i+2] > low[n])
+    downflagUpFrontier3  := downflagUpFrontier3  and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i+3] > low[n])
+    downflagUpFrontier4  := downflagUpFrontier4  and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i+4] > low[n])
+flagDownFrontier = downflagUpFrontier0 or downflagUpFrontier1 or downflagUpFrontier2 or downflagUpFrontier3 or downflagUpFrontier4
+downFractal = downflagDownFrontier and flagDownFrontier
+
+var upArr1   = array.new_bool(0)
+var downArr1 = array.new_bool(0)
+var timeArr1 = array.new_int(0)
+var highArr1 = array.new_float(0)
+var lowArr1  = array.new_float(0)
+
+pastT1 = na(time[n]) ? time : time[n]
+pastH1 = na(high[n]) ? high : high[n]
+pastL1 = na(low[n])  ? low  : low[n]
+
+array.push(upArr1,   upFractal)
+array.push(downArr1, downFractal)
+array.push(timeArr1, pastT1)
+array.push(highArr1, pastH1)
+array.push(lowArr1,  pastL1)
+
+var int mirrorBar1 = -1
+if time[n] == mirrorTime
+    mirrorBar1 := array.size(upArr1) - 1
+
+if upFractal
+    label.new(x=pastT1, y=pastH1, text="?", xloc=xloc.bar_time, yloc=yloc.abovebar,
+              color=color.new(color.white,100), textcolor=#009688, style=label.style_none, size=size.small)
+if downFractal
+    label.new(x=pastT1, y=pastL1, text="?", xloc=xloc.bar_time, yloc=yloc.belowbar,
+              color=color.new(color.white,100), textcolor=#F44336, style=label.style_none, size=size.small)
+
+// ?? ›—«ò «· ”Ì” „ ? ??
+mHigh = mirrorLevel != 0 ? 2.0 * mirrorLevel - low  : high
+mLow  = mirrorLevel != 0 ? 2.0 * mirrorLevel - high : low
+
+bool upflagDownFrontier2 = true
+bool upflagUpFrontier0b  = true
+bool upflagUpFrontier1b  = true
+bool upflagUpFrontier2b  = true
+bool upflagUpFrontier3b  = true
+bool upflagUpFrontier4b  = true
+for i = 1 to n
+    upflagDownFrontier2 := upflagDownFrontier2 and (mHigh[n-i] < mHigh[n])
+    upflagUpFrontier0b  := upflagUpFrontier0b  and (mHigh[n+i] < mHigh[n])
+    upflagUpFrontier1b  := upflagUpFrontier1b  and (mHigh[n+1] <= mHigh[n] and mHigh[n+i+1] < mHigh[n])
+    upflagUpFrontier2b  := upflagUpFrontier2b  and (mHigh[n+1] <= mHigh[n] and mHigh[n+2] <= mHigh[n] and mHigh[n+i+2] < mHigh[n])
+    upflagUpFrontier3b  := upflagUpFrontier3b  and (mHigh[n+1] <= mHigh[n] and mHigh[n+2] <= mHigh[n] and mHigh[n+3] <= mHigh[n] and mHigh[n+i+3] < mHigh[n])
+    upflagUpFrontier4b  := upflagUpFrontier4b  and (mHigh[n+1] <= mHigh[n] and mHigh[n+2] <= mHigh[n] and mHigh[n+3] <= mHigh[n] and mHigh[n+4] <= mHigh[n] and mHigh[n+i+4] < mHigh[n])
+flagUpFrontier2 = upflagUpFrontier0b or upflagUpFrontier1b or upflagUpFrontier2b or upflagUpFrontier3b or upflagUpFrontier4b
+upFractal2 = upflagDownFrontier2 and flagUpFrontier2
+
+bool downflagDownFrontier2 = true
+bool downflagUpFrontier0b  = true
+bool downflagUpFrontier1b  = true
+bool downflagUpFrontier2b  = true
+bool downflagUpFrontier3b  = true
+bool downflagUpFrontier4b  = true
+for i = 1 to n
+    downflagDownFrontier2 := downflagDownFrontier2 and (mLow[n-i] > mLow[n])
+    downflagUpFrontier0b  := downflagUpFrontier0b  and (mLow[n+i] > mLow[n])
+    downflagUpFrontier1b  := downflagUpFrontier1b  and (mLow[n+1] >= mLow[n] and mLow[n+i+1] > mLow[n])
+    downflagUpFrontier2b  := downflagUpFrontier2b  and (mLow[n+1] >= mLow[n] and mLow[n+2] >= mLow[n] and mLow[n+i+2] > mLow[n])
+    downflagUpFrontier3b  := downflagUpFrontier3b  and (mLow[n+1] >= mLow[n] and mLow[n+2] >= mLow[n] and mLow[n+3] >= mLow[n] and mLow[n+i+3] > mLow[n])
+    downflagUpFrontier4b  := downflagUpFrontier4b  and (mLow[n+1] >= mLow[n] and mLow[n+2] >= mLow[n] and mLow[n+3] >= mLow[n] and mLow[n+4] >= mLow[n] and mLow[n+i+4] > mLow[n])
+flagDownFrontier2 = downflagUpFrontier0b or downflagUpFrontier1b or downflagUpFrontier2b or downflagUpFrontier3b or downflagUpFrontier4b
+downFractal2 = downflagDownFrontier2 and flagDownFrontier2
+
+var upArr2   = array.new_bool(0)
+var downArr2 = array.new_bool(0)
+var timeArr2 = array.new_int(0)
+var highArr2 = array.new_float(0)
+var lowArr2  = array.new_float(0)
+
+pastT2  = na(time[n])  ? time  : time[n]
+pastMH2 = na(mHigh[n]) ? mHigh : mHigh[n]
+pastML2 = na(mLow[n])  ? mLow  : mLow[n]
+
+array.push(upArr2,   upFractal2)
+array.push(downArr2, downFractal2)
+array.push(timeArr2, pastT2)
+array.push(highArr2, pastMH2)
+array.push(lowArr2,  pastML2)
+
+var int mirrorBar2 = -1
+if time[n] == mirrorTime
+    mirrorBar2 := array.size(upArr2) - 1
+
+if upFractal2
+    label.new(x=pastT2, y=pastMH2, text="?", xloc=xloc.bar_time, yloc=yloc.abovebar,
+              color=color.new(color.white,100), textcolor=#FF9800, style=label.style_none, size=size.small)
+if downFractal2
+    label.new(x=pastT2, y=pastML2, text="?", xloc=xloc.bar_time, yloc=yloc.belowbar,
+              color=color.new(color.white,100), textcolor=#9C27B0, style=label.style_none, size=size.small)
+
+// ?? Œÿ mirrorLevel ??
+if barstate.islast and mirrorLevel != 0
+    line.new(x1=bar_index, y1=mirrorLevel, x2=bar_index+1, y2=mirrorLevel,
+             color=color.new(color.yellow,40), width=1, style=line.style_dashed, extend=extend.both)
+
+linePrice(srcT, dstT, srcPrice, dstPrice, kT) =>
+    dstT == srcT ? srcPrice : srcPrice + float(kT - srcT) / float(dstT - srcT) * (dstPrice - srcPrice)
+
+// ?? —”„ ”Ì” „ ? ??
+if barstate.islast and mirrorBar1 != -1
+    total1 = array.size(upArr1)
+    upCnt1 = 0
+    dnCnt1 = 0
+    upBx1  = 0
+    dnBx1  = 0
+
+    for d = 1 to mirrorBar1
+        srcIdx = mirrorBar1 - d
+        dstIdx = mirrorBar1 + d
+        if dstIdx >= total1
+            break
+        srcT = array.get(timeArr1, srcIdx)
+        dstT = array.get(timeArr1, dstIdx)
+
+        if array.get(upArr1, srcIdx)
+            // crossSystem: «“ ﬁÌ„  „ ﬁ«—‰ (”Ì” „?) ‘—Ê⁄ ? »Â ﬁÌ„  «’·Ì (”Ì” „?) Œ „
+            srcP = crossSystem ? array.get(highArr2, srcIdx) : array.get(highArr1, srcIdx)
+            dstP = crossSystem ? array.get(highArr1, dstIdx) : array.get(highArr1, dstIdx)
+            if upCnt1 < maxLines
+                line.new(x1=srcT, y1=srcP, x2=dstT, y2=dstP, xloc=xloc.bar_time,
+                         color=color.new(#009688,50), width=1)
+                label.new(x=dstT, y=dstP, text="?", xloc=xloc.bar_time, yloc=yloc.abovebar,
+                          color=color.new(color.white,100), textcolor=color.new(#009688,40),
+                          style=label.style_none, size=size.small)
+                upCnt1 += 1
+            if upBx1 < maxLines
+                hit = -1
+                for k = srcIdx + 1 to total1 - 1
+                    kT = array.get(timeArr1, k)
+                    lp = linePrice(srcT, dstT, srcP, dstP, kT)
+                    if array.get(highArr1, k) >= lp
+                        hit := k
+                        break
+                if hit != -1
+                    symIdx = 2 * mirrorBar1 - srcIdx
+                    symT   = symIdx >= 0 and symIdx < total1 ? array.get(timeArr1, symIdx) : array.get(timeArr1, srcIdx)
+                    box.new(left=symT, top=array.get(highArr1, hit), right=last_bar_time,
+                            bottom=array.get(lowArr1, hit), xloc=xloc.bar_time,
+                            border_color=color.new(#009688,30), bgcolor=color.new(#009688,88), border_width=1)
+                    upBx1 += 1
+
+        if array.get(downArr1, srcIdx)
+            srcP = crossSystem ? array.get(lowArr2, srcIdx) : array.get(lowArr1, srcIdx)
+            dstP = crossSystem ? array.get(lowArr1, dstIdx) : array.get(lowArr1, dstIdx)
+            if dnCnt1 < maxLines
+                line.new(x1=srcT, y1=srcP, x2=dstT, y2=dstP, xloc=xloc.bar_time,
+                         color=color.new(#F44336,50), width=1)
+                label.new(x=dstT, y=dstP, text="?", xloc=xloc.bar_time, yloc=yloc.belowbar,
+                          color=color.new(color.white,100), textcolor=color.new(#F44336,40),
+                          style=label.style_none, size=size.small)
+                dnCnt1 += 1
+            if dnBx1 < maxLines
+                hit = -1
+                for k = srcIdx + 1 to total1 - 1
+                    kT = array.get(timeArr1, k)
+                    lp = linePrice(srcT, dstT, srcP, dstP, kT)
+                    if array.get(lowArr1, k) <= lp
+                        hit := k
+                        break
+                if hit != -1
+                    symIdx = 2 * mirrorBar1 - srcIdx
+                    symT   = symIdx >= 0 and symIdx < total1 ? array.get(timeArr1, symIdx) : array.get(timeArr1, srcIdx)
+                    box.new(left=symT, top=array.get(highArr1, hit), right=last_bar_time,
+                            bottom=array.get(lowArr1, hit), xloc=xloc.bar_time,
+                            border_color=color.new(#F44336,30), bgcolor=color.new(#F44336,88), border_width=1)
+                    dnBx1 += 1
+
+// ?? —”„ ”Ì” „ ? ??
+if barstate.islast and mirrorBar2 != -1 and mirrorLevel != 0
+    total2 = array.size(upArr2)
+    upCnt2 = 0
+    dnCnt2 = 0
+    upBx2  = 0
+    dnBx2  = 0
+
+    for d = 1 to mirrorBar2
+        srcIdx = mirrorBar2 - d
+        dstIdx = mirrorBar2 + d
+        if dstIdx >= total2
+            break
+        srcT = array.get(timeArr2, srcIdx)
+        dstT = array.get(timeArr2, dstIdx)
+
+        if array.get(upArr2, srcIdx)
+            // crossSystem: «“ ﬁÌ„  «’·Ì (”Ì” „?) ‘—Ê⁄ ? »Â ﬁÌ„  „ ﬁ«—‰ (”Ì” „?) Œ „
+            srcP = crossSystem ? array.get(highArr1, srcIdx) : array.get(highArr2, srcIdx)
+            dstP = crossSystem ? array.get(highArr2, dstIdx) : array.get(highArr2, dstIdx)
+            if upCnt2 < maxLines
+                line.new(x1=srcT, y1=srcP, x2=dstT, y2=dstP, xloc=xloc.bar_time,
+                         color=color.new(#FF9800,50), width=1)
+                label.new(x=dstT, y=dstP, text="?", xloc=xloc.bar_time, yloc=yloc.abovebar,
+                          color=color.new(color.white,100), textcolor=color.new(#FF9800,40),
+                          style=label.style_none, size=size.small)
+                upCnt2 += 1
+            if upBx2 < maxLines
+                hit = -1
+                for k = srcIdx + 1 to total2 - 1
+                    kT = array.get(timeArr2, k)
+                    lp = linePrice(srcT, dstT, srcP, dstP, kT)
+                    if array.get(highArr2, k) >= lp
+                        hit := k
+                        break
+                if hit != -1
+                    symIdx = 2 * mirrorBar2 - srcIdx
+                    symT   = symIdx >= 0 and symIdx < total2 ? array.get(timeArr2, symIdx) : array.get(timeArr2, srcIdx)
+                    box.new(left=symT, top=array.get(highArr2, hit), right=last_bar_time,
+                            bottom=array.get(lowArr2, hit), xloc=xloc.bar_time,
+                            border_color=color.new(#FF9800,30), bgcolor=color.new(#FF9800,88), border_width=1)
+                    upBx2 += 1
+
+        if array.get(downArr2, srcIdx)
+            srcP = crossSystem ? array.get(lowArr1, srcIdx) : array.get(lowArr2, srcIdx)
+            dstP = crossSystem ? array.get(lowArr2, dstIdx) : array.get(lowArr2, dstIdx)
+            if dnCnt2 < maxLines
+                line.new(x1=srcT, y1=srcP, x2=dstT, y2=dstP, xloc=xloc.bar_time,
+                         color=color.new(#9C27B0,50), width=1)
+                label.new(x=dstT, y=dstP, text="?", xloc=xloc.bar_time, yloc=yloc.belowbar,
+                          color=color.new(color.white,100), textcolor=color.new(#9C27B0,40),
+                          style=label.style_none, size=size.small)
+                dnCnt2 += 1
+            if dnBx2 < maxLines
+                hit = -1
+                for k = srcIdx + 1 to total2 - 1
+                    kT = array.get(timeArr2, k)
+                    lp = linePrice(srcT, dstT, srcP, dstP, kT)
+                    if array.get(lowArr2, k) <= lp
+                        hit := k
+                        break
+                if hit != -1
+                    symIdx = 2 * mirrorBar2 - srcIdx
+                    symT   = symIdx >= 0 and symIdx < total2 ? array.get(timeArr2, symIdx) : array.get(timeArr2, srcIdx)
+                    box.new(left=symT, top=array.get(highArr2, hit), right=last_bar_time,
+                            bottom=array.get(lowArr2, hit), xloc=xloc.bar_time,
+                            border_color=color.new(#9C27B0,30), bgcolor=color.new(#9C27B0,88), border_width=1)
+                    dnBx2 += 1
+
+// ?? ò‰œ·ùÂ«Ì „ ﬁ«—‰ ??
+mOpen  = mirrorLevel != 0 ? 2.0 * mirrorLevel - open  : na
+mHigh2 = mirrorLevel != 0 ? 2.0 * mirrorLevel - low   : na
+mLow2  = mirrorLevel != 0 ? 2.0 * mirrorLevel - high  : na
+mClose = mirrorLevel != 0 ? 2.0 * mirrorLevel - close : na
+
+plotcandle(mOpen, mHigh2, mLow2, mClose, title="Mirror Candles",
+           color      = mClose >= mOpen ? color.new(#FF9800,30) : color.new(#9C27B0,30),
+           wickcolor  = mClose >= mOpen ? color.new(#FF9800,30) : color.new(#9C27B0,30),
+           bordercolor= mClose >= mOpen ? color.new(#FF9800,30) : color.new(#9C27B0,30))

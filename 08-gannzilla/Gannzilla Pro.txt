@@ -1,0 +1,386 @@
+import dash
+from dash import html, dcc, callback, Output, Input, State, no_update
+import plotly.graph_objects as go
+import numpy as np
+from datetime import datetime, timedelta
+
+
+# ???????????????????????????????????????????????????????????
+#  Ê«»⁄ ò„òÌ Ê „Õ«”»« 
+# ???????????????????????????????????????????????????????????
+
+def get_next_value(current_val, increment, data_type, is_ascending=True):
+    sign = 1 if is_ascending else -1
+    inc = increment * sign
+
+    if isinstance(current_val, datetime):
+        if data_type in ['time', 'pt']:
+            return current_val + timedelta(minutes=inc)
+        else:
+            return current_val + timedelta(days=inc)
+    else:
+        return current_val + inc
+
+
+def get_fractional_value(start_val, theta, increment, data_type, is_ascending):
+    """„Õ«”»Â œﬁÌﬁ „ﬁœ«— »Ì‰«»Ì‰Ì »— «”«” “«ÊÌÂ ÿÌ ‘œÂ"""
+    steps = theta / (np.pi / 4)
+    total_increment = steps * increment
+
+    if not is_ascending:
+        total_increment = -total_increment
+
+    if isinstance(start_val, datetime):
+        if data_type in ['time', 'pt']:
+            return start_val + timedelta(minutes=total_increment)
+        else:  # date, pd
+            return start_val + timedelta(days=total_increment)
+    else:
+        return start_val + total_increment
+
+
+def format_value(val, data_type, is_hover=False):
+    if isinstance(val, datetime):
+        if data_type == 'time':
+            # «÷«›Â ò—œ‰ À«‰ÌÂ œ— Â«Ê— »—«Ì œﬁ  »Ì‘ —
+            return val.strftime("%H:%M:%S") if is_hover else val.strftime("%H:%M")
+        elif data_type == 'date':
+            return val.strftime("%d.%m.%y %H:%M") if is_hover else val.strftime("%d.%m.%y")
+        else:
+            return val.strftime("%d.%m.%y %H:%M") if is_hover else val.strftime("%d.%m<br>%H:%M")
+    else:
+        # ‰„«Ì‘ «⁄‘«— »Ì‘ — »—«Ì Õ«·  Â«Ê—
+        return f"{val:.4f}" if is_hover else f"{val:g}"
+
+
+def generate_golden_spiral_with_numbers(cx, cy, max_r, start_val_str, increment, data_type, clockwise=True,
+                                        is_ascending=True, points_count=300):
+    """ Ê·Ìœ ‰ﬁ«ÿ «”ÅÌ—«· ÿ·«ÌÌ »Â Â„—«Â „ﬁ«œÌ— ÅÌÊ” Â Ê ê”” Â"""
+    phi = (1 + np.sqrt(5)) / 2
+    b = np.log(phi) / (np.pi / 2)
+    a = 0.5  # ‘⁄«⁄ ‘—Ê⁄
+
+    #  ⁄ÌÌ‰ „ﬁœ«— «Ê·ÌÂ
+    try:
+        if data_type in ['date', 'time', 'pd', 'pt']:
+            start_val = datetime.strptime(start_val_str, "%d.%m.%Y %H:%M")
+        else:
+            start_val = float(start_val_str)
+    except:
+        start_val = 0.0 if data_type == 'price' else datetime.now()
+
+    # ê«„ùÂ«Ì “«ÊÌÂù«Ì »—«Ì ﬁ—«— œ«œ‰ «⁄œ«œ („À·« Â— 45 œ—ÃÂ Ì« pi/4)
+    theta_step = np.pi / 4
+
+    x_texts, y_texts, texts = [], [], []
+
+    # 1.  Ê·Ìœ Œÿ ÅÌÊ” Â Ê „ﬁ«œÌ— Hover »Ì‰«»Ì‰Ì
+    max_theta = np.log(max_r / a) / b if max_r > a else 0
+    theta_continuous = np.linspace(0, max_theta, 1000)
+    r_continuous = a * np.exp(b * theta_continuous)
+
+    if clockwise:
+        x_lines = cx + r_continuous * np.cos(-theta_continuous)
+        y_lines = cy + r_continuous * np.sin(-theta_continuous)
+    else:
+        x_lines = cx + r_continuous * np.cos(theta_continuous)
+        y_lines = cy + r_continuous * np.sin(theta_continuous)
+
+    #  Ê·Ìœ „ Ê‰ Â«Ê— ÅÌÊ” Â
+    hover_lines = []
+    for th in theta_continuous:
+        val = get_fractional_value(start_val, th, increment, data_type, is_ascending)
+        hover_lines.append(format_value(val, data_type, is_hover=True))
+
+    # 2.  Ê·Ìœ ‰ﬁ«ÿ ê”” Â (›Ìò”) »—«Ì ‰„«Ì‘ —ÊÌ ç«— 
+    current_val = start_val
+    for i in range(points_count):
+        theta = i * theta_step
+        if theta > max_theta: break
+
+        r = a * np.exp(b * theta)
+
+        if clockwise:
+            tx = cx + r * np.cos(-theta)
+            ty = cy + r * np.sin(-theta)
+        else:
+            tx = cx + r * np.cos(theta)
+            ty = cy + r * np.sin(theta)
+
+        x_texts.append(tx)
+        y_texts.append(ty)
+        texts.append(format_value(current_val, data_type))
+
+        # ¬ÅœÌ  „ﬁœ«— »—«Ì ‰ﬁÿÂ À«»  »⁄œÌ
+        current_val = get_next_value(current_val, increment, data_type, is_ascending)
+
+    return x_lines, y_lines, hover_lines, x_texts, y_texts, texts
+
+
+# ???????????????????????????????????????????????????????????
+# ”«Œ  —«»ÿ ò«—»—Ì
+# ???????????????????????????????????????????????????????????
+
+def build_blank_grid(size):
+    """«ÌÃ«œ ‘»òÂ ‘ÿ—‰ÃÌ Œ«·Ì »Â ⁄‰Ê«‰ Å”ù“„Ì‰Â œ— HTML"""
+    rows = []
+    cell_pct = f"{100 / size}%"
+    for r in range(size):
+        cells = []
+        for c in range(size):
+            cells.append(html.Td("", style={
+                'width': cell_pct, 'height': cell_pct,
+                'border': '1px solid #e0e0e0',
+                'backgroundColor': '#fafafa' if (r + c) % 2 == 0 else 'white',
+                'padding': '0', 'boxSizing': 'border-box'
+            }))
+        rows.append(html.Tr(cells, style={'height': cell_pct}))
+
+    return html.Table(rows, style={
+        'borderCollapse': 'collapse', 'width': '100%',
+        'height': '100%', 'tableLayout': 'fixed'
+    })
+
+
+def build_overlay_figure(spiral_centers, size, data_type, start_val, increment, show_protractor=True, show_spiral=True):
+    fig = go.Figure()
+    max_r = size / 2
+
+    if show_protractor:
+        R = max_r * 0.98
+        angles = np.linspace(0, 2 * np.pi, 360)
+
+        # œ«Ì—Â «’·Ì ‰ﬁ«·Â
+        fig.add_trace(go.Scatter(x=R * np.cos(angles), y=R * np.sin(angles), mode='lines',
+                                 line=dict(color='gray', width=1), hoverinfo='skip'))
+
+        # « ’«· “Ê«Ì«Ì „ﬁ«»· »« ŒÿÊÿ ‰ﬁÿÂùçÌ‰
+        for deg in range(0, 180, 15):
+            rad = np.radians(deg)
+            x1, y1 = -R * np.cos(rad), -R * np.sin(rad)
+            x2, y2 = R * np.cos(rad), R * np.sin(rad)
+            fig.add_trace(go.Scatter(x=[x1, x2], y=[y1, y2], mode='lines',
+                                     line=dict(color='rgba(150, 150, 150, 0.4)', width=1, dash='dot'),
+                                     hoverinfo='skip'))
+
+        # —”„  ÌòùÂ« Ê „ ‰ “Ê«Ì«
+        for deg in range(0, 360, 15):
+            rad = np.radians(deg)
+            x1, y1 = (R - 0.2) * np.cos(rad), (R - 0.2) * np.sin(rad)
+            x2, y2 = (R + 0.2) * np.cos(rad), (R + 0.2) * np.sin(rad)
+            fig.add_trace(go.Scatter(x=[x1, x2], y=[y1, y2], mode='lines',
+                                     line=dict(color='#E53935', width=1.5), hoverinfo='skip'))
+
+            tx, ty = (R + 0.6) * np.cos(rad), (R + 0.6) * np.sin(rad)
+            fig.add_trace(go.Scatter(x=[tx], y=[ty], mode='text', text=[f"{deg}∞"],
+                                     textfont=dict(size=9, color='#424242'), hoverinfo='skip'))
+
+    if show_spiral:
+        #  ‰ŸÌ„«  «”ÅÌ—«·ùÂ«: 0 = ’⁄ÊœÌ/”«⁄ ùê—œ° 1 = ‰“Ê·Ì/Å«œ ”«⁄ ùê—œ
+        colors = ['#4CAF50', '#F44336']
+        dirs = [True, False]
+        ascends = [True, False]
+
+        # ‘⁄«⁄ »”Ì«— »“—ê — »—«Ì «ÿ„Ì‰«‰ «“ ‰«„ÕœÊœ Ê «œ«„Âùœ«— »Êœ‰ «”ÅÌ—«· œ— ò«œ— ‰„«Ì‘
+        extended_max_r = size * 3
+
+        for i in range(2):
+            if i < len(spiral_centers):
+                cx, cy = spiral_centers[i]
+                xl, yl, hl, xt, yt, texts = generate_golden_spiral_with_numbers(
+                    cx, cy, extended_max_r, start_val, increment, data_type,
+                    clockwise=dirs[i], is_ascending=ascends[i], points_count=300
+                )
+
+                # —”„ „”Ì— «”ÅÌ—«· ÅÌÊ” Â »Â Â„—«Â Hover
+                fig.add_trace(go.Scatter(x=xl, y=yl, mode='lines',
+                                         line=dict(color=colors[i], width=2, dash='dot'),
+                                         hovertext=hl, hoverinfo='text',
+                                         name=f'spiral_line_{i}'))
+
+                # —”„ «⁄œ«œ —ÊÌ „”Ì— «”ÅÌ—«·
+                fig.add_trace(go.Scatter(x=xt, y=yt, mode='markers+text',
+                                         marker=dict(color=colors[i], size=4),
+                                         text=texts, textposition="top center",
+                                         textfont=dict(size=9, color='black'),
+                                         hoverinfo='text', name=f'spiral_text_{i}'))
+
+                # «Â—„ Ã«»Ã«ÌÌ „—ò“Ì
+                fig.add_shape(type="circle", x0=cx - 0.3, y0=cy - 0.3, x1=cx + 0.3, y1=cy + 0.3,
+                              fillcolor=colors[i], line=dict(color='white', width=1.5),
+                              layer="above", editable=True, name=f"handle_{i}")
+
+    fig.update_layout(
+        xaxis=dict(range=[-size / 2, size / 2], showgrid=False, zeroline=False, visible=False, fixedrange=True),
+        yaxis=dict(range=[-size / 2, size / 2], showgrid=False, zeroline=False, visible=False, fixedrange=True),
+        margin=dict(l=0, r=0, t=0, b=0),
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        showlegend=False, dragmode=False
+    )
+    return fig
+
+
+# ???????????????????????????????????????????????????????????
+# «Å·ÌòÌ‘‰ «’·Ì
+# ???????????????????????????????????????????????????????????
+
+DEFAULT_CENTERS = [[0, 0], [0, 0]]
+app = dash.Dash(__name__, suppress_callback_exceptions=True)
+
+app.layout = html.Div([
+    html.Div([
+        html.Div(
+            [html.Span("? "), html.Span("Gannzilla Pro - Dynamic Spiral Sequences", style={'font-weight': 'bold'})]),
+    ], style={'display': 'flex', 'justify-content': 'space-between', 'background': '#E8E8E8', 'padding': '8px 10px'}),
+
+    html.Div([
+        # Å‰·  ‰ŸÌ„«  ”„  çÅ
+        html.Div([
+            html.Details([
+                html.Summary(html.B("Layout", style={'color': '#4CAF50'}),
+                             style={'cursor': 'pointer', 'margin-bottom': '5px'}),
+                html.Div([
+                    html.Label("Size", style={'width': '80px', 'display': 'inline-block'}),
+                    dcc.Input(id='inp-layout-size', value=15, type='number', style={'width': '60px'}),
+                ], style={'margin': '2px 0'}),
+                html.Div([
+                    html.Label("Data type", style={'width': '80px', 'display': 'inline-block'}),
+                    dcc.Dropdown(id='dd-data-type',
+                                 options=[{'label': 'Price', 'value': 'price'},
+                                          {'label': 'Date', 'value': 'date'},
+                                          {'label': 'Time', 'value': 'time'}],
+                                 value='price', style={'width': '120px', 'display': 'inline-block'}),
+                ], style={'margin': '2px 0'}),
+            ], open=True, style={'font-size': '12px'}),
+
+            html.Details([
+                html.Summary(html.B("Parameters", style={'color': '#2196F3'}),
+                             style={'cursor': 'pointer', 'margin': '10px 0 5px'}),
+                html.Div([
+                    html.Label("Start Value", style={'width': '80px', 'display': 'inline-block'}),
+                    dcc.Input(id='inp-price-value', value='100', style={'width': '120px'}),
+                ], style={'margin': '2px 0', 'font-size': '11px'}),
+                html.Div([
+                    html.Label("Increment", style={'width': '80px', 'display': 'inline-block'}),
+                    dcc.Input(id='inp-increment', value=1, type='number', style={'width': '60px'}),
+                ], style={'margin': '2px 0', 'font-size': '11px'}),
+            ], open=True, style={'font-size': '12px'}),
+
+            html.Details([
+                html.Summary(html.B("Tools", style={'color': '#4CAF50'}),
+                             style={'cursor': 'pointer', 'margin': '10px 0 5px'}),
+                html.Div([
+                    html.Label("Protractor", style={'width': '80px', 'display': 'inline-block'}),
+                    dcc.Checklist(id='chk-prot-visible', options=[{'label': '', 'value': '1'}], value=['1'],
+                                  inline=True),
+                ], style={'margin': '2px 0'}),
+                html.Div([
+                    html.Label("Spirals", style={'width': '80px', 'display': 'inline-block'}),
+                    dcc.Checklist(id='chk-spiral-visible', options=[{'label': '', 'value': '1'}], value=['1'],
+                                  inline=True),
+                ], style={'margin': '2px 0'}),
+            ], open=True, style={'font-size': '12px'}),
+
+            html.Button("? Apply / Calculate", id='btn-apply',
+                        style={'margin-top': '20px', 'padding': '8px', 'background': '#4CAF50',
+                               'color': 'white', 'border': 'none', 'width': '100%', 'cursor': 'pointer'})
+        ], style={'width': '250px', 'padding': '15px', 'background': '#FAFAFA', 'border-right': '1px solid #ddd',
+                  'height': '100vh'}),
+
+        # »Œ‘ ‰„Êœ«—
+        html.Div([
+            dcc.Store(id='spiral-centers-store', data=DEFAULT_CENTERS),
+            html.Div(id='render-container', style={
+                'position': 'relative',
+                'width': '720px', 'height': '720px',
+                'margin': '20px auto', 'boxShadow': '0 0 10px rgba(0,0,0,0.1)'
+            }, children=[
+                html.Div(id='html-grid-layer', style={
+                    'position': 'absolute', 'top': 0, 'left': 0,
+                    'width': '100%', 'height': '100%', 'zIndex': 1
+                }),
+                dcc.Graph(
+                    id='plotly-overlay-layer',
+                    config={'displayModeBar': False, 'edits': {'shapePosition': True}},
+                    style={
+                        'position': 'absolute', 'top': 0, 'left': 0,
+                        'width': '100%', 'height': '100%', 'zIndex': 2,
+                        'background': 'transparent'
+                    }
+                )
+            ])
+        ], style={'flex': '1', 'overflow': 'auto'}),
+    ], style={'display': 'flex'}),
+], style={'font-family': 'Segoe UI, Arial', 'margin': '-8px'})
+
+
+@callback(
+    Output('html-grid-layer', 'children'),
+    Output('plotly-overlay-layer', 'figure'),
+    Output('spiral-centers-store', 'data'),
+    Input('btn-apply', 'n_clicks'),
+    State('dd-data-type', 'value'),
+    State('inp-price-value', 'value'),
+    State('inp-increment', 'value'),
+    State('inp-layout-size', 'value'),
+    State('chk-prot-visible', 'value'),
+    State('chk-spiral-visible', 'value'),
+    State('spiral-centers-store', 'data')
+)
+def update_all(n_clicks, data_type, start_val, increment, grid_size, prot_vis, spir_vis, centers):
+    if not centers: centers = DEFAULT_CENTERS
+    size = int(grid_size) if grid_size else 15
+    inc = float(increment) if increment else 1
+
+    html_table = build_blank_grid(size)
+    overlay_fig = build_overlay_figure(centers, size, data_type, start_val, inc, bool(prot_vis), bool(spir_vis))
+
+    return html_table, overlay_fig, centers
+
+
+@callback(
+    Output('spiral-centers-store', 'data', allow_duplicate=True),
+    Input('plotly-overlay-layer', 'relayoutData'),
+    State('spiral-centers-store', 'data'),
+    State('plotly-overlay-layer', 'figure'),
+    prevent_initial_call=True
+)
+def on_shape_drag(relayout_data, centers, figure):
+    if not relayout_data or not centers or not figure: return no_update
+    new_centers = [list(c) for c in centers]
+    updated = False
+    shapes = figure.get('layout', {}).get('shapes', [])
+
+    for key in relayout_data:
+        if key.startswith('shapes[') and key.endswith('.x0'):
+            idx = int(key.split('[')[1].split(']')[0])
+            if idx < len(shapes) and shapes[idx].get('name', '').startswith('handle_'):
+                h_idx = int(shapes[idx]['name'].split('_')[1])
+                x0, x1 = relayout_data.get(f'shapes[{idx}].x0'), relayout_data.get(f'shapes[{idx}].x1')
+                y0, y1 = relayout_data.get(f'shapes[{idx}].y0'), relayout_data.get(f'shapes[{idx}].y1')
+                if None not in (x0, x1, y0, y1):
+                    new_centers[h_idx] = [(x0 + x1) / 2, (y0 + y1) / 2]
+                    updated = True
+    return new_centers if updated else no_update
+
+
+@callback(
+    Output('plotly-overlay-layer', 'figure', allow_duplicate=True),
+    Input('spiral-centers-store', 'data'),
+    State('dd-data-type', 'value'),
+    State('inp-price-value', 'value'),
+    State('inp-increment', 'value'),
+    State('inp-layout-size', 'value'),
+    State('chk-prot-visible', 'value'),
+    State('chk-spiral-visible', 'value'),
+    prevent_initial_call=True
+)
+def update_overlay_after_drag(centers, data_type, start_val, increment, grid_size, prot_vis, spir_vis):
+    if not centers: return no_update
+    size = int(grid_size) if grid_size else 15
+    inc = float(increment) if increment else 1
+    return build_overlay_figure(centers, size, data_type, start_val, inc, bool(prot_vis), bool(spir_vis))
+
+
+if __name__ == '__main__':
+    app.run(debug=True, port=8050)

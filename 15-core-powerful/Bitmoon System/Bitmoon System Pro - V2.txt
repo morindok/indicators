@@ -1,0 +1,122 @@
+//@version=5
+indicator("Symmetric Candles & Dynamic Fractals (Extended)", shorttitle="Sym Dyn Fractals Ext", format=format.price, precision=0, overlay=true, max_bars_back=4000)
+
+// --- Inputs ---
+target_time = input.time(0, "«‰ Œ«» “„«‰", confirm=true)
+level1 = input.price(0, "«‰ Œ«» ”ÿÕ «Ê·", confirm=true)
+level2 = input.price(0, "«‰ Œ«» ”ÿÕ œÊ„", confirm=true)
+n = input.int(title="Periods (Fractal)", defval=2, minval=2)
+
+// --- Fractals Logic (Williams Fractals) ---
+// UpFractal
+bool upDnFront = true, bool upUp0 = true, bool upUp1 = true, bool upUp2 = true, bool upUp3 = true, bool upUp4 = true
+for i = 1 to n
+    upDnFront := upDnFront and (high[n-i] < high[n])
+    upUp0 := upUp0 and (high[n+i] < high[n])
+    upUp1 := upUp1 and (high[n+1] <= high[n] and high[n+i + 1] < high[n])
+    upUp2 := upUp2 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i + 2] < high[n])
+    upUp3 := upUp3 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i + 3] < high[n])
+    upUp4 := upUp4 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i + 4] < high[n])
+flagUpFrontier = upUp0 or upUp1 or upUp2 or upUp3 or upUp4
+upFractal = (upDnFront and flagUpFrontier)
+
+// downFractal
+bool dnDnFront = true, bool dnUp0 = true, bool dnUp1 = true, bool dnUp2 = true, bool dnUp3 = true, bool dnUp4 = true
+for i = 1 to n
+    dnDnFront := dnDnFront and (low[n-i] > low[n])
+    dnUp0 := dnUp0 and (low[n+i] > low[n])
+    dnUp1 := dnUp1 and (low[n+1] >= low[n] and low[n+i + 1] > low[n])
+    dnUp2 := dnUp2 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i + 2] > low[n])
+    dnUp3 := dnUp3 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i + 3] > low[n])
+    dnUp4 := dnUp4 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i + 4] > low[n])
+flagDownFrontier = dnUp0 or dnUp1 or dnUp2 or dnUp3 or dnUp4
+downFractal = (dnDnFront and flagDownFrontier)
+
+// --- Time Symmetry Variables ---
+show = time >= target_time
+var int target_bar_index = na
+if show and not show[1]
+    target_bar_index := bar_index
+
+// ›«’·Â ò‰œ· Ã«—Ì «“ “„«‰ «‰ Œ«» ‘œÂ
+dist = show ? (bar_index - target_bar_index) : 0
+
+// --- Dynamic MA Length Calculation (Base & Symmetric) ---
+var int lastUpBar = na
+var int lastDownBar = na
+
+if upFractal
+    lastUpBar := bar_index - n
+if downFractal
+    lastDownBar := bar_index - n
+
+// „Õ«”»Â ÿÊ· œ«Ì‰«„Ìò Å«ÌÂ (›«’·Â œﬁÌﬁ »Ì‰ ¬Œ—Ì‰ ”ﬁ› Ê ò›)
+int base_dyn_length = 14 
+if not na(lastUpBar) and not na(lastDownBar)
+    base_dyn_length := math.max(1, math.abs(lastUpBar - lastDownBar))
+
+// ¬›”  ŒÊ«‰œ‰ „ﬁ«œÌ— »œÊ‰  «ŒÌ— (œÌ·Ì n ò‰œ· Õ–› „Ìù‘Êœ)
+int offset_past_exact = show ? (2 * dist) - n : 0
+int offset_sym = show ? (2 * dist) : 0
+
+int sym_dyn_length = base_dyn_length
+
+// ŒÊ«‰œ‰ ÿÊ· „ ﬁ«—‰ «“ ê–‘ Â œﬁÌﬁ« «“ —ÊÌ ò‰œ·  «ÌÌœ ›—«ò «· »—«Ì Õ–›  «ŒÌ—
+if show and offset_past_exact >= 0 and offset_past_exact < 3900
+    sym_dyn_length := base_dyn_length[offset_past_exact]
+else if show and offset_sym >= 0 and offset_sym < 3900
+    sym_dyn_length := base_dyn_length[offset_sym]
+
+// «⁄„«· nz »—«Ì Ã·ÊêÌ—Ì «“ Œÿ«Ì na œ— ’Ê—  œ— œ” —” ‰»Êœ‰ œÌ «Ì ê–‘ Â
+sym_dyn_length := nz(sym_dyn_length, 14)
+sym_dyn_length := math.max(1, sym_dyn_length)
+
+// --- Base MA Calculations ---
+ma = ta.sma(close, sym_dyn_length)
+plot(show ? ma : na, color=color.white, title="Original MA")
+
+// --- Main Symmetries ---
+ma_sym1 = 2 * level1 - ma
+ma_sym2 = 2 * level2 - ma
+plot(show ? ma_sym1 : na, color=color.blue, title="MA Sym 1")
+plot(show ? ma_sym2 : na, color=color.red, title="MA Sym 2")
+
+// --- Middle Symmetries ---
+// „Õ«”»Â ”ÿÕ Ê”ÿ »Ì‰ œÊ ”ÿÕ «‰ Œ«»Ì
+level_mid = (level1 + level2) / 2
+
+//  ﬁ«—‰ „ÊÊÌ‰ê ‰”»  »Â ”ÿÕ Ê”ÿ
+ma_sym_mid = 2 * level_mid - ma
+plot(show ? ma_sym_mid : na, color=color.orange, title="MA Sym Mid")
+
+//  ﬁ«—‰ „ÊÊÌ‰ê Ê”ÿ ‰”»  »Â œÊ ”ÿÕ »«·« Ê Å«ÌÌ‰
+ma_sym_mid_1 = 2 * level1 - ma_sym_mid
+plot(show ? ma_sym_mid_1 : na, color=color.fuchsia, title="MA Sym Mid 1")
+
+ma_sym_mid_2 = 2 * level2 - ma_sym_mid
+plot(show ? ma_sym_mid_2 : na, color=color.lime, title="MA Sym Mid 2")
+
+// --- Symmetric Candles Plot (ONLY Sym Mid 2) ---
+// ò‰œ·ùÂ«Ì „ ﬁ«—‰ ‰”»  »Â „ÊÊÌ‰êù Ê”ÿ ﬁ—Ì‰Âù‘œÂ (‰”ŒÂ ?)
+sym_mid2_o = 2 * ma_sym_mid_2 - open
+sym_mid2_h = 2 * ma_sym_mid_2 - low
+sym_mid2_l = 2 * ma_sym_mid_2 - high
+sym_mid2_c = 2 * ma_sym_mid_2 - close
+
+col_mid2 = sym_mid2_c >= sym_mid2_o ? color.new(color.lime, 0) : color.new(color.olive, 0)
+
+// ‰„«Ì‘ ›ﬁÿ ò‰œ· Sym Mid 2
+plotcandle(show ? sym_mid2_o : na, show ? sym_mid2_h : na, show ? sym_mid2_l : na, show ? sym_mid2_c : na, title="Sym Mid Candle 2", color=col_mid2, wickcolor=col_mid2, bordercolor=col_mid2)
+
+// --- Time Symmetry Logic for Fractals ---
+mirrored_up = false
+mirrored_down = false
+
+//  ﬁ«—‰ ”Ìê‰«·ùÂ«Ì ›—«ò «· »œÊ‰ œÌ·Ì
+if show and dist > 0 and offset_past_exact >= 0 and offset_past_exact < 3900
+    mirrored_up := upFractal[offset_past_exact]
+    mirrored_down := downFractal[offset_past_exact]
+
+// —”„ ›—«ò «· Â« ›ﬁÿ »—«Ì ”ÿÕ Sym Mid 2
+plotshape(mirrored_up ? sym_mid2_h : na, style=shape.triangleup, location=location.absolute, color=color.new(color.lime, 0), size=size.small, offset=0, title="SymMid2 UpFractal")
+plotshape(mirrored_down ? sym_mid2_l : na, style=shape.triangledown, location=location.absolute, color=color.new(color.olive, 0), size=size.small, offset=0, title="SymMid2 DownFractal")

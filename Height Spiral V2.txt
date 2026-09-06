@@ -1,0 +1,191 @@
+//@version=5
+indicator("Golden Spiral - 4 Symmetries & Intersections", overlay=true, max_polylines_count=10, max_lines_count=500)
+
+t1 = input.time(0, "Time 1", confirm=true)
+p1 = input.price(0.0, "Price 1", confirm=true)
+t2 = input.time(0, "Time 2", confirm=true)
+p2 = input.price(0.0, "Price 2", confirm=true)
+center_ratio = input.float(0.5, "Center Ratio", step=0.1)
+
+show_intersections = input.bool(true, "Show Intersection Lines")
+extend_lines       = input.bool(true, "Extend Intersection Lines Right")
+show_avg= input.bool(true, "Show Average Line")
+intersect_color    = input.color(color.new(color.gray, 50), "Intersection Lines Color")
+avg_color          = input.color(color.new(color.yellow, 0), "Average Line Color")
+
+// æÑæÏíåÇí ÒÇæíå
+upper_angle = input.float(45.0, "Upper Level Angle (degrees)", step=1.0)
+lower_angle = input.float(-45.0, "Lower Level Angle (degrees)", step=1.0)
+
+show_sym_upper = input.bool(true, "Show Symmetric Candles (Upper)")
+show_sym_lower = input.bool(true, "Show Symmetric Candles (Lower)")
+
+baseUpper = math.max(p1, p2)
+baseLower = math.min(p1, p2)
+
+// ?? ãäØÞ ÌÏíÏ: ãÍÇÓÈå ÔíÈ ãÈäÇ (ÒÇæíå 45 ÏÑÌå ãÚÇÏá ÞØÑ ÈÇÒå) ??
+dt_bars = math.max(1, math.round(math.abs(t2 - t1) / (timeframe.in_seconds(timeframe.period) * 1000)))
+dp_range = math.abs(p2 - p1)
+baseline_slope = dp_range / dt_bars
+
+// ÊÈÏíá ÒÇæíå Èå ÔíÈ ÈÇ ÇÓÊÝÇÏå ÇÒ ÔíÈ ãÈäÇ
+upper_slope = math.tan(upper_angle * math.pi / 180) * baseline_slope
+lower_slope = math.tan(lower_angle * math.pi / 180) * baseline_slope
+
+// ÝÇÕáå ÇÒ t1
+barsFromT1 = math.round((time - t1) / (timeframe.in_seconds(timeframe.period) * 1000))
+
+upperLevel = baseUpper + upper_slope * barsFromT1
+lowerLevel = baseLower + lower_slope * barsFromT1
+
+// ?? ˜äÏáåÇí ãÊÞÇÑä ????????????????????????????????????????????????????????
+symOpenUpper  = 2 * upperLevel - open
+symHighUpper  = 2 * upperLevel - low
+symLowUpper   = 2 * upperLevel - high
+symCloseUpper = 2 * upperLevel - close
+
+symOpenLower  = 2 * lowerLevel - open
+symHighLower  = 2 * lowerLevel - low
+symLowLower   = 2 * lowerLevel - high
+symCloseLower = 2 * lowerLevel - close
+
+plotcandle(symOpenUpper, symHighUpper, symLowUpper, symCloseUpper,
+           title="Symmetric Upper", color=color.green, wickcolor=color.green, bordercolor=color.green,
+           display=show_sym_upper ? display.all : display.none)
+
+plotcandle(symOpenLower, symHighLower, symLowLower, symCloseLower,
+           title="Symmetric Lower", color=color.blue, wickcolor=color.blue, bordercolor=color.blue,
+           display=show_sym_lower ? display.all : display.none)
+
+plot(upperLevel, color=color.red,   linewidth=2, title="Upper Level")
+plot(lowerLevel, color=color.green, linewidth=2, title="Lower Level")
+
+// ?? ãÍÇÓÈå ÇÑÊÝÇÚ ˜á ÏÑ ÈÇÒå ?????????????????????????????????????????????
+var float sum_height = 0.0
+var float sum_red_dp = 0.0
+var int count_red = 0
+in_range = time >= math.min(t1, t2) and time <= math.max(t1, t2)
+if in_range
+    sum_height += (high - low)
+    if close < open
+        sum_red_dp += (close - open)
+        count_red += 1
+
+// ?? ÊæÇÈÚ ÊÞÇØÚ ???????????????????????????????????????????????????????????
+get_intersect_y(x1, y1, x2, y2, x3, y3, x4, y4) =>
+    float y_int = na
+    if not (math.max(x1,x2)<math.min(x3,x4) or math.min(x1,x2)>math.max(x3,x4) or math.max(y1,y2)<math.min(y3,y4) or math.min(y1,y2)>math.max(y3,y4))
+        den = (x1-x2)*(y3-y4)-(y1-y2)*(x3-x4)
+        if den != 0
+            t = ((x1-x3)*(y3-y4)-(y1-y3)*(x3-x4))/den
+            u = -((x1-x2)*(y1-y3)-(y1-y2)*(x1-x3))/den
+            if t>=0 and t<=1 and u>=0 and u<=1
+                y_int := y1+t*(y2-y1)
+    y_int
+
+find_intersects(arr1, arr2, res_array) =>
+    sz1 = array.size(arr1)
+    sz2 = array.size(arr2)
+    if sz1>2 and sz2>2
+        for i = 2 to sz1-1
+            p1_a=array.get(arr1,i-1), p1_b=array.get(arr1,i)
+            for j = 2 to sz2-1
+                p2_a=array.get(arr2,j-1), p2_b=array.get(arr2,j)
+                y_int=get_intersect_y(p1_a.time,p1_a.price,p1_b.time,p1_b.price,p2_a.time,p2_a.price,p2_b.time,p2_b.price)
+                if not na(y_int)
+                    array.push(res_array,y_int)
+
+// ?? ÑÓã ãÇÑí ØáÇíí ??????????????????????????????????????????????????????
+if barstate.islast
+    dt = t2 - t1
+    dp = p2 - p1
+    
+    total_bars_dt = dt == 0 ? 1 : dt / (timeframe.in_seconds(timeframe.period) * 1000)
+    spiral_dp = count_red > 0 ? (sum_red_dp / count_red) * total_bars_dt : 0.0
+
+    dt_norm = dt == 0 ? 1 : dt
+    b_coeff = math.log(1.618) / (math.pi / 2)
+    center_t = math.round(t1 + dt * center_ratio)
+    center_p = p1 + dp * center_ratio
+
+    prev_t_1=center_t, prev_p_1=center_p
+    prev_t_2=center_t, prev_p_2=center_p
+    prev_t_3=center_t, prev_p_3=center_p
+    prev_t_4=center_t, prev_p_4=center_p
+    acc_len_1=0.0, acc_len_2=0.0, acc_len_3=0.0, acc_len_4=0.0
+    a=0.02
+
+    var pts_1=array.new<chart.point>()
+    var pts_2=array.new<chart.point>()
+    var pts_3=array.new<chart.point>()
+    var pts_4=array.new<chart.point>()
+
+    array.push(pts_1,chart.point.from_time(center_t,center_p))
+    array.push(pts_2,chart.point.from_time(center_t,center_p))
+    array.push(pts_3,chart.point.from_time(center_t,center_p))
+    array.push(pts_4,chart.point.from_time(center_t,center_p))
+
+    for i = 1 to 2000
+        theta=i*0.1
+        r=a*math.exp(b_coeff*theta)
+        dx1=r*(dt*math.cos(theta)-dt*math.sin(theta))
+        dy1=r*(spiral_dp*math.sin(theta)+spiral_dp*math.cos(theta))
+        dx2=r*(dt*math.cos(-theta)-dt*math.sin(-theta))
+        dy2=r*(spiral_dp*math.sin(-theta)+spiral_dp*math.cos(-theta))
+
+        curr_t_1=math.round(center_t+dx1), curr_p_1=center_p+dy1
+        curr_t_2=math.round(center_t+dx2), curr_p_2=center_p+dy2
+        curr_t_3=math.round(center_t-dx1), curr_p_3=center_p-dy1
+        curr_t_4=math.round(center_t-dx2), curr_p_4=center_p-dy2
+
+        seg_1=math.sqrt(math.pow(((curr_t_1-prev_t_1)/dt_norm)*spiral_dp,2)+math.pow(curr_p_1-prev_p_1,2))
+        seg_2=math.sqrt(math.pow(((curr_t_2-prev_t_2)/dt_norm)*spiral_dp,2)+math.pow(curr_p_2-prev_p_2,2))
+        seg_3=math.sqrt(math.pow(((curr_t_3-prev_t_3)/dt_norm)*spiral_dp,2)+math.pow(curr_p_3-prev_p_3,2))
+        seg_4=math.sqrt(math.pow(((curr_t_4-prev_t_4)/dt_norm)*spiral_dp,2)+math.pow(curr_p_4-prev_p_4,2))
+
+        if acc_len_1<=sum_height or sum_height==0
+            array.push(pts_1,chart.point.from_time(curr_t_1,curr_p_1))
+            acc_len_1+=seg_1
+        if acc_len_2<=sum_height or sum_height==0
+            array.push(pts_2,chart.point.from_time(curr_t_2,curr_p_2))
+            acc_len_2+=seg_2
+        if acc_len_3<=sum_height or sum_height==0
+            array.push(pts_3,chart.point.from_time(curr_t_3,curr_p_3))
+            acc_len_3+=seg_3
+        if acc_len_4<=sum_height or sum_height==0
+            array.push(pts_4,chart.point.from_time(curr_t_4,curr_p_4))
+            acc_len_4+=seg_4
+
+        if (acc_len_1>sum_height) and (acc_len_2>sum_height) and (acc_len_3>sum_height) and (acc_len_4>sum_height) and sum_height>0
+            break
+
+        prev_t_1:=curr_t_1, prev_p_1:=curr_p_1
+        prev_t_2:=curr_t_2, prev_p_2:=curr_p_2
+        prev_t_3:=curr_t_3, prev_p_3:=curr_p_3
+        prev_t_4:=curr_t_4, prev_p_4:=curr_p_4
+
+    if array.size(pts_1)>1
+        polyline.new(pts_1,xloc=xloc.bar_time,line_color=color.blue,line_width=2)
+    if array.size(pts_2)>1
+        polyline.new(pts_2,xloc=xloc.bar_time,line_color=color.red,line_width=2)
+    if array.size(pts_3)>1
+        polyline.new(pts_3,xloc=xloc.bar_time,line_color=color.green,line_width=2)
+    if array.size(pts_4)>1
+        polyline.new(pts_4,xloc=xloc.bar_time,line_color=color.orange,line_width=2)
+
+    if show_intersections or show_avg
+        var y_intersections=array.new<float>()
+        ext_style=extend_lines?extend.right:extend.none
+        find_intersects(pts_1,pts_2,y_intersections)
+        find_intersects(pts_1,pts_4,y_intersections)
+        find_intersects(pts_2,pts_3,y_intersections)
+        find_intersects(pts_3,pts_4,y_intersections)
+
+        if show_intersections and array.size(y_intersections)>0
+            for i=0 to array.size(y_intersections)-1
+                y_val=array.get(y_intersections,i)
+                line.new(center_t,y_val,center_t+dt_norm,y_val,xloc=xloc.bar_time,color=intersect_color,style=line.style_dashed,extend=ext_style)
+
+        if show_avg and array.size(y_intersections)>0
+            avg_y=array.avg(y_intersections)
+            line.new(center_t,avg_y,center_t+dt_norm,avg_y,xloc=xloc.bar_time,color=avg_color,width=2,style=line.style_solid,extend=ext_style)

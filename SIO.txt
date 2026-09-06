@@ -1,0 +1,37 @@
+//@version=6
+indicator("Symmetry Intersection Oscillator", overlay=false, shorttitle="SIO")
+
+// --- æÑæÏíåÇ ---
+length = input.int(20, "Lookback Length")
+src = input.source(close, "Source")
+smooth = input.int(3, "Smoothing")
+
+// --- ãäØŞ ãÍÇÓÈå ÊŞÇÑä ---
+// ãÍÇÓÈå äŞØå ÊÚÇÏá (Mid-line) ãÈÊäí ÈÑ äæÓÇä ãÊŞÇÑä
+ma = ta.sma(src, length)
+highest = ta.highest(high, length)
+lowest = ta.lowest(low, length)
+midPoint = (highest + lowest) / 2
+
+// ãÍÇÓÈå ÇäÍÑÇİ ãÊŞÇÑä (Symmetric Deviation)
+// Çíä ãŞÏÇÑ äÔÇä ãíÏåÏ ŞíãÊ ŞÏÑ ÇÒ ãÍæÑ ÊŞÇÑä ÎæÏ İÇÕáå ÑİÊå ÇÓÊ
+sym_deviation = src - (2 * midPoint - src)
+
+// åãæÇÑÓÇÒí ÈÑÇí ˜ÇåÔ äæíÒ
+osc = ta.sma(sym_deviation, smooth)
+
+// --- ÊÑÓíã ÇÓíáÇÊæÑ ---
+plot(osc, title="Symmetry Deviation", color=osc > 0 ? color.red : color.green, style=plot.style_area)
+plot(0, title="Zero Line", color=color.gray, linewidth=2)
+
+// --- ÓíäÇáåÇí æÇÑÇíí íÇ ÈÇÒÔÊ ---
+// ÒãÇäí ˜å ÇÓíáÇÊæÑ Èå äŞÇØ Ç˜ÓÊÑíã ãíÑÓÏ¡ ÇÍÊãÇá ÈÑÎæÑÏ ÈÇ ÓØæÍ ÊŞÇØÚ ˜Ï ÇÕáí ÈÇáÇÊÑ ÇÓÊ
+upperLevel = ta.stdev(osc, length) * 2
+lowerLevel = -ta.stdev(osc, length) * 2
+
+plot(upperLevel, title="Upper Threshold", color=color.new(color.red, 50))
+plot(lowerLevel, title="Lower Threshold", color=color.new(color.green, 50))
+
+// åÔÏÇÑ ÈÑÇí ãÚÇãáåÑ: æŞÊí ÇÓíáÇÊæÑ Èå ãÍÏæÏå ÇÔÈÇÚ ãíÑÓÏ¡ ÓØæÍ ÊŞÇØÚ (˜Ï Çæá) ÑÇ ÒíÑ äÙÑ ÈíÑ
+alertcondition(ta.crossover(osc, lowerLevel), title="Symmetry Buy Alert", message="ŞíãÊ ÏÑ æÖÚíÊ ÇÔÈÇÚ İÑæÔ ãÊŞÇÑä - ÂãÇÏå ÈÑÇí ÎÑíÏ ÏÑ ÈÑÎæÑÏ Èå ÓØÍ ÊŞÇØÚ")
+alertcondition(ta.crossunder(osc, upperLevel), title="Symmetry Sell Alert", message="ŞíãÊ ÏÑ æÖÚíÊ ÇÔÈÇÚ ÎÑíÏ ãÊŞÇÑä - ÂãÇÏå ÈÑÇí İÑæÔ ÏÑ ÈÑÎæÑÏ Èå ÓØÍ ÊŞÇØÚ")

@@ -1,0 +1,359 @@
+//@version=5
+indicator("Gann Octagon{Morindok}", overlay=true, max_labels_count=500, max_lines_count=500)
+
+// ??????????????????????????????????????????????????????????????
+// ê—ÊÂ:  ‰ŸÌ„«  ò‰œ· Å«ÌÂ
+// ??????????????????????????????????????????????????????????????
+grp1 = " ‰ŸÌ„«  ò‰œ· Å«ÌÂ"
+anchor_time     = input.time(0,           "? “„«‰ ò‰œ·",  group=grp1, confirm=true)
+price_src       = input.string("High",    "ﬁÌ„  „—ò“Ì",   group=grp1, options=["High", "Low"])
+direction_input = input.string("«›“«Ì‘Ì", "ÃÂ  «”ÅÌ—«·", group=grp1, options=["«›“«Ì‘Ì", "ò«Â‘Ì"])
+
+// ??????????????????????????????????????????????????????????????
+// ê—ÊÂ: ê«„ (Step)
+// ??????????????????????????????????????????????????????????????
+grp_step = "ê«„ «ò «êÊ‰"
+step_mode    = input.string("«— ›«⁄ ò‰œ·", "Õ«·  ê«„",  group=grp_step, options=["«— ›«⁄ ò‰œ·", "ATR  ÿ»ÌﬁÌ", "œ” Ì"])
+atr_len      = input.int(14,    "œÊ—Â ATR",              group=grp_step, minval=1,   maxval=200)
+atr_mult     = input.float(1.0, "÷—Ì» ATR",              group=grp_step, minval=0.1, maxval=10.0, step=0.1)
+manual_step  = input.float(0.0, "ê«„ œ” Ì (0=ŒÊœò«—)",  group=grp_step, minval=0.0)
+
+// ??????????????????????????????????????????????????????????????
+// ê—ÊÂ:  ‰ŸÌ„«  œÊ—Â«Ì «”ÅÌ—«·
+// ??????????????????????????????????????????????????????????????
+grp2 = "œÊ—Â«Ì «”ÅÌ—«·"
+ring_from  = input.int(1,     "«“ œÊ—", group=grp2, minval=1, maxval=5)
+ring_to    = input.int(3,     " « œÊ—", group=grp2, minval=1, maxval=5)
+show_ring1 = input.bool(true,  "œÊ— ?", group=grp2)
+show_ring2 = input.bool(true,  "œÊ— ?", group=grp2)
+show_ring3 = input.bool(true,  "œÊ— ?", group=grp2)
+show_ring4 = input.bool(false, "œÊ— ?", group=grp2)
+show_ring5 = input.bool(false, "œÊ— ?", group=grp2)
+
+// ??????????????????????????????????????????????????????????????
+// ê—ÊÂ:  ‰ŸÌ„«  «”ÅÌ—«·
+// ??????????????????????????????????????????????????????????????
+grp3 = " ‰ŸÌ„«  «”ÅÌ—«·"
+spiral_angle = input.float(137.5, "“«ÊÌÂ ç—Œ‘ «”ÅÌ—«· (∞)", group=grp3, minval=1.0, maxval=360.0, step=0.5)
+show_lines   = input.bool(true,   "‰„«Ì‘ ŒÿÊÿ",              group=grp3)
+show_labels  = input.bool(true,   "‰„«Ì‘ ·Ì»· ﬁÌ„ ",         group=grp3)
+show_table   = input.bool(true,   "‰„«Ì‘ ÃœÊ· «ò «êÊ‰",      group=grp3)
+
+// ??????????????????????????????????????????????????????????????
+// ê—ÊÂ: —‰ê œÊ—Â«
+// ??????????????????????????????????????????????????????????????
+grp4 = "—‰ê œÊ—Â«"
+col_ring1 = input.color(color.new(#FFD700, 0),  "—‰ê œÊ— ?", group=grp4)
+col_ring2 = input.color(color.new(#00BFFF, 0),  "—‰ê œÊ— ?", group=grp4)
+col_ring3 = input.color(color.new(#FF69B4, 0),  "—‰ê œÊ— ?", group=grp4)
+col_ring4 = input.color(color.new(#7CFC00, 0),  "—‰ê œÊ— ?", group=grp4)
+col_ring5 = input.color(color.new(#FF8C00, 0),  "—‰ê œÊ— ?", group=grp4)
+col_center = input.color(color.new(#FF4500, 0),  "—‰ê „—ò“", group=grp4)
+
+// ??????????????????????????????????????????????????????????????
+// Ì«› ‰ ò‰œ· «‰ Œ«»Ì Ê «” Œ—«Ã ﬁÌ„  „—ò“Ì
+// ??????????????????????????????????????????????????????????????
+var float center_price  = na
+var float candle_body   = na
+var int   anchor_bar    = na
+var float atr_at_anchor = na
+
+// ATR “‰œÂ (Â— »«— »—Ê“ „Ìù‘Êœ)
+atr_live = ta.atr(atr_len)
+
+if time == anchor_time
+    anchor_bar    := bar_index
+    center_price  := price_src == "High" ? high : low
+    candle_body   := high - low
+    atr_at_anchor := atr_live
+
+// ??????????????????????????????????????????????????????????????
+// ê«„  ÿ»ÌﬁÌ ó „Õ«”»Â step ›⁄«·
+// Õ«·  ATR  ÿ»ÌﬁÌ: step = „Ì«‰êÌ‰ Ê“‰Ì ATR@anchor Ê ATR@now
+//   ? »« ÅÌ‘—›  ﬁÌ„  œ— „”Ì—° ATR Ã«—Ì »Ì‘ — Ê“‰ „ÌùêÌ—œ
+//   ? œ— ‰ ÌÃÂ ”ÿÊÕ »« ‘—«Ìÿ Ê«ﬁ⁄Ì »«“«— Â„«Â‰ê „Ìù„«‰‰œ
+// ??????????????????????????????????????????????????????????????
+f_calc_step(float cndl, float atr_anch, float atr_now, float mult, string mode, float manual) =>
+    float s = na
+    if mode == "«— ›«⁄ ò‰œ·"
+        s := cndl
+    else if mode == "ATR  ÿ»ÌﬁÌ"
+        // Ê“‰ ATR Ã«—Ì = 0.6 | Ê“‰ ATR anchor = 0.4
+        // «Ì‰ ‰”»  ”ÿÊÕ —« »Â ‘—«Ìÿ ·ÕŸÂù«Ì Õ”«”ù — „Ìùò‰œ
+        float blended = 0.4 * atr_anch + 0.6 * atr_now
+        s := blended * mult
+    else
+        // Õ«·  œ” Ì
+        s := manual > 0.0 ? manual : cndl
+    s
+
+// step ›⁄·Ì ó Â— »«— »« ATR Ã«—Ì »Âù—Ê“—”«‰Ì „Ìù‘Êœ
+active_step = f_calc_step(candle_body, atr_at_anchor, atr_live, atr_mult, step_mode, manual_step)
+
+// ??????????????????????????????????????????????????????????????
+//  «»⁄ „Õ«”»Â ”ÿÕ Gann Octagon ó ring = œÊ— «”ÅÌ—«·
+// ›—„Ê·: increment = (step / 2?P) ◊ (deg/360) ◊ (1+?) ◊ ring
+// Level = (?P ± increment)≤
+// ??????????????????????????????????????????????????????????????
+f_oct_level(float cen, float step, float ang_deg, float spin_deg, int dir, int ring) =>
+    float base_sq   = math.sqrt(cen)
+    float delta_one = step / (2.0 * base_sq)
+    float frac      = ang_deg / 360.0
+    float phi_scale = spin_deg / 360.0
+    float increment = delta_one * frac * (1.0 + phi_scale) * float(ring)
+    float lvl       = math.pow(base_sq + float(dir) * increment, 2.0)
+    lvl
+
+//  «»⁄ »—ê—œ«‰œ‰ —‰ê œÊ—
+f_ring_col(int r) =>
+    r == 1 ? col_ring1 : r == 2 ? col_ring2 : r == 3 ? col_ring3 : r == 4 ? col_ring4 : col_ring5
+
+//  «»⁄ »——”Ì ›⁄«· »Êœ‰ œÊ—
+f_ring_on(int r) =>
+    r == 1 ? show_ring1 : r == 2 ? show_ring2 : r == 3 ? show_ring3 : r == 4 ? show_ring4 : show_ring5
+
+// ??????????????????????????????????????????????????????????????
+// ÀÊ«»  “Ê«Ì«Ì «ò «êÊ‰
+// ??????????????????????????????????????????????????????????????
+int dir_val = direction_input == "«›“«Ì‘Ì" ? 1 : -1
+
+float ang0 = 45.0
+float ang1 = 90.0
+float ang2 = 135.0
+float ang3 = 180.0
+float ang4 = 225.0
+float ang5 = 270.0
+float ang6 = 315.0
+float ang7 = 360.0
+
+// ??????????????????????????????????????????????????????????????
+// „Õ«”»Â ”ÿÊÕ: 5 œÊ— ◊ 8 “«ÊÌÂ = 40 ”ÿÕ
+// œ— Õ«·  ATR  ÿ»ÌﬁÌ° active_step Â— »«—  €ÌÌ— „Ìùò‰œ
+// ? ”ÿÊÕ »« Â— ò‰œ· ÃœÌœ »Âù—Ê“ „Ìù‘Ê‰œ
+// ??????????????????????????????????????????????????????????????
+var float r1_L0=na
+var float r1_L1=na  
+var float r1_L2=na  
+var float r1_L3=na
+var float r1_L4=na  
+var float r1_L5=na  
+var float r1_L6=na  
+var float r1_L7=na
+var float r2_L0=na  
+var float r2_L1=na  
+var float r2_L2=na  
+var float r2_L3=na
+var float r2_L4=na  
+var float r2_L5=na  
+var float r2_L6=na  
+var float r2_L7=na
+var float r3_L0=na  
+var float r3_L1=na  
+var float r3_L2=na  
+var float r3_L3=na
+var float r3_L4=na  
+var float r3_L5=na  
+var float r3_L6=na  
+var float r3_L7=na
+var float r4_L0=na  
+var float r4_L1=na  
+var float r4_L2=na  
+var float r4_L3=na
+var float r4_L4=na  
+var float r4_L5=na  
+var float r4_L6=na  
+var float r4_L7=na
+var float r5_L0=na  
+var float r5_L1=na  
+var float r5_L2=na  
+var float r5_L3=na
+var float r5_L4=na 
+var float r5_L5=na  
+var float r5_L6=na  
+var float r5_L7=na
+
+if not na(center_price) and not na(candle_body) and not na(active_step)
+    r1_L0 := f_oct_level(center_price, active_step, ang0, spiral_angle, dir_val, 1)
+    r1_L1 := f_oct_level(center_price, active_step, ang1, spiral_angle, dir_val, 1)
+    r1_L2 := f_oct_level(center_price, active_step, ang2, spiral_angle, dir_val, 1)
+    r1_L3 := f_oct_level(center_price, active_step, ang3, spiral_angle, dir_val, 1)
+    r1_L4 := f_oct_level(center_price, active_step, ang4, spiral_angle, dir_val, 1)
+    r1_L5 := f_oct_level(center_price, active_step, ang5, spiral_angle, dir_val, 1)
+    r1_L6 := f_oct_level(center_price, active_step, ang6, spiral_angle, dir_val, 1)
+    r1_L7 := f_oct_level(center_price, active_step, ang7, spiral_angle, dir_val, 1)
+    r2_L0 := f_oct_level(center_price, active_step, ang0, spiral_angle, dir_val, 2)
+    r2_L1 := f_oct_level(center_price, active_step, ang1, spiral_angle, dir_val, 2)
+    r2_L2 := f_oct_level(center_price, active_step, ang2, spiral_angle, dir_val, 2)
+    r2_L3 := f_oct_level(center_price, active_step, ang3, spiral_angle, dir_val, 2)
+    r2_L4 := f_oct_level(center_price, active_step, ang4, spiral_angle, dir_val, 2)
+    r2_L5 := f_oct_level(center_price, active_step, ang5, spiral_angle, dir_val, 2)
+    r2_L6 := f_oct_level(center_price, active_step, ang6, spiral_angle, dir_val, 2)
+    r2_L7 := f_oct_level(center_price, active_step, ang7, spiral_angle, dir_val, 2)
+    r3_L0 := f_oct_level(center_price, active_step, ang0, spiral_angle, dir_val, 3)
+    r3_L1 := f_oct_level(center_price, active_step, ang1, spiral_angle, dir_val, 3)
+    r3_L2 := f_oct_level(center_price, active_step, ang2, spiral_angle, dir_val, 3)
+    r3_L3 := f_oct_level(center_price, active_step, ang3, spiral_angle, dir_val, 3)
+    r3_L4 := f_oct_level(center_price, active_step, ang4, spiral_angle, dir_val, 3)
+    r3_L5 := f_oct_level(center_price, active_step, ang5, spiral_angle, dir_val, 3)
+    r3_L6 := f_oct_level(center_price, active_step, ang6, spiral_angle, dir_val, 3)
+    r3_L7 := f_oct_level(center_price, active_step, ang7, spiral_angle, dir_val, 3)
+    r4_L0 := f_oct_level(center_price, active_step, ang0, spiral_angle, dir_val, 4)
+    r4_L1 := f_oct_level(center_price, active_step, ang1, spiral_angle, dir_val, 4)
+    r4_L2 := f_oct_level(center_price, active_step, ang2, spiral_angle, dir_val, 4)
+    r4_L3 := f_oct_level(center_price, active_step, ang3, spiral_angle, dir_val, 4)
+    r4_L4 := f_oct_level(center_price, active_step, ang4, spiral_angle, dir_val, 4)
+    r4_L5 := f_oct_level(center_price, active_step, ang5, spiral_angle, dir_val, 4)
+    r4_L6 := f_oct_level(center_price, active_step, ang6, spiral_angle, dir_val, 4)
+    r4_L7 := f_oct_level(center_price, active_step, ang7, spiral_angle, dir_val, 4)
+    r5_L0 := f_oct_level(center_price, active_step, ang0, spiral_angle, dir_val, 5)
+    r5_L1 := f_oct_level(center_price, active_step, ang1, spiral_angle, dir_val, 5)
+    r5_L2 := f_oct_level(center_price, active_step, ang2, spiral_angle, dir_val, 5)
+    r5_L3 := f_oct_level(center_price, active_step, ang3, spiral_angle, dir_val, 5)
+    r5_L4 := f_oct_level(center_price, active_step, ang4, spiral_angle, dir_val, 5)
+    r5_L5 := f_oct_level(center_price, active_step, ang5, spiral_angle, dir_val, 5)
+    r5_L6 := f_oct_level(center_price, active_step, ang6, spiral_angle, dir_val, 5)
+    r5_L7 := f_oct_level(center_price, active_step, ang7, spiral_angle, dir_val, 5)
+
+// ??????????????????????????????????????????????????????????????
+//  «»⁄ ò„òÌ: »—ê—œ«‰œ‰ ”ÿÕ Ìò œÊ— Ê “«ÊÌÂ Œ«’
+// ??????????????????????????????????????????????????????????????
+f_get_lvl(int ring, int ang_idx) =>
+    float v = na
+    if ring == 1
+        v := ang_idx == 0 ? r1_L0 : ang_idx == 1 ? r1_L1 : ang_idx == 2 ? r1_L2 : ang_idx == 3 ? r1_L3 : ang_idx == 4 ? r1_L4 : ang_idx == 5 ? r1_L5 : ang_idx == 6 ? r1_L6 : r1_L7
+    else if ring == 2
+        v := ang_idx == 0 ? r2_L0 : ang_idx == 1 ? r2_L1 : ang_idx == 2 ? r2_L2 : ang_idx == 3 ? r2_L3 : ang_idx == 4 ? r2_L4 : ang_idx == 5 ? r2_L5 : ang_idx == 6 ? r2_L6 : r2_L7
+    else if ring == 3
+        v := ang_idx == 0 ? r3_L0 : ang_idx == 1 ? r3_L1 : ang_idx == 2 ? r3_L2 : ang_idx == 3 ? r3_L3 : ang_idx == 4 ? r3_L4 : ang_idx == 5 ? r3_L5 : ang_idx == 6 ? r3_L6 : r3_L7
+    else if ring == 4
+        v := ang_idx == 0 ? r4_L0 : ang_idx == 1 ? r4_L1 : ang_idx == 2 ? r4_L2 : ang_idx == 3 ? r4_L3 : ang_idx == 4 ? r4_L4 : ang_idx == 5 ? r4_L5 : ang_idx == 6 ? r4_L6 : r4_L7
+    else
+        v := ang_idx == 0 ? r5_L0 : ang_idx == 1 ? r5_L1 : ang_idx == 2 ? r5_L2 : ang_idx == 3 ? r5_L3 : ang_idx == 4 ? r5_L4 : ang_idx == 5 ? r5_L5 : ang_idx == 6 ? r5_L6 : r5_L7
+    v
+
+// ??????????????????????????????????????????????????????????????
+// ¬—«ÌÂùÂ«Ì À«»  ó global scope
+// ??????????????????????????????????????????????????????????????
+var string[] ang_lbl   = array.from("? 45∞", "? 90∞", "? 135∞", "? 180∞", "? 225∞", "? 270∞", "? 315∞", "? 360∞")
+var bool[]   is_card   = array.from(false, true, false, true, false, true, false, true)
+var string[] ang_degs  = array.from("45∞", "90∞", "135∞", "180∞", "225∞", "270∞", "315∞", "360∞")
+var string[] type_strs = array.from("«—œÌ‰«·", "? ò«—œÌ‰«·", "«—œÌ‰«·", "? ò«—œÌ‰«·", "«—œÌ‰«·", "? ò«—œÌ‰«·", "«—œÌ‰«·", "? ò«—œÌ‰«·")
+
+// ??????????????????????????????????????????????????????????????
+// —”„ ŒÿÊÿ Ê ·Ì»·ùÂ«
+// ??????????????????????????????????????????????????????????????
+var line[]  l_arr  = array.new_line()
+var label[] lb_arr = array.new_label()
+
+if (barstate.islastconfirmedhistory or barstate.islast) and not na(center_price) and not na(anchor_bar)
+    for ln in l_arr
+        line.delete(ln)
+    array.clear(l_arr)
+    for lb in lb_arr
+        label.delete(lb)
+    array.clear(lb_arr)
+
+    int x1 = anchor_bar
+    int x2 = bar_index + 30
+
+    if show_lines
+        array.push(l_arr, line.new(x1, center_price, x2, center_price, color=col_center, width=2, style=line.style_solid, xloc=xloc.bar_index))
+    if show_labels
+        array.push(lb_arr, label.new(x2, center_price, text="? „—ò“: " + str.tostring(center_price, "#.####"), color=col_center, textcolor=color.white, style=label.style_label_left, size=size.small, xloc=xloc.bar_index))
+
+    int r_start = math.max(1, math.min(ring_from, 5))
+    int r_end   = math.max(r_start, math.min(ring_to, 5))
+
+    for ring = r_start to r_end
+        if f_ring_on(ring)
+            color  rc  = f_ring_col(ring)
+            string rtx = " [R" + str.tostring(ring) + "]"
+            for ai = 0 to 7
+                float lvl = f_get_lvl(ring, ai)
+                if not na(lvl) and lvl > 0
+                    bool card = array.get(is_card, ai)
+                    int  lw   = card ? 2 : 1
+                    color lc  = color.new(rc, card ? 0 : 30)
+                    if show_lines
+                        array.push(l_arr, line.new(x1, lvl, x2, lvl, color=lc, width=lw, style=line.style_solid, xloc=xloc.bar_index))
+                    if show_labels
+                        string lbl_txt = array.get(ang_lbl, ai) + rtx + " ? " + str.tostring(lvl, "#.####")
+                        array.push(lb_arr, label.new(x2, lvl, text=lbl_txt, color=lc, textcolor=color.white, style=label.style_label_left, size=size.tiny, xloc=xloc.bar_index))
+
+// ??????????????????????????????????????????????????????????????
+// ÃœÊ· «ò «êÊ‰ (5 ” Ê‰: œÊ— | # | “«ÊÌÂ | ‰Ê⁄ | ﬁÌ„ )
+// ??????????????????????????????????????????????????????????????
+var table tbl = na
+
+if barstate.islast and show_table and not na(center_price)
+    if not na(tbl)
+        table.delete(tbl)
+
+    int r_s = math.max(1, math.min(ring_from, 5))
+    int r_e = math.max(r_s, math.min(ring_to, 5))
+
+    int active_rings = 0
+    for r = r_s to r_e
+        if f_ring_on(r)
+            active_rings += 1
+
+    // —œÌ›ùÂ«: Âœ—(1) + „—ò“(1) + ”ÿÊÕ(active◊8) + step_info(1) + footer(1)
+    int total_rows = 1 + 1 + active_rings * 8 + 1 + 1
+
+    tbl := table.new(position.top_right, 5, total_rows, bgcolor=color.new(#0D1117, 5), border_color=color.new(#FFD700, 35), border_width=1, frame_color=color.new(#FFD700, 0), frame_width=2)
+
+    // Âœ—
+    table.cell(tbl, 0, 0, "œÊ—",    text_color=color.new(#FFD700, 0), text_size=size.small, bgcolor=color.new(#1A1F2E, 0), text_halign=text.align_center)
+    table.cell(tbl, 1, 0, "#",      text_color=color.new(#FFD700, 0), text_size=size.small, bgcolor=color.new(#1A1F2E, 0), text_halign=text.align_center)
+    table.cell(tbl, 2, 0, "“«ÊÌÂ", text_color=color.new(#FFD700, 0), text_size=size.small, bgcolor=color.new(#1A1F2E, 0), text_halign=text.align_center)
+    table.cell(tbl, 3, 0, "‰Ê⁄",   text_color=color.new(#FFD700, 0), text_size=size.small, bgcolor=color.new(#1A1F2E, 0), text_halign=text.align_center)
+    table.cell(tbl, 4, 0, "ﬁÌ„ ",  text_color=color.new(#FFD700, 0), text_size=size.small, bgcolor=color.new(#1A1F2E, 0), text_halign=text.align_center)
+
+    // —œÌ› „—ò“
+    table.cell(tbl, 0, 1, "?",   text_color=color.white, text_size=size.tiny, bgcolor=color.new(#FF4500, 50), text_halign=text.align_center)
+    table.cell(tbl, 1, 1, "ó",   text_color=color.white, text_size=size.tiny, bgcolor=color.new(#FF4500, 50), text_halign=text.align_center)
+    table.cell(tbl, 2, 1, "0∞",  text_color=color.white, text_size=size.tiny, bgcolor=color.new(#FF4500, 50), text_halign=text.align_center)
+    table.cell(tbl, 3, 1, "„—ò“", text_color=color.white, text_size=size.tiny, bgcolor=color.new(#FF4500, 50), text_halign=text.align_center)
+    table.cell(tbl, 4, 1, str.tostring(center_price, "#.####"), text_color=color.white, text_size=size.tiny, bgcolor=color.new(#FF4500, 50), text_halign=text.align_right)
+
+    int row_idx = 2
+
+    for ring = r_s to r_e
+        if f_ring_on(ring)
+            color rc = f_ring_col(ring)
+            for ai = 0 to 7
+                float  lvl     = f_get_lvl(ring, ai)
+                bool   is_c    = array.get(is_card, ai)
+                color  bg_c    = color.new(rc, is_c ? 70 : 85)
+                color  tc      = color.new(rc, 0)
+                string price_s = not na(lvl) ? str.tostring(lvl, "#.####") : "ó"
+                table.cell(tbl, 0, row_idx, "R" + str.tostring(ring),  text_color=tc, text_size=size.tiny, bgcolor=bg_c, text_halign=text.align_center)
+                table.cell(tbl, 1, row_idx, str.tostring(ai + 1),      text_color=tc, text_size=size.tiny, bgcolor=bg_c, text_halign=text.align_center)
+                table.cell(tbl, 2, row_idx, array.get(ang_degs, ai),   text_color=tc, text_size=size.tiny, bgcolor=bg_c, text_halign=text.align_center)
+                table.cell(tbl, 3, row_idx, array.get(type_strs, ai),  text_color=tc, text_size=size.tiny, bgcolor=bg_c, text_halign=text.align_center)
+                table.cell(tbl, 4, row_idx, price_s,                   text_color=tc, text_size=size.tiny, bgcolor=bg_c, text_halign=text.align_right)
+                row_idx += 1
+
+    // —œÌ› «ÿ·«⁄«  ê«„  ÿ»ÌﬁÌ
+    int step_row = total_rows - 2
+    string step_lbl  = step_mode == "ATR  ÿ»ÌﬁÌ" ? "ATR◊" + str.tostring(atr_mult, "#.#") : step_mode == "œ” Ì" ? "œ” Ì" : "«— ›«⁄ ò‰œ·"
+    string step_val  = not na(active_step) ? str.tostring(active_step, "#.####") : "ó"
+    table.cell(tbl, 0, step_row, "ê«„:",     text_color=color.new(#AAAAAA, 0), text_size=size.tiny, bgcolor=color.new(#111820, 0), text_halign=text.align_center)
+    table.cell(tbl, 1, step_row, step_lbl,   text_color=color.new(#AAAAAA, 0), text_size=size.tiny, bgcolor=color.new(#111820, 0), text_halign=text.align_center)
+    table.cell(tbl, 2, step_row, step_val,   text_color=color.new(#00BFFF, 0), text_size=size.tiny, bgcolor=color.new(#111820, 0), text_halign=text.align_right)
+    table.cell(tbl, 3, step_row, "?=" + str.tostring(spiral_angle, "#.#") + "∞", text_color=color.new(#AAAAAA, 0), text_size=size.tiny, bgcolor=color.new(#111820, 0), text_halign=text.align_center)
+    table.cell(tbl, 4, step_row, direction_input, text_color=color.new(#AAAAAA, 0), text_size=size.tiny, bgcolor=color.new(#111820, 0), text_halign=text.align_center)
+
+    // footer
+    int foot_row = total_rows - 1
+    table.cell(tbl, 0, foot_row, price_src, text_color=color.new(#555555, 0), text_size=size.tiny, bgcolor=color.new(#0D1117, 0), text_halign=text.align_center)
+    table.cell(tbl, 1, foot_row, "R" + str.tostring(r_s) + "?R" + str.tostring(r_e), text_color=color.new(#555555, 0), text_size=size.tiny, bgcolor=color.new(#0D1117, 0), text_halign=text.align_center)
+    table.cell(tbl, 2, foot_row, "", text_color=color.new(#555555, 0), text_size=size.tiny, bgcolor=color.new(#0D1117, 0), text_halign=text.align_center)
+    table.cell(tbl, 3, foot_row, "", text_color=color.new(#555555, 0), text_size=size.tiny, bgcolor=color.new(#0D1117, 0), text_halign=text.align_center)
+    table.cell(tbl, 4, foot_row, "Morindok", text_color=color.new(#444444, 0), text_size=size.tiny, bgcolor=color.new(#0D1117, 0), text_halign=text.align_center)
+
+// ??????????????????????????????????????????????????????????????
+// ⁄·«„  —ÊÌ ò‰œ· «‰ Œ«»Ì
+// ??????????????????????????????????????????????????????????????
+is_anchor = time == anchor_time
+plotshape(is_anchor, title="ò‰œ· Gann Octagon", location=location.belowbar, style=shape.triangleup, size=size.normal, color=color.new(#FFD700, 0), text="? Oct")

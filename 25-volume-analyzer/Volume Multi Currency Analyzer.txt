@@ -1,0 +1,449 @@
+//@version=6
+indicator("Volume Multi Currency Annalyzer{Morindok}", shorttitle="MultiDeTrend Morindok", overlay=false)
+
+// ================== ورودی‌ها ==================
+grpSymbols = "نمادها"
+sym1 = input.symbol("BINANCE:BTCUSDT", "نماد ۱", group=grpSymbols)
+sym2 = input.symbol("BINANCE:ETHUSDT", "نماد ۲", group=grpSymbols)
+sym3 = input.symbol("BINANCE:BNBUSDT", "نماد ۳", group=grpSymbols)
+sym4 = input.symbol("BINANCE:SOLUSDT", "نماد ۴", group=grpSymbols)
+sym5 = input.symbol("BINANCE:XRPUSDT", "نماد ۵", group=grpSymbols)
+
+showSym1 = input.bool(true, "نمایش نماد ۱", group=grpSymbols)
+showSym2 = input.bool(true, "نمایش نماد ۲", group=grpSymbols)
+showSym3 = input.bool(true, "نمایش نماد ۳", group=grpSymbols)
+showSym4 = input.bool(false, "نمایش نماد ۴", group=grpSymbols)
+showSym5 = input.bool(false, "نمایش نماد ۵", group=grpSymbols)
+
+grpMA = "میانگین متحرک"
+fibLength = input.int(21, "دوره فیبوناچی", options=[3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377], group=grpMA)
+maType = input.string("EMA", "نوع میانگین متحرک", options=["SMA", "EMA", "WMA", "VWMA", "RMA"], group=grpMA)
+
+grpNorm = "نرمال‌سازی"
+normMethod = input.string("درصد", "روش نرمال‌سازی", options=["درصد", "زد اسکور"], group=grpNorm)
+
+grpVis = "نمایش"
+showZeroLine = input.bool(true, "نمایش خط صفر", group=grpVis)
+showZBands = input.bool(true, "نمایش باندهای زد اسکور ±۱ و ±۲", group=grpVis)
+
+// ================== ورودی‌های ایجنت جریان پول ==================
+grpFlow = "ایجنت جریان پول"
+showFlowAgent = input.bool(true, "فعال‌سازی ایجنت تحلیل جریان پول", group=grpFlow)
+changeLen = input.int(14, "دوره تغییرات قیمت/حجم", group=grpFlow)
+slopeLen = input.int(21, "دوره شیب رگرسیون", group=grpFlow)
+pivotLen = input.int(5, "طول پیوت (چپ/راست)", group=grpFlow)
+flowSensitivity = input.float(5.0, "حساسیت برآورد حجم انتقال", minval=0.1, group=grpFlow)
+
+grpWeights = "وزن‌های امتیاز چرخش"
+wPrice = input.float(1.0, "وزن تغییر قیمت", group=grpWeights)
+wVol = input.float(1.0, "وزن تغییر حجم دلاری", group=grpWeights)
+wAngle = input.float(1.0, "وزن زاویه شیب", group=grpWeights)
+wRatio = input.float(1.0, "وزن نسبت به میانگین متحرک", group=grpWeights)
+wPivot = input.float(1.0, "وزن ارتفاع از پیوت", group=grpWeights)
+
+grpBS = "وزن‌های تشخیص خرید/فروش"
+bsLen = input.int(14, "دوره CMF و حجم جهت‌دار", group=grpBS)
+wCmf = input.float(1.0, "وزن CMF", group=grpBS)
+wUpDownVol = input.float(1.0, "وزن نسبت حجم صعودی/نزولی", group=grpBS)
+wClv = input.float(1.0, "وزن CLV", group=grpBS)
+wObv = input.float(1.0, "وزن شیب OBV", group=grpBS)
+
+grpValidate = "ایجنت اجماع و صحت‌سنجی"
+rsiLen = input.int(14, "دوره RSI", group=grpValidate)
+rsiUpTh = input.float(55, "آستانه RSI صعودی", group=grpValidate)
+rsiDnTh = input.float(45, "آستانه RSI نزولی", group=grpValidate)
+atrChLen = input.int(14, "دوره تغییر ATR", group=grpValidate)
+strongAgreeCount = input.int(4, "حداقل توافق برای سیگنال قطعی (از ۵)", minval=3, maxval=5, group=grpValidate)
+probableAgreeCount = input.int(3, "حداقل توافق برای سیگنال محتمل (از ۵)", minval=2, maxval=5, group=grpValidate)
+
+// ================== توابع ==================
+f_ma(src, len, type) =>
+    float out = na
+    if type == "SMA"
+        out := ta.sma(src, len)
+    else if type == "EMA"
+        out := ta.ema(src, len)
+    else if type == "WMA"
+        out := ta.wma(src, len)
+    else if type == "VWMA"
+        out := ta.vwma(src, len)
+    else
+        out := ta.rma(src, len)
+    out
+
+f_detrend(sym, len, type, norm) =>
+    [c, m] = request.security(sym, timeframe.period, [close, f_ma(close, len, type)])
+    diff = c - m
+    result = norm == "درصد" ? diff / m * 100 : diff / ta.stdev(diff, len)
+    result
+
+f_lastPivotVal(len) =>
+    var float pv = na
+    ph = ta.pivothigh(high, len, len)
+    pl = ta.pivotlow(low, len, len)
+    if not na(ph)
+        pv := ph
+    if not na(pl)
+        pv := pl
+    pv
+
+f_barsSincePivot(len) =>
+    var int bsp = 0
+    ph = ta.pivothigh(high, len, len)
+    pl = ta.pivotlow(low, len, len)
+    if not na(ph) or not na(pl)
+        bsp := 0
+    else
+        bsp := bsp + 1
+    bsp
+
+f_flowMetrics(sym, tf, maLen, sLen, pLen, chLen) =>
+    [c, v, m, atrVal, linNow, linPrev, pv, bsp] = request.security(sym, tf, [close, volume, f_ma(close, maLen, maType), ta.atr(14), ta.linreg(close, sLen, 0), ta.linreg(close, sLen, 1), f_lastPivotVal(pLen), f_barsSincePivot(pLen)])
+    priceChangePct = (c - c[chLen]) / c[chLen] * 100
+    volChangePct = (v - v[chLen]) / v[chLen] * 100
+    dollarVol = c * v
+    dollarVolChangePct = (dollarVol - dollarVol[chLen]) / dollarVol[chLen] * 100
+    slope = linNow - linPrev
+    angleDeg = math.atan(slope / atrVal) * 180 / math.pi
+    ratioToMA = (c - m) / m * 100
+    pivotHeightPct = na(pv) ? 0.0 : (c - pv) / pv * 100
+    [priceChangePct, volChangePct, dollarVolChangePct, angleDeg, ratioToMA, pivotHeightPct, bsp, dollarVol]
+
+f_buySellMetrics(sym, tf, len) =>
+    [c, h, l, v] = request.security(sym, tf, [close, high, low, volume])
+    rangeVal = h - l
+    clv = rangeVal == 0 ? 0.0 : ((c - l) - (h - c)) / rangeVal
+    mfv = clv * v
+    cmf = ta.sma(mfv, len) / ta.sma(v, len)
+    upVol = c > c[1] ? v : c < c[1] ? 0.0 : v * 0.5
+    downVol = c < c[1] ? v : c > c[1] ? 0.0 : v * 0.5
+    upVolAvg = ta.sma(upVol, len)
+    downVolAvg = ta.sma(downVol, len)
+    upDownRatio = (upVolAvg - downVolAvg) / (upVolAvg + downVolAvg)
+    obvDelta = c > c[1] ? v : c < c[1] ? -v : 0.0
+    obvLine = ta.cum(obvDelta)
+    obvSlope = ta.linreg(obvLine, len, 0) - ta.linreg(obvLine, len, 1)
+    obvAtr = ta.atr(len)
+    obvSlopeNorm = obvAtr == 0 ? 0.0 : obvSlope / obvAtr
+    [cmf, upDownRatio, clv, obvSlopeNorm]
+
+f_validationMetrics(sym, tf, rLen, aLen, chLen) =>
+    [c, rsiVal, atrNow] = request.security(sym, tf, [close, ta.rsi(close, rLen), ta.atr(aLen)])
+    atrChangePct = (atrNow - atrNow[chLen]) / atrNow[chLen] * 100
+    priceDir = c - c[chLen]
+    [rsiVal, atrChangePct, priceDir]
+
+f_cleanSym(s) =>
+    out = s
+    out := str.replace(out, "BINANCE:", "")
+    out := str.replace(out, "BYBIT:", "")
+    out := str.replace(out, "OKX:", "")
+    out := str.replace(out, "BITGET:", "")
+    out := str.replace(out, "USDT", "")
+    out
+
+f_zsafe(x, arr) =>
+    m = array.avg(arr)
+    sd = array.stdev(arr)
+    result = sd == 0 ? 0.0 : (x - m) / sd
+    result
+
+f_voteTrend(ang, rat) =>
+    v1 = ang > 0 ? 1 : ang < 0 ? -1 : 0
+    v2 = rat > 0 ? 1 : rat < 0 ? -1 : 0
+    total = v1 + v2
+    result = total > 0 ? 1 : total < 0 ? -1 : 0
+    result
+
+f_voteMomentum(rsiVal, upTh, dnTh) =>
+    result = rsiVal > upTh ? 1 : rsiVal < dnTh ? -1 : 0
+    result
+
+f_voteVolatility(atrChgPct, priceDir) =>
+    result = atrChgPct > 0 and priceDir > 0 ? 1 : atrChgPct > 0 and priceDir < 0 ? -1 : 0
+    result
+
+f_voteFlow(bsRaw) =>
+    result = bsRaw > 0 ? 1 : bsRaw < 0 ? -1 : 0
+    result
+
+f_voteRotation(scoreVal) =>
+    result = scoreVal > 0 ? 1 : scoreVal < 0 ? -1 : 0
+    result
+
+// توابع انتقال‌یافته به فضای سراسری (Global Scope) برای رفع خطای سینتکس
+f_voteText(v) =>
+    v > 0 ? "▲" : v < 0 ? "▼" : "–"
+
+f_signalLabel(buyC, sellC) =>
+    agree = math.max(buyC, sellC)
+    string sig = "خنثی"
+    if agree >= strongAgreeCount and buyC > sellC
+        sig := "خرید قطعی"
+    else if agree >= strongAgreeCount and sellC > buyC
+        sig := "فروش قطعی"
+    else if agree >= probableAgreeCount and buyC > sellC
+        sig := "خرید محتمل"
+    else if agree >= probableAgreeCount and sellC > buyC
+        sig := "فروش محتمل"
+    sig
+
+f_signalColor(buyC, sellC) =>
+    agree = math.max(buyC, sellC)
+    color sigColor = color.new(color.gray, 70)
+    if agree >= strongAgreeCount and buyC > sellC
+        sigColor := color.new(color.green, 60)
+    else if agree >= strongAgreeCount and sellC > buyC
+        sigColor := color.new(color.red, 60)
+    else if agree >= probableAgreeCount and buyC > sellC
+        sigColor := color.new(color.green, 82)
+    else if agree >= probableAgreeCount and sellC > buyC
+        sigColor := color.new(color.red, 82)
+    sigColor
+
+// ================== محاسبات دی‌ترند ==================
+dt1 = f_detrend(sym1, fibLength, maType, normMethod)
+dt2 = f_detrend(sym2, fibLength, maType, normMethod)
+dt3 = f_detrend(sym3, fibLength, maType, normMethod)
+dt4 = f_detrend(sym4, fibLength, maType, normMethod)
+dt5 = f_detrend(sym5, fibLength, maType, normMethod)
+
+// ================== محاسبات ایجنت جریان پول (چرخش نسبی) ==================
+[pc1, vc1, dvc1, ang1, rat1, piv1, bsp1, dv1] = f_flowMetrics(sym1, timeframe.period, fibLength, slopeLen, pivotLen, changeLen)
+[pc2, vc2, dvc2, ang2, rat2, piv2, bsp2, dv2] = f_flowMetrics(sym2, timeframe.period, fibLength, slopeLen, pivotLen, changeLen)
+[pc3, vc3, dvc3, ang3, rat3, piv3, bsp3, dv3] = f_flowMetrics(sym3, timeframe.period, fibLength, slopeLen, pivotLen, changeLen)
+[pc4, vc4, dvc4, ang4, rat4, piv4, bsp4, dv4] = f_flowMetrics(sym4, timeframe.period, fibLength, slopeLen, pivotLen, changeLen)
+[pc5, vc5, dvc5, ang5, rat5, piv5, bsp5, dv5] = f_flowMetrics(sym5, timeframe.period, fibLength, slopeLen, pivotLen, changeLen)
+
+// ================== محاسبات تشخیص خرید/فروش ==================
+[cmf1, ud1, clv1, obv1] = f_buySellMetrics(sym1, timeframe.period, bsLen)
+[cmf2, ud2, clv2, obv2] = f_buySellMetrics(sym2, timeframe.period, bsLen)
+[cmf3, ud3, clv3, obv3] = f_buySellMetrics(sym3, timeframe.period, bsLen)
+[cmf4, ud4, clv4, obv4] = f_buySellMetrics(sym4, timeframe.period, bsLen)
+[cmf5, ud5, clv5, obv5] = f_buySellMetrics(sym5, timeframe.period, bsLen)
+
+// ================== محاسبات ایجنت اجماع/صحت‌سنجی ==================
+[rsi1, atrCh1, pdir1] = f_validationMetrics(sym1, timeframe.period, rsiLen, atrChLen, changeLen)
+[rsi2, atrCh2, pdir2] = f_validationMetrics(sym2, timeframe.period, rsiLen, atrChLen, changeLen)
+[rsi3, atrCh3, pdir3] = f_validationMetrics(sym3, timeframe.period, rsiLen, atrChLen, changeLen)
+[rsi4, atrCh4, pdir4] = f_validationMetrics(sym4, timeframe.period, rsiLen, atrChLen, changeLen)
+[rsi5, atrCh5, pdir5] = f_validationMetrics(sym5, timeframe.period, rsiLen, atrChLen, changeLen)
+
+// ================== نمایش ==================
+plot(showSym1 ? dt1 : na, "نماد ۱", color=color.new(color.yellow, 0), linewidth=2)
+plot(showSym2 ? dt2 : na, "نماد ۲", color=color.new(color.aqua, 0), linewidth=2)
+plot(showSym3 ? dt3 : na, "نماد ۳", color=color.new(color.orange, 0), linewidth=2)
+plot(showSym4 ? dt4 : na, "نماد ۴", color=color.new(color.fuchsia, 0), linewidth=2)
+plot(showSym5 ? dt5 : na, "نماد ۵", color=color.new(color.lime, 0), linewidth=2)
+
+hline(showZeroLine ? 0 : na, "خط صفر", color=color.new(color.gray, 40), linestyle=hline.style_dashed)
+
+zBandUpper1 = normMethod == "زد اسکور" and showZBands ? 1.0 : na
+zBandLower1 = normMethod == "زد اسکور" and showZBands ? -1.0 : na
+zBandUpper2 = normMethod == "زد اسکور" and showZBands ? 2.0 : na
+zBandLower2 = normMethod == "زد اسکور" and showZBands ? -2.0 : na
+
+hline(zBandUpper1, "باند بالا ۱", color=color.new(color.gray, 60), linestyle=hline.style_dotted)
+hline(zBandLower1, "باند پایین ۱", color=color.new(color.gray, 60), linestyle=hline.style_dotted)
+hline(zBandUpper2, "باند بالا ۲", color=color.new(color.red, 70), linestyle=hline.style_dotted)
+hline(zBandLower2, "باند پایین ۲", color=color.new(color.red, 70), linestyle=hline.style_dotted)
+
+// ================== جداول ==================
+var table flowTbl = table.new(position.bottom_right, 10, 6, bgcolor=color.new(color.black, 75), border_width=1, border_color=color.gray, frame_width=1, frame_color=color.gray)
+var table sumTbl = table.new(position.top_right, 5, 2, bgcolor=color.new(color.black, 75), border_width=1, border_color=color.gray, frame_width=1, frame_color=color.gray)
+var table signalTbl = table.new(position.middle_right, 9, 6, bgcolor=color.new(color.black, 70), border_width=1, border_color=color.gray, frame_width=1, frame_color=color.gray)
+
+if showFlowAgent and barstate.islast
+    priceArr = array.from(pc1, pc2, pc3, pc4, pc5)
+    volArr = array.from(dvc1, dvc2, dvc3, dvc4, dvc5)
+    angleArr = array.from(ang1, ang2, ang3, ang4, ang5)
+    ratioArr = array.from(rat1, rat2, rat3, rat4, rat5)
+    pivotArr = array.from(piv1, piv2, piv3, piv4, piv5)
+
+    cmfArr = array.from(cmf1, cmf2, cmf3, cmf4, cmf5)
+    udArr = array.from(ud1, ud2, ud3, ud4, ud5)
+    clvArr = array.from(clv1, clv2, clv3, clv4, clv5)
+    obvArr = array.from(obv1, obv2, obv3, obv4, obv5)
+
+    score1 = wPrice * f_zsafe(pc1, priceArr) + wVol * f_zsafe(dvc1, volArr) + wAngle * f_zsafe(ang1, angleArr) + wRatio * f_zsafe(rat1, ratioArr) + wPivot * f_zsafe(piv1, pivotArr)
+    score2 = wPrice * f_zsafe(pc2, priceArr) + wVol * f_zsafe(dvc2, volArr) + wAngle * f_zsafe(ang2, angleArr) + wRatio * f_zsafe(rat2, ratioArr) + wPivot * f_zsafe(piv2, pivotArr)
+    score3 = wPrice * f_zsafe(pc3, priceArr) + wVol * f_zsafe(dvc3, volArr) + wAngle * f_zsafe(ang3, angleArr) + wRatio * f_zsafe(rat3, ratioArr) + wPivot * f_zsafe(piv3, pivotArr)
+    score4 = wPrice * f_zsafe(pc4, priceArr) + wVol * f_zsafe(dvc4, volArr) + wAngle * f_zsafe(ang4, angleArr) + wRatio * f_zsafe(rat4, ratioArr) + wPivot * f_zsafe(piv4, pivotArr)
+    score5 = wPrice * f_zsafe(pc5, priceArr) + wVol * f_zsafe(dvc5, volArr) + wAngle * f_zsafe(ang5, angleArr) + wRatio * f_zsafe(rat5, ratioArr) + wPivot * f_zsafe(piv5, pivotArr)
+
+    bsRaw1 = wCmf * cmf1 + wUpDownVol * ud1 + wClv * clv1 + wObv * obv1
+    bsRaw2 = wCmf * cmf2 + wUpDownVol * ud2 + wClv * clv2 + wObv * obv2
+    bsRaw3 = wCmf * cmf3 + wUpDownVol * ud3 + wClv * clv3 + wObv * obv3
+    bsRaw4 = wCmf * cmf4 + wUpDownVol * ud4 + wClv * clv4 + wObv * obv4
+    bsRaw5 = wCmf * cmf5 + wUpDownVol * ud5 + wClv * clv5 + wObv * obv5
+
+    bsArr = array.from(bsRaw1, bsRaw2, bsRaw3, bsRaw4, bsRaw5)
+    bsRel1 = f_zsafe(bsRaw1, bsArr)
+    bsRel2 = f_zsafe(bsRaw2, bsArr)
+    bsRel3 = f_zsafe(bsRaw3, bsArr)
+    bsRel4 = f_zsafe(bsRaw4, bsArr)
+    bsRel5 = f_zsafe(bsRaw5, bsArr)
+
+    scoreArr = array.from(score1, score2, score3, score4, score5)
+    dvArr = array.from(dv1, dv2, dv3, dv4, dv5)
+    nameArr = array.from(f_cleanSym(sym1), f_cleanSym(sym2), f_cleanSym(sym3), f_cleanSym(sym4), f_cleanSym(sym5))
+    bsRawArr = array.from(bsRaw1, bsRaw2, bsRaw3, bsRaw4, bsRaw5)
+    bsRelArr = array.from(bsRel1, bsRel2, bsRel3, bsRel4, bsRel5)
+
+    rank1 = 1
+    rank2 = 1
+    rank3 = 1
+    rank4 = 1
+    rank5 = 1
+    for j = 0 to 4
+        sj = array.get(scoreArr, j)
+        rank1 := sj > score1 ? rank1 + 1 : rank1
+        rank2 := sj > score2 ? rank2 + 1 : rank2
+        rank3 := sj > score3 ? rank3 + 1 : rank3
+        rank4 := sj > score4 ? rank4 + 1 : rank4
+        rank5 := sj > score5 ? rank5 + 1 : rank5
+
+    maxIdx = array.indexof(scoreArr, array.max(scoreArr))
+    minIdx = array.indexof(scoreArr, array.min(scoreArr))
+    scoreSpread = array.max(scoreArr) - array.min(scoreArr)
+    avgDollarVol = (array.get(dvArr, maxIdx) + array.get(dvArr, minIdx)) / 2
+    flowPctOfVol = math.min(math.abs(scoreSpread) * flowSensitivity, 100)
+    estFlowUSD = avgDollarVol * flowPctOfVol / 100
+
+    table.cell(flowTbl, 0, 0, "نماد", text_color=color.white, bgcolor=color.new(color.gray, 30))
+    table.cell(flowTbl, 1, 0, "قیمت Δ%", text_color=color.white, bgcolor=color.new(color.gray, 30))
+    table.cell(flowTbl, 2, 0, "حجم$ Δ%", text_color=color.white, bgcolor=color.new(color.gray, 30))
+    table.cell(flowTbl, 3, 0, "زاویه°", text_color=color.white, bgcolor=color.new(color.gray, 30))
+    table.cell(flowTbl, 4, 0, "نسبت MA%", text_color=color.white, bgcolor=color.new(color.gray, 30))
+    table.cell(flowTbl, 5, 0, "پیوت Δ%", text_color=color.white, bgcolor=color.new(color.gray, 30))
+    table.cell(flowTbl, 6, 0, "امتیاز چرخش", text_color=color.white, bgcolor=color.new(color.gray, 30))
+    table.cell(flowTbl, 7, 0, "رتبه", text_color=color.white, bgcolor=color.new(color.gray, 30))
+    table.cell(flowTbl, 8, 0, "جهت پول", text_color=color.white, bgcolor=color.new(color.gray, 30))
+    table.cell(flowTbl, 9, 0, "قدرت جهت", text_color=color.white, bgcolor=color.new(color.gray, 30))
+
+    for i = 0 to 4
+        rowScore = array.get(scoreArr, i)
+        rowRank = i == 0 ? rank1 : i == 1 ? rank2 : i == 2 ? rank3 : i == 3 ? rank4 : rank5
+        rowBsRaw = array.get(bsRawArr, i)
+        rowBsRel = array.get(bsRelArr, i)
+        rowColor = rowScore > 0 ? color.new(color.green, 80) : color.new(color.red, 80)
+        bsLabel = rowBsRaw > 0 ? "خرید" : "فروش"
+        bsColor = rowBsRaw > 0 ? color.new(color.green, 80) : color.new(color.red, 80)
+        table.cell(flowTbl, 0, i + 1, array.get(nameArr, i), text_color=color.white)
+        table.cell(flowTbl, 1, i + 1, str.tostring(i == 0 ? pc1 : i == 1 ? pc2 : i == 2 ? pc3 : i == 3 ? pc4 : pc5, "#.##"), text_color=color.white)
+        table.cell(flowTbl, 2, i + 1, str.tostring(i == 0 ? dvc1 : i == 1 ? dvc2 : i == 2 ? dvc3 : i == 3 ? dvc4 : dvc5, "#.##"), text_color=color.white)
+        table.cell(flowTbl, 3, i + 1, str.tostring(i == 0 ? ang1 : i == 1 ? ang2 : i == 2 ? ang3 : i == 3 ? ang4 : ang5, "#.#"), text_color=color.white)
+        table.cell(flowTbl, 4, i + 1, str.tostring(i == 0 ? rat1 : i == 1 ? rat2 : i == 2 ? rat3 : i == 3 ? rat4 : rat5, "#.##"), text_color=color.white)
+        table.cell(flowTbl, 5, i + 1, str.tostring(i == 0 ? piv1 : i == 1 ? piv2 : i == 2 ? piv3 : i == 3 ? piv4 : piv5, "#.##"), text_color=color.white)
+        table.cell(flowTbl, 6, i + 1, str.tostring(rowScore, "#.##"), text_color=color.white, bgcolor=rowColor)
+        table.cell(flowTbl, 7, i + 1, str.tostring(rowRank), text_color=color.white, bgcolor=rowColor)
+        table.cell(flowTbl, 8, i + 1, bsLabel, text_color=color.white, bgcolor=bsColor)
+        table.cell(flowTbl, 9, i + 1, str.tostring(rowBsRel, "#.##"), text_color=color.white, bgcolor=bsColor)
+
+    sourceBsLabel = array.get(bsRawArr, minIdx) > 0 ? "خرید ضعیف" : "فروش"
+    destBsLabel = array.get(bsRawArr, maxIdx) > 0 ? "خرید" : "فروش کاذب"
+
+    table.cell(sumTbl, 0, 0, "از (خروج پول)", text_color=color.white, bgcolor=color.new(color.gray, 30))
+    table.cell(sumTbl, 1, 0, "به (ورود پول)", text_color=color.white, bgcolor=color.new(color.gray, 30))
+    table.cell(sumTbl, 2, 0, "برآورد حجم($)", text_color=color.white, bgcolor=color.new(color.gray, 30))
+    table.cell(sumTbl, 3, 0, "جهت مبدا", text_color=color.white, bgcolor=color.new(color.gray, 30))
+    table.cell(sumTbl, 4, 0, "جهت مقصد", text_color=color.white, bgcolor=color.new(color.gray, 30))
+    table.cell(sumTbl, 0, 1, array.get(nameArr, minIdx), text_color=color.red)
+    table.cell(sumTbl, 1, 1, array.get(nameArr, maxIdx), text_color=color.green)
+    table.cell(sumTbl, 2, 1, str.tostring(estFlowUSD, "#,###"), text_color=color.yellow)
+    table.cell(sumTbl, 3, 1, sourceBsLabel, text_color=color.orange)
+    table.cell(sumTbl, 4, 1, destBsLabel, text_color=color.orange)
+
+    // ---------- ایجنت اجماع/صحت‌سنجی ----------
+    vT1 = f_voteTrend(ang1, rat1)
+    vT2 = f_voteTrend(ang2, rat2)
+    vT3 = f_voteTrend(ang3, rat3)
+    vT4 = f_voteTrend(ang4, rat4)
+    vT5 = f_voteTrend(ang5, rat5)
+
+    vM1 = f_voteMomentum(rsi1, rsiUpTh, rsiDnTh)
+    vM2 = f_voteMomentum(rsi2, rsiUpTh, rsiDnTh)
+    vM3 = f_voteMomentum(rsi3, rsiUpTh, rsiDnTh)
+    vM4 = f_voteMomentum(rsi4, rsiUpTh, rsiDnTh)
+    vM5 = f_voteMomentum(rsi5, rsiUpTh, rsiDnTh)
+
+    vV1 = f_voteVolatility(atrCh1, pdir1)
+    vV2 = f_voteVolatility(atrCh2, pdir2)
+    vV3 = f_voteVolatility(atrCh3, pdir3)
+    vV4 = f_voteVolatility(atrCh4, pdir4)
+    vV5 = f_voteVolatility(atrCh5, pdir5)
+
+    vF1 = f_voteFlow(bsRaw1)
+    vF2 = f_voteFlow(bsRaw2)
+    vF3 = f_voteFlow(bsRaw3)
+    vF4 = f_voteFlow(bsRaw4)
+    vF5 = f_voteFlow(bsRaw5)
+
+    vR1 = f_voteRotation(score1)
+    vR2 = f_voteRotation(score2)
+    vR3 = f_voteRotation(score3)
+    vR4 = f_voteRotation(score4)
+    vR5 = f_voteRotation(score5)
+
+    sumV1 = vT1 + vM1 + vV1 + vF1 + vR1
+    sumV2 = vT2 + vM2 + vV2 + vF2 + vR2
+    sumV3 = vT3 + vM3 + vV3 + vF3 + vR3
+    sumV4 = vT4 + vM4 + vV4 + vF4 + vR4
+    sumV5 = vT5 + vM5 + vV5 + vF5 + vR5
+
+    buyCount1 = (vT1 > 0 ? 1 : 0) + (vM1 > 0 ? 1 : 0) + (vV1 > 0 ? 1 : 0) + (vF1 > 0 ? 1 : 0) + (vR1 > 0 ? 1 : 0)
+    sellCount1 = (vT1 < 0 ? 1 : 0) + (vM1 < 0 ? 1 : 0) + (vV1 < 0 ? 1 : 0) + (vF1 < 0 ? 1 : 0) + (vR1 < 0 ? 1 : 0)
+    buyCount2 = (vT2 > 0 ? 1 : 0) + (vM2 > 0 ? 1 : 0) + (vV2 > 0 ? 1 : 0) + (vF2 > 0 ? 1 : 0) + (vR2 > 0 ? 1 : 0)
+    sellCount2 = (vT2 < 0 ? 1 : 0) + (vM2 < 0 ? 1 : 0) + (vV2 < 0 ? 1 : 0) + (vF2 < 0 ? 1 : 0) + (vR2 < 0 ? 1 : 0)
+    buyCount3 = (vT3 > 0 ? 1 : 0) + (vM3 > 0 ? 1 : 0) + (vV3 > 0 ? 1 : 0) + (vF3 > 0 ? 1 : 0) + (vR3 > 0 ? 1 : 0)
+    sellCount3 = (vT3 < 0 ? 1 : 0) + (vM3 < 0 ? 1 : 0) + (vV3 < 0 ? 1 : 0) + (vF3 < 0 ? 1 : 0) + (vR3 < 0 ? 1 : 0)
+    buyCount4 = (vT4 > 0 ? 1 : 0) + (vM4 > 0 ? 1 : 0) + (vV4 > 0 ? 1 : 0) + (vF4 > 0 ? 1 : 0) + (vR4 > 0 ? 1 : 0)
+    sellCount4 = (vT4 < 0 ? 1 : 0) + (vM4 < 0 ? 1 : 0) + (vV4 < 0 ? 1 : 0) + (vF4 < 0 ? 1 : 0) + (vR4 < 0 ? 1 : 0)
+    buyCount5 = (vT5 > 0 ? 1 : 0) + (vM5 > 0 ? 1 : 0) + (vV5 > 0 ? 1 : 0) + (vF5 > 0 ? 1 : 0) + (vR5 > 0 ? 1 : 0)
+    sellCount5 = (vT5 < 0 ? 1 : 0) + (vM5 < 0 ? 1 : 0) + (vV5 < 0 ? 1 : 0) + (vF5 < 0 ? 1 : 0) + (vR5 < 0 ? 1 : 0)
+
+    sig1 = f_signalLabel(buyCount1, sellCount1)
+    sig2 = f_signalLabel(buyCount2, sellCount2)
+    sig3 = f_signalLabel(buyCount3, sellCount3)
+    sig4 = f_signalLabel(buyCount4, sellCount4)
+    sig5 = f_signalLabel(buyCount5, sellCount5)
+
+    col1 = f_signalColor(buyCount1, sellCount1)
+    col2 = f_signalColor(buyCount2, sellCount2)
+    col3 = f_signalColor(buyCount3, sellCount3)
+    col4 = f_signalColor(buyCount4, sellCount4)
+    col5 = f_signalColor(buyCount5, sellCount5)
+
+    voteTArr = array.from(vT1, vT2, vT3, vT4, vT5)
+    voteMArr = array.from(vM1, vM2, vM3, vM4, vM5)
+    voteVArr = array.from(vV1, vV2, vV3, vV4, vV5)
+    voteFArr = array.from(vF1, vF2, vF3, vF4, vF5)
+    voteRArr = array.from(vR1, vR2, vR3, vR4, vR5)
+    buyCArr = array.from(buyCount1, buyCount2, buyCount3, buyCount4, buyCount5)
+    sellCArr = array.from(sellCount1, sellCount2, sellCount3, sellCount4, sellCount5)
+    sigArr = array.from(sig1, sig2, sig3, sig4, sig5)
+    colArr = array.from(col1, col2, col3, col4, col5)
+
+    table.cell(signalTbl, 0, 0, "نماد", text_color=color.white, bgcolor=color.new(color.gray, 20))
+    table.cell(signalTbl, 1, 0, "روند", text_color=color.white, bgcolor=color.new(color.gray, 20))
+    table.cell(signalTbl, 2, 0, "مومنتوم", text_color=color.white, bgcolor=color.new(color.gray, 20))
+    table.cell(signalTbl, 3, 0, "نوسان", text_color=color.white, bgcolor=color.new(color.gray, 20))
+    table.cell(signalTbl, 4, 0, "جریان پول", text_color=color.white, bgcolor=color.new(color.gray, 20))
+    table.cell(signalTbl, 5, 0, "چرخش", text_color=color.white, bgcolor=color.new(color.gray, 20))
+    table.cell(signalTbl, 6, 0, "خرید/کل", text_color=color.white, bgcolor=color.new(color.gray, 20))
+    table.cell(signalTbl, 7, 0, "فروش/کل", text_color=color.white, bgcolor=color.new(color.gray, 20))
+    table.cell(signalTbl, 8, 0, "سیگنال نهایی", text_color=color.white, bgcolor=color.new(color.gray, 20))
+
+    for i = 0 to 4
+        rBuy = array.get(buyCArr, i)
+        rSell = array.get(sellCArr, i)
+        rCol = array.get(colArr, i)
+        table.cell(signalTbl, 0, i + 1, array.get(nameArr, i), text_color=color.white)
+        table.cell(signalTbl, 1, i + 1, f_voteText(array.get(voteTArr, i)), text_color=color.white)
+        table.cell(signalTbl, 2, i + 1, f_voteText(array.get(voteMArr, i)), text_color=color.white)
+        table.cell(signalTbl, 3, i + 1, f_voteText(array.get(voteVArr, i)), text_color=color.white)
+        table.cell(signalTbl, 4, i + 1, f_voteText(array.get(voteFArr, i)), text_color=color.white)
+        table.cell(signalTbl, 5, i + 1, f_voteText(array.get(voteRArr, i)), text_color=color.white)
+        table.cell(signalTbl, 6, i + 1, str.tostring(rBuy) + "/۵", text_color=color.green)
+        table.cell(signalTbl, 7, i + 1, str.tostring(rSell) + "/۵", text_color=color.red)
+        table.cell(signalTbl, 8, i + 1, array.get(sigArr, i), text_color=color.white, bgcolor=rCol)

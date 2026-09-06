@@ -1,0 +1,53 @@
+//@version=5
+indicator("Interactive Two Points MA Symmetry (Whole Chart)", overlay=true)
+
+// ÏÑíÇÝÊ äÞÇØ
+t1 = input.time(0, title="Point 1", confirm=true, inline="p1")
+p1 = input.price(0, title="", confirm=true, inline="p1")
+t2 = input.time(0, title="Point 2", confirm=true, inline="p2")
+p2 = input.price(0, title="", confirm=true, inline="p2")
+
+// ãÍÇÓÈå ÔíÈ¡ ÒãÇä ãíÇäí æ ÞíãÊ ãíÇäí
+slope = (t2 - t1) != 0 ? (p2 - p1) / (t2 - t1) : 0
+mid_time = math.round((t1 + t2) / 2)
+cross_level = (p1 + p2) / 2
+
+// ãÍÇÓÈå Øæá ÈÇÒå æ ãææíä ÇæÑíÌ Çíå
+bar_ms = timeframe.in_seconds(timeframe.period) * 1000
+ma_len = math.max(1, math.round(math.abs(t2 - t1) / bar_ms))
+ma = ta.sma(close, ma_len)
+
+// ÇÚãÇá ÔíÈ ÇÕáí æ ãÚ˜æÓ
+ma_slope = ma + (slope * (time - mid_time))
+ma_inverse = ma - (slope * (time - mid_time))
+
+plot(ma_slope, color=color.blue, title="MA Normal Slope")
+plot(ma_inverse, color=color.red, title="MA Inverse Slope")
+plot(cross_level, color=color.gray, style=plot.style_line, title="Horizontal Cross Level")
+
+// ?. ÞÑíäåÓÇÒí ˜äÏáåÇ äÓÈÊ Èå ÓØÍ ÇÝÞí ÊÞÇØÚ
+sym_open  = (2 * cross_level) - open
+sym_high  = (2 * cross_level) - low  // ˜Ý ÇÕáí ãíÔæÏ ÓÞÝ ÞÑíäå
+sym_low   = (2 * cross_level) - high // ÓÞÝ ÇÕáí ãíÔæÏ ˜Ý ÞÑíäå
+sym_close = (2 * cross_level) - close
+
+candle_color = sym_close >= sym_open ? color.new(color.orange, 50) : color.orange
+plotcandle(sym_open, sym_high, sym_low, sym_close, title="Symmetrical Candles", color=candle_color, wickcolor=color.orange, bordercolor=color.orange)
+
+// ?. ÞÑíäåÓÇÒí ãÌÏÏ ˜äÏáåÇí äÇÑäÌí äÓÈÊ Èå ãææíä ÔíÈÏÇÑ ÇÕáí (ÓÈÒ)
+final_slope_open  = (2 * ma_slope) - sym_open
+final_slope_high  = (2 * ma_slope) - sym_low   // ˜Ý äÇÑäÌí ãíÔæÏ ÓÞÝ ÓÈÒ
+final_slope_low   = (2 * ma_slope) - sym_high  // ÓÞÝ äÇÑäÌí ãíÔæÏ ˜Ý ÓÈÒ
+final_slope_close = (2 * ma_slope) - sym_close
+
+slope_candle_color = final_slope_close >= final_slope_open ? color.new(color.green, 50) : color.green
+plotcandle(final_slope_open, final_slope_high, final_slope_low, final_slope_close, title="Final Symmetrical Candles (Normal MA)", color=slope_candle_color, wickcolor=color.green, bordercolor=color.green)
+
+// ?. ÞÑíäåÓÇÒí ãÌÏÏ ˜äÏáåÇí äÇÑäÌí äÓÈÊ Èå ãææíä ÔíÈÏÇÑ ãÚ˜æÓ (ÈäÝÔ)
+final_inv_open  = (2 * ma_inverse) - sym_open
+final_inv_high  = (2 * ma_inverse) - sym_low   // ˜Ý äÇÑäÌí ãíÔæÏ ÓÞÝ ÈäÝÔ
+final_inv_low   = (2 * ma_inverse) - sym_high  // ÓÞÝ äÇÑäÌí ãíÔæÏ ˜Ý ÈäÝÔ
+final_inv_close = (2 * ma_inverse) - sym_close
+
+inv_candle_color = final_inv_close >= final_inv_open ? color.new(color.purple, 50) : color.purple
+plotcandle(final_inv_open, final_inv_high, final_inv_low, final_inv_close, title="Final Symmetrical Candles (Inverse MA)", color=inv_candle_color, wickcolor=color.purple, bordercolor=color.purple)

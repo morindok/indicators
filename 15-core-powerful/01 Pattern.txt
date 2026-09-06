@@ -1,0 +1,23 @@
+//@version=5
+indicator("0-1 Reversal Signals", overlay=true)
+
+//  ‰ŸÌ„ Õœ«ﬁ· ÿÊ· —‘ Â »—«Ì  «ÌÌœ ‰ﬁÿÂ »«“ê‘ Ì (ﬁ«»·  €ÌÌ— «“  ‰ŸÌ„«  «‰œÌò« Ê—)
+streak_length = input.int(5, title="Minimum Pattern Length")
+
+//  ‘ŒÌ’ ò‰œ· 1 (”»“) Ê 0 (ﬁ—„“)
+is_1 = close >= open
+is_0 = close < open
+
+// ‘„«—‘  ⁄œ«œ 1Â« Ê 0Â«Ì „ Ê«·Ì
+var int count_1 = 0
+var int count_0 = 0
+count_1 := is_1 ? count_1 + 1 : 0
+count_0 := is_0 ? count_0 + 1 : 0
+
+// ’œÊ— ”Ìê‰«· »«“ê‘ Ì: Ÿ«Â— ‘œ‰ 1 »⁄œ «“ Ìò —‘ Â ÿÊ·«‰Ì 0 (Œ—Ìœ) Ì« »—⁄ò” (›—Ê‘)
+bullish_signal = is_1 and count_0[1] >= streak_length
+bearish_signal = is_0 and count_1[1] >= streak_length
+
+// ‰„«Ì‘ ”Ìê‰«· —ÊÌ ç«—  »œÊ‰ «” ›«œÂ «“ œ” Ê—«  ç‰œ ŒÿÌ
+plotshape(bullish_signal, title="Buy Signal", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.normal, text="BUY")
+plotshape(bearish_signal, title="Sell Signal", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.normal, text="SELL")

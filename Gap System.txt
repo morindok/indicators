@@ -1,0 +1,248 @@
+//@version=5
+indicator("Price Level Symmetry", overlay=true)
+
+level1 = input.price(100, "Level 1", confirm=true)
+level2 = input.price(200, "Level 2", confirm=true)
+midLevel = input.price(150, "Mid Level", confirm=true)
+useDistance = input.bool(true, "Use Mid Level Distance")
+useBoundarySymmetry = input.bool(true, "Use Boundary Symmetry")
+showBoundaryCandles = input.bool(true, "Show Boundary Touch Candles")
+maLength = input.int(20, "Moving Average Length", minval=1)
+showMA = input.bool(false, "Show Moving Average on Mid Level")
+maType = input.string("SMA", "MA Type", options=["SMA", "EMA", "WMA"])
+useSymmetricMA = input.bool(false, "Use Symmetric Moving Average") // New input for symmetric MA
+useAngle = input.bool(true, "Use Angle")
+anchorTime = input.time(timestamp("2024-01-01 00:00"), "Anchor Time", confirm=true)
+skipWeekend = input.bool(false, "Skip Weekend Gaps (For Gold/Forex)")
+upperAngle = input.float(0, "Upper Level Angle (degrees)", step=0.1)
+lowerAngle = input.float(0, "Lower Level Angle (degrees)", step=0.1)
+midAngle = input.float(0, "Mid Level Angle (degrees)", step=0.1)
+showGapBoxes = input.bool(true, "Show Gap Boxes")
+gapBoxColor = input.color(color.new(color.purple, 80), "Gap Box Color")
+
+float baseUpperLevel = math.max(level1, level2)
+float baseLowerLevel = math.min(level1, level2)
+
+float week_ms = 604800000.0
+float weekend_ms = skipWeekend ? (math.floor((time + 345600000.0) / week_ms) - math.floor((anchorTime + 345600000.0) / week_ms)) * 172800000.0 : 0.0
+float x = ((time - anchorTime) - weekend_ms) / 60000.0
+
+float upperLevel = baseUpperLevel
+float lowerLevel = baseLowerLevel
+float adjustedMidLevel = midLevel
+
+if useAngle
+    float upperSlope = math.tan(upperAngle * math.pi / 180)
+    float lowerSlope = math.tan(lowerAngle * math.pi / 180)
+    float midSlope = math.tan(midAngle * math.pi / 180)
+    upperLevel := baseUpperLevel + upperSlope * x
+    lowerLevel := baseLowerLevel + lowerSlope * x
+    adjustedMidLevel := midLevel + midSlope * x
+
+plot(upperLevel, "Upper Level", color=color.red, linewidth=2)
+plot(lowerLevel, "Lower Level", color=color.blue, linewidth=2)
+plot(adjustedMidLevel, "Mid Level", color=color.yellow, linewidth=2)
+
+float theoreticalMid = (upperLevel + lowerLevel) / 2
+float userOffset = adjustedMidLevel - theoreticalMid
+
+// MA Calculation with Symmetric Option
+float symmetricPriceForMA = close < adjustedMidLevel ? adjustedMidLevel + (adjustedMidLevel - close) : adjustedMidLevel - (close - adjustedMidLevel)
+float maSource = useSymmetricMA ? symmetricPriceForMA : close
+float ma = na
+if maType == "SMA"
+    ma := ta.sma(maSource, maLength)
+else if maType == "EMA"
+    ma := ta.ema(maSource, maLength)
+else if maType == "WMA"
+    ma := ta.wma(maSource, maLength)
+
+float maWithOffset = ma + userOffset
+float midMA = showMA ? maWithOffset : na
+
+float activeMidLevel = showMA ? midMA : adjustedMidLevel
+
+distanceToUpper = upperLevel - activeMidLevel
+distanceToLower = activeMidLevel - lowerLevel
+
+bool touchedUpper = high >= upperLevel
+bool touchedLower = low <= lowerLevel
+
+var float symmetricOpen = na
+var float symmetricHigh = na
+var float symmetricLow = na
+var float symmetricClose = na
+
+var float inverseOpen = na
+var float inverseHigh = na
+var float inverseLow = na
+var float inverseClose = na
+
+var float boundarySymmetricOpen = na
+var float boundarySymmetricHigh = na
+var float boundarySymmetricLow = na
+var float boundarySymmetricClose = na
+
+// Variables for gap detection and box management
+var float prevBoundaryHigh = na
+var float prevBoundaryLow = na
+var bool gapDetected = false
+var int gapStartBar = na
+var float gapTop = na
+var float gapBottom = na
+var box[] activeBoxes = array.new_box()
+
+// Function to get symmetric price based on MA source
+var float symmetricPriceSource = na
+symmetricPriceSource := useSymmetricMA ? symmetricPriceForMA : close
+
+// Function to get the correct price source (normal or symmetric) for calculations
+getPriceSource(price, isSymmetric) =>
+    isSymmetric ? (price < activeMidLevel ? symmetricPriceSource + (symmetricPriceSource - price) : symmetricPriceSource - (price - symmetricPriceSource)) : price
+
+if useDistance
+    // Use getPriceSource for open, high, low, close when useSymmetricMA is true
+    openSource = getPriceSource(open, useSymmetricMA)
+    highSource = getPriceSource(high, useSymmetricMA)
+    lowSource = getPriceSource(low, useSymmetricMA)
+    closeSource = getPriceSource(close, useSymmetricMA)
+
+    symmetricOpen := openSource < activeMidLevel ? upperLevel + distanceToUpper * ((activeMidLevel - openSource) / distanceToLower) : lowerLevel - distanceToLower * ((openSource - activeMidLevel) / distanceToUpper)
+    symmetricHigh := highSource < activeMidLevel ? upperLevel + distanceToUpper * ((activeMidLevel - highSource) / distanceToLower) : lowerLevel - distanceToLower * ((highSource - activeMidLevel) / distanceToUpper)
+    symmetricLow := lowSource < activeMidLevel ? upperLevel + distanceToUpper * ((activeMidLevel - lowSource) / distanceToLower) : lowerLevel - distanceToLower * ((lowSource - activeMidLevel) / distanceToUpper)
+    symmetricClose := closeSource < activeMidLevel ? upperLevel + distanceToUpper * ((activeMidLevel - closeSource) / distanceToLower) : lowerLevel - distanceToLower * ((closeSource - activeMidLevel) / distanceToUpper)
+    
+    // Inverse calculations, also considering the symmetric source if enabled
+    inverseOpenSource = getPriceSource(open, useSymmetricMA)
+    inverseHighSource = getPriceSource(high, useSymmetricMA)
+    inverseLowSource = getPriceSource(low, useSymmetricMA)
+    inverseCloseSource = getPriceSource(close, useSymmetricMA)
+
+    inverseOpen := inverseOpenSource > activeMidLevel ? upperLevel + distanceToUpper * ((inverseOpenSource - activeMidLevel) / distanceToUpper) : lowerLevel - distanceToLower * ((activeMidLevel - inverseOpenSource) / distanceToLower)
+    inverseHigh := inverseHighSource > activeMidLevel ? upperLevel + distanceToUpper * ((inverseHighSource - activeMidLevel) / distanceToUpper) : lowerLevel - distanceToLower * ((activeMidLevel - inverseHighSource) / distanceToLower)
+    inverseLow := inverseLowSource > activeMidLevel ? upperLevel + distanceToUpper * ((inverseLowSource - activeMidLevel) / distanceToUpper) : lowerLevel - distanceToLower * ((activeMidLevel - inverseLowSource) / distanceToLower)
+    inverseClose := inverseCloseSource > activeMidLevel ? upperLevel + distanceToUpper * ((inverseCloseSource - activeMidLevel) / distanceToUpper) : lowerLevel - distanceToLower * ((activeMidLevel - inverseCloseSource) / distanceToLower)
+
+    if useBoundarySymmetry
+        symmetricOpen := symmetricOpen < lowerLevel ? lowerLevel + (lowerLevel - symmetricOpen) : symmetricOpen > upperLevel ? upperLevel - (symmetricOpen - upperLevel) : symmetricOpen
+        symmetricHigh := symmetricHigh < lowerLevel ? lowerLevel + (lowerLevel - symmetricHigh) : symmetricHigh > upperLevel ? upperLevel - (symmetricHigh - upperLevel) : symmetricHigh
+        symmetricLow := symmetricLow < lowerLevel ? lowerLevel + (lowerLevel - symmetricLow) : symmetricLow > upperLevel ? upperLevel - (symmetricLow - upperLevel) : symmetricLow
+        symmetricClose := symmetricClose < lowerLevel ? lowerLevel + (lowerLevel - symmetricClose) : symmetricClose > upperLevel ? upperLevel - (symmetricClose - upperLevel) : symmetricClose
+        inverseOpen := inverseOpen < lowerLevel ? lowerLevel + (lowerLevel - inverseOpen) : inverseOpen > upperLevel ? upperLevel - (inverseOpen - upperLevel) : inverseOpen
+        inverseHigh := inverseHigh < lowerLevel ? lowerLevel + (lowerLevel - inverseHigh) : inverseHigh > upperLevel ? upperLevel - (inverseHigh - upperLevel) : inverseHigh
+        inverseLow := inverseLow < lowerLevel ? lowerLevel + (lowerLevel - inverseLow) : inverseLow > upperLevel ? upperLevel - (inverseLow - upperLevel) : inverseLow
+        inverseClose := inverseClose < lowerLevel ? lowerLevel + (lowerLevel - inverseClose) : inverseClose > upperLevel ? upperLevel - (inverseClose - upperLevel) : inverseClose
+    if touchedUpper
+        boundarySymmetricOpen := lowerLevel - distanceToLower * ((openSource - activeMidLevel) / distanceToUpper)
+        boundarySymmetricHigh := lowerLevel - distanceToLower * ((highSource - activeMidLevel) / distanceToUpper)
+        boundarySymmetricLow := lowerLevel - distanceToLower * ((lowSource - activeMidLevel) / distanceToUpper)
+        boundarySymmetricClose := lowerLevel - distanceToLower * ((closeSource - activeMidLevel) / distanceToUpper)
+    else if touchedLower
+        boundarySymmetricOpen := upperLevel + distanceToUpper * ((activeMidLevel - openSource) / distanceToLower)
+        boundarySymmetricHigh := upperLevel + distanceToUpper * ((activeMidLevel - highSource) / distanceToLower)
+        boundarySymmetricLow := upperLevel + distanceToUpper * ((activeMidLevel - lowSource) / distanceToLower)
+        boundarySymmetricClose := upperLevel + distanceToUpper * ((activeMidLevel - closeSource) / distanceToLower)
+    else
+        boundarySymmetricOpen := na
+        boundarySymmetricHigh := na
+        boundarySymmetricLow := na
+        boundarySymmetricClose := na
+else
+    // Use getPriceSource for open, high, low, close when useSymmetricMA is true
+    openSource = getPriceSource(open, useSymmetricMA)
+    highSource = getPriceSource(high, useSymmetricMA)
+    lowSource = getPriceSource(low, useSymmetricMA)
+    closeSource = getPriceSource(close, useSymmetricMA)
+
+    symmetricOpen := openSource < activeMidLevel ? upperLevel + (upperLevel - openSource) : lowerLevel + (lowerLevel - openSource)
+    symmetricHigh := highSource < activeMidLevel ? upperLevel + (upperLevel - highSource) : lowerLevel + (lowerLevel - highSource)
+    symmetricLow := lowSource < activeMidLevel ? upperLevel + (upperLevel - lowSource) : lowerLevel + (lowerLevel - lowSource)
+    symmetricClose := closeSource < activeMidLevel ? upperLevel + (upperLevel - closeSource) : lowerLevel + (lowerLevel - closeSource)
+    
+    // Inverse calculations, also considering the symmetric source if enabled
+    inverseOpenSource = getPriceSource(open, useSymmetricMA)
+    inverseHighSource = getPriceSource(high, useSymmetricMA)
+    inverseLowSource = getPriceSource(low, useSymmetricMA)
+    inverseCloseSource = getPriceSource(close, useSymmetricMA)
+
+    inverseOpen := inverseOpenSource > activeMidLevel ? upperLevel + (inverseOpenSource - upperLevel) : lowerLevel + (inverseOpenSource - lowerLevel)
+    inverseHigh := inverseHighSource > activeMidLevel ? upperLevel + (inverseHighSource - upperLevel) : lowerLevel + (inverseHighSource - lowerLevel)
+    inverseLow := inverseLowSource > activeMidLevel ? upperLevel + (inverseLowSource - upperLevel) : lowerLevel + (inverseLowSource - lowerLevel)
+    inverseClose := inverseCloseSource > activeMidLevel ? upperLevel + (inverseCloseSource - upperLevel) : lowerLevel + (inverseCloseSource - lowerLevel)
+
+    if touchedUpper
+        boundarySymmetricOpen := lowerLevel - (openSource - lowerLevel)
+        boundarySymmetricHigh := lowerLevel - (highSource - lowerLevel)
+        boundarySymmetricLow := lowerLevel - (lowSource - lowerLevel)
+        boundarySymmetricClose := lowerLevel - (closeSource - lowerLevel)
+    else if touchedLower
+        boundarySymmetricOpen := upperLevel + (upperLevel - openSource)
+        boundarySymmetricHigh := upperLevel + (upperLevel - highSource)
+        boundarySymmetricLow := upperLevel + (upperLevel - lowSource)
+        boundarySymmetricClose := upperLevel + (upperLevel - closeSource)
+    else
+        boundarySymmetricOpen := na
+        boundarySymmetricHigh := na
+        boundarySymmetricLow := na
+        boundarySymmetricClose := na
+
+// Gap detection logic for boundary candles
+if showGapBoxes and not na(boundarySymmetricHigh) and not na(boundarySymmetricLow)
+    // Find the true visual TOP and BOTTOM of the current boundary (purple) candle
+    // These should use the boundary symmetric values directly, as they represent the candle's extremities
+    float currentPurpleTop = math.max(boundarySymmetricHigh, boundarySymmetricLow)
+    float currentPurpleBottom = math.min(boundarySymmetricHigh, boundarySymmetricLow)
+
+    // Check if there's a gap between current and previous boundary candle
+    if not na(prevBoundaryHigh) and not na(prevBoundaryLow)
+        // Find true visual TOP and BOTTOM of the previous boundary (purple) candle
+        float prevPurpleTop = math.max(prevBoundaryHigh, prevBoundaryLow)
+        float prevPurpleBottom = math.min(prevBoundaryHigh, prevBoundaryLow)
+
+        // Gap up: current purple BOTTOM > previous purple TOP
+        if currentPurpleBottom > prevPurpleTop
+            gapDetected := true
+            gapStartBar := bar_index
+            gapTop := currentPurpleBottom // The top of the gap is the bottom of the current candle
+            gapBottom := prevPurpleTop    // The bottom of the gap is the top of the previous candle
+            // Create new box
+            newBox = box.new(gapStartBar - 1, gapTop, gapStartBar, gapBottom, 
+                           border_color=gapBoxColor, bgcolor=gapBoxColor, 
+                           extend=extend.right, xloc=xloc.bar_index)
+            array.push(activeBoxes, newBox)
+            
+        // Gap down: current purple TOP < previous purple BOTTOM
+        else if currentPurpleTop < prevPurpleBottom
+            gapDetected := true
+            gapStartBar := bar_index
+            gapTop := prevPurpleBottom    // The top of the gap is the bottom of the previous candle
+            gapBottom := currentPurpleTop // The bottom of the gap is the top of the current candle
+            // Create new box
+            newBox = box.new(gapStartBar - 1, gapTop, gapStartBar, gapBottom, 
+                           border_color=gapBoxColor, bgcolor=gapBoxColor, 
+                           extend=extend.right, xloc=xloc.bar_index)
+            array.push(activeBoxes, newBox)
+    
+    // Update previous boundary candle values (these are the raw symmetric values before boundary clamping)
+    prevBoundaryHigh := boundarySymmetricHigh
+    prevBoundaryLow := boundarySymmetricLow
+else if na(boundarySymmetricHigh) or na(boundarySymmetricLow)
+    // Reset when no boundary candle exists
+    prevBoundaryHigh := na
+    prevBoundaryLow := na
+
+// Check if price fills any active gap boxes
+if array.size(activeBoxes) > 0
+    for i = array.size(activeBoxes) - 1 to 0
+        currentBox = array.get(activeBoxes, i)
+        boxTop = box.get_top(currentBox)
+        boxBottom = box.get_bottom(currentBox)
+        
+        // Check if current price candle intersects with the gap box
+        // This check remains based on the actual price (high/low)
+        if (high >= boxBottom and low <= boxTop)
+            // Price has filled the gap, stop extending the box
+            box.set_right(currentBox, bar_index)
+            box.set_extend(currentBox, extend.none)
+            // Remove from active boxes array
+            array.remove(activeBoxes, i)

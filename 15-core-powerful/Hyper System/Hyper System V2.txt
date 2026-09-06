@@ -1,0 +1,129 @@
+//@version=5
+indicator("Interactive Two Points MA Symmetry", overlay=true, max_bars_back=5000)
+
+t1 = input.time(0, title="Point 1", confirm=true, inline="p1")
+p1 = input.price(0, title="", confirm=true, inline="p1")
+t2 = input.time(0, title="Point 2", confirm=true, inline="p2")
+p2 = input.price(0, title="", confirm=true, inline="p2")
+
+use_manual_ma = input.bool(false, title="Use Manual MA Length")
+manual_ma_len = input.int(14, title="Manual MA Length", minval=1)
+
+orange_angle = input.float(45.0, title="Orange Level Angle (Degrees)", step=1.0)
+use_sep_horiz = input.bool(false, title="Separate Horizontal Symmetry (Upper/Lower)")
+use_cum_slope = input.bool(false, title="Continue Price with Cumulative Slope after T2")
+
+slope = (t2 - t1) != 0 ? (p2 - p1) / (t2 - t1) : 0
+mid_time = math.round((t1 + t2) / 2)
+cross_level = (p1 + p2) / 2
+
+bar_ms = timeframe.in_seconds(timeframe.period) * 1000
+auto_ma_len = math.max(1, math.round(math.abs(t2 - t1) / bar_ms))
+ma_len = use_manual_ma ? manual_ma_len : auto_ma_len
+
+ma = ta.sma(close, ma_len)
+
+ma_slope = ma + (slope * (time - mid_time))
+ma_inverse = ma - (slope * (time - mid_time))
+
+plot(ma_slope, color=color.blue, title="MA Normal Slope")
+plot(ma_inverse, color=color.red, title="MA Inverse Slope")
+plot(cross_level, color=color.gray, style=plot.style_line, title="Horizontal Cross Level")
+
+ma_sym = (2 * cross_level) - ma
+ma_sym_slope = ma_sym + (slope * (time - mid_time))
+ma_sym_inverse = ma_sym - (slope * (time - mid_time))
+
+plot(ma_sym_slope, color=color.aqua, title="Symmetric MA Normal Slope")
+plot(ma_sym_inverse, color=color.maroon, title="Symmetric MA Inverse Slope")
+
+sym_open  = (2 * cross_level) - open
+sym_high  = (2 * cross_level) - low  
+sym_low   = (2 * cross_level) - high 
+sym_close = (2 * cross_level) - close
+
+final_slope_open  = (2 * ma_slope) - sym_open
+final_slope_high  = (2 * ma_slope) - sym_low   
+final_slope_low   = (2 * ma_slope) - sym_high  
+final_slope_close = (2 * ma_slope) - sym_close
+slope_candle_color = final_slope_close >= final_slope_open ? color.new(color.green, 50) : color.green
+plotcandle(final_slope_open, final_slope_high, final_slope_low, final_slope_close, title="Final Symmetrical Candles (Normal MA)", color=slope_candle_color, wickcolor=color.green, bordercolor=color.green)
+
+final_inv_open  = (2 * ma_inverse) - sym_open
+final_inv_high  = (2 * ma_inverse) - sym_low   
+final_inv_low   = (2 * ma_inverse) - sym_high  
+final_inv_close = (2 * ma_inverse) - sym_close
+inv_candle_color = final_inv_close >= final_inv_open ? color.new(color.purple, 50) : color.purple
+plotcandle(final_inv_open, final_inv_high, final_inv_low, final_inv_close, title="Final Symmetrical Candles (Inverse MA)", color=inv_candle_color, wickcolor=color.purple, bordercolor=color.purple)
+
+final_sym_slope_open  = (2 * ma_sym_slope) - sym_open
+final_sym_slope_high  = (2 * ma_sym_slope) - sym_low   
+final_sym_slope_low   = (2 * ma_sym_slope) - sym_high  
+final_sym_slope_close = (2 * ma_sym_slope) - sym_close
+sym_slope_candle_color = final_sym_slope_close >= final_sym_slope_open ? color.new(color.aqua, 50) : color.aqua
+plotcandle(final_sym_slope_open, final_sym_slope_high, final_sym_slope_low, final_sym_slope_close, title="Final Symmetrical Candles (Sym MA)", color=sym_slope_candle_color, wickcolor=color.aqua, bordercolor=color.aqua)
+
+final_sym_inv_open  = (2 * ma_sym_inverse) - sym_open
+final_sym_inv_high  = (2 * ma_sym_inverse) - sym_low   
+final_sym_inv_low   = (2 * ma_sym_inverse) - sym_high  
+final_sym_inv_close = (2 * ma_sym_inverse) - sym_close
+sym_inv_candle_color = final_sym_inv_close >= final_sym_inv_open ? color.new(color.maroon, 50) : color.maroon
+plotcandle(final_sym_inv_open, final_sym_inv_high, final_sym_inv_low, final_sym_inv_close, title="Final Symmetrical Candles (Sym Inverse MA)", color=sym_inv_candle_color, wickcolor=color.maroon, bordercolor=color.maroon)
+
+is_cross_point = time >= mid_time and time[1] < mid_time
+cross_price_2 = ta.valuewhen(is_cross_point, ma_sym_slope, 0)
+cross_time_2  = ta.valuewhen(is_cross_point, time, 0)
+
+auto_price_scale = nz(ta.valuewhen(is_cross_point, ta.atr(100), 0), syminfo.mintick)
+bars_since_cross = (time - cross_time_2) / bar_ms
+orange_slope_per_bar = math.tan(orange_angle * math.pi / 180) * auto_price_scale
+orange_line_price = cross_price_2 + (orange_slope_per_bar * bars_since_cross)
+
+plot(orange_line_price, color=color.orange, style=plot.style_cross, linewidth=2, title="Symmetry Level (Orange Line)")
+
+cp2_open  = (2 * orange_line_price) - open
+cp2_close = (2 * orange_line_price) - close
+cp2_high  = (2 * orange_line_price) - low
+cp2_low   = (2 * orange_line_price) - high
+
+cp2_color = cp2_close >= cp2_open ? color.new(color.fuchsia, 0) : color.new(color.blue, 0)
+plotcandle(cp2_open, cp2_high, cp2_low, cp2_close, title="Candles Symmetrical to Orange Level", color=cp2_color, wickcolor=cp2_color, bordercolor=cp2_color)
+
+line_price = p1 + (slope * (time - t1))
+plot(line_price, color=color.yellow, linewidth=2, title="Main Line Between 2 Points")
+
+p2p_sym_open = (2 * line_price) - open
+p2p_sym_high = (2 * line_price) - low
+p2p_sym_low = (2 * line_price) - high
+p2p_sym_close = (2 * line_price) - close
+p2p_color = p2p_sym_close >= p2p_sym_open ? color.new(color.orange, 50) : color.orange
+plotcandle(p2p_sym_open, p2p_sym_high, p2p_sym_low, p2p_sym_close, title="Symmetrical Price (Line)", color=p2p_color, wickcolor=p2p_color, bordercolor=p2p_color)
+
+upper_lvl = math.max(p1, p2)
+lower_lvl = math.min(p1, p2)
+
+up_sym_open  = use_sep_horiz ? (2 * upper_lvl) - open  : na
+up_sym_high  = use_sep_horiz ? (2 * upper_lvl) - low   : na
+up_sym_low   = use_sep_horiz ? (2 * upper_lvl) - high  : na
+up_sym_close = use_sep_horiz ? (2 * upper_lvl) - close : na
+up_sym_color = up_sym_close >= up_sym_open ? color.new(color.teal, 50) : color.teal
+plotcandle(up_sym_open, up_sym_high, up_sym_low, up_sym_close, title="Upper Horizontal Symmetry", color=up_sym_color, wickcolor=up_sym_color, bordercolor=up_sym_color)
+
+dn_sym_open  = use_sep_horiz ? (2 * lower_lvl) - open  : na
+dn_sym_high  = use_sep_horiz ? (2 * lower_lvl) - low   : na
+dn_sym_low   = use_sep_horiz ? (2 * lower_lvl) - high  : na
+dn_sym_close = use_sep_horiz ? (2 * lower_lvl) - close : na
+dn_sym_color = dn_sym_close >= dn_sym_open ? color.new(color.red, 50) : color.red
+plotcandle(dn_sym_open, dn_sym_high, dn_sym_low, dn_sym_close, title="Lower Horizontal Symmetry", color=dn_sym_color, wickcolor=dn_sym_color, bordercolor=dn_sym_color)
+
+// ==========================================
+// Continue Price with Cumulative Slope
+// ==========================================
+cum_shift = time > t2 ? (slope * (time - t2)) : 0
+cum_open  = (use_cum_slope and time > t2) ? open + cum_shift : na
+cum_high  = (use_cum_slope and time > t2) ? high + cum_shift : na
+cum_low   = (use_cum_slope and time > t2) ? low  + cum_shift : na
+cum_close = (use_cum_slope and time > t2) ? close+ cum_shift : na
+
+cum_color = cum_close >= cum_open ? color.new(color.white, 50) : color.white
+plotcandle(cum_open, cum_high, cum_low, cum_close, title="Price Continued with Cumulative Slope", color=cum_color, wickcolor=cum_color, bordercolor=cum_color)

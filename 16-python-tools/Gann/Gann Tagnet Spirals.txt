@@ -1,0 +1,163 @@
+import dash
+from dash import dcc, html, Input, Output
+
+
+def generate_spiral_indices(size, reverse_dir=False):
+    matrix = [[-1] * size for _ in range(size)]
+    r, c = size // 2, size // 2
+    matrix[r][c] = 0
+
+    if reverse_dir:
+        dr, dc = [0, -1, 0, 1], [-1, 0, 1, 0]
+    else:
+        dr, dc = [0, -1, 0, 1], [1, 0, -1, 0]
+
+    dir_idx, step_length, current_step, direction_changes = 0, 1, 0, 0
+
+    for i in range(1, size * size):
+        r, c = r + dr[dir_idx], c + dc[dir_idx]
+        if 0 <= r < size and 0 <= c < size: matrix[r][c] = i
+        current_step += 1
+        if current_step == step_length:
+            current_step, dir_idx = 0, (dir_idx + 1) % 4
+            direction_changes += 1
+            if direction_changes % 2 == 0: step_length += 1
+    return matrix
+
+
+CARD_STYLE = {'backgroundColor': '#ffffff', 'borderRadius': '12px', 'padding': '20px',
+              'boxShadow': '0 4px 6px rgba(0,0,0,0.05)', 'flex': '1', 'margin': '10px', 'border': '1px solid #e2e8f0'}
+LABEL_STYLE = {'display': 'block', 'marginBottom': '8px', 'fontWeight': '600', 'color': '#4a5568', 'fontSize': '14px'}
+INPUT_STYLE = {'width': '100%', 'padding': '10px', 'borderRadius': '6px', 'border': '1px solid #cbd5e0',
+               'boxSizing': 'border-box', 'marginBottom': '15px', 'fontSize': '14px'}
+
+app = dash.Dash(__name__)
+
+app.layout = html.Div(
+    style={'fontFamily': 'Tahoma, sans-serif', 'direction': 'rtl', 'backgroundColor': '#f7fafc', 'minHeight': '100vh',
+           'padding': '40px'}, children=[
+        html.H2("ÇÓíÑÇáåÇí ããÇÓ ÈÇ åÇíáÇíÊ äÒÏí˜ÊÑíä ãÞÇÏíÑ ÏÑ ÓÊæäåÇí ãÊäÇÙÑ",
+                style={'textAlign': 'center', 'color': '#2d3748', 'marginBottom': '30px', 'fontWeight': 'bold'}),
+
+        html.Div(style={'display': 'flex', 'flexWrap': 'wrap', 'justifyContent': 'center', 'maxWidth': '1200px',
+                        'margin': '0 auto'}, children=[
+            html.Div(style=CARD_STYLE, children=[
+                html.H4("ÇÓíÑÇá ÕÚæÏí ()",
+                        style={'color': '#38a169', 'marginTop': '0', 'borderBottom': '2px solid #38a169',
+                               'paddingBottom': '10px'}),
+                html.Label("ÞíãÊ ãÑ˜Òí:", style=LABEL_STYLE),
+                dcc.Input(id='asc-center', type='number', value=60000.5, step='any', style=INPUT_STYLE),
+                html.Label("Çã ÇÝÒÇíÔí:", style=LABEL_STYLE),
+                dcc.Input(id='asc-step', type='number', value=10.25, step='any', style=INPUT_STYLE),
+            ]),
+            html.Div(style=CARD_STYLE, children=[
+                html.H4("ÇÓíÑÇá äÒæáí (ÑÇÓÊ)",
+                        style={'color': '#e53e3e', 'marginTop': '0', 'borderBottom': '2px solid #e53e3e',
+                               'paddingBottom': '10px'}),
+                html.Label("ÞíãÊ ãÑ˜Òí:", style=LABEL_STYLE),
+                dcc.Input(id='desc-center', type='number', value=60500.0, step='any', style=INPUT_STYLE),
+                html.Label("Çã ˜ÇåÔí:", style=LABEL_STYLE),
+                dcc.Input(id='desc-step', type='number', value=15.5, step='any', style=INPUT_STYLE),
+            ]),
+            html.Div(style=CARD_STYLE, children=[
+                html.H4("ÓÇÎÊÇÑ ÌÏæá", style={'color': '#3182ce', 'marginTop': '0', 'borderBottom': '2px solid #3182ce',
+                                              'paddingBottom': '10px'}),
+                html.Label("ÇÈÚÇÏ åÑ ãÇÑí (ÝÑÏ):", style=LABEL_STYLE),
+                dcc.Input(id='grid-size', type='number', value=9, step=2, min=3, max=21, style=INPUT_STYLE),
+            ]),
+        ]),
+
+        html.Div(id='gann-table-container',
+                 style={'display': 'flex', 'justifyContent': 'center', 'marginTop': '40px', 'overflowX': 'auto'})
+    ])
+
+
+@app.callback(
+    Output('gann-table-container', 'children'),
+    [Input('asc-center', 'value'), Input('asc-step', 'value'),
+     Input('desc-center', 'value'), Input('desc-step', 'value'),
+     Input('grid-size', 'value')]
+)
+def update_table(asc_center, asc_step, desc_center, desc_step, size):
+    if None in [asc_center, asc_step, desc_center, desc_step, size]:
+        return html.Div("áØÝÇð ÊãÇãí ãÞÇÏíÑ ÑÇ æÇÑÏ ˜äíÏ.", style={'color': 'gray'})
+
+    if size % 2 == 0: size += 1
+
+    indices_left = generate_spiral_indices(size, reverse_dir=False)
+    indices_right = generate_spiral_indices(size, reverse_dir=True)
+
+    # 1. ãÍÇÓÈå ãÞÇÏíÑ åÑ Ïæ ÌÏæá
+    vals_left = [[asc_center + (indices_left[r][c] * asc_step) for c in range(size)] for r in range(size)]
+    vals_right = [[desc_center - (indices_right[r][c] * desc_step) for c in range(size)] for r in range(size)]
+
+    # 2. íÏÇ ˜ÑÏä ÑÏíÝí ˜å ÏÑ åÑ ÓÊæä ˜ãÊÑíä ÇÎÊáÇÝ ÑÇ ÏÇÑÏ
+    closest_row_for_col = []
+    for c in range(size):
+        min_diff = float('inf')
+        best_r = -1
+        for r in range(size):
+            diff = abs(vals_left[r][c] - vals_right[r][c])
+            if diff < min_diff:
+                min_diff = diff
+                best_r = r
+        closest_row_for_col.append(best_r)
+
+    # 3. ÓÇÎÊÇÑÏåí HTML ÌÏæá
+    rows = []
+    for r in range(size):
+        cells = []
+
+        # ÇÓíÑÇá  (ÕÚæÏí)
+        for c in range(size):
+            val = vals_left[r][c]
+            is_center = (indices_left[r][c] == 0)
+            is_closest = (r == closest_row_for_col[c])
+
+            # ÇÑ ˜ãÊÑíä ÇÎÊáÇÝ ÑÇ ÏÇÔÊ ÒÑÏ ÔæÏ¡ æÑäå ÑäåÇí ÞÈáí
+            if is_closest:
+                bg_color = '#fef08a'  # Ñä åÇíáÇíÊ ÒÑÏ
+                border_color = '#ca8a04'
+            else:
+                bg_color = '#e6fffa' if is_center else '#ffffff'
+                border_color = '#38a169' if is_center else '#e2e8f0'
+
+            cell_content = html.Div(f"{val:g}",
+                                    style={'color': '#2f855a' if not is_closest else '#854d0e', 'fontWeight': 'bold',
+                                           'fontSize': '14px'})
+            cells.append(html.Td(cell_content,
+                                 style={'border': f'2px solid {border_color}', 'padding': '10px', 'textAlign': 'center',
+                                        'backgroundColor': bg_color, 'minWidth': '60px', 'borderRadius': '4px'}))
+
+        # ÎØ ÌÏÇ˜ääÏå ããÇÓ
+        cells.append(html.Td("", style={'width': '10px', 'backgroundColor': '#cbd5e0', 'borderRadius': '2px'}))
+
+        # ÇÓíÑÇá ÑÇÓÊ (äÒæáí)
+        for c in range(size):
+            val = vals_right[r][c]
+            is_center = (indices_right[r][c] == 0)
+            is_closest = (r == closest_row_for_col[c])
+
+            if is_closest:
+                bg_color = '#fef08a'
+                border_color = '#ca8a04'
+            else:
+                bg_color = '#fff5f5' if is_center else '#ffffff'
+                border_color = '#e53e3e' if is_center else '#e2e8f0'
+
+            cell_content = html.Div(f"{val:g}",
+                                    style={'color': '#c53030' if not is_closest else '#854d0e', 'fontWeight': 'bold',
+                                           'fontSize': '14px'})
+            cells.append(html.Td(cell_content,
+                                 style={'border': f'2px solid {border_color}', 'padding': '10px', 'textAlign': 'center',
+                                        'backgroundColor': bg_color, 'minWidth': '60px', 'borderRadius': '4px'}))
+
+        rows.append(html.Tr(cells))
+
+    return html.Table(rows, style={'borderCollapse': 'separate', 'borderSpacing': '3px', 'backgroundColor': '#edf2f7',
+                                   'padding': '15px', 'borderRadius': '12px',
+                                   'boxShadow': '0 10px 15px -3px rgba(0, 0, 0, 0.1)'})
+
+
+if __name__ == '__main__':
+    app.run(debug=True)

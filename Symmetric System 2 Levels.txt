@@ -1,0 +1,422 @@
+//@version=5
+indicator("Symmetric Distance Difference Box + Advanced Ratio Analyzer", overlay=true, max_boxes_count=500, max_lines_count=500)
+
+level1 = input.price(0, title="Price Level 1", confirm=true)
+level2 = input.price(0, title="Price Level 2", confirm=true)
+startTime = input.time(0, title="Start Time", confirm=true)
+endTime = input.time(0, title="End Time", confirm=true)
+liveTime = input.time(0, title="Live Time (for analysis)", confirm=true)
+showSymmetric = input.bool(true, title="Show Symmetric Candles")
+useFibLevels = input.bool(false, title="Use Fibonacci Levels (1.618, 0.618 & 0.382)")
+adjustSlope = input.bool(false, title="Adjust Slope for Area Ratio")
+areaRatio = input.float(0.618, title="Target Area Ratio", minval=0.001, maxval=10)
+showAnalysisTable = input.bool(true, title="Show Ratio Analysis Table")
+
+sensitivityPercent = input.float(1.5, title="Reaction Sensitivity (%)", minval=0.1, maxval=5.0, step=0.1, group="Advanced Analysis")
+minTouches = input.int(2, title="Minimum Touches Required", minval=1, maxval=10, group="Advanced Analysis")
+volumeWeight = input.float(1.5, title="Volume Weight Factor", minval=0.0, maxval=5.0, step=0.1, group="Advanced Analysis")
+rejectionWeight = input.float(2.0, title="Rejection Pattern Weight", minval=0.0, maxval=5.0, step=0.1, group="Advanced Analysis")
+consolidationWeight = input.float(1.2, title="Consolidation Weight", minval=0.0, maxval=3.0, step=0.1, group="Advanced Analysis")
+showDetailedLevels = input.bool(true, title="Show Detected Levels", group="Advanced Analysis")
+slopeSpeed = input.float(50.0, title="Slope Adjustment Speed", minval=10.0, maxval=200.0, step=10.0, group="Advanced Analysis", tooltip="ò‰ —· ”—⁄   €ÌÌ— ‘Ì» - ⁄œœ òÊçòù — =  €ÌÌ— ”—Ì⁄ù —")
+
+upperLevel = math.max(level1, level2)
+lowerLevel = math.min(level1, level2)
+
+var float upperLevelAdjusted = upperLevel
+var float lowerLevelAdjusted = lowerLevel
+var float slopeUpper = 0
+var float slopeLower = 0
+var int startBar = na
+var bool slopeCalculated = false
+
+tanhApprox(x) =>
+    ex = math.exp(2 * x)
+    (ex - 1) / (ex + 1)
+
+if time >= endTime and time[1] < endTime and adjustSlope and not slopeCalculated
+    startBar := na
+    slopeCalculated := true
+    
+    maxLookback = math.min(bar_index, 5000)
+    for i = 0 to maxLookback - 1
+        if i <= bar_index and time[i] <= startTime
+            startBar := bar_index - i
+            break
+    
+    if not na(startBar)
+        totalAreaUpper = 0.0
+        totalAreaLower = 0.0
+        barCount = 0
+        
+        for i = 0 to maxLookback - 1
+            if i <= bar_index and time[i] >= startTime and time[i] <= endTime
+                distUpper = math.max(high[i] - upperLevel, 0) + math.max(upperLevel - low[i], 0)
+                distLower = math.max(high[i] - lowerLevel, 0) + math.max(lowerLevel - low[i], 0)
+                
+                totalAreaUpper += distUpper
+                totalAreaLower += distLower
+                barCount += 1
+        
+        if barCount > 0
+            avgAreaUpper = totalAreaUpper / barCount
+            avgAreaLower = totalAreaLower / barCount
+            
+            initialDistance = upperLevel - lowerLevel
+            currentRatio = avgAreaLower > 0 ? avgAreaUpper / avgAreaLower : 1.0
+            
+            if math.abs(currentRatio - areaRatio) > 0.01
+                correctionFactor = areaRatio / currentRatio
+                midPrice = (upperLevel + lowerLevel) / 2
+                halfDistance = initialDistance / 2
+                adjustment = (correctionFactor - 1.0) * halfDistance * 0.5
+                
+                upperLevelAdjusted := upperLevel + adjustment
+                lowerLevelAdjusted := lowerLevel - adjustment
+                slopeUpper := (upperLevelAdjusted - upperLevel) / slopeSpeed
+                slopeLower := (lowerLevelAdjusted - lowerLevel) / slopeSpeed
+
+var float currentUpperLevel = upperLevel
+var float currentLowerLevel = lowerLevel
+
+if not na(startBar) and adjustSlope and slopeCalculated
+    barsFromStart = bar_index - startBar
+    progress = tanhApprox(barsFromStart / slopeSpeed)
+    currentUpperLevel := upperLevel + (upperLevelAdjusted - upperLevel) * progress
+    currentLowerLevel := lowerLevel + (lowerLevelAdjusted - lowerLevel) * progress
+else
+    currentUpperLevel := upperLevel
+    currentLowerLevel := lowerLevel
+
+plot(currentUpperLevel, color=color.red, linewidth=2, title="Upper Level")
+plot(currentLowerLevel, color=color.green, linewidth=2, title="Lower Level")
+
+plot(adjustSlope and slopeCalculated ? upperLevelAdjusted : na, color=color.new(color.red, 50), linewidth=1, style=plot.style_circles, title="Target Upper")
+plot(adjustSlope and slopeCalculated ? lowerLevelAdjusted : na, color=color.new(color.green, 50), linewidth=1, style=plot.style_circles, title="Target Lower")
+
+var float totalDistanceUpper = 0
+var float totalDistanceLower = 0
+var int count = 0
+
+if time >= endTime and time[1] < endTime
+    totalDistanceUpper := 0
+    totalDistanceLower := 0
+    count := 0
+    
+    maxLookback = math.min(bar_index, 5000)
+    
+    for i = 0 to maxLookback - 1
+        if i <= bar_index and time[i] >= startTime and time[i] <= endTime
+            histUpperLevel = upperLevel
+            histLowerLevel = lowerLevel
+            
+            if adjustSlope and slopeCalculated and not na(startBar)
+                barsFromStartHist = (bar_index - i) - startBar
+                if barsFromStartHist >= 0
+                    progress = tanhApprox(barsFromStartHist / slopeSpeed)
+                    histUpperLevel := upperLevel + (upperLevelAdjusted - upperLevel) * progress
+                    histLowerLevel := lowerLevel + (lowerLevelAdjusted - lowerLevel) * progress
+            
+            distanceUpper = math.abs(high[i] - histUpperLevel) + math.abs(low[i] - histUpperLevel)
+            distanceLower = math.abs(high[i] - histLowerLevel) + math.abs(low[i] - histLowerLevel)
+            totalDistanceUpper := totalDistanceUpper + distanceUpper
+            totalDistanceLower := totalDistanceLower + distanceLower
+            count := count + 1
+    
+    if count > 0
+        avgDistanceUpper = totalDistanceUpper / (count * 2)
+        avgDistanceLower = totalDistanceLower / (count * 2)
+        boxWidth = math.min(count, 500)
+        
+        if useFibLevels
+            priceRange = currentUpperLevel - currentLowerLevel
+            fib1618 = currentUpperLevel + priceRange * 0.618
+            fib618 = currentLowerLevel + priceRange * 0.618
+            fib382 = currentLowerLevel + priceRange * 0.382
+            
+            box.new(bar_index, fib1618, bar_index + boxWidth, fib1618 + avgDistanceUpper, border_color=color.purple, bgcolor=color.new(color.purple, 80), xloc=xloc.bar_index)
+            box.new(bar_index, fib1618, bar_index + boxWidth, fib1618 - avgDistanceLower, border_color=color.maroon, bgcolor=color.new(color.maroon, 80), xloc=xloc.bar_index)
+            
+            box.new(bar_index, fib618, bar_index + boxWidth, fib618 + avgDistanceUpper, border_color=color.red, bgcolor=color.new(color.red, 80), xloc=xloc.bar_index)
+            box.new(bar_index, fib618, bar_index + boxWidth, fib618 - avgDistanceLower, border_color=color.orange, bgcolor=color.new(color.orange, 80), xloc=xloc.bar_index)
+            
+            box.new(bar_index, fib382, bar_index + boxWidth, fib382 + avgDistanceUpper, border_color=color.red, bgcolor=color.new(color.red, 80), xloc=xloc.bar_index)
+            box.new(bar_index, fib382, bar_index + boxWidth, fib382 - avgDistanceLower, border_color=color.green, bgcolor=color.new(color.green, 80), xloc=xloc.bar_index)
+        else
+            box.new(bar_index, currentUpperLevel, bar_index + boxWidth, currentUpperLevel + avgDistanceUpper, border_color=color.red, bgcolor=color.new(color.red, 80), xloc=xloc.bar_index)
+            box.new(bar_index, currentUpperLevel, bar_index + boxWidth, currentUpperLevel - avgDistanceLower, border_color=color.orange, bgcolor=color.new(color.orange, 80), xloc=xloc.bar_index)
+            
+            box.new(bar_index, currentLowerLevel, bar_index + boxWidth, currentLowerLevel + avgDistanceUpper, border_color=color.red, bgcolor=color.new(color.red, 80), xloc=xloc.bar_index)
+            box.new(bar_index, currentLowerLevel, bar_index + boxWidth, currentLowerLevel - avgDistanceLower, border_color=color.green, bgcolor=color.new(color.green, 80), xloc=xloc.bar_index)
+
+symOpenUpper = 2 * currentUpperLevel - open
+symHighUpper = 2 * currentUpperLevel - high
+symLowUpper = 2 * currentUpperLevel - low
+symCloseUpper = 2 * currentUpperLevel - close
+
+symOpenLower = 2 * currentLowerLevel - open
+symHighLower = 2 * currentLowerLevel - high
+symLowLower = 2 * currentLowerLevel - low
+symCloseLower = 2 * currentLowerLevel - close
+
+plotcandle(symOpenUpper, symHighUpper, symLowUpper, symCloseUpper, title="Symmetric Upper", color=color.green, wickcolor=color.green, bordercolor=color.green, display=showSymmetric ? display.all : display.none)
+plotcandle(symOpenLower, symHighLower, symLowLower, symCloseLower, title="Symmetric Lower", color=color.blue, wickcolor=color.blue, bordercolor=color.blue, display=showSymmetric ? display.all : display.none)
+
+var table analysisTable = na
+var float[] fibRatios = array.from(0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.272, 1.414, 1.618, 2.0, 2.272, 2.414, 2.618, 3.0, 3.618)
+var string[] fibNames = array.from("0.236", "0.382", "0.5", "0.618", "0.786", "1.0", "1.272", "1.414", "1.618", "2.0", "2.272", "2.414", "2.618", "3.0", "3.618")
+
+isRejectionCandle(idx, level, isResistance) =>
+    if idx > bar_index or idx < 0
+        false
+    else
+        bodySize = math.abs(close[idx] - open[idx])
+        totalSize = high[idx] - low[idx]
+        
+        if totalSize == 0
+            false
+        else
+            wickRatio = isResistance ? (high[idx] - math.max(close[idx], open[idx])) / totalSize : (math.min(close[idx], open[idx]) - low[idx]) / totalSize
+            bodyRatio = bodySize / totalSize
+            
+            isNearLevel = isResistance ? math.abs(high[idx] - level) < (upperLevel - lowerLevel) * sensitivityPercent / 100 : math.abs(low[idx] - level) < (upperLevel - lowerLevel) * sensitivityPercent / 100
+            hasLongWick = wickRatio > 0.4
+            hasSmallBody = bodyRatio < 0.5
+            correctDirection = isResistance ? close[idx] < open[idx] : close[idx] > open[idx]
+            
+            isNearLevel and hasLongWick and (hasSmallBody or correctDirection)
+
+isConsolidation(idx, level, lookback) =>
+    if idx > bar_index or idx < 0
+        false
+    else
+        touches = 0
+        priceRange = upperLevel - lowerLevel
+        threshold = priceRange * sensitivityPercent / 100
+        
+        for i = 0 to math.min(lookback - 1, 9)
+            checkIdx = idx - i
+            if checkIdx >= 0 and checkIdx <= bar_index
+                if math.abs(high[checkIdx] - level) < threshold or math.abs(low[checkIdx] - level) < threshold or (high[checkIdx] > level and low[checkIdx] < level)
+                    touches += 1
+        
+        touches >= 3
+
+analyzeRatiosAdvanced(startT, endT, liveT) =>
+    var float bestRatio = 0.618
+    var float bestScore = 0.0
+    var float[] scores = array.new_float(15, 0.0)
+    var int[] touchCounts = array.new_int(15, 0)
+    var float[] avgDistances = array.new_float(15, 0.0)
+    
+    if liveT > endT and endT > startT
+        priceRange = upperLevel - lowerLevel
+        maxLookback = math.min(bar_index, 5000)
+        threshold = priceRange * sensitivityPercent / 100
+        
+        for ratioIdx = 0 to 14
+            ratio = array.get(fibRatios, ratioIdx)
+            totalReactionScore = 0.0
+            touchCount = 0
+            totalDistance = 0.0
+            consecutiveTouches = 0
+            maxConsecutive = 0
+            
+            baseUpper = adjustSlope and slopeCalculated ? currentUpperLevel : upperLevel
+            baseLower = adjustSlope and slopeCalculated ? currentLowerLevel : lowerLevel
+            adjustedRange = baseUpper - baseLower
+            
+            upperFibLevel = baseUpper + adjustedRange * (ratio - 1.0)
+            lowerFibLevel = baseLower - adjustedRange * ratio
+            midFibLevel = baseLower + adjustedRange * ratio
+            
+            var line upperLine = na
+            var line lowerLine = na
+            var line midLine = na
+            
+            for i = 0 to maxLookback - 1
+                if i <= bar_index and time[i] > endT and time[i] <= liveT
+                    histBaseUpper = upperLevel
+                    histBaseLower = lowerLevel
+                    
+                    if adjustSlope and slopeCalculated and not na(startBar)
+                        barsFromStartHist = (bar_index - i) - startBar
+                        if barsFromStartHist >= 0
+                            progress = tanhApprox(barsFromStartHist / slopeSpeed)
+                            histBaseUpper := upperLevel + (upperLevelAdjusted - upperLevel) * progress
+                            histBaseLower := lowerLevel + (lowerLevelAdjusted - lowerLevel) * progress
+                    
+                    histRange = histBaseUpper - histBaseLower
+                    histUpperFib = histBaseUpper + histRange * (ratio - 1.0)
+                    histLowerFib = histBaseLower - histRange * ratio
+                    histMidFib = histBaseLower + histRange * ratio
+                    
+                    reactionStrength = 0.0
+                    minDistance = priceRange * 10
+                    
+                    distToUpperHigh = math.abs(high[i] - histUpperFib)
+                    distToUpperLow = math.abs(low[i] - histUpperFib)
+                    
+                    if distToUpperHigh < threshold or distToUpperLow < threshold or (high[i] > histUpperFib and low[i] < histUpperFib)
+                        touchCount += 1
+                        consecutiveTouches += 1
+                        minDistance := math.min(minDistance, math.min(distToUpperHigh, distToUpperLow))
+                        
+                        reactionStrength += 5.0
+                        
+                        if isRejectionCandle(i, histUpperFib, true)
+                            reactionStrength += 8.0 * rejectionWeight
+                        
+                        if isConsolidation(i, histUpperFib, 5)
+                            reactionStrength += 6.0 * consolidationWeight
+                        
+                        accuracyBonus = (1 - minDistance / threshold) * 3.0
+                        reactionStrength += accuracyBonus
+                    else
+                        consecutiveTouches := 0
+                    
+                    distToLowerHigh = math.abs(high[i] - histLowerFib)
+                    distToLowerLow = math.abs(low[i] - histLowerFib)
+                    
+                    if distToLowerHigh < threshold or distToLowerLow < threshold or (high[i] > histLowerFib and low[i] < histLowerFib)
+                        touchCount += 1
+                        consecutiveTouches += 1
+                        minDistance := math.min(minDistance, math.min(distToLowerHigh, distToLowerLow))
+                        
+                        reactionStrength += 5.0
+                        
+                        if isRejectionCandle(i, histLowerFib, false)
+                            reactionStrength += 8.0 * rejectionWeight
+                        
+                        if isConsolidation(i, histLowerFib, 5)
+                            reactionStrength += 6.0 * consolidationWeight
+                        
+                        accuracyBonus = (1 - minDistance / threshold) * 2.0
+                        reactionStrength += accuracyBonus
+                    
+                    distToMidHigh = math.abs(high[i] - histMidFib)
+                    distToMidLow = math.abs(low[i] - histMidFib)
+                    
+                    if distToMidHigh < threshold or distToMidLow < threshold or (high[i] > histMidFib and low[i] < histMidFib)
+                        touchCount += 1
+                        minDistance := math.min(minDistance, math.min(distToMidHigh, distToMidLow))
+                        reactionStrength += 3.0
+                        
+                        accuracyBonus = (1 - minDistance / threshold) * 2.0
+                        reactionStrength += accuracyBonus
+                    
+                    if reactionStrength > 0 and i >= 5
+                        avgVolume = 0.0
+                        for j = 1 to 5
+                            checkIdx = i - j
+                            if checkIdx >= 0 and checkIdx <= bar_index
+                                avgVolume += volume[checkIdx]
+                        avgVolume := avgVolume / 5
+                        
+                        if avgVolume > 0 and volume[i] > avgVolume * 1.3
+                            volumeBonus = math.min((volume[i] / avgVolume - 1) * 5.0, 10.0) * volumeWeight
+                            reactionStrength += volumeBonus
+                    
+                    maxConsecutive := math.max(maxConsecutive, consecutiveTouches)
+                    if consecutiveTouches >= 3
+                        reactionStrength += consecutiveTouches * 2.0
+                    
+                    if minDistance < priceRange * 10
+                        totalDistance += minDistance
+                    
+                    totalReactionScore += reactionStrength
+            
+            avgScore = touchCount > 0 ? totalReactionScore / touchCount : 0.0
+            avgDist = touchCount > 0 ? totalDistance / touchCount : priceRange
+            
+            if touchCount < minTouches
+                avgScore *= (touchCount / minTouches) * 0.5
+            
+            if maxConsecutive >= 3
+                avgScore *= (1 + maxConsecutive * 0.1)
+            
+            accuracyFactor = 1 + (1 - math.min(avgDist / threshold, 1.0)) * 0.5
+            avgScore *= accuracyFactor
+            
+            array.set(scores, ratioIdx, avgScore)
+            array.set(touchCounts, ratioIdx, touchCount)
+            array.set(avgDistances, ratioIdx, avgDist)
+            
+            if avgScore > bestScore
+                bestScore := avgScore
+                bestRatio := ratio
+            
+            if showDetailedLevels and ratio == bestRatio and touchCount >= minTouches
+                startBarIdx = bar_index
+                endBarIdx = bar_index
+                
+                for i = 0 to maxLookback - 1
+                    if i <= bar_index and time[i] <= endT
+                        startBarIdx := bar_index - i
+                    if i <= bar_index and time[i] <= liveT
+                        endBarIdx := bar_index - i
+                
+                if not na(upperLine)
+                    line.delete(upperLine)
+                if not na(lowerLine)
+                    line.delete(lowerLine)
+                if not na(midLine)
+                    line.delete(midLine)
+                
+                upperLine := line.new(startBarIdx, upperFibLevel, endBarIdx, upperFibLevel, color=color.new(color.yellow, 0), width=2, style=line.style_dashed)
+                lowerLine := line.new(startBarIdx, lowerFibLevel, endBarIdx, lowerFibLevel, color=color.new(color.orange, 0), width=2, style=line.style_dashed)
+                midLine := line.new(startBarIdx, midFibLevel, endBarIdx, midFibLevel, color=color.new(color.aqua, 0), width=1, style=line.style_dotted)
+    
+    [bestRatio, bestScore, scores, touchCounts, avgDistances]
+
+if showAnalysisTable and time >= liveTime and time[1] < liveTime
+    [recommendedRatio, confidence, allScores, allTouches, allDistances] = analyzeRatiosAdvanced(startTime, endTime, liveTime)
+    
+    if na(analysisTable)
+        analysisTable := table.new(position.top_left, 5, 17, bgcolor=color.new(color.black, 10), border_width=2, border_color=color.gray)
+        
+        table.cell(analysisTable, 0, 0, "÷—Ì»", text_color=color.white, bgcolor=color.new(color.blue, 30), text_size=size.normal)
+        table.cell(analysisTable, 1, 0, "«„ Ì«“", text_color=color.white, bgcolor=color.new(color.blue, 30), text_size=size.normal)
+        table.cell(analysisTable, 2, 0, "»—ŒÊ—œ", text_color=color.white, bgcolor=color.new(color.blue, 30), text_size=size.normal)
+        table.cell(analysisTable, 3, 0, "œﬁ ", text_color=color.white, bgcolor=color.new(color.blue, 30), text_size=size.normal)
+        table.cell(analysisTable, 4, 0, " Ê’ÌÂ", text_color=color.white, bgcolor=color.new(color.blue, 30), text_size=size.normal)
+        
+        maxScore = 0.0
+        for i = 0 to 14
+            score = array.get(allScores, i)
+            if score > maxScore
+                maxScore := score
+        
+        for i = 0 to 14
+            ratio = array.get(fibRatios, i)
+            ratioName = array.get(fibNames, i)
+            score = array.get(allScores, i)
+            touches = array.get(allTouches, i)
+            avgDist = array.get(allDistances, i)
+            
+            normalizedScore = maxScore > 0 ? (score / maxScore) * 100 : 0
+            
+            bgColor = normalizedScore > 70 ? color.new(color.green, 60) : normalizedScore > 40 ? color.new(color.yellow, 60) : color.new(color.red, 70)
+            
+            table.cell(analysisTable, 0, i + 1, ratioName, text_color=color.white, bgcolor=bgColor, text_size=size.small)
+            table.cell(analysisTable, 1, i + 1, str.tostring(score, "#.##"), text_color=color.white, bgcolor=bgColor, text_size=size.small)
+            table.cell(analysisTable, 2, i + 1, str.tostring(touches), text_color=color.white, bgcolor=bgColor, text_size=size.small)
+            
+            priceRange = upperLevel - lowerLevel
+            accuracyPercent = priceRange > 0 ? math.max(0, (1 - math.min(avgDist / (priceRange * sensitivityPercent / 100), 1.0)) * 100) : 0
+            table.cell(analysisTable, 3, i + 1, str.tostring(accuracyPercent, "#") + "%", text_color=color.white, bgcolor=bgColor, text_size=size.small)
+            
+            isRecommended = ratio == recommendedRatio
+            stars = normalizedScore > 90 ? "???" : normalizedScore > 70 ? "??" : normalizedScore > 50 ? "?" : "-"
+            recommendText = isRecommended ? "? " + stars : stars
+            table.cell(analysisTable, 4, i + 1, recommendText, text_color=isRecommended ? color.yellow : color.gray, bgcolor=bgColor, text_size=size.small)
+        
+        confidencePercent = maxScore > 0 ? (confidence / maxScore) * 100 : 0
+        
+        table.cell(analysisTable, 0, 16, "»Â —Ì‰:", text_color=color.yellow, bgcolor=color.new(color.green, 40), text_size=size.normal)
+        table.cell(analysisTable, 1, 16, str.tostring(recommendedRatio, "#.###"), text_color=color.yellow, bgcolor=color.new(color.green, 40), text_size=size.normal)
+        table.cell(analysisTable, 2, 16, "«ÿ„Ì‰«‰:", text_color=color.yellow, bgcolor=color.new(color.green, 40), text_size=size.normal)
+        table.cell(analysisTable, 3, 16, str.tostring(confidencePercent, "#") + "%", text_color=color.yellow, bgcolor=color.new(color.green, 40), text_size=size.normal)
+        
+        qualityText = confidencePercent > 80 ? "⁄«·Ì" : confidencePercent > 60 ? "ŒÊ»" : confidencePercent > 40 ? "„ Ê”ÿ" : "÷⁄Ì›"
+        table.cell(analysisTable, 4, 16, qualityText, text_color=color.yellow, bgcolor=color.new(color.green, 40), text_size=size.normal)

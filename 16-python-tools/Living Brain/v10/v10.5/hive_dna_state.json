@@ -1,0 +1,19 @@
+{
+  "generation": 0,
+  "adaptive": {
+    "score_threshold": 0.62,
+    "conv_threshold": 0.5
+  },
+  "awareness": 0.49749999999999894,
+  "confidence": 0.6712397153135883,
+  "learning_rate": 0.013482320600513614,
+  "win_streak": 0,
+  "loss_streak": 1,
+  "organism_weights": {
+    "Aether": 1.394,
+    "Pulse": 1.2860000000000056,
+    "Flux": 1.2069999999999967,
+    "Vector": 1.078
+  },
+  "saved_at": "2026-08-19T14:21:51.862050+00:00"
+}

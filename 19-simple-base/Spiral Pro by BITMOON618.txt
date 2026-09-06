@@ -1,0 +1,190 @@
+//@version=5
+indicator("Spiral{Morindok}", overlay=true)
+
+t1 = input.time(0,  title="Center Time", confirm=true, inline="p1")
+p1 = input.price(0, title="",            confirm=true, inline="p1")
+t2 = input.time(0,  title="Edge Time",   confirm=true, inline="p2")
+p2 = input.price(0, title="",            confirm=true, inline="p2")
+
+spiral_color       = input.color(color.blue,         "Ñä ÇÓíÑÇá",        group="ÙÇåÑ")
+mirror_color       = input.color(color.orange,        "Ñä ãÊŞÇÑä ŞíãÊ",    group="ÙÇåÑ")
+mirror_spiral_col  = input.color(color.red,           "Ñä ÇÓíÑÇá ãÊŞÇÑä", group="ÙÇåÑ")
+line_width         = input.int(2, "ÖÎÇãÊ ÎØ", minval=1, maxval=5,           group="ÙÇåÑ")
+show_labels        = input.bool(false, "äãÇíÔ áíÈá ãÑ˜Ò æ áÈå",             group="ÙÇåÑ")
+show_dots          = input.bool(false, "äŞØå Ñæí ÏæÑåÇí ˜Çãá",              group="ÙÇåÑ")
+dot_color          = input.color(color.yellow, "Ñä äŞØå ÏæÑåÇ",            group="ÙÇåÑ")
+gradient_mode      = input.bool(false, "ÑäÈäÏí ÑÇÏíÇäÊ ÏæÑåÇ",           group="ÙÇåÑ")
+grad_color2        = input.color(color.purple, "Ñä ÇíÇä ÑÇÏíÇäÊ",        group="ÙÇåÑ")
+
+show_mirror_price  = input.bool(false, "äãÇíÔ ŞíãÊ ãÊŞÇÑä",    group="ÒíäÔ")
+show_mirror_spiral = input.bool(false, "äãÇíÔ ÇÓíÑÇá ãÊŞÇÑä", group="ÒíäÔ")
+show_dashboard     = input.bool(false, "äãÇíÔ ÏÇÔÈæÑÏ ÇØáÇÚÇÊ",group="ÒíäÔ")
+
+fib_ratio          = input.float(1.618, "äÓÈÊ ÑÔÏ (íÔİÑÖ İíÈæäÇí)", minval=1.001, maxval=5.0, step=0.001, group="Ô˜á ÇÓíÑÇá")
+num_turns          = input.float(0.0,   "ÊÚÏÇÏ ÏæÑåÇ (0=ÎæÏ˜ÇÑ)",        minval=0.0,   maxval=20.0, step=0.5,   group="Ô˜á ÇÓíÑÇá")
+theta_offset       = input.float(0.0,   "ÒÇæíå ÔÑæÚ (offset ÏÑÌå)",      minval=-360,  maxval=360,  step=15.0,  group="Ô˜á ÇÓíÑÇá")
+cw_direction       = input.bool(false,  "ÏæÑÇä ÓÇÚÊÑÏ",                  group="Ô˜á ÇÓíÑÇá")
+inner_spiral_count = input.int(1,       "ÊÚÏÇÏ ÇÓíÑÇáåÇí Êæ ÏÑ Êæ",     minval=1, maxval=5,       group="Ô˜á ÇÓíÑÇá")
+
+use_candle_limit   = input.bool(false, "ãÍÏæÏ Èå ÇÑÊİÇÚ ˜äÏáåÇ", group="ãÍÏæÏíÊ")
+candle_type        = input.string("åãå", "äæÚ ˜äÏá", options=["åãå", "ÓÈÒ", "ŞÑãÒ"], group="ãÍÏæÏíÊ")
+
+use_slope_rotation = input.bool(false, "ÏæÑÇä ÈÑ ÇÓÇÓ ÔíÈ ˜äÏáåÇ",  group="æÇÈÓÊå Èå ÏÇÏå")
+use_atr_scale      = input.bool(false, "ãŞíÇÓ ÑÔÏ ÈÑ ÇÓÇÓ ATR ÈÇÒå",  group="æÇÈÓÊå Èå ÏÇÏå")
+use_vol_angle      = input.bool(false, "ÒÇæíå ÈÑ ÇÓÇÓ ÍÌã ãÚÇãáÇÊ",   group="æÇÈÓÊå Èå ÏÇÏå")
+use_bar_count      = input.bool(false, "ÇãåÇ ÈÑ ÇÓÇÓ ÊÚÏÇÏ ˜äÏáåÇ", group="æÇÈÓÊå Èå ÏÇÏå")
+
+sym_time           = input.bool(false, "ÊŞÇÑä ÒãÇäí (ÇäÚ˜ÇÓ ãÍæÑ ÒãÇä)",  group="ÊŞÇÑä íÔÑİÊå")
+sym_dual           = input.bool(false, "ÊŞÇÑä ÏæÇäå (ÒãÇä + ŞíãÊ)",      group="ÊŞÇÑä íÔÑİÊå")
+antiphase          = input.bool(false, "ÇÓíÑÇá ÂäÊíİÇÒ (??? ÏÑÌå)",     group="ÊŞÇÑä íÔÑİÊå")
+
+var float sum_height  = 0.0
+var float slope_sum   = 0.0
+var float atr_sum     = 0.0
+var float vol_sum     = 0.0
+var int   slope_count = 0
+var int   bar_count   = 0
+var bar_times         = array.new<int>()
+var bar_closes        = array.new<float>()
+
+array.push(bar_times,  time)
+array.push(bar_closes, close)
+
+in_range = time >= math.min(t1, t2) and time <= math.max(t1, t2)
+if in_range
+    slope_sum   += (close - open) / math.max(open, 0.0001)
+    atr_sum     += high - low
+    vol_sum     += volume
+    slope_count += 1
+    bar_count   += 1
+    if candle_type == "åãå"
+        sum_height += high - low
+    else if candle_type == "ÓÈÒ" and close >= open
+        sum_height += high - low
+    else if candle_type == "ŞÑãÒ" and close < open
+        sum_height += high - low
+
+if barstate.islast and t1 != 0 and t2 != 0
+    avg_slope   = slope_count > 0 ? slope_sum  / slope_count : 0.0
+    avg_atr     = slope_count > 0 ? atr_sum    / slope_count : 0.0
+    avg_vol     = slope_count > 0 ? vol_sum    / slope_count : 0.0
+    max_vol     = vol_sum > 0     ? vol_sum    : 1.0
+
+    slope_angle = use_slope_rotation ? avg_slope * math.pi : 0.0
+    vol_angle   = use_vol_angle      ? (avg_vol / math.max(max_vol, 1)) * math.pi * 0.5 : 0.0
+    total_angle = slope_angle + vol_angle
+    cos_s       = math.cos(total_angle)
+    sin_s       = math.sin(total_angle)
+
+    atr_factor  = use_atr_scale  ? math.max(avg_atr / math.max(math.abs(p2 - p1), 0.0001), 0.1) : 1.0
+    a_base      = 0.02 * atr_factor
+    b           = math.log(fib_ratio) / (math.pi / 2)
+    dt          = t2 - t1
+    dp          = p2 - p1
+    dir         = cw_direction ? -1.0 : 1.0
+    t_off       = theta_offset * math.pi / 180.0
+
+    max_steps   = use_bar_count ? bar_count * 10 : 2000
+    max_theta   = num_turns > 0 ? num_turns * 2 * math.pi : 1e10
+    n           = array.size(bar_times)
+
+    for spin = 1 to inner_spiral_count
+        a_val   = a_base * math.pow(0.7, spin - 1)
+        pts               = array.new<chart.point>()
+        pts_mirror_price  = array.new<chart.point>()
+        pts_mirror_spiral = array.new<chart.point>()
+        pts_sym_time      = array.new<chart.point>()
+        pts_dual          = array.new<chart.point>()
+        pts_anti          = array.new<chart.point>()
+
+        array.push(pts,               chart.point.from_time(t1, p1))
+        array.push(pts_mirror_price,  chart.point.from_time(t1, p1))
+        array.push(pts_mirror_spiral, chart.point.from_time(t1, p1))
+        array.push(pts_sym_time,      chart.point.from_time(t1, p1))
+        array.push(pts_dual,          chart.point.from_time(t1, p1))
+        array.push(pts_anti,          chart.point.from_time(t1, p1))
+
+        prev_seg_pts   = array.new<chart.point>()
+        prev_color_idx = 0
+        prev_p         = p1
+        acc_len        = 0.0
+        prev_turn      = 0
+
+        for i = 1 to max_steps
+            theta     = dir * (i * 0.1 + t_off)
+            if math.abs(theta) > max_theta
+                break
+            r         = a_val * math.exp(b * math.abs(theta))
+            raw_dx    = r * (dt * math.cos(theta) - dt * math.sin(theta))
+            raw_dy    = r * (dp * math.sin(theta) + dp * math.cos(theta))
+            dx        = raw_dx * cos_s - raw_dy / math.max(math.abs(dp), 0.0001) * math.abs(dp) * sin_s
+            dy        = raw_dx / math.max(math.abs(dt), 1) * math.abs(dt) * sin_s + raw_dy * cos_s
+            ct        = math.round(t1 + dx)
+            cp        = p1 + dy
+            ct_sym    = math.round(t1 - dx)
+            cur_turn  = math.floor(math.abs(theta) / (2 * math.pi))
+
+            if ct > 0 and ct < 32503680000000
+                best_idx  = 0
+                best_diff = math.abs(array.get(bar_times, 0) - ct)
+                for j = 1 to n - 1
+                    d = math.abs(array.get(bar_times, j) - ct)
+                    if d < best_diff
+                        best_diff := d
+                        best_idx  := j
+                real_close = array.get(bar_closes, best_idx)
+                cm_price   = 2.0 * cp - real_close
+                array.push(pts,               chart.point.from_time(ct, cp))
+                if show_mirror_price
+                    array.push(pts_mirror_price,  chart.point.from_time(ct, cm_price))
+                if show_mirror_spiral
+                    array.push(pts_mirror_spiral, chart.point.from_time(ct, p1 - dy))
+                if sym_time or sym_dual
+                    if ct_sym > 0 and ct_sym < 32503680000000
+                        array.push(pts_sym_time, chart.point.from_time(ct_sym, cp))
+                        if sym_dual
+                            array.push(pts_dual, chart.point.from_time(ct_sym, p1 - dy))
+                if antiphase
+                    ct_anti = math.round(t1 + dx)
+                    if ct_anti > 0 and ct_anti < 32503680000000
+                        array.push(pts_anti, chart.point.from_time(ct_anti, p1 - dy + (p1 - dy - cp)))
+
+                if show_dots and cur_turn > prev_turn
+                    label.new(ct, cp, "?", xloc=xloc.bar_time, style=label.style_none, textcolor=dot_color, size=size.small)
+                prev_turn := cur_turn
+
+            acc_len += math.abs(cp - prev_p)
+            prev_p  := cp
+
+            if use_candle_limit
+                if acc_len > sum_height
+                    break
+            else
+                if num_turns == 0
+                    if math.abs(dx) > math.abs(dt) * 3 and math.abs(dy) > math.abs(dp) * 3
+                        break
+
+        if array.size(pts) > 1
+            s_color = gradient_mode ? color.from_gradient(spin, 1, inner_spiral_count, spiral_color, grad_color2) : spiral_color
+            polyline.new(pts, xloc=xloc.bar_time, line_color=s_color, line_width=line_width)
+
+        if show_mirror_price and array.size(pts_mirror_price) > 1
+            polyline.new(pts_mirror_price,  xloc=xloc.bar_time, line_color=mirror_color,      line_width=line_width)
+        if show_mirror_spiral and array.size(pts_mirror_spiral) > 1
+            polyline.new(pts_mirror_spiral, xloc=xloc.bar_time, line_color=mirror_spiral_col, line_width=line_width)
+        if (sym_time or sym_dual) and array.size(pts_sym_time) > 1
+            polyline.new(pts_sym_time, xloc=xloc.bar_time, line_color=color.new(spiral_color, 40), line_width=line_width)
+        if sym_dual and array.size(pts_dual) > 1
+            polyline.new(pts_dual, xloc=xloc.bar_time, line_color=color.new(mirror_spiral_col, 40), line_width=line_width)
+        if antiphase and array.size(pts_anti) > 1
+            polyline.new(pts_anti, xloc=xloc.bar_time, line_color=color.new(mirror_color, 40), line_width=line_width)
+
+    if show_labels
+        label.new(t1, p1, "?  ãÑ˜Ò", xloc=xloc.bar_time, style=label.style_label_right, color=color.new(spiral_color, 70), textcolor=spiral_color, size=size.small)
+        label.new(t2, p2, "?  áÈå",  xloc=xloc.bar_time, style=label.style_label_left,  color=color.new(spiral_color, 70), textcolor=spiral_color, size=size.small)
+
+    if show_dashboard
+        avg_s = slope_count > 0 ? slope_sum / slope_count * 100 : 0.0
+        dashboard_text = "ÇÓíÑÇá\n??????????\nÒÇæíå ÔíÈ: " + str.tostring(math.round(total_angle * 180 / math.pi, 2)) + "°\nãíÇäíä ÔíÈ: " + str.tostring(math.round(avg_s, 3)) + "%\nÊÚÏÇÏ ˜äÏá: " + str.tostring(bar_count) + "\nATR ãíÇäíä: " + str.tostring(math.round(avg_atr, 4)) + "\näÓÈÊ ÑÔÏ: " + str.tostring(fib_ratio)
+        var table dash = table.new(position.top_right, 1, 1, bgcolor=color.new(color.black, 70), border_color=color.gray, border_width=1)
+        table.cell(dash, 0, 0, dashboard_text, text_color=color.white, text_size=size.small)

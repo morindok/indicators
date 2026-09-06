@@ -1,0 +1,125 @@
+//@version=6
+indicator("Bmoon System Pivot Finder - Auto Pivot Target", overlay=true, max_lines_count=500)
+n = input.int(2, title="Pivot Periods (Left/Right)", minval=2)
+useLog = input.bool(true, title="Use Logarithmic Scale")
+autoAdjust = input.bool(true, title="Auto Adjust Multipliers (ATR Based)")
+
+// --- P1 Inputs ---
+mirrorLevel1 = input.price(0, title="P1 Mirror Level", confirm=true)
+levelMult1   = input.float(1.0, title="P1 Base Level Multiplier", step=0.1)
+selectedTime1 = input.time(0, title="P1 Reference Time", confirm=true)
+timeMult1    = input.float(1.0, title="P1 Base Time Distance Multiplier", step=0.1)
+
+// --- P2 Inputs ---
+mirrorLevel2 = input.price(0, title="P2 Mirror Level", confirm=true)
+levelMult2   = input.float(1.382, title="P2 Base Level Multiplier", step=0.1)
+selectedTime2 = input.time(0, title="P2 Reference Time", confirm=true)
+timeMult2    = input.float(1.382, title="P2 Base Time Distance Multiplier", step=0.1)
+
+// --- Auto Adjust Logic ---
+float atr14 = ta.atr(14)
+float atr50 = ta.sma(atr14, 50)
+float volRatio = nz(atr14 / atr50, 1.0)
+
+float finalLevelMult1 = autoAdjust ? levelMult1 * volRatio : levelMult1
+float finalTimeMult1  = autoAdjust ? timeMult1 * volRatio : timeMult1
+float finalLevelMult2 = autoAdjust ? levelMult2 * volRatio : levelMult2
+float finalTimeMult2  = autoAdjust ? timeMult2 * volRatio : timeMult2
+
+// --- Smart Engine Logic (Added) ---
+bool smartEngine = input.bool(true, title="Smart Engine (Wave & Market Adapt)")
+float fibExt = input.float(0.618, title="Smart Fib Extension", step=0.1)
+float waveAmp = math.abs(mirrorLevel2 - mirrorLevel1)
+float waveBarsMs = math.abs(selectedTime2 - selectedTime1)
+float waveBars = waveBarsMs / (timeframe.in_seconds() * 1000)
+float volAdapt = nz(atr14 / (waveAmp / math.max(waveBars, 1)), 1.0)
+
+f_smartMult(baseMult, isLevel) => smartEngine ? baseMult * volAdapt * (isLevel ? fibExt : 1.0) : baseMult
+
+// --- Mirror Levels ---
+float adjMirrorLevel1 = mirrorLevel1 * f_smartMult(finalLevelMult1, true)
+float adjMirrorLevel2 = mirrorLevel2 * f_smartMult(finalLevelMult2, true)
+
+float mHigh1  = useLog ? (adjMirrorLevel1 * adjMirrorLevel1 / low)   : float(2.0 * adjMirrorLevel1 - low)
+float mLow1   = useLog ? (adjMirrorLevel1 * adjMirrorLevel1 / high)  : float(2.0 * adjMirrorLevel1 - high)
+
+float mHigh2  = useLog ? (adjMirrorLevel2 * adjMirrorLevel2 / low)   : float(2.0 * adjMirrorLevel2 - low)
+float mLow2   = useLog ? (adjMirrorLevel2 * adjMirrorLevel2 / high)  : float(2.0 * adjMirrorLevel2 - high)
+
+// --- Pivot Targeting ---
+float pivotHigh = ta.pivothigh(high, n, n)
+float pivotLow  = ta.pivotlow(low, n, n)
+
+bool isPivotHigh = not na(pivotHigh)
+bool isPivotLow  = not na(pivotLow)
+
+var int refBarIndex1 = na, var int refBarIndex2 = na
+if time <= selectedTime1
+    refBarIndex1 := bar_index
+if time <= selectedTime2
+    refBarIndex2 := bar_index
+
+// Pivot Arrays
+var upFracIdx1 = array.new_int(0), var dnFracIdx1 = array.new_int(0)
+if isPivotHigh and time[n] < selectedTime1
+    array.push(upFracIdx1, int(bar_index - n))
+if isPivotLow and time[n] < selectedTime1
+    array.push(dnFracIdx1, int(bar_index - n))
+
+var upFracIdx2 = array.new_int(0), var dnFracIdx2 = array.new_int(0)
+if isPivotHigh and time[n] < selectedTime2
+    array.push(upFracIdx2, int(bar_index - n))
+if isPivotLow and time[n] < selectedTime2
+    array.push(dnFracIdx2, int(bar_index - n))
+
+// --- Shifted References ---
+int baseInterval = (na(refBarIndex1) or na(refBarIndex2)) ? 0 : math.abs(refBarIndex2 - refBarIndex1)
+
+int shiftedRef1 = na(refBarIndex1) ? na : int(refBarIndex1 + math.round(baseInterval * f_smartMult(finalTimeMult1, false)))
+int shiftedRef2 = na(refBarIndex2) ? na : int(refBarIndex2 + math.round(baseInterval * f_smartMult(finalTimeMult2, false)))
+
+int targetIdx1 = na(shiftedRef1) ? na : (shiftedRef1 - (bar_index - shiftedRef1))
+int targetIdx2 = na(shiftedRef2) ? na : (shiftedRef2 - (bar_index - shiftedRef2))
+
+bool p1Up = not na(shiftedRef1) and bar_index > shiftedRef1 and array.indexof(upFracIdx1, targetIdx1) >= 0
+bool p1Dn = not na(shiftedRef1) and bar_index > shiftedRef1 and array.indexof(dnFracIdx1, targetIdx1) >= 0
+bool p2Up = not na(shiftedRef2) and bar_index > shiftedRef2 and array.indexof(upFracIdx2, targetIdx2) >= 0
+bool p2Dn = not na(shiftedRef2) and bar_index > shiftedRef2 and array.indexof(dnFracIdx2, targetIdx2) >= 0
+
+var float[] activeLineY = array.new_float(0)
+var int[] activeLineConfirmX = array.new_int(0)
+
+// Simplified Intersection Logic for Pivots
+if p1Up or p2Up or p1Dn or p2Dn
+    float targetY = p1Up ? mHigh1 : p2Up ? mHigh2 : p1Dn ? mLow1 : mLow2
+    array.push(activeLineY, targetY)
+    array.push(activeLineConfirmX, bar_index)
+
+bool buySignal = false
+bool sellSignal = false
+
+int arrSize = array.size(activeLineY)
+if arrSize > 0
+    for i = arrSize - 1 to 0
+        float ly = array.get(activeLineY, i)
+        int confirmX = array.get(activeLineConfirmX, i)
+        
+        if bar_index > confirmX
+            bool touchFromAbove = (low[1] > ly and low <= ly)
+            bool touchFromBelow = (high[1] < ly and high >= ly)
+            
+            if touchFromAbove
+                buySignal := true 
+                array.remove(activeLineY, i)
+                array.remove(activeLineConfirmX, i)
+            else if touchFromBelow
+                sellSignal := true 
+                array.remove(activeLineY, i)
+                array.remove(activeLineConfirmX, i)
+
+// --- Plotting Exact Pivot Targets ---
+plotshape(isPivotHigh ? pivotHigh : na, title="Pivot High", style=shape.circle, location=location.absolute, color=color.new(color.orange, 50), size=size.tiny, offset=-n)
+plotshape(isPivotLow ? pivotLow : na, title="Pivot Low", style=shape.circle, location=location.absolute, color=color.new(color.blue, 50), size=size.tiny, offset=-n)
+
+plotshape(buySignal, title="Buy Signal", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small)
+plotshape(sellSignal, title="Sell Signal", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small)

@@ -1,0 +1,140 @@
+//@version=6
+indicator("Fractal Symmetry Signals", overlay=true)
+
+n = input.int(2, "Fractal Periods", minval=2)
+slopeMultiplier = input.float(1.618, "Slope Multiplier", step=0.01)
+midSlopeRatio = input.float(0.5, "Mid Slope Ratio", step=0.1)
+zoneHeightPct = input.float(0.3, "Zone Height %", step=0.05)
+maxZones = input.int(15, "Max Zones", minval=3, maxval=50)
+
+bool upflagDownFrontier = true
+bool upflagUpFrontier0 = true
+bool upflagUpFrontier1 = true
+bool upflagUpFrontier2 = true
+bool upflagUpFrontier3 = true
+bool upflagUpFrontier4 = true
+for i = 1 to n
+    upflagDownFrontier := upflagDownFrontier and (high[n-i] < high[n])
+    upflagUpFrontier0 := upflagUpFrontier0 and (high[n+i] < high[n])
+    upflagUpFrontier1 := upflagUpFrontier1 and (high[n+1] <= high[n] and high[n+i+1] < high[n])
+    upflagUpFrontier2 := upflagUpFrontier2 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i+2] < high[n])
+    upflagUpFrontier3 := upflagUpFrontier3 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i+3] < high[n])
+    upflagUpFrontier4 := upflagUpFrontier4 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i+4] < high[n])
+flagUpFrontier = upflagUpFrontier0 or upflagUpFrontier1 or upflagUpFrontier2 or upflagUpFrontier3 or upflagUpFrontier4
+upFractal = upflagDownFrontier and flagUpFrontier
+
+bool downflagDownFrontier = true
+bool downflagUpFrontier0 = true
+bool downflagUpFrontier1 = true
+bool downflagUpFrontier2 = true
+bool downflagUpFrontier3 = true
+bool downflagUpFrontier4 = true
+for i = 1 to n
+    downflagDownFrontier := downflagDownFrontier and (low[n-i] > low[n])
+    downflagUpFrontier0 := downflagUpFrontier0 and (low[n+i] > low[n])
+    downflagUpFrontier1 := downflagUpFrontier1 and (low[n+1] >= low[n] and low[n+i+1] > low[n])
+    downflagUpFrontier2 := downflagUpFrontier2 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i+2] > low[n])
+    downflagUpFrontier3 := downflagUpFrontier3 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i+3] > low[n])
+    downflagUpFrontier4 := downflagUpFrontier4 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i+4] > low[n])
+flagDownFrontier = downflagUpFrontier0 or downflagUpFrontier1 or downflagUpFrontier2 or downflagUpFrontier3 or downflagUpFrontier4
+downFractal = downflagDownFrontier and flagDownFrontier
+
+var float prevFractalPrice = na
+var int prevFractalTime = na
+var int prevWasUp = -1
+
+var float[] zoneTop = array.new_float()
+var float[] zoneBot = array.new_float()
+var int[] zoneBear = array.new_int()
+var int[] zoneUsed = array.new_int()
+
+trimZones() =>
+    if array.size(zoneTop) > maxZones
+        array.shift(zoneTop)
+        array.shift(zoneBot)
+        array.shift(zoneBear)
+        array.shift(zoneUsed)
+    if array.size(zoneTop) > maxZones
+        array.shift(zoneTop)
+        array.shift(zoneBot)
+        array.shift(zoneBear)
+        array.shift(zoneUsed)
+    if array.size(zoneTop) > maxZones
+        array.shift(zoneTop)
+        array.shift(zoneBot)
+        array.shift(zoneBear)
+        array.shift(zoneUsed)
+
+fractalDetected = upFractal or downFractal
+
+if fractalDetected
+    currentIsUp = upFractal ? 1 : 0
+    f2P = upFractal ? high[n] : low[n]
+    f2T_ms = time[n]
+
+    if prevWasUp != -1 and prevWasUp != currentIsUp and not na(prevFractalPrice)
+        f1P = prevFractalPrice
+        f1T = float(prevFractalTime) / 60000.0
+        f2T = float(f2T_ms) / 60000.0
+        dT = f2T - f1T
+
+        if math.abs(dT) > 0.0
+            midLevel = (f1P + f2P) / 2.0
+            baseUpper = math.max(f1P, f2P)
+            baseLower = math.min(f1P, f2P)
+            swingRange = baseUpper - baseLower
+            priceSlope = (f2P - f1P) / dT
+            isBull = f2P > f1P
+            upperSlope = (isBull ? priceSlope : -priceSlope) * slopeMultiplier
+            midSlope1 = -(math.abs(upperSlope) * midSlopeRatio)
+            bearDir = isBull ? 0 : 1
+            halfH = swingRange * zoneHeightPct / 100.0
+
+            p_mid = midLevel + midSlope1 * (dT / 2.0)
+            array.push(zoneTop, p_mid + halfH)
+            array.push(zoneBot, p_mid - halfH)
+            array.push(zoneBear, bearDir)
+            array.push(zoneUsed, 0)
+
+            if upperSlope != 0.0
+                crossOffset = dT / 2.0 + (baseLower - baseUpper) / (2.0 * upperSlope)
+                p_ul = baseUpper + upperSlope * crossOffset
+                p_lu = baseLower - upperSlope * crossOffset
+
+                if p_ul > 0.0
+                    array.push(zoneTop, p_ul + halfH)
+                    array.push(zoneBot, p_ul - halfH)
+                    array.push(zoneBear, bearDir)
+                    array.push(zoneUsed, 0)
+
+                if p_lu > 0.0
+                    array.push(zoneTop, p_lu + halfH)
+                    array.push(zoneBot, p_lu - halfH)
+                    array.push(zoneBear, bearDir)
+                    array.push(zoneUsed, 0)
+
+            trimZones()
+
+    prevFractalPrice := f2P
+    prevFractalTime := f2T_ms
+    prevWasUp := currentIsUp
+
+buySignal = false
+sellSignal = false
+
+if array.size(zoneTop) > 0
+    for i = 0 to array.size(zoneTop) - 1
+        if array.get(zoneUsed, i) == 0
+            zTop = array.get(zoneTop, i)
+            zBot = array.get(zoneBot, i)
+            bear = array.get(zoneBear, i)
+            inZone = high >= zBot and low <= zTop
+            if inZone and close > open and close[1] <= open[1] and bear == 0
+                buySignal := true
+                array.set(zoneUsed, i, 1)
+            if inZone and close < open and close[1] >= open[1] and bear == 1
+                sellSignal := true
+                array.set(zoneUsed, i, 1)
+
+plotshape(buySignal, style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small)
+plotshape(sellSignal, style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small)

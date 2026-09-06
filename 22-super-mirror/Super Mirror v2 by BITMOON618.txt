@@ -1,0 +1,173 @@
+//@version=5
+indicator("Super Mirror {Morindok} by BITMOON618", overlay=true)
+
+// ==========================================
+//  ‰ŸÌ„«  ”ÿÊÕ œ” Ì Ê “„«‰
+// ==========================================
+price1 = input.price(0, title="Level 1", confirm=true)
+price2 = input.price(0, title="Level 2", confirm=true)
+time1 = input.time(0, title="Start Time", confirm=true)
+time2 = input.time(0, title="End Time", confirm=true)
+
+baseline_type = input.string("Golden Cloud", options=["Golden Cloud", "Moving Average", "HH/LL", "ATR", "Bollinger Bands", "Ichimoku Cloud", "RSI", "CCI", "MACD"], title="Baseline Type")
+
+lookback = input.int(20, "Lookback Period (Golden/HHLL)", group="Baseline Settings")
+atr_len = input.int(14, "ATR Length", group="Baseline Settings")
+atr_mult = input.float(1.0, "ATR Multiplier", group="Baseline Settings")
+bb_len = input.int(20, "Bollinger Length", group="Baseline Settings")
+bb_mult = input.float(2.0, "Bollinger Multiplier", group="Baseline Settings")
+rsi_len = input.int(14, "RSI Length", group="Baseline Settings")
+cci_len = input.int(20, "CCI Length", group="Baseline Settings")
+
+//  ‰ŸÌ„«  MACD
+macd_fast = input.int(12, "MACD Fast Length", group="Baseline Settings")
+macd_slow = input.int(26, "MACD Slow Length", group="Baseline Settings")
+macd_signal = input.int(9, "MACD Signal Length", group="Baseline Settings")
+
+//  ‰ŸÌ„«  «ÌçÌ„ÊòÊ (»œÊ‰ ‘Ì› )
+tenkan_len = input.int(9, "Tenkan-sen Length", group="Baseline Settings")
+kijun_len = input.int(26, "Kijun-sen Length", group="Baseline Settings")
+senkou_len = input.int(52, "Senkou Span B Length", group="Baseline Settings")
+
+// ==========================================
+// „ €Ì—Â«Ì “„«‰Ì
+// ==========================================
+var int start_bar = na
+start_bar := na(start_bar) and time >= time1 ? bar_index : start_bar
+var int end_bar = na
+end_bar := na(end_bar) and time >= time2 ? bar_index : end_bar
+
+float src_price = close
+
+// ==========================================
+// „Õ«”»«  »Ì” ·«Ì‰ Â«
+// ==========================================
+// 1. „Ì«‰êÌ‰ „ Õ—ò (MA)
+ma_length = na(start_bar) or na(end_bar) ? 14 : math.max(1, math.abs(end_bar - start_bar))
+ma = ta.sma(src_price, int(ma_length))
+
+// 2. «»— ÿ·«ÌÌ Ê HH/LL
+highestPrice = ta.highest(high, lookback)
+lowestPrice = ta.lowest(low, lookback)
+
+goldenRatio = 1.618
+midPoint = (highestPrice + lowestPrice) / 2
+priceRange = highestPrice - lowestPrice
+goldenRange = priceRange / goldenRatio
+upperLevel = midPoint + (goldenRange / 2)
+lowerLevel = midPoint - (goldenRange / 2)
+
+// 3. „Õ«”»«  ATR
+atr_val = ta.atr(atr_len) * atr_mult
+atr_upper = ma + atr_val
+atr_lower = ma - atr_val
+
+// 4. „Õ«”»«  »Ê·Ì‰ê— »«‰œ
+[bb_mid, bb_upper, bb_lower] = ta.bb(src_price, bb_len, bb_mult)
+
+// 5. „Õ«”»«  «»— «ÌçÌ„ÊòÊ (»œÊ‰ ¬›” )
+tenkan = math.avg(ta.highest(high, tenkan_len), ta.lowest(low, tenkan_len))
+kijun = math.avg(ta.highest(high, kijun_len), ta.lowest(low, kijun_len))
+senkouA = math.avg(tenkan, kijun)
+senkouB = math.avg(ta.highest(high, senkou_len), ta.lowest(low, senkou_len))
+
+ichi_upper = math.max(nz(senkouA, src_price), nz(senkouB, src_price))
+ichi_lower = math.min(nz(senkouA, src_price), nz(senkouB, src_price))
+
+// 6. „Õ«”»«  RSI ( »œÌ· »Â „ﬁÌ«” ﬁÌ„ )
+rsi_val = ta.rsi(src_price, rsi_len)
+highest_price_rsi = ta.highest(high, rsi_len)
+lowest_price_rsi = ta.lowest(low, rsi_len)
+rsi_mapped = lowest_price_rsi + (rsi_val / 100) * (highest_price_rsi - lowest_price_rsi)
+
+// 7. „Õ«”»«  CCI ( »œÌ· »Â „ﬁÌ«” ﬁÌ„ )
+cci_val = ta.cci(src_price, cci_len)
+cci_highest = ta.highest(cci_val, cci_len)
+cci_lowest = ta.lowest(cci_val, cci_len)
+cci_ratio = (cci_val - cci_lowest) / math.max(cci_highest - cci_lowest, 1e-10) // Ã·ÊêÌ—Ì «“  ﬁ”Ì„ »— ’›—
+highest_price_cci = ta.highest(high, cci_len)
+lowest_price_cci = ta.lowest(low, cci_len)
+cci_mapped = lowest_price_cci + cci_ratio * (highest_price_cci - lowest_price_cci)
+
+// 8. „Õ«”»«  MACD ( »œÌ· »Â „ﬁÌ«” ﬁÌ„ )
+[macd_line, signal_line, _] = ta.macd(src_price, macd_fast, macd_slow, macd_signal)
+macd_highest = ta.highest(macd_line, macd_slow)
+macd_lowest = ta.lowest(macd_line, macd_slow)
+macd_ratio = (macd_line - macd_lowest) / math.max(macd_highest - macd_lowest, 1e-10)
+highest_price_macd = ta.highest(high, macd_slow)
+lowest_price_macd = ta.lowest(low, macd_slow)
+macd_mapped = lowest_price_macd + macd_ratio * (highest_price_macd - lowest_price_macd)
+
+// «‰ Œ«» »Ì”ù·«Ì‰  Ê”ÿ ò«—»—
+actual_upper = baseline_type == "Golden Cloud" ? upperLevel : 
+               baseline_type == "HH/LL" ? highestPrice : 
+               baseline_type == "ATR" ? atr_upper : 
+               baseline_type == "Bollinger Bands" ? bb_upper :
+               baseline_type == "Ichimoku Cloud" ? ichi_upper :
+               baseline_type == "RSI" ? rsi_mapped :
+               baseline_type == "CCI" ? cci_mapped :
+               baseline_type == "MACD" ? macd_mapped :
+               ma
+
+actual_lower = baseline_type == "Golden Cloud" ? lowerLevel : 
+               baseline_type == "HH/LL" ? lowestPrice : 
+               baseline_type == "ATR" ? atr_lower : 
+               baseline_type == "Bollinger Bands" ? bb_lower :
+               baseline_type == "Ichimoku Cloud" ? ichi_lower :
+               baseline_type == "RSI" ? rsi_mapped :
+               baseline_type == "CCI" ? cci_mapped :
+               baseline_type == "MACD" ? macd_mapped :
+               ma
+
+p_upper = plot(actual_upper, "Upper Baseline", color=color.blue, display=display.none)
+p_lower = plot(actual_lower, "Lower Baseline", color=color.red, display=display.none)
+
+// ==========================================
+//  ﬁ«—‰ ﬁÌ„  (Reflection)
+// ==========================================
+price_ref1_lvl1 = 2 * price1 - src_price
+price_ref1_lvl2 = 2 * price2 - src_price
+plot(price_ref1_lvl1, title="Reflected Price on Level 1", display=display.none)
+plot(price_ref1_lvl2, title="Reflected Price on Level 2", display=display.none)
+
+price_ref2_lvl1 = 2 * actual_upper - price_ref1_lvl1
+price_ref2_lvl2 = 2 * actual_lower - price_ref1_lvl2
+plot(price_ref2_lvl1, title="Reflected back on Upper Baseline", display=display.none)
+plot(price_ref2_lvl2, title="Reflected back on Lower Baseline", display=display.none)
+
+// ==========================================
+// „‰ÿﬁ ”Ìê‰«·ùœÂÌ
+// ==========================================
+is_after = not na(end_bar) and bar_index > end_bar
+
+// --- „‰ÿﬁ ›—Ê‘ ---
+var float lowest_green = na
+var bool has_collided_sell = false
+var bool signal_fired_sell = false
+
+lowest_green := is_after and not has_collided_sell ? math.min(nz(lowest_green, price_ref2_lvl1), price_ref2_lvl1) : lowest_green
+plot(is_after ? lowest_green : na, title="Lowest Green Tracker", display=display.none)
+
+is_hit_sell = is_after and not na(lowest_green) and not has_collided_sell and (ta.cross(price_ref2_lvl2, lowest_green) or price_ref2_lvl2 == lowest_green)
+sell_signal = is_hit_sell and not signal_fired_sell
+
+has_collided_sell := has_collided_sell or is_hit_sell
+signal_fired_sell := signal_fired_sell or sell_signal
+
+plotshape(sell_signal, title="Sell Signal", text="SELL", style=shape.labeldown, location=location.abovebar, color=color.red, textcolor=color.white, size=size.small)
+
+// --- „‰ÿﬁ Œ—Ìœ ---
+var float highest_purple = na
+var bool has_collided_buy = false
+var bool signal_fired_buy = false
+
+highest_purple := is_after and not has_collided_buy ? math.max(nz(highest_purple, price_ref2_lvl2), price_ref2_lvl2) : highest_purple
+plot(is_after ? highest_purple : na, title="Highest Purple Tracker", display=display.none)
+
+is_hit_buy = is_after and not na(highest_purple) and not has_collided_buy and (ta.cross(price_ref2_lvl1, highest_purple) or price_ref2_lvl1 == highest_purple)
+buy_signal = is_hit_buy and not signal_fired_buy
+
+has_collided_buy := has_collided_buy or is_hit_buy
+signal_fired_buy := signal_fired_buy or buy_signal
+
+plotshape(buy_signal, title="Buy Signal", text="BUY", style=shape.labelup, location=location.belowbar, color=color.green, textcolor=color.white, size=size.small)

@@ -1,0 +1,476 @@
+import dash
+from dash import dcc, html, Input, Output
+import plotly.graph_objects as go
+import yfinance as yf
+import numpy as np
+import time
+import math
+import pandas as pd
+
+# ==========================================
+# 1. ·Ì”  œ«—«ÌÌùÂ« (30 «—“ + ÿ·«)
+# ==========================================
+ASSETS = {
+    'Bitcoin (BTC)': 'BTC-USD',
+    'Ethereum (ETH)': 'ETH-USD',
+    'Solana (SOL)': 'SOL-USD',
+    'Binance (BNB)': 'BNB-USD',
+    'XRP': 'XRP-USD',
+    'Cardano (ADA)': 'ADA-USD',
+    'Dogecoin (DOGE)': 'DOGE-USD',
+    'Polkadot (DOT)': 'DOT-USD',
+    'Avalanche (AVAX)': 'AVAX-USD',
+    'Chainlink (LINK)': 'LINK-USD',
+    'Litecoin (LTC)': 'LTC-USD',
+    'Polygon (MATIC)': 'MATIC-USD',
+    'Stellar (XLM)': 'XLM-USD',
+    'Uniswap (UNI)': 'UNI-USD',
+    'Cosmos (ATOM)': 'ATOM-USD',
+    'Monero (XMR)': 'XMR-USD',
+    'Filecoin (FIL)': 'FIL-USD',
+    'Aave (AAVE)': 'AAVE-USD',
+    'Algorand (ALGO)': 'ALGO-USD',
+    'Tezos (XTZ)': 'XTZ-USD',
+    'VeChain (VET)': 'VET-USD',
+    'Tron (TRX)': 'TRX-USD',
+    'EOS': 'EOS-USD',
+    'Neo (NEO)': 'NEO-USD',
+    'Dash': 'DASH-USD',
+    'Zcash (ZEC)': 'ZEC-USD',
+    'Maker (MKR)': 'MKR-USD',
+    'Compound (COMP)': 'COMP-USD',
+    'Shiba Inu (SHIB)': 'SHIB-USD',
+    'Toncoin (TON)': 'TON-USD',
+    'Gold (XAU)': 'GC=F',
+}
+
+# ==========================================
+# 2. ”Ì” „ “„«‰ Ê ›Ì“Ìò òÌÂ«‰Ì
+# ==========================================
+def get_julian_date():
+    return time.time() / 86400.0 + 2440587.5
+
+G = 6.67430e-11
+AU = 1.496e11
+SOLAR_MASS = 1.989e30
+SGR_A_MASS = 4.1e6 * SOLAR_MASS
+GALACTIC_CENTER_DIST = 8.0 * 3.086e16 * 1000
+
+
+class SolarSystem:
+    def __init__(self):
+        self.planets = {
+            'Mercury': {'a': 0.387, 'P': 87.97,  'm': 1.66e-7, 'inc': 7.0,  'phase': 0},
+            'Venus':   {'a': 0.723, 'P': 224.7,  'm': 2.45e-6, 'inc': 3.4,  'phase': 45},
+            'Earth':   {'a': 1.000, 'P': 365.25, 'm': 3.00e-6, 'inc': 0.0,  'phase': 90},
+            'Mars':    {'a': 1.524, 'P': 687.0,  'm': 3.23e-7, 'inc': 1.85, 'phase': 135},
+            'Jupiter': {'a': 5.203, 'P': 4331.0, 'm': 9.55e-4, 'inc': 1.3,  'phase': 180},
+            'Saturn':  {'a': 9.537, 'P': 10747., 'm': 2.86e-4, 'inc': 2.5,  'phase': 225},
+        }
+        self.sun_pos = np.array([0.0, 0.0, 0.0])
+
+    def get_position(self, planet_name, jd):
+        p = self.planets[planet_name]
+        n = 2 * math.pi / p['P']
+        t = jd - 2451545.0
+        M = (n * t + math.radians(p['phase'])) % (2 * math.pi)
+        x = p['a'] * math.cos(M)
+        y = p['a'] * math.sin(M) * math.cos(math.radians(p['inc']))
+        z = p['a'] * math.sin(M) * math.sin(math.radians(p['inc']))
+        return np.array([x, y, z])
+
+    def get_all_positions(self, jd):
+        positions = {'Sun': self.sun_pos.copy()}
+        for name in self.planets:
+            positions[name] = self.get_position(name, jd)
+        return positions
+
+    def get_orbit_trace(self, planet_name, color):
+        p = self.planets[planet_name]
+        theta = np.linspace(0, 2 * np.pi, 100)
+        x = p['a'] * np.cos(theta)
+        y = p['a'] * np.sin(theta) * math.cos(math.radians(p['inc']))
+        z = p['a'] * np.sin(theta) * math.sin(math.radians(p['inc']))
+        return go.Scatter3d(
+            x=x, y=y, z=z, mode='lines',
+            line=dict(color=color, width=1, dash='dot'), showlegend=False
+        )
+
+
+class CosmicPredictor:
+    def __init__(self):
+        self.solar_system = SolarSystem()
+
+    def calculate_gravitational_vectors(self, jd):
+        pos = self.solar_system.get_all_positions(jd)
+        earth_pos = pos['Earth']
+        forces = {}
+
+        # ŒÊ—‘Ìœ
+        r_vec = pos['Sun'] - earth_pos
+        dist = np.linalg.norm(r_vec) * AU
+        mag = G * (SOLAR_MASS * self.solar_system.planets['Earth']['m'] * SOLAR_MASS) / (dist ** 2)
+        forces['Sun'] = {'vec': r_vec / max(np.linalg.norm(r_vec), 1e-30), 'mag': mag}
+
+        # „‘ —Ì
+        r_vec = pos['Jupiter'] - earth_pos
+        dist = np.linalg.norm(r_vec) * AU
+        m_p = self.solar_system.planets['Jupiter']['m'] * SOLAR_MASS
+        mag = G * (self.solar_system.planets['Earth']['m'] * SOLAR_MASS * m_p) / (dist ** 2)
+        forces['Jupiter'] = {'vec': r_vec / max(np.linalg.norm(r_vec), 1e-30), 'mag': mag}
+
+        # ”Ì«Âç«·Â „—ò“Ì
+        galactic_center_pos = np.array([-GALACTIC_CENTER_DIST / AU, 0.0, 0.0])
+        r_vec = galactic_center_pos - earth_pos
+        dist = np.linalg.norm(r_vec) * AU
+        mag = G * (self.solar_system.planets['Earth']['m'] * SOLAR_MASS * SGR_A_MASS) / (dist ** 2)
+        forces['SgrA*'] = {'vec': r_vec / max(np.linalg.norm(r_vec), 1e-30), 'mag': mag}
+
+        return forces
+
+
+# ==========================================
+# 3. „Ê Ê— »òù ”  Ê  Õ·Ì· ¬„«—Ì ÅÌ‘—› Â
+# ==========================================
+def run_backtest(ticker, solar_sys, predictor):
+    try:
+        hist = yf.Ticker(ticker).history(period="5d", interval="5m")
+        if hist.empty:
+            hist = yf.Ticker(ticker).history(period="1mo", interval="1h")
+        if hist.empty:
+            return None
+    except Exception:
+        return None
+
+    prices = hist['Close'].values
+    times_idx = hist.index
+    timestamps_sec = times_idx.astype(np.int64) // 10 ** 9
+    jds = timestamps_sec / 86400.0 + 2440587.5
+
+    step = max(1, min(12, len(prices) // 4))
+
+    hist_preds, actual_next, pred_times = [], [], []
+
+    for i in range(0, len(prices) - step, step):
+        current_jd = jds[i]
+        future_jd = jds[i + step]
+        current_price = prices[i]
+
+        forces_now = predictor.calculate_gravitational_vectors(current_jd)
+        forces_future = predictor.calculate_gravitational_vectors(future_jd)
+
+        base_force = sum(f['mag'] for f in forces_now.values())
+        future_force = sum(f['mag'] for f in forces_future.values())
+        anomaly = (future_force - base_force) / base_force if base_force > 0 else 0
+
+        jup_pos = solar_sys.get_position('Jupiter', future_jd)
+        earth_pos = solar_sys.get_position('Earth', future_jd)
+        norm_j = np.linalg.norm(jup_pos)
+        norm_e = np.linalg.norm(earth_pos)
+        alignment = np.dot(jup_pos, earth_pos) / (norm_j * norm_e) if norm_j > 0 and norm_e > 0 else 0
+
+        pred_price = current_price * (1 + anomaly * 1500) + (alignment * 120)
+        hist_preds.append(pred_price)
+        actual_next.append(prices[i + step])
+        pred_times.append(times_idx[i + step])
+
+    if not hist_preds:
+        return None
+
+    hist_preds = np.array(hist_preds)
+    actual_next = np.array(actual_next)
+    actual_current = np.array([prices[i] for i in range(0, len(prices) - step, step)])
+
+    # Win Rate
+    pred_dir = np.sign(hist_preds - actual_current)
+    actual_dir = np.sign(actual_next - actual_current)
+    mask = actual_dir != 0
+    win_rate = float(np.mean(pred_dir[mask] == actual_dir[mask]) * 100) if np.sum(mask) > 0 else 0.0
+
+    mae = float(np.mean(np.abs(hist_preds - actual_next)))
+    rmse = float(np.sqrt(np.mean((hist_preds - actual_next) ** 2)))
+
+    pred_ret = (hist_preds - actual_current) / np.where(actual_current == 0, 1, actual_current)
+    actual_ret = (actual_next - actual_current) / np.where(actual_current == 0, 1, actual_current)
+    if len(pred_ret) > 1 and np.std(pred_ret) > 0 and np.std(actual_ret) > 0:
+        corr = float(np.corrcoef(pred_ret, actual_ret)[0, 1])
+    else:
+        corr = 0.0
+
+    return {
+        'hist': hist,
+        'pred_times': pred_times,
+        'hist_preds': hist_preds,
+        'stats': {
+            'Win Rate': f"{win_rate:.1f}%",
+            'MAE': f"${mae:.2f}",
+            'RMSE': f"${rmse:.2f}",
+            'Correlation': f"{corr:.3f}",
+            'Volatility': f"{float(np.std(actual_ret)) * 100:.2f}%",
+        },
+        'current_price': float(prices[-1]),
+    }
+
+
+# ==========================================
+# 4. ”«Œ  ê—«› ”Âù»⁄œÌ „‰ŸÊ„Â ‘„”Ì
+# ==========================================
+def build_solar_fig(solar_sys, positions, forces):
+    fig = go.Figure()
+
+    colors_orbit = {
+        'Mercury': 'gray', 'Venus': 'orange', 'Earth': 'blue',
+        'Mars': 'red', 'Jupiter': 'brown', 'Saturn': 'gold',
+    }
+    for name in solar_sys.planets:
+        fig.add_trace(solar_sys.get_orbit_trace(name, colors_orbit[name]))
+
+    colors_body = {
+        'Sun': 'yellow', 'Mercury': 'gray', 'Venus': 'orange',
+        'Earth': '#00ffff', 'Mars': 'red', 'Jupiter': '#d2b48c', 'Saturn': 'gold',
+    }
+    for name, pos in positions.items():
+        size = 15 if name == 'Sun' else (10 if name == 'Jupiter' else 6)
+        if name == 'Earth':
+            size = 12
+        fig.add_trace(go.Scatter3d(
+            x=[pos[0]], y=[pos[1]], z=[pos[2]],
+            mode='markers+text',
+            marker=dict(size=size, color=colors_body.get(name, 'white')),
+            text=[f"Earth (Asset)" if name == 'Earth' else name],
+            textposition='top center', name=name,
+        ))
+
+    earth_pos = positions['Earth']
+    force_colors = {'Sun': 'yellow', 'Jupiter': 'orange', 'SgrA*': 'purple'}
+    for f_name, f_data in forces.items():
+        vec = f_data['vec']
+        fig.add_trace(go.Scatter3d(
+            x=[earth_pos[0], earth_pos[0] + vec[0] * 0.4],
+            y=[earth_pos[1], earth_pos[1] + vec[1] * 0.4],
+            z=[earth_pos[2], earth_pos[2] + vec[2] * 0.4],
+            mode='lines',
+            line=dict(color=force_colors[f_name], width=4),
+            showlegend=False,
+        ))
+
+    fig.update_layout(
+        scene=dict(bgcolor='#050510', aspectmode='cube',
+                   xaxis_title='X (AU)', yaxis_title='Y (AU)', zaxis_title='Z (AU)'),
+        paper_bgcolor='#050510', font=dict(color='white'),
+        margin=dict(l=0, r=0, t=30, b=0), showlegend=False,
+    )
+    return fig
+
+
+# ==========================================
+# 5. ”«Œ  ê—«› ”Âù»⁄œÌ òÂò‘«‰
+# ==========================================
+def build_galaxy_fig(jd):
+    fig = go.Figure()
+    gal_r = 80
+    theta_gal = np.linspace(0, 2 * np.pi, 200)
+
+    fig.add_trace(go.Scatter3d(
+        x=gal_r * np.cos(theta_gal),
+        y=gal_r * np.sin(theta_gal),
+        z=np.zeros_like(theta_gal),
+        mode='lines',
+        line=dict(color='rgba(255,255,255,0.2)', width=3), showlegend=False,
+    ))
+
+    fig.add_trace(go.Scatter3d(
+        x=[0], y=[0], z=[0], mode='markers+text',
+        marker=dict(size=15, color='purple', symbol='diamond'),
+        text=['Sgr A*'], textposition='top center',
+    ))
+
+    galactic_phase = (jd / (225e6 * 365.25)) * 2 * np.pi
+    sx = gal_r * math.cos(galactic_phase)
+    sy = gal_r * math.sin(galactic_phase)
+
+    fig.add_trace(go.Scatter3d(
+        x=[sx], y=[sy], z=[0], mode='markers+text',
+        marker=dict(size=10, color='#00ffff'),
+        text=['Solar System'], textposition='top center',
+    ))
+
+    fig.add_trace(go.Scatter3d(
+        x=[sx, 0], y=[sy, 0], z=[0, 0], mode='lines',
+        line=dict(color='purple', width=3, dash='dash'), showlegend=False,
+    ))
+
+    fig.update_layout(
+        scene=dict(bgcolor='#050510', aspectmode='cube',
+                   xaxis_title='X', yaxis_title='Y', zaxis_title='Z'),
+        paper_bgcolor='#050510', font=dict(color='white'),
+        margin=dict(l=0, r=0, t=30, b=0),
+    )
+    return fig
+
+
+# ==========================================
+# 6. —«Âù«‰œ«“Ì «Å·ÌòÌ‘‰ Dash
+# ==========================================
+app = dash.Dash(__name__)
+app.title = "Cosmic Multi-Asset Predictor"
+
+app.layout = html.Div(style={
+    'backgroundColor': '#050510', 'color': '#e0e0e0', 'fontFamily': 'Segoe UI'
+}, children=[
+
+    html.H1("?? Cosmic Multi-Asset Predictor",
+            style={'textAlign': 'center', 'color': '#00d2ff', 'margin': '20px'}),
+
+    html.Div([
+        dcc.Dropdown(
+            id='asset-dropdown',
+            options=[{'label': k, 'value': v} for k, v in ASSETS.items()],
+            value='BTC-USD',
+            clearable=False,
+            style={'width': '50%', 'margin': 'auto', 'color': 'black'},
+        )
+    ], style={'padding': '10px'}),
+
+    html.Div([
+        html.Div([dcc.Graph(id='solar-system-3d', style={'height': '450px'})],
+                 style={'width': '48%', 'display': 'inline-block', 'padding': '10px'}),
+        html.Div([dcc.Graph(id='galactic-model-3d', style={'height': '450px'})],
+                 style={'width': '48%', 'display': 'inline-block', 'padding': '10px'}),
+    ]),
+
+    html.Div([
+        dcc.Graph(id='price-chart', style={'height': '450px'})
+    ], style={'padding': '10px'}),
+
+    html.Div(id='stats-dashboard', style={'textAlign': 'center', 'padding': '20px'}),
+
+    dcc.Interval(id='interval', interval=30 * 1000, n_intervals=0),
+])
+
+
+# ==========================================
+# 7. Callback «’·Ì
+# ==========================================
+@app.callback(
+    [Output('solar-system-3d', 'figure'),
+     Output('galactic-model-3d', 'figure'),
+     Output('price-chart', 'figure'),
+     Output('stats-dashboard', 'children')],
+    [Input('interval', 'n_intervals'),
+     Input('asset-dropdown', 'value')]
+)
+def update_dashboard(n, ticker):
+    jd = get_julian_date()
+    solar_sys = SolarSystem()
+    predictor = CosmicPredictor()
+    positions = solar_sys.get_all_positions(jd)
+    forces = predictor.calculate_gravitational_vectors(jd)
+
+    # --- ê—«›ùÂ«Ì ”Âù»⁄œÌ ---
+    fig_solar = build_solar_fig(solar_sys, positions, forces)
+    fig_galaxy = build_galaxy_fig(jd)
+
+    # --- »òù ”  ---
+    backtest_data = run_backtest(ticker, solar_sys, predictor)
+
+    # --- ‰„Êœ«— ﬁÌ„  ---
+    fig_price = go.Figure()
+
+    if backtest_data:
+        hist = backtest_data['hist']
+        current_price = backtest_data['current_price']
+
+        # 1) ﬁÌ„  Ê«ﬁ⁄Ì ê–‘ Â
+        fig_price.add_trace(go.Scatter(
+            x=hist.index, y=hist['Close'], mode='lines',
+            name='Actual Price', line=dict(color='#00d2ff', width=2),
+        ))
+
+        # 2) „”Ì— »òù ”  (ÅÌ‘ù»Ì‰ÌùÂ«Ì ê–‘ Â „œ·)
+        fig_price.add_trace(go.Scatter(
+            x=backtest_data['pred_times'],
+            y=backtest_data['hist_preds'],
+            mode='markers+lines',
+            name='Backtest Path',
+            line=dict(color='#ffa500', width=1, dash='dot'),
+            marker=dict(size=3, color='#ffa500'),
+        ))
+
+        # 3) ÅÌ‘ù»Ì‰Ì ¬Ì‰œÂ
+        times_f = [str(hist.index[-1])]
+        preds_f = [current_price]
+
+        for i in range(1, 50):
+            f_jd = jd + (i * 5) / (24 * 60)
+            f_forces = predictor.calculate_gravitational_vectors(f_jd)
+            base_f = sum(f['mag'] for f in forces.values())
+            fut_f = sum(f['mag'] for f in f_forces.values())
+            anom = (fut_f - base_f) / base_f if base_f > 0 else 0
+
+            j_p = solar_sys.get_position('Jupiter', f_jd)
+            e_p = solar_sys.get_position('Earth', f_jd)
+            nj, ne = np.linalg.norm(j_p), np.linalg.norm(e_p)
+            align = float(np.dot(j_p, e_p) / (nj * ne)) if nj > 0 and ne > 0 else 0
+
+            pred = current_price * (1 + anom * 1500) + (align * 120)
+            future_ts = time.time() + i * 300
+            times_f.append(time.strftime('%Y-%m-%d %H:%M', time.localtime(future_ts)))
+            preds_f.append(pred)
+
+        fig_price.add_trace(go.Scatter(
+            x=times_f, y=preds_f, mode='lines',
+            name='Future Prediction',
+            line=dict(color='#ff0055', width=2, dash='dash'),
+        ))
+
+        # 4) Œÿ NOW  ?  «’·«Õ «—Ê—: «” ›«œÂ «“ add_shape + add_annotation
+        now_str = str(hist.index[-1])
+        fig_price.add_shape(
+            type='line',
+            x0=now_str, x1=now_str,
+            y0=0, y1=1, yref='paper',
+            line=dict(color='gray', width=1, dash='dash'),
+        )
+        fig_price.add_annotation(
+            x=now_str, y=1.0, yref='paper',
+            text='NOW', showarrow=False,
+            font=dict(color='gray', size=12),
+            yanchor='bottom',
+        )
+
+        stats = backtest_data['stats']
+    else:
+        stats = {
+            'Win Rate': 'N/A', 'MAE': 'N/A',
+            'RMSE': 'N/A', 'Correlation': 'N/A', 'Volatility': 'N/A',
+        }
+
+    fig_price.update_layout(
+        paper_bgcolor='#050510', plot_bgcolor='#050510',
+        font=dict(color='white'),
+        legend=dict(bgcolor='rgba(0,0,0,0)'),
+        xaxis_title='Time', yaxis_title='Price (USD)',
+    )
+
+    # --- œ«‘»Ê—œ ¬„«—Ì ---
+    colors_map = {
+        'Win Rate': '#00ff00', 'MAE': '#ffaa00', 'RMSE': '#ff5555',
+        'Correlation': '#00aaff', 'Volatility': '#aa00ff',
+    }
+    stat_cards = []
+    for key, val in stats.items():
+        stat_cards.append(html.Div([
+            html.H4(key, style={'color': colors_map[key], 'margin': '0'}),
+            html.H2(val, style={'margin': '10px 0 0 0', 'color': '#fff'}),
+        ], style={
+            'width': '17%', 'display': 'inline-block', 'padding': '15px',
+            'border': '1px solid #333', 'borderRadius': '10px',
+            'margin': '8px', 'backgroundColor': '#111',
+        }))
+
+    return fig_solar, fig_galaxy, fig_price, html.Div(stat_cards)
+
+
+if __name__ == '__main__':
+    app.run(debug=True, port=8050)

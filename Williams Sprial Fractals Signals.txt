@@ -1,0 +1,71 @@
+//@version=6
+indicator("Strict Cycle & Spiral Convergence", shorttitle="Perfect Spiral", format=format.price, precision=2, overlay=true)
+
+n = input.int(2, title="Fractal Periods", minval=2)
+phi = 1.618 // ‰”»  ÿ·«ÌÌ »—«Ì «”ÅÌ—«·
+
+// ---  ‘ŒÌ’ ›—«ò «·ùÂ« ---
+upFractal = ta.pivothigh(n, n)
+downFractal = ta.pivotlow(n, n)
+
+// --- „ €Ì—Â«Ì ”«Ìò· Ê «”ÅÌ—«· ---
+var int t0 = na, var float p0 = na // ‰ﬁÿÂ «Ê· »—œ«—
+var int t1 = na, var float p1 = na // ‰ﬁÿÂ œÊ„ »—œ«—
+var int vector_dir = 0 // 1 »—«Ì ’⁄ÊœÌ° -1 »—«Ì ‰“Ê·Ì
+
+// »Âù—Ê“—”«‰Ì ‰ﬁ«ÿ »—œ«— »— «”«” ›—«ò «·ùÂ«
+if not na(upFractal)
+    t0 := t1, p0 := p1
+    t1 := bar_index[n], p1 := upFractal
+    vector_dir := 1
+if not na(downFractal)
+    t0 := t1, p0 := p1
+    t1 := bar_index[n], p1 := downFractal
+    vector_dir := -1
+
+// --- „Õ«”»Â  ﬁ«—‰ ﬁÌ„ -“„«‰ ---
+bool perfect_buy = false
+bool perfect_sell = false
+
+if not na(t0) and not na(t1) and not na(p0) and not na(p1)
+    // „Õ«”»Â œ· «Ì “„«‰ Ê ﬁÌ„ 
+    int delta_T = math.abs(t1 - t0)
+    float delta_P = math.abs(p1 - p0)
+    
+    if delta_T > 0 and delta_P > 0
+        // „Õ«”»Â »”ÿùÂ«Ì «”ÅÌ—«· (÷—Ì» 1.618 Ê 2.618)
+        int target_time_1 = math.round(t1 + (delta_T * phi))
+        int target_time_2 = math.round(t1 + (delta_T * phi * phi))
+        
+        float target_price_up_1 = p1 + (delta_P * phi)
+        float target_price_down_1 = p1 - (delta_P * phi)
+        
+        float target_price_up_2 = p1 + (delta_P * phi * phi)
+        float target_price_down_2 = p1 - (delta_P * phi * phi)
+
+        // »——”Ì «Ì‰òÂ ¬Ì« ò‰œ· ›⁄·Ì œ— “„«‰ (Cycle) œﬁÌﬁ ﬁ—«— œ«—œø (»«  ·Ê—«‰” 1 ò‰œ·)
+        bool is_time_node = (bar_index == target_time_1) or (bar_index == target_time_2) or (bar_index == target_time_1 + 1) or (bar_index == target_time_2 + 1)
+        
+        // »——”Ì »—ŒÊ—œ ﬁÌ„  »Â »«‰œÂ«Ì «”ÅÌ—«· œ— ò‰œ· ›⁄·Ì
+        bool price_hit_lower = (low <= target_price_down_1 and high >= target_price_down_1) or (low <= target_price_down_2 and high >= target_price_down_2)
+        bool price_hit_upper = (high >= target_price_up_1 and low <= target_price_up_1) or (high >= target_price_up_2 and low <= target_price_up_2)
+        
+        // ›—„Ê·  «ÌÌœ ò‰œ·Ì (»” Â ‘œ‰ œ— ÃÂ  „Œ«·› »—«Ì  «ÌÌœ »«“ê‘  «“ ”ÿÕ Â‰œ”Ì)
+        bool bullish_candle = close > open and close > (high + low) / 2
+        bool bearish_candle = close < open and close < (high + low) / 2
+        
+        // ’œÊ— ”Ìê‰«· Â„ê—«ÌÌ „ÿ·ﬁ (ê—Â ›÷«-“„«‰)
+        if is_time_node and price_hit_lower and bullish_candle
+            perfect_buy := true
+            
+        if is_time_node and price_hit_upper and bearish_candle
+            perfect_sell := true
+
+// --- —”„ ”Ìê‰«·ùÂ« ---
+// «Ì‰ ”Ìê‰«·ùÂ« »Â ‘œ  ‰«œ— Â” ‰œ° «„« »«·« —Ì‰ ÷—Ì» «ÿ„Ì‰«‰ —« »— «”«” Â‰œ”Â »«“«— œ«—‰œ.
+plotshape(perfect_buy, title="Perfect Spiral Buy", style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.normal)
+plotshape(perfect_sell, title="Perfect Spiral Sell", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.normal)
+
+// —”„ ŒÿÊÿ  «—ê  (›ﬁÿ »—«Ì „‘«ÂœÂ ⁄·  ’œÊ— ”Ìê‰«· œ— “„«‰ ÊﬁÊ⁄)
+bgcolor(perfect_buy ? color.new(color.lime, 80) : na, title="Buy Node Area")
+bgcolor(perfect_sell ? color.new(color.red, 80) : na, title="Sell Node Area")

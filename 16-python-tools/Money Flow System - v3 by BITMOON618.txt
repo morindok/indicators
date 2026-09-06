@@ -1,0 +1,1263 @@
+"""
+???????????????????????????????????????????????????????????????????????????????
+CRYPTO MONEY FLOW DASHBOARD v2 - Ã—Ì«‰ ÅÊ· ò—ÌÅ Ê (‰”ŒÂ ÅÌ‘—› Â »«  »  Õ·Ì· «—“)
+???????????????????????????????????????????????????????????????????????????????
+A comprehensive real-time crypto volume and money flow analysis system
+using Dash, Plotly, and Yahoo Finance data.
+
+New in v2:
+- Two-tab layout: "‰„«Ì ò·Ì »«“«—" (market overview, unchanged) and
+  " Õ·Ì· «—“ „‰ Œ»" (single-coin deep dive)
+- Composite Trend Score (-100..100) combining MA cross, VWAP, RSI, MFI,
+  OBV slope and ADL slope, shown as a gauge
+- Fractal-based support/resistance detection (Williams-fractal style, 2-2)
+- Volatility (ATR%) card
+- BTC correlation card for non-BTC assets
+
+Author: AI Assistant
+Date: 2026-07-20
+"""
+
+import dash
+from dash import dcc, html, Input, Output, State, callback_context
+from dash.exceptions import PreventUpdate
+import dash_bootstrap_components as dbc
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+import yfinance as yf
+import threading
+import time
+import json
+import os
+from collections import deque
+import warnings
+
+warnings.filterwarnings('ignore')
+
+# ???????????????????????????????????????????????????????????????????????????????
+# CONFIGURATION
+# ???????????????????????????????????????????????????????????????????????????????
+
+CRYPTO_TICKERS = [
+    'BTC-USD', 'ETH-USD', 'BNB-USD', 'SOL-USD', 'XRP-USD', 'ADA-USD',
+    'DOGE-USD', 'DOT-USD', 'AVAX-USD', 'LINK-USD', 'LTC-USD', 'ATOM-USD',
+    'ETC-USD', 'XLM-USD', 'ALGO-USD', 'VET-USD', 'ICP-USD', 'FIL-USD',
+    'TRX-USD', 'SHIB-USD', 'NEAR-USD', 'ARB-USD', 'OP-USD', 'SAND-USD',
+    'MANA-USD', 'AXS-USD', 'FLOW-USD', 'MKR-USD', 'AAVE-USD', 'GRT-USD'
+]
+
+CRYPTO_NAMES = {
+    'BTC-USD': 'Bitcoin', 'ETH-USD': 'Ethereum', 'BNB-USD': 'Binance Coin',
+    'SOL-USD': 'Solana', 'XRP-USD': 'Ripple', 'ADA-USD': 'Cardano',
+    'DOGE-USD': 'Dogecoin', 'DOT-USD': 'Polkadot', 'AVAX-USD': 'Avalanche',
+    'LINK-USD': 'Chainlink', 'LTC-USD': 'Litecoin', 'ATOM-USD': 'Cosmos',
+    'ETC-USD': 'Ethereum Classic', 'XLM-USD': 'Stellar', 'ALGO-USD': 'Algorand',
+    'VET-USD': 'VeChain', 'ICP-USD': 'Internet Computer', 'FIL-USD': 'Filecoin',
+    'TRX-USD': 'TRON', 'SHIB-USD': 'Shiba Inu', 'NEAR-USD': 'NEAR Protocol',
+    'ARB-USD': 'Arbitrum', 'OP-USD': 'Optimism', 'SAND-USD': 'The Sandbox',
+    'MANA-USD': 'Decentraland', 'AXS-USD': 'Axie Infinity', 'FLOW-USD': 'Flow',
+    'MKR-USD': 'Maker', 'AAVE-USD': 'Aave', 'GRT-USD': 'The Graph'
+}
+
+# Color scheme
+COLORS = {
+    'bg_dark': '#0a0a0f',
+    'bg_card': '#12121a',
+    'bg_card_light': '#1a1a2e',
+    'text_primary': '#e0e0e0',
+    'text_secondary': '#888888',
+    'accent_green': '#00d4aa',
+    'accent_red': '#ff4757',
+    'accent_blue': '#3498db',
+    'accent_purple': '#9b59b6',
+    'accent_orange': '#f39c12',
+    'accent_cyan': '#00bcd4',
+    'border': '#2a2a3e',
+    'gradient_start': '#1a1a2e',
+    'gradient_end': '#16213e'
+}
+
+
+# ???????????????????????????????????????????????????????????????????????????????
+# DATA MANAGER CLASS
+# ???????????????????????????????????????????????????????????????????????????????
+
+class CryptoDataManager:
+    """Manages real-time crypto data fetching and analysis"""
+
+    def __init__(self):
+        self.data_cache = {}
+        self.volume_history = {}
+        self.money_flow_history = {}
+        self.last_update = None
+        self.update_lock = threading.Lock()
+
+    def fetch_data(self, ticker, period='1mo', interval='5m'):
+        """Fetch data from Yahoo Finance"""
+        try:
+            df = yf.download(ticker, period=period, interval=interval, progress=False)
+            if df.empty:
+                return None
+            df = df.reset_index()
+            df.columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
+            df['Ticker'] = ticker.replace('-USD', '')
+            return df
+        except Exception as e:
+            print(f"Error fetching {ticker}: {e}")
+            return None
+
+    def calculate_indicators(self, df):
+        """Calculate technical indicators for money flow analysis"""
+        if df is None or df.empty:
+            return None
+
+        df = df.copy()
+
+        # Volume indicators
+        df['Volume_MA_20'] = df['Volume'].rolling(window=20).mean()
+        df['Volume_MA_50'] = df['Volume'].rolling(window=50).mean()
+        df['Volume_Ratio'] = df['Volume'] / (df['Volume_MA_20'] + 1e-9)
+        df['Volume_Surge'] = df['Volume_Ratio'] > 2.0
+
+        # Price indicators
+        df['Price_Change'] = df['Close'].pct_change() * 100
+        df['Price_MA_20'] = df['Close'].rolling(window=20).mean()
+        df['Price_MA_50'] = df['Close'].rolling(window=50).mean()
+
+        # Money Flow Index (MFI)
+        typical_price = (df['High'] + df['Low'] + df['Close']) / 3
+        raw_money_flow = typical_price * df['Volume']
+
+        money_flow_positive = np.where(typical_price > typical_price.shift(1),
+                                       raw_money_flow, 0)
+        money_flow_negative = np.where(typical_price < typical_price.shift(1),
+                                       raw_money_flow, 0)
+
+        period = 14
+        positive_sum = pd.Series(money_flow_positive).rolling(window=period).sum()
+        negative_sum = pd.Series(money_flow_negative).rolling(window=period).sum()
+
+        money_ratio = positive_sum / (negative_sum + 1e-9)
+        df['MFI'] = 100 - (100 / (1 + money_ratio))
+
+        # On-Balance Volume (OBV)
+        df['OBV'] = np.where(df['Close'] > df['Close'].shift(1), df['Volume'],
+                             np.where(df['Close'] < df['Close'].shift(1), -df['Volume'], 0)).cumsum()
+
+        # Accumulation/Distribution Line (ADL)
+        money_flow_multiplier = ((df['Close'] - df['Low']) - (df['High'] - df['Close'])) / (
+                    df['High'] - df['Low'] + 1e-9)
+        money_flow_volume = money_flow_multiplier * df['Volume']
+        df['ADL'] = money_flow_volume.cumsum()
+
+        # VWAP
+        df['VWAP'] = (typical_price * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
+
+        # Bollinger Bands
+        df['BB_Upper'] = df['Price_MA_20'] + (df['Close'].rolling(window=20).std() * 2)
+        df['BB_Lower'] = df['Price_MA_20'] - (df['Close'].rolling(window=20).std() * 2)
+
+        # RSI
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / (loss + 1e-9)
+        df['RSI'] = 100 - (100 / (1 + rs))
+
+        # ATR (for volatility)
+        prev_close = df['Close'].shift(1)
+        tr = pd.concat([
+            df['High'] - df['Low'],
+            (df['High'] - prev_close).abs(),
+            (df['Low'] - prev_close).abs()
+        ], axis=1).max(axis=1)
+        df['ATR'] = tr.rolling(window=14).mean()
+        df['ATR_Pct'] = (df['ATR'] / (df['Close'] + 1e-9)) * 100
+
+        # Money Flow Direction
+        df['Money_Flow_Direction'] = np.where(df['Close'] > df['Open'], 'Inflow',
+                                              np.where(df['Close'] < df['Open'], 'Outflow', 'Neutral'))
+
+        # Buy/Sell Pressure
+        df['Buy_Pressure'] = (df['Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-9) * 100
+        df['Sell_Pressure'] = (df['High'] - df['Close']) / (df['High'] - df['Low'] + 1e-9) * 100
+
+        return df
+
+    def find_fractal_pivots(self, df, left=2, right=2):
+        """Williams-fractal style pivot high/low detection (left/right bars must be lower/higher)"""
+        if df is None or len(df) < (left + right + 1):
+            return [], []
+
+        highs = df['High'].values
+        lows = df['Low'].values
+        dates = df['Date'].values
+
+        pivot_highs = []
+        pivot_lows = []
+
+        for i in range(left, len(df) - right):
+            window_high = highs[i - left:i + right + 1]
+            window_low = lows[i - left:i + right + 1]
+            if highs[i] == window_high.max():
+                pivot_highs.append((dates[i], highs[i]))
+            if lows[i] == window_low.min():
+                pivot_lows.append((dates[i], lows[i]))
+
+        return pivot_highs, pivot_lows
+
+    def get_support_resistance(self, df, left=2, right=2):
+        """Nearest fractal-based support (below price) and resistance (above price)"""
+        if df is None or df.empty:
+            return None, None
+
+        current_price = df['Close'].iloc[-1]
+        pivot_highs, pivot_lows = self.find_fractal_pivots(df, left, right)
+
+        resistances_above = [p for _, p in pivot_highs if p > current_price]
+        supports_below = [p for _, p in pivot_lows if p < current_price]
+
+        resistance = min(resistances_above) if resistances_above else df['High'].max()
+        support = max(supports_below) if supports_below else df['Low'].min()
+
+        return support, resistance
+
+    def compute_trend_score(self, df):
+        """
+        Composite trend score in range -100 (strong bearish) .. +100 (strong bullish).
+        Weights: MA20/50 cross 25, VWAP 15, RSI 20, MFI 20, OBV slope 10, ADL slope 10
+        """
+        if df is None or len(df) < 20:
+            return None
+
+        latest = df.iloc[-1]
+        score = 0.0
+        breakdown = {}
+
+        # MA20 vs MA50 (weight 25)
+        if pd.notna(latest['Price_MA_20']) and pd.notna(latest['Price_MA_50']):
+            if latest['Price_MA_20'] > latest['Price_MA_50']:
+                score += 25
+                breakdown['ma_trend'] = '’⁄ÊœÌ'
+            else:
+                score -= 25
+                breakdown['ma_trend'] = '‰“Ê·Ì'
+        else:
+            breakdown['ma_trend'] = '‰«„‘Œ’'
+
+        # Price vs VWAP (weight 15)
+        if pd.notna(latest['VWAP']):
+            if latest['Close'] > latest['VWAP']:
+                score += 15
+                breakdown['vwap_trend'] = '»«·«Ì VWAP'
+            else:
+                score -= 15
+                breakdown['vwap_trend'] = 'Å«ÌÌ‰ VWAP'
+        else:
+            breakdown['vwap_trend'] = '‰«„‘Œ’'
+
+        # RSI (weight 20)
+        if pd.notna(latest['RSI']):
+            rsi = latest['RSI']
+            if rsi > 70:
+                score -= 10
+                breakdown['rsi_status'] = f'«‘»«⁄ Œ—Ìœ ({rsi:.1f})'
+            elif rsi < 30:
+                score += 10
+                breakdown['rsi_status'] = f'«‘»«⁄ ›—Ê‘ ({rsi:.1f})'
+            elif rsi > 50:
+                score += 20
+                breakdown['rsi_status'] = f'„À»  ({rsi:.1f})'
+            else:
+                score -= 20
+                breakdown['rsi_status'] = f'„‰›Ì ({rsi:.1f})'
+        else:
+            breakdown['rsi_status'] = '‰«„‘Œ’'
+
+        # MFI (weight 20)
+        if pd.notna(latest['MFI']):
+            mfi = latest['MFI']
+            if mfi > 80:
+                score -= 10
+                breakdown['mfi_status'] = f'«‘»«⁄ Œ—Ìœ ({mfi:.1f})'
+            elif mfi < 20:
+                score += 10
+                breakdown['mfi_status'] = f'«‘»«⁄ ›—Ê‘ ({mfi:.1f})'
+            elif mfi > 50:
+                score += 20
+                breakdown['mfi_status'] = f'Ê—Êœ ÅÊ· ({mfi:.1f})'
+            else:
+                score -= 20
+                breakdown['mfi_status'] = f'Œ—ÊÃ ÅÊ· ({mfi:.1f})'
+        else:
+            breakdown['mfi_status'] = '‰«„‘Œ’'
+
+        # OBV slope (weight 10)
+        lookback = min(20, len(df) - 1)
+        if lookback > 0:
+            obv_now = df['OBV'].iloc[-1]
+            obv_prev = df['OBV'].iloc[-lookback]
+            if obv_now > obv_prev:
+                score += 10
+                breakdown['obv_slope'] = '’⁄ÊœÌ'
+            else:
+                score -= 10
+                breakdown['obv_slope'] = '‰“Ê·Ì'
+        else:
+            breakdown['obv_slope'] = '‰«„‘Œ’'
+
+        # ADL slope (weight 10)
+        if lookback > 0:
+            adl_now = df['ADL'].iloc[-1]
+            adl_prev = df['ADL'].iloc[-lookback]
+            if adl_now > adl_prev:
+                score += 10
+                breakdown['adl_slope'] = '’⁄ÊœÌ'
+            else:
+                score -= 10
+                breakdown['adl_slope'] = '‰“Ê·Ì'
+        else:
+            breakdown['adl_slope'] = '‰«„‘Œ’'
+
+        score = max(-100, min(100, score))
+
+        if score >= 60:
+            label, color = '’⁄ÊœÌ ﬁÊÌ', COLORS['accent_green']
+        elif score >= 20:
+            label, color = '’⁄ÊœÌ', COLORS['accent_green']
+        elif score > -20:
+            label, color = 'Œ‰ÀÌ', COLORS['accent_orange']
+        elif score > -60:
+            label, color = '‰“Ê·Ì', COLORS['accent_red']
+        else:
+            label, color = '‰“Ê·Ì ﬁÊÌ', COLORS['accent_red']
+
+        return {
+            'score': score,
+            'label': label,
+            'color': color,
+            'breakdown': breakdown
+        }
+
+    def compute_btc_correlation(self, ticker, df, period='1mo', interval='5m'):
+        """Pearson correlation of returns vs BTC over the same window"""
+        if ticker == 'BTC-USD' or df is None or df.empty:
+            return None
+
+        btc_df = self.fetch_data('BTC-USD', period=period, interval=interval)
+        if btc_df is None or btc_df.empty:
+            return None
+
+        merged = pd.merge(
+            df[['Date', 'Close']].rename(columns={'Close': 'Close_asset'}),
+            btc_df[['Date', 'Close']].rename(columns={'Close': 'Close_btc'}),
+            on='Date', how='inner'
+        )
+        if len(merged) < 10:
+            return None
+
+        ret_asset = merged['Close_asset'].pct_change().dropna()
+        ret_btc = merged['Close_btc'].pct_change().dropna()
+        n = min(len(ret_asset), len(ret_btc))
+        if n < 10:
+            return None
+
+        corr = np.corrcoef(ret_asset.tail(n), ret_btc.tail(n))[0, 1]
+        return corr
+
+    def update_all_data(self):
+        """Update data for all cryptocurrencies"""
+        with self.update_lock:
+            print(f"[{datetime.now()}] Updating crypto data...")
+            for ticker in CRYPTO_TICKERS:
+                df = self.fetch_data(ticker)
+                if df is not None:
+                    df = self.calculate_indicators(df)
+                    self.data_cache[ticker] = df
+
+                    # Store volume history for trend analysis
+                    if ticker not in self.volume_history:
+                        self.volume_history[ticker] = deque(maxlen=500)
+                    self.volume_history[ticker].append({
+                        'time': df['Date'].iloc[-1],
+                        'volume': df['Volume'].iloc[-1],
+                        'price': df['Close'].iloc[-1],
+                        'change': df['Price_Change'].iloc[-1]
+                    })
+
+            self.last_update = datetime.now()
+            print(f"[{datetime.now()}] Data update complete!")
+
+    def get_latest_snapshot(self):
+        """Get latest snapshot of all cryptocurrencies"""
+        snapshot = []
+        for ticker, df in self.data_cache.items():
+            if df is not None and not df.empty:
+                latest = df.iloc[-1]
+                snapshot.append({
+                    'ticker': ticker.replace('-USD', ''),
+                    'name': CRYPTO_NAMES.get(ticker, ticker),
+                    'price': latest['Close'],
+                    'change_24h': latest['Price_Change'],
+                    'volume': latest['Volume'],
+                    'volume_ratio': latest['Volume_Ratio'],
+                    'mfi': latest['MFI'],
+                    'rsi': latest['RSI'],
+                    'money_flow': latest['Money_Flow_Direction'],
+                    'buy_pressure': latest['Buy_Pressure'],
+                    'sell_pressure': latest['Sell_Pressure'],
+                    'vwap': latest['VWAP'],
+                    'bb_position': (latest['Close'] - latest['BB_Lower']) / (
+                                latest['BB_Upper'] - latest['BB_Lower'] + 1e-9) * 100
+                })
+        return pd.DataFrame(snapshot)
+
+    def get_volume_leaders(self, n=10):
+        """Get top N cryptocurrencies by volume"""
+        snapshot = self.get_latest_snapshot()
+        if snapshot.empty:
+            return snapshot
+        return snapshot.nlargest(n, 'volume')
+
+    def get_money_flow_leaders(self, n=10, direction='inflow'):
+        """Get top N by money flow direction"""
+        snapshot = self.get_latest_snapshot()
+        if snapshot.empty:
+            return snapshot
+        if direction == 'inflow':
+            return snapshot[snapshot['money_flow'] == 'Inflow'].nlargest(n, 'buy_pressure')
+        else:
+            return snapshot[snapshot['money_flow'] == 'Outflow'].nlargest(n, 'sell_pressure')
+
+    def get_volume_surge_alerts(self, threshold=2.0):
+        """Get cryptocurrencies with volume surge"""
+        snapshot = self.get_latest_snapshot()
+        if snapshot.empty:
+            return snapshot
+        return snapshot[snapshot['volume_ratio'] > threshold].sort_values('volume_ratio', ascending=False)
+
+
+# ???????????????????????????????????????????????????????????????????????????????
+# INITIALIZE DATA MANAGER
+# ???????????????????????????????????????????????????????????????????????????????
+
+data_manager = CryptoDataManager()
+
+# Initial data load
+print("Loading initial data...")
+data_manager.update_all_data()
+print("Initial data loaded!")
+
+# ???????????????????????????????????????????????????????????????????????????????
+# DASH APPLICATION
+# ???????????????????????????????????????????????????????????????????????????????
+
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
+app.title = "Crypto Money Flow Dashboard"
+app.config.suppress_callback_exceptions = True
+
+# ???????????????????????????????????????????????????????????????????????????????
+# SHARED STYLES
+# ???????????????????????????????????????????????????????????????????????????????
+
+CARD_STYLE = {
+    'backgroundColor': COLORS['bg_card'],
+    'border': f'1px solid {COLORS["border"]}',
+    'borderRadius': '12px'
+}
+CARD_HEADER_STYLE = {
+    'backgroundColor': COLORS['bg_card_light'],
+    'borderBottom': f'1px solid {COLORS["border"]}'
+}
+
+TAB_STYLE = {
+    'backgroundColor': COLORS['bg_card'],
+    'color': COLORS['text_secondary'],
+    'border': f'1px solid {COLORS["border"]}',
+    'padding': '10px'
+}
+TAB_SELECTED_STYLE = {
+    'backgroundColor': COLORS['bg_card_light'],
+    'color': COLORS['accent_cyan'],
+    'border': f'1px solid {COLORS["accent_cyan"]}',
+    'padding': '10px',
+    'fontWeight': 'bold'
+}
+
+
+def metric_mini_card(label, value_id, text_color='text-info'):
+    return dbc.Card([
+        dbc.CardBody([
+            html.H6(label, className="text-muted", style={'fontSize': '0.8rem'}),
+            html.H4(id=value_id, className=text_color, style={'fontWeight': 'bold', 'marginBottom': 0})
+        ])
+    ], style=CARD_STYLE)
+
+
+# ???????????????????????????????????????????????????????????????????????????????
+# TAB 1 - MARKET OVERVIEW (unchanged content, moved under a tab)
+# ???????????????????????????????????????????????????????????????????????????????
+
+tab_overview_content = html.Div([
+    # Control Panel & Status
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardBody([
+                    html.H5([html.I(className="fas fa-cog me-2"), "Control Panel"],
+                            className="card-title mb-3"),
+                    dbc.Row([
+                        dbc.Col([
+                            dbc.Button(
+                                [html.I(className="fas fa-sync-alt me-2"), "Refresh Data"],
+                                id="refresh-btn",
+                                color="info",
+                                className="w-100",
+                                style={
+                                    'backgroundColor': COLORS['accent_blue'],
+                                    'border': 'none',
+                                    'borderRadius': '8px'
+                                }
+                            )
+                        ], width=3)
+                    ])
+                ])
+            ], style={**CARD_STYLE, 'marginBottom': '20px'})
+        ], width=12)
+    ], className="mt-3"),
+
+    # Key Metrics Cards
+    dbc.Row([
+        dbc.Col(metric_mini_card("Total Volume (24h)", "total-volume", "text-info"), width=3),
+        dbc.Col(metric_mini_card("Top Volume Leader", "volume-leader", "text-success"), width=3),
+        dbc.Col(metric_mini_card("Money Flow Direction", "money-flow-dominant", "text-warning"), width=3),
+        dbc.Col(metric_mini_card("Volume Surge Alerts", "surge-alerts", "text-danger"), width=3),
+    ], className="mb-4"),
+
+    # Main Charts Row
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5([html.I(className="fas fa-chart-bar me-2"),
+                             "Volume Comparison - Top 10"], style={'color': COLORS['text_primary']})
+                ], style=CARD_HEADER_STYLE),
+                dbc.CardBody([
+                    dcc.Graph(id='volume-comparison-chart', config={'displayModeBar': False},
+                              style={'height': '400px'})
+                ])
+            ], style={**CARD_STYLE, 'height': '100%'})
+        ], width=6),
+
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5([html.I(className="fas fa-fire me-2"),
+                             "Money Flow Heatmap"], style={'color': COLORS['text_primary']})
+                ], style=CARD_HEADER_STYLE),
+                dbc.CardBody([
+                    dcc.Graph(id='money-flow-heatmap', config={'displayModeBar': False},
+                              style={'height': '400px'})
+                ])
+            ], style={**CARD_STYLE, 'height': '100%'})
+        ], width=6)
+    ], className="mb-4"),
+
+    # Volume Surge Alerts Table
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5([html.I(className="fas fa-bell me-2"), "Volume Surge Alerts"],
+                            style={'color': COLORS['text_primary']})
+                ], style=CARD_HEADER_STYLE),
+                dbc.CardBody([html.Div(id='surge-alerts-table')])
+            ], style=CARD_STYLE)
+        ], width=12)
+    ], className="mb-4"),
+
+    # Money Flow Distribution
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5([html.I(className="fas fa-pie-chart me-2"), "Money Flow Distribution"],
+                            style={'color': COLORS['text_primary']})
+                ], style=CARD_HEADER_STYLE),
+                dbc.CardBody([
+                    dcc.Graph(id='money-flow-pie', config={'displayModeBar': False},
+                              style={'height': '350px'})
+                ])
+            ], style=CARD_STYLE)
+        ], width=6),
+
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5([html.I(className="fas fa-list-ol me-2"), "Top Money Flow Leaders"],
+                            style={'color': COLORS['text_primary']})
+                ], style=CARD_HEADER_STYLE),
+                dbc.CardBody([html.Div(id='money-flow-leaders-table')])
+            ], style=CARD_STYLE)
+        ], width=6)
+    ], className="mb-4"),
+])
+
+
+# ???????????????????????????????????????????????????????????????????????????????
+# TAB 2 - SELECTED COIN ANALYSIS (new)
+# ???????????????????????????????????????????????????????????????????????????????
+
+tab_coin_content = html.Div([
+    # Control Panel
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col([
+                            html.Label("«‰ Œ«» «—“:", style={'color': COLORS['text_secondary']}),
+                            dcc.Dropdown(
+                                id='crypto-selector',
+                                options=[{'label': f"{CRYPTO_NAMES.get(t, t)} ({t.replace('-USD', '')})",
+                                          'value': t} for t in CRYPTO_TICKERS],
+                                value='BTC-USD',
+                                style={'backgroundColor': COLORS['bg_card'], 'color': '#000'}
+                            )
+                        ], width=4),
+                        dbc.Col([
+                            html.Label("»«“Â “„«‰Ì:", style={'color': COLORS['text_secondary']}),
+                            dcc.Dropdown(
+                                id='time-range',
+                                options=[
+                                    {'label': '1 Day', 'value': '1d'},
+                                    {'label': '5 Days', 'value': '5d'},
+                                    {'label': '1 Month', 'value': '1mo'},
+                                    {'label': '3 Months', 'value': '3mo'}
+                                ],
+                                value='1mo',
+                                style={'backgroundColor': COLORS['bg_card'], 'color': '#000'}
+                            )
+                        ], width=3),
+                        dbc.Col([
+                            html.Label("Õ«·   Õ·Ì·:", style={'color': COLORS['text_secondary']}),
+                            dcc.Dropdown(
+                                id='analysis-mode',
+                                options=[
+                                    {'label': 'Volume Analysis', 'value': 'volume'},
+                                    {'label': 'Money Flow', 'value': 'moneyflow'},
+                                    {'label': 'Trend Analysis', 'value': 'trend'},
+                                    {'label': 'All Combined', 'value': 'combined'}
+                                ],
+                                value='combined',
+                                style={'backgroundColor': COLORS['bg_card'], 'color': '#000'}
+                            )
+                        ], width=3),
+                    ])
+                ])
+            ], style={**CARD_STYLE, 'marginBottom': '20px'})
+        ], width=12)
+    ], className="mt-3"),
+
+    # Trend summary: gauge + info panel
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5([html.I(className="fas fa-tachometer-alt me-2"), "‰„—Â  —‰œ  —òÌ»Ì"],
+                            style={'color': COLORS['text_primary']})
+                ], style=CARD_HEADER_STYLE),
+                dbc.CardBody([
+                    dcc.Graph(id='trend-gauge-chart', config={'displayModeBar': False},
+                              style={'height': '320px'})
+                ])
+            ], style=CARD_STYLE)
+        ], width=5),
+
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5([html.I(className="fas fa-info-circle me-2"), "Œ·«’Â Ê÷⁄Ì "],
+                            style={'color': COLORS['text_primary']})
+                ], style=CARD_HEADER_STYLE),
+                dbc.CardBody([
+                    html.Div(id='trend-info-panel')
+                ])
+            ], style={**CARD_STYLE, 'height': '100%'})
+        ], width=7)
+    ], className="mb-4"),
+
+    # Detail Chart
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([html.H5(id="detail-chart-title", style={'color': COLORS['text_primary']})],
+                               style=CARD_HEADER_STYLE),
+                dbc.CardBody([
+                    dcc.Graph(id='price-volume-chart', config={'displayModeBar': True},
+                              style={'height': '500px'})
+                ])
+            ], style=CARD_STYLE)
+        ], width=12)
+    ], className="mb-4"),
+
+    # Technical Indicators Row
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([html.H5([html.I(className="fas fa-wave-square me-2"), "MFI & RSI"],
+                                         style={'color': COLORS['text_primary']})], style=CARD_HEADER_STYLE),
+                dbc.CardBody([
+                    dcc.Graph(id='mfi-rsi-chart', config={'displayModeBar': False}, style={'height': '300px'})
+                ])
+            ], style=CARD_STYLE)
+        ], width=6),
+
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([html.H5([html.I(className="fas fa-layer-group me-2"), "OBV & ADL"],
+                                         style={'color': COLORS['text_primary']})], style=CARD_HEADER_STYLE),
+                dbc.CardBody([
+                    dcc.Graph(id='obv-adl-chart', config={'displayModeBar': False}, style={'height': '300px'})
+                ])
+            ], style=CARD_STYLE)
+        ], width=6)
+    ], className="mb-4"),
+])
+
+
+# ???????????????????????????????????????????????????????????????????????????????
+# LAYOUT
+# ???????????????????????????????????????????????????????????????????????????????
+
+app.layout = dbc.Container([
+    # Header
+    dbc.Row([
+        dbc.Col([
+            html.Div([
+                html.H1([
+                    html.I(className="fas fa-chart-line", style={'marginRight': '15px'}),
+                    "Ã—Ì«‰ ÅÊ· ò—ÌÅ Ê"
+                ], className="text-center mb-2", style={
+                    'color': COLORS['accent_cyan'],
+                    'fontSize': '2.5rem',
+                    'fontWeight': 'bold',
+                    'textShadow': '0 0 20px rgba(0, 188, 212, 0.5)'
+                }),
+                html.P("Crypto Money Flow Analysis Dashboard",
+                       className="text-center mb-4",
+                       style={'color': COLORS['text_secondary'], 'fontSize': '1.1rem'}),
+                html.Hr(style={'borderColor': COLORS['border'], 'marginBottom': '20px'})
+            ])
+        ], width=12)
+    ]),
+
+    dcc.Tabs(id='main-tabs', value='tab-overview', children=[
+        dcc.Tab(label='‰„«Ì ò·Ì »«“«—', value='tab-overview',
+                style=TAB_STYLE, selected_style=TAB_SELECTED_STYLE,
+                children=[tab_overview_content]),
+        dcc.Tab(label=' Õ·Ì· «—“ „‰ Œ»', value='tab-coin',
+                style=TAB_STYLE, selected_style=TAB_SELECTED_STYLE,
+                children=[tab_coin_content]),
+    ]),
+
+    # Auto-refresh interval
+    dcc.Interval(id='interval-component', interval=300000, n_intervals=0),  # 5 minutes
+
+    # Store for data
+    dcc.Store(id='data-store')
+
+], fluid=True, style={
+    'backgroundColor': COLORS['bg_dark'],
+    'minHeight': '100vh',
+    'padding': '20px',
+    'fontFamily': 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif'
+})
+
+
+# ???????????????????????????????????????????????????????????????????????????????
+# CALLBACKS - OVERVIEW TAB (unchanged logic)
+# ???????????????????????????????????????????????????????????????????????????????
+
+@app.callback(
+    [Output('data-store', 'data'),
+     Output('total-volume', 'children'),
+     Output('volume-leader', 'children'),
+     Output('money-flow-dominant', 'children'),
+     Output('surge-alerts', 'children')],
+    [Input('interval-component', 'n_intervals'),
+     Input('refresh-btn', 'n_clicks')]
+)
+def update_data(n_intervals, n_clicks):
+    """Update all data periodically"""
+    ctx = callback_context
+
+    data_manager.update_all_data()
+    snapshot = data_manager.get_latest_snapshot()
+
+    if snapshot.empty:
+        return {}, "N/A", "N/A", "N/A", "0"
+
+    total_vol = snapshot['volume'].sum()
+    top_vol = snapshot.nlargest(1, 'volume').iloc[0]
+
+    inflow_count = len(snapshot[snapshot['money_flow'] == 'Inflow'])
+    outflow_count = len(snapshot[snapshot['money_flow'] == 'Outflow'])
+    dominant = "Inflow ??" if inflow_count > outflow_count else "Outflow ??"
+
+    surge_alerts = data_manager.get_volume_surge_alerts()
+    surge_count = len(surge_alerts)
+
+    store_data = snapshot.to_dict('records')
+
+    return (
+        store_data,
+        f"${total_vol / 1e9:.2f}B",
+        f"{top_vol['ticker']} (${top_vol['volume'] / 1e6:.1f}M)",
+        dominant,
+        str(surge_count)
+    )
+
+
+@app.callback(
+    Output('volume-comparison-chart', 'figure'),
+    [Input('data-store', 'data')]
+)
+def update_volume_chart(data):
+    if not data:
+        return go.Figure()
+
+    df = pd.DataFrame(data)
+    top10 = df.nlargest(10, 'volume')
+
+    fig = go.Figure()
+    colors = [COLORS['accent_green'] if x > 0 else COLORS['accent_red']
+              for x in top10['change_24h']]
+
+    fig.add_trace(go.Bar(
+        x=top10['ticker'], y=top10['volume'] / 1e6, marker_color=colors,
+        text=[f"${v / 1e6:.1f}M" for v in top10['volume']],
+        textposition='outside', textfont=dict(color=COLORS['text_primary'], size=10)
+    ))
+
+    fig.update_layout(
+        title=dict(text='Top 10 by Volume', font=dict(color=COLORS['text_primary'], size=16)),
+        paper_bgcolor=COLORS['bg_card'], plot_bgcolor=COLORS['bg_card'],
+        font=dict(color=COLORS['text_primary']),
+        xaxis=dict(gridcolor=COLORS['border'], tickfont=dict(size=10)),
+        yaxis=dict(gridcolor=COLORS['border'], title='Volume (Millions USD)', tickfont=dict(size=10)),
+        showlegend=False, margin=dict(l=50, r=20, t=50, b=50)
+    )
+    return fig
+
+
+@app.callback(
+    Output('money-flow-heatmap', 'figure'),
+    [Input('data-store', 'data')]
+)
+def update_money_flow_heatmap(data):
+    if not data:
+        return go.Figure()
+
+    df = pd.DataFrame(data)
+    df['flow_score'] = df['buy_pressure'] - df['sell_pressure']
+    df_sorted = df.sort_values('flow_score', ascending=True).tail(20)
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        y=df_sorted['ticker'], x=df_sorted['flow_score'], orientation='h',
+        marker=dict(
+            color=df_sorted['flow_score'],
+            colorscale=[[0, COLORS['accent_red']], [0.5, COLORS['accent_orange']], [1, COLORS['accent_green']]],
+            showscale=True, colorbar=dict(title="Flow Score", tickfont=dict(color=COLORS['text_primary']))
+        ),
+        text=[f"{x:.1f}" for x in df_sorted['flow_score']],
+        textposition='outside', textfont=dict(color=COLORS['text_primary'], size=9)
+    ))
+
+    fig.update_layout(
+        title=dict(text='Buy/Sell Pressure (Top 20)', font=dict(color=COLORS['text_primary'], size=16)),
+        paper_bgcolor=COLORS['bg_card'], plot_bgcolor=COLORS['bg_card'],
+        font=dict(color=COLORS['text_primary']),
+        xaxis=dict(gridcolor=COLORS['border'], title='Buy Pressure - Sell Pressure', tickfont=dict(size=10)),
+        yaxis=dict(gridcolor=COLORS['border'], tickfont=dict(size=10)),
+        showlegend=False, margin=dict(l=80, r=100, t=50, b=50)
+    )
+    return fig
+
+
+@app.callback(
+    Output('surge-alerts-table', 'children'),
+    [Input('data-store', 'data')]
+)
+def update_surge_alerts(data):
+    if not data:
+        return html.Div("No alerts", style={'color': COLORS['text_secondary']})
+
+    df = pd.DataFrame(data)
+    alerts = df[df['volume_ratio'] > 2.0].sort_values('volume_ratio', ascending=False)
+
+    if alerts.empty:
+        return html.Div("No volume surge alerts detected",
+                        style={'color': COLORS['text_secondary'], 'textAlign': 'center', 'padding': '20px'})
+
+    table_header = [
+        html.Thead(html.Tr([
+            html.Th("Crypto", style={'color': COLORS['accent_cyan']}),
+            html.Th("Price", style={'color': COLORS['accent_cyan']}),
+            html.Th("Change", style={'color': COLORS['accent_cyan']}),
+            html.Th("Volume", style={'color': COLORS['accent_cyan']}),
+            html.Th("Volume Ratio", style={'color': COLORS['accent_cyan']}),
+            html.Th("MFI", style={'color': COLORS['accent_cyan']}),
+            html.Th("Signal", style={'color': COLORS['accent_cyan']})
+        ], style={'backgroundColor': COLORS['bg_card_light']}))
+    ]
+
+    rows = []
+    for _, row in alerts.iterrows():
+        change_color = COLORS['accent_green'] if row['change_24h'] > 0 else COLORS['accent_red']
+        signal = "STRONG BUY" if row['volume_ratio'] > 5 and row['change_24h'] > 0 else \
+            "BUY" if row['volume_ratio'] > 3 and row['change_24h'] > 0 else \
+                "SELL" if row['change_24h'] < 0 else "WATCH"
+
+        rows.append(html.Tr([
+            html.Td(row['ticker'], style={'fontWeight': 'bold'}),
+            html.Td(f"${row['price']:.4f}"),
+            html.Td(f"{row['change_24h']:.2f}%", style={'color': change_color}),
+            html.Td(f"${row['volume'] / 1e6:.1f}M"),
+            html.Td(f"{row['volume_ratio']:.1f}x", style={'color': COLORS['accent_orange']}),
+            html.Td(f"{row['mfi']:.1f}"),
+            html.Td(signal, style={'fontWeight': 'bold'})
+        ], style={'borderBottom': f'1px solid {COLORS["border"]}'}))
+
+    table_body = [html.Tbody(rows)]
+    return dbc.Table(table_header + table_body, bordered=False,
+                     style={'color': COLORS['text_primary']}, className="table-dark")
+
+
+@app.callback(
+    Output('money-flow-pie', 'figure'),
+    [Input('data-store', 'data')]
+)
+def update_money_flow_pie(data):
+    if not data:
+        return go.Figure()
+
+    df = pd.DataFrame(data)
+    inflow = len(df[df['money_flow'] == 'Inflow'])
+    outflow = len(df[df['money_flow'] == 'Outflow'])
+    neutral = len(df[df['money_flow'] == 'Neutral'])
+
+    fig = go.Figure(data=[go.Pie(
+        labels=['Inflow', 'Outflow', 'Neutral'], values=[inflow, outflow, neutral], hole=0.4,
+        marker_colors=[COLORS['accent_green'], COLORS['accent_red'], COLORS['accent_blue']],
+        textinfo='label+percent', textfont=dict(color=COLORS['text_primary'], size=12)
+    )])
+
+    fig.update_layout(
+        title=dict(text='Market Money Flow Distribution', font=dict(color=COLORS['text_primary'], size=16)),
+        paper_bgcolor=COLORS['bg_card'], font=dict(color=COLORS['text_primary']),
+        showlegend=True, legend=dict(font=dict(color=COLORS['text_primary'])),
+        margin=dict(l=20, r=20, t=60, b=20), height=350
+    )
+    return fig
+
+
+@app.callback(
+    Output('money-flow-leaders-table', 'children'),
+    [Input('data-store', 'data')]
+)
+def update_money_flow_leaders(data):
+    if not data:
+        return html.Div("No data", style={'color': COLORS['text_secondary']})
+
+    df = pd.DataFrame(data)
+    inflow_leaders = df[df['money_flow'] == 'Inflow'].nlargest(5, 'buy_pressure')
+    outflow_leaders = df[df['money_flow'] == 'Outflow'].nlargest(5, 'sell_pressure')
+
+    content = [html.H6("Top Inflow", style={'color': COLORS['accent_green'], 'marginTop': '10px'})]
+    for _, row in inflow_leaders.iterrows():
+        content.append(html.Div([
+            html.Span(f"{row['ticker']}", style={'fontWeight': 'bold', 'width': '80px', 'display': 'inline-block'}),
+            html.Span(f"${row['price']:.4f}  ", style={'width': '100px', 'display': 'inline-block'}),
+            html.Span(f"+{row['change_24h']:.2f}%", style={'color': COLORS['accent_green']}),
+            html.Span(f"  Buy Pressure: {row['buy_pressure']:.1f}%",
+                      style={'color': COLORS['text_secondary'], 'fontSize': '0.85rem'})
+        ], style={'padding': '5px 0', 'borderBottom': f'1px solid {COLORS["border"]}'}))
+
+    content.append(html.H6("Top Outflow", style={'color': COLORS['accent_red'], 'marginTop': '20px'}))
+    for _, row in outflow_leaders.iterrows():
+        content.append(html.Div([
+            html.Span(f"{row['ticker']}", style={'fontWeight': 'bold', 'width': '80px', 'display': 'inline-block'}),
+            html.Span(f"${row['price']:.4f}  ", style={'width': '100px', 'display': 'inline-block'}),
+            html.Span(f"{row['change_24h']:.2f}%", style={'color': COLORS['accent_red']}),
+            html.Span(f"  Sell Pressure: {row['sell_pressure']:.1f}%",
+                      style={'color': COLORS['text_secondary'], 'fontSize': '0.85rem'})
+        ], style={'padding': '5px 0', 'borderBottom': f'1px solid {COLORS["border"]}'}))
+
+    return html.Div(content)
+
+
+# ???????????????????????????????????????????????????????????????????????????????
+# CALLBACKS - COIN ANALYSIS TAB (new)
+# ???????????????????????????????????????????????????????????????????????????????
+
+@app.callback(
+    [Output('detail-chart-title', 'children'),
+     Output('price-volume-chart', 'figure')],
+    [Input('crypto-selector', 'value'),
+     Input('time-range', 'value'),
+     Input('analysis-mode', 'value')]
+)
+def update_detail_chart(ticker, time_range, mode):
+    if not ticker:
+        raise PreventUpdate
+
+    df = data_manager.fetch_data(ticker, period=time_range, interval='5m')
+    if df is None or df.empty:
+        return f"{CRYPTO_NAMES.get(ticker, ticker)} - No Data", go.Figure()
+
+    df = data_manager.calculate_indicators(df)
+    title = f"{CRYPTO_NAMES.get(ticker, ticker)} ({ticker.replace('-USD', '')}) - Detailed Analysis"
+
+    fig = make_subplots(
+        rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05,
+        row_heights=[0.5, 0.25, 0.25],
+        subplot_titles=('Price & Bollinger Bands', 'Volume', 'Money Flow Index')
+    )
+
+    fig.add_trace(go.Candlestick(
+        x=df['Date'], open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
+        name='Price', increasing_line_color=COLORS['accent_green'], decreasing_line_color=COLORS['accent_red']
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=df['Date'], y=df['BB_Upper'], line=dict(color=COLORS['accent_purple'], width=1, dash='dash'),
+        name='BB Upper', opacity=0.7
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=df['Date'], y=df['BB_Lower'], line=dict(color=COLORS['accent_purple'], width=1, dash='dash'),
+        name='BB Lower', opacity=0.7, fill='tonexty', fillcolor='rgba(155, 89, 182, 0.1)'
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=df['Date'], y=df['VWAP'], line=dict(color=COLORS['accent_orange'], width=2), name='VWAP'
+    ), row=1, col=1)
+
+    # Support / resistance lines on price panel
+    support, resistance = data_manager.get_support_resistance(df)
+    if support is not None:
+        fig.add_hline(y=support, line_dash="dot", line_color=COLORS['accent_green'],
+                      row=1, col=1, annotation_text=f"Support {support:.4f}")
+    if resistance is not None:
+        fig.add_hline(y=resistance, line_dash="dot", line_color=COLORS['accent_red'],
+                      row=1, col=1, annotation_text=f"Resistance {resistance:.4f}")
+
+    colors = [COLORS['accent_green'] if c > 0 else COLORS['accent_red']
+              for c in df['Price_Change'].fillna(0)]
+
+    fig.add_trace(go.Bar(x=df['Date'], y=df['Volume'], marker_color=colors, name='Volume', opacity=0.7),
+                  row=2, col=1)
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['Volume_MA_20'],
+                              line=dict(color=COLORS['accent_blue'], width=2), name='Vol MA20'), row=2, col=1)
+
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MFI'],
+                              line=dict(color=COLORS['accent_cyan'], width=2), name='MFI'), row=3, col=1)
+    fig.add_hline(y=80, line_dash="dash", line_color=COLORS['accent_red'], row=3, col=1, annotation_text="Overbought")
+    fig.add_hline(y=20, line_dash="dash", line_color=COLORS['accent_green'], row=3, col=1, annotation_text="Oversold")
+
+    fig.update_layout(
+        paper_bgcolor=COLORS['bg_card'], plot_bgcolor=COLORS['bg_card'], font=dict(color=COLORS['text_primary']),
+        xaxis_rangeslider_visible=False, showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                    font=dict(color=COLORS['text_primary'])),
+        margin=dict(l=50, r=20, t=80, b=50), height=500
+    )
+    fig.update_xaxes(gridcolor=COLORS['border'])
+    fig.update_yaxes(gridcolor=COLORS['border'])
+
+    return title, fig
+
+
+@app.callback(
+    Output('mfi-rsi-chart', 'figure'),
+    [Input('crypto-selector', 'value'),
+     Input('time-range', 'value')]
+)
+def update_mfi_rsi_chart(ticker, time_range):
+    if not ticker:
+        return go.Figure()
+
+    df = data_manager.fetch_data(ticker, period=time_range, interval='5m')
+    if df is None or df.empty:
+        return go.Figure()
+
+    df = data_manager.calculate_indicators(df)
+
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1,
+                        subplot_titles=('Money Flow Index (MFI)', 'Relative Strength Index (RSI)'))
+
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MFI'], line=dict(color=COLORS['accent_cyan'], width=2),
+                              name='MFI', fill='tozeroy', fillcolor='rgba(0, 188, 212, 0.1)'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['RSI'], line=dict(color=COLORS['accent_purple'], width=2),
+                              name='RSI', fill='tozeroy', fillcolor='rgba(155, 89, 182, 0.1)'), row=2, col=1)
+
+    fig.add_hline(y=80, line_dash="dash", line_color=COLORS['accent_red'], row=1, col=1)
+    fig.add_hline(y=20, line_dash="dash", line_color=COLORS['accent_green'], row=1, col=1)
+    fig.add_hline(y=70, line_dash="dash", line_color=COLORS['accent_red'], row=2, col=1)
+    fig.add_hline(y=30, line_dash="dash", line_color=COLORS['accent_green'], row=2, col=1)
+
+    fig.update_layout(
+        paper_bgcolor=COLORS['bg_card'], plot_bgcolor=COLORS['bg_card'], font=dict(color=COLORS['text_primary']),
+        showlegend=True, legend=dict(font=dict(color=COLORS['text_primary'])),
+        margin=dict(l=50, r=20, t=60, b=50), height=300
+    )
+    fig.update_xaxes(gridcolor=COLORS['border'])
+    fig.update_yaxes(gridcolor=COLORS['border'])
+    return fig
+
+
+@app.callback(
+    Output('obv-adl-chart', 'figure'),
+    [Input('crypto-selector', 'value'),
+     Input('time-range', 'value')]
+)
+def update_obv_adl_chart(ticker, time_range):
+    if not ticker:
+        return go.Figure()
+
+    df = data_manager.fetch_data(ticker, period=time_range, interval='5m')
+    if df is None or df.empty:
+        return go.Figure()
+
+    df = data_manager.calculate_indicators(df)
+
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1,
+                        subplot_titles=('On-Balance Volume (OBV)', 'Accumulation/Distribution Line (ADL)'))
+
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['OBV'], line=dict(color=COLORS['accent_blue'], width=2),
+                              name='OBV', fill='tozeroy', fillcolor='rgba(52, 152, 219, 0.1)'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['ADL'], line=dict(color=COLORS['accent_orange'], width=2),
+                              name='ADL', fill='tozeroy', fillcolor='rgba(243, 156, 18, 0.1)'), row=2, col=1)
+
+    fig.update_layout(
+        paper_bgcolor=COLORS['bg_card'], plot_bgcolor=COLORS['bg_card'], font=dict(color=COLORS['text_primary']),
+        showlegend=True, legend=dict(font=dict(color=COLORS['text_primary'])),
+        margin=dict(l=50, r=20, t=60, b=50), height=300
+    )
+    fig.update_xaxes(gridcolor=COLORS['border'])
+    fig.update_yaxes(gridcolor=COLORS['border'])
+    return fig
+
+
+@app.callback(
+    [Output('trend-gauge-chart', 'figure'),
+     Output('trend-info-panel', 'children')],
+    [Input('crypto-selector', 'value'),
+     Input('time-range', 'value')]
+)
+def update_trend_summary(ticker, time_range):
+    """Composite trend score gauge + support/resistance/volatility/correlation info panel"""
+    if not ticker:
+        raise PreventUpdate
+
+    df = data_manager.fetch_data(ticker, period=time_range, interval='5m')
+    if df is None or df.empty:
+        return go.Figure(), html.Div("œ«œÂù«Ì „ÊÃÊœ ‰Ì” ", style={'color': COLORS['text_secondary']})
+
+    df = data_manager.calculate_indicators(df)
+
+    trend = data_manager.compute_trend_score(df)
+    support, resistance = data_manager.get_support_resistance(df)
+    corr = data_manager.compute_btc_correlation(ticker, df, period=time_range, interval='5m')
+
+    latest = df.iloc[-1]
+    current_price = latest['Close']
+    atr_pct = latest['ATR_Pct'] if pd.notna(latest['ATR_Pct']) else None
+
+    # --- Gauge figure ---
+    score = trend['score'] if trend else 0
+    label = trend['label'] if trend else '‰«„‘Œ’'
+    color = trend['color'] if trend else COLORS['text_secondary']
+
+    gauge_fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=score,
+        number={'suffix': "", 'font': {'color': COLORS['text_primary'], 'size': 36}},
+        title={'text': f"{CRYPTO_NAMES.get(ticker, ticker)} ó {label}",
+               'font': {'color': color, 'size': 18}},
+        gauge={
+            'axis': {'range': [-100, 100], 'tickcolor': COLORS['text_primary']},
+            'bar': {'color': color},
+            'bgcolor': COLORS['bg_card'],
+            'borderwidth': 0,
+            'steps': [
+                {'range': [-100, -60], 'color': 'rgba(255, 71, 87, 0.5)'},
+                {'range': [-60, -20], 'color': 'rgba(255, 71, 87, 0.25)'},
+                {'range': [-20, 20], 'color': 'rgba(243, 156, 18, 0.25)'},
+                {'range': [20, 60], 'color': 'rgba(0, 212, 170, 0.25)'},
+                {'range': [60, 100], 'color': 'rgba(0, 212, 170, 0.5)'}
+            ],
+        }
+    ))
+    gauge_fig.update_layout(
+        paper_bgcolor=COLORS['bg_card'], font=dict(color=COLORS['text_primary']),
+        margin=dict(l=30, r=30, t=60, b=10), height=320
+    )
+
+    # --- Info panel ---
+    breakdown = trend['breakdown'] if trend else {}
+
+    def info_row(label_text, value_text, value_color=None):
+        return html.Div([
+            html.Span(label_text, style={'color': COLORS['text_secondary'], 'width': '180px',
+                                          'display': 'inline-block'}),
+            html.Span(value_text, style={'color': value_color or COLORS['text_primary'], 'fontWeight': 'bold'})
+        ], style={'padding': '6px 0', 'borderBottom': f'1px solid {COLORS["border"]}'})
+
+    corr_text = "N/A (ŒÊœ »Ì ùòÊÌ‰ «” )" if ticker == 'BTC-USD' else (
+        f"{corr:.2f}" if corr is not None else "œ«œÂ ò«›Ì ‰Ì” ")
+    corr_color = COLORS['text_primary']
+    if corr is not None and ticker != 'BTC-USD':
+        corr_color = COLORS['accent_green'] if corr > 0.5 else (
+            COLORS['accent_red'] if corr < -0.2 else COLORS['accent_orange'])
+
+    panel = html.Div([
+        info_row("ﬁÌ„  ›⁄·Ì:", f"${current_price:,.4f}"),
+        info_row("—Ê‰œ MA20/50:", breakdown.get('ma_trend', '‰«„‘Œ’')),
+        info_row("Ê÷⁄Ì  ‰”»  »Â VWAP:", breakdown.get('vwap_trend', '‰«„‘Œ’')),
+        info_row("Ê÷⁄Ì  RSI:", breakdown.get('rsi_status', '‰«„‘Œ’')),
+        info_row("Ê÷⁄Ì  MFI:", breakdown.get('mfi_status', '‰«„‘Œ’')),
+        info_row("‘Ì» OBV:", breakdown.get('obv_slope', '‰«„‘Œ’')),
+        info_row("‘Ì» ADL:", breakdown.get('adl_slope', '‰«„‘Œ’')),
+        html.Hr(style={'borderColor': COLORS['border'], 'margin': '10px 0'}),
+        info_row("‰“œÌòù —Ì‰ Õ„«Ì :", f"${support:,.4f}" if support is not None else "N/A",
+                 COLORS['accent_green']),
+        info_row("‰“œÌòù —Ì‰ „ﬁ«Ê„ :", f"${resistance:,.4f}" if resistance is not None else "N/A",
+                 COLORS['accent_red']),
+        info_row("‰Ê”«‰ (ATR%):", f"{atr_pct:.2f}%" if atr_pct is not None else "N/A",
+                 COLORS['accent_orange']),
+        info_row("Â„»” êÌ »« »Ì ùòÊÌ‰:", corr_text, corr_color),
+    ])
+
+    return gauge_fig, panel
+
+
+# ???????????????????????????????????????????????????????????????????????????????
+# RUN SERVER
+# ???????????????????????????????????????????????????????????????????????????????
+
+if __name__ == '__main__':
+    print("=" * 70)
+    print("  CRYPTO MONEY FLOW DASHBOARD v2")
+    print("  Ã—Ì«‰ ÅÊ· ò—ÌÅ Ê - »«  »  Õ·Ì· «—“ „‰ Œ»")
+    print("=" * 70)
+    print("  Server starting at: http://127.0.0.1:8050")
+    print("  Auto-refresh interval: 5 minutes")
+    print("=" * 70)
+    app.run(debug=True, host='0.0.0.0', port=8050)

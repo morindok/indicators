@@ -1,0 +1,7 @@
+//@version=5
+indicator("Interactive Two Points", overlay=true)
+t1 = input.time(0, title="Point 1", confirm=true, inline="p1")
+p1 = input.price(0, title="", confirm=true, inline="p1")
+t2 = input.time(0, title="Point 2", confirm=true, inline="p2")
+p2 = input.price(0, title="", confirm=true, inline="p2")
+line.new(t1, p1, t2, p2, xloc.bar_time, extend.none, color.blue, style.solid, 2)

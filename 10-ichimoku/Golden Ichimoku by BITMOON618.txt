@@ -1,0 +1,148 @@
+//@version=5
+indicator("Dynamic Ichimoku by Pivot Distance", overlay=true, max_lines_count=500, max_labels_count=500, max_bars_back=1000)
+
+// --- [ Inputs ] ---
+leftBars  = input.int(50, title="Pivot Left Bars")
+rightBars = input.int(50, title="Pivot Right Bars")
+tenkanLen = input.int(9, title="Tenkan-sen Length")
+fixedShift = input.int(0, title="Cloud Offset (Shift)")
+
+// --- [ Functions ] ---
+f_findMainPivot(int barsBackStart, int barsBackEnd, bool isHigh) =>
+    int mainPivotOffset = na
+    float mainPivotPrice = na
+    
+    int safeStart = math.max(0, barsBackStart)
+    int safeEnd = math.max(0, barsBackEnd)
+    
+    if safeStart >= safeEnd
+        for i = safeEnd to safeStart
+            int leftLen = safeStart - i
+            int rightLen = i - safeEnd
+            
+            bool isValidPivot = true
+            
+            if isHigh
+                if leftLen > 0
+                    for j = 1 to leftLen
+                        if high[i + j] > high[i]
+                            isValidPivot := false
+                            break
+                if rightLen > 0 and isValidPivot
+                    for j = 1 to rightLen
+                        if high[i - j] > high[i]
+                            isValidPivot := false
+                            break
+            else
+                if leftLen > 0
+                    for j = 1 to leftLen
+                        if low[i + j] < low[i]
+                            isValidPivot := false
+                            break
+                if rightLen > 0 and isValidPivot
+                    for j = 1 to rightLen
+                        if low[i - j] < low[i]
+                            isValidPivot := false
+                            break
+                            
+            if isValidPivot
+                mainPivotOffset := i
+                mainPivotPrice := isHigh ? high[i] : low[i]
+                break
+                
+    [mainPivotOffset, mainPivotPrice]
+
+// --- [ Pivot Detection & Dynamic Length ] ---
+ph = ta.pivothigh(high, leftBars, rightBars)
+pl = ta.pivotlow(low, leftBars, rightBars)
+
+var int lastPivotBar = na
+var int prevPivotBar = na
+
+if not na(ph) or not na(pl)
+    prevPivotBar := lastPivotBar
+    lastPivotBar := bar_index[rightBars] 
+
+rawLen = na(prevPivotBar) ? 26 : math.max(1, lastPivotBar - prevPivotBar)
+dynamicLen = math.min(rawLen, 1000)
+
+// --- [ Ichimoku Calculations ] ---
+donchian(len) => math.avg(ta.highest(high, len), ta.lowest(low, len))
+
+tenkan = donchian(tenkanLen)
+kijun = donchian(dynamicLen)
+senkouA = math.avg(tenkan, kijun)
+senkouB = donchian(dynamicLen * 2)
+
+// --- [ Plotting ] ---
+plot(tenkan, color=color.blue, title="Tenkan-sen")
+plot(kijun, color=color.red, title="Kijun-sen (Dynamic)")
+
+pA = plot(senkouA, offset=fixedShift, color=color.green, title="Senkou Span A")
+pB = plot(senkouB, offset=fixedShift, color=color.red, title="Senkou Span B")
+
+fill(pA, pB, color=senkouA > senkouB ? color.new(color.green, 80) : color.new(color.red, 80), title="Kumo Cloud")
+
+plot(close, offset=-fixedShift, color=color.purple, title="Chikou Span")
+
+// --- [ Labels, Lines & Signals ] ---
+if dynamicLen != dynamicLen[1]
+    
+    // „Êﬁ⁄Ì  ‰„«Ì‘ ⁄œœ «»—
+    x2 = bar_index + fixedShift
+    
+    label.new(x = x2, y = math.avg(senkouA, senkouB), 
+              text = str.tostring(dynamicLen), 
+              color = color.new(color.white, 100), 
+              textcolor = color.gray, 
+              style = label.style_none, 
+              size = size.small)
+              
+    line.new(x1=x2, y1=low - ta.tr, x2=x2, y2=high + ta.tr, extend=extend.both, color=color.new(color.blue, 60), style=line.style_dashed)
+    
+    // «» œ«Ì »«“Â
+    x1 = x2 - dynamicLen
+    line.new(x1=x1, y1=low - ta.tr, x2=x1, y2=high + ta.tr, extend=extend.both, color=color.new(color.orange, 60), style=line.style_dashed)
+    
+    int barsBackStart = math.max(0, dynamicLen - fixedShift)
+    int barsBackEnd = 0
+    
+    [hh_offset, hh_val] = f_findMainPivot(barsBackStart, barsBackEnd, true)
+    [ll_offset, ll_val] = f_findMainPivot(barsBackStart, barsBackEnd, false)
+    
+    float valid_hh = na(hh_val) ? high : hh_val
+    float valid_ll = na(ll_val) ? low : ll_val
+    
+    bool is_hh_major = (valid_hh - close) > (close - valid_ll)
+    
+    int major_offset = is_hh_major ? hh_offset : ll_offset
+    float major_price = is_hh_major ? valid_hh : valid_ll
+    
+    if not na(major_offset)
+        int pivot_x = bar_index - major_offset
+        
+        // 1. ﬁ—«— œ«œ‰ ⁄œœ ‘Ì›  »—«»— »« ⁄œœ «»—
+        int shift_amount = dynamicLen
+        
+        // 2. „Êﬁ⁄Ì  ÃœÌœ »⁄œ «“ ‘Ì›  œ«œ‰ x2 »Â «‰œ«“Â ⁄œœ «»—
+        int shifted_pos = x2 + shift_amount
+        
+        // 3. „Õ«”»Â ›«’·Â «“ «» œ«Ì »«“Â (x1)  « „Êﬁ⁄Ì  ÃœÌœ
+        int dist = shifted_pos - x1 
+        
+        // 4. Õ—ò  »Â Ã·Ê «“ ÅÌÊÊ  »Â «‰œ«“Â «Ì‰ ›«’·Â „Õ«”»Â ‘œÂ
+        int signal_x = pivot_x + dist
+        
+        // „Õ«”»Â ÷—«Ì» ›Ì»Ê‰«çÌ
+        float fib1 = dynamicLen * 0.618
+        float fib2 = dynamicLen * 1.618
+        
+        // «÷«›Â ò—œ‰ ŒÊœ ⁄œœ »Â Œÿ «Ê·
+        string lbl_text = str.tostring(dynamicLen) + "\n" + str.tostring(fib1, "#.##") + "\n" + str.tostring(fib2, "#.##")
+        
+        label.new(x = signal_x, y = major_price, 
+                  text = lbl_text, 
+                  color = is_hh_major ? color.new(color.red, 20) : color.new(color.green, 20),
+                  textcolor = color.white,
+                  style = is_hh_major ? label.style_label_down : label.style_label_up,
+                  size = size.small)

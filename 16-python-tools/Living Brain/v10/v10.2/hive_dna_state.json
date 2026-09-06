@@ -1,0 +1,17 @@
+{
+  "generation": 0,
+  "adaptive": {
+    "score_threshold": 0.62,
+    "conv_threshold": 0.5
+  },
+  "awareness": 0.4,
+  "win_streak": 0,
+  "loss_streak": 1,
+  "organism_weights": {
+    "Aether": 1.42,
+    "Pulse": 1.32,
+    "Flux": 1.22,
+    "Vector": 1.12
+  },
+  "saved_at": "2026-08-19T16:08:11.281950+00:00"
+}

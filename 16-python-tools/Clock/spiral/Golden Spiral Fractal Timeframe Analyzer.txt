@@ -1,0 +1,269 @@
+# -*- coding: utf-8 -*-
+"""
+🌌 Golden Spiral Fractal Timeframe Analyzer - Bybit
+------------------------------------------------------------------
+این سیستم کندل‌های خطی را به اسپیرال‌های لگاریتمی طلایی تبدیل می‌کند.
+تایم فریم‌های پایین‌تر (مانند 15m) روی منحنی اسپیرالِ تایم فریم‌های بالاتر (مانند 1h)
+مثل چرخ‌دنده‌های فراکتال می‌چرخند و رسم می‌شوند.
+"""
+
+import time
+import numpy as np
+import pandas as pd
+import requests
+import dash
+from dash import dcc, html, Input, Output, State, ctx
+import dash_bootstrap_components as dbc
+import plotly.graph_objects as go
+
+# ==============================================================================
+# 0) تنظیمات رنگی و تم
+# ==============================================================================
+BG, CARD, LINE, TXT, MUT = "#0b1220", "#121c30", "#23314d", "#e8ecf4", "#8fa3c0"
+GOLD, CYAN, MAGENTA = "#f0b90b", "#00e5ff", "#ff007f"
+
+DEFAULT_SYMBOL = "BTCUSDT"
+HTF_INTERVAL = "60"  # تایم فریم بالا (مادر)
+LTF_INTERVAL = "15"  # تایم فریم پایین (فرزند)
+
+# ==============================================================================
+# 1) اتصال REST پایدار به بایبیت (الهام گرفته از کد شما)
+# ==============================================================================
+REST_CANDIDATES = ["https://api.bybit.com", "https://api.bytick.com", "https://api.bybit.kz"]
+SESSION = requests.Session()
+SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
+})
+_ACTIVE_REST_BASE = {"url": None}
+
+
+def bybit_get(path, params, timeout=10):
+    cands = ([_ACTIVE_REST_BASE["url"]] if _ACTIVE_REST_BASE["url"] else []) + \
+            [b for b in REST_CANDIDATES if b != _ACTIVE_REST_BASE["url"]]
+    for base in cands:
+        try:
+            r = SESSION.get(f"{base}{path}", params=params, timeout=timeout)
+            if r.status_code in (403, 451):
+                continue
+            r.raise_for_status()
+            d = r.json()
+            if d.get("retCode") == 0:
+                _ACTIVE_REST_BASE["url"] = base
+                return d
+        except Exception:
+            continue
+    return None
+
+
+def get_klines(symbol, interval, category="linear", limit=100):
+    d = bybit_get("/v5/market/kline", {
+        "category": category, "symbol": symbol, "interval": interval, "limit": limit
+    })
+    if not d or "list" not in (d.get("result") or {}):
+        return pd.DataFrame()
+    lst = d["result"]["list"]
+    if not lst:
+        return pd.DataFrame()
+    df = pd.DataFrame(lst, columns=["ts", "open", "high", "low", "close", "volume", "turnover"])
+    # تبدیل به timestamp عددی برای محاسبات ریاضی (ثانیه)
+    df["ts_num"] = df["ts"].astype(float) / 1000.0
+    for c in ["open", "high", "low", "close"]:
+        df[c] = df[c].astype(float)
+    return df.sort_values("ts_num").reset_index(drop=True)
+
+
+# ==============================================================================
+# 2) موتور ریاضی هندسه اسپیرال طلایی
+# ==============================================================================
+def get_golden_spiral_path(x_start, y_start, x_end, y_end, num_points=100, loops=1):
+    """
+    رسم یک اسپیرال لگاریتمی طلایی بین دو نقطه.
+    فرمول اسپیرال طلایی: r = a * e^(b*theta) که در آن b = ln(1.618)/(pi/2)
+    """
+    b = 0.3063489  # ضریب اسپیرال طلایی فیبوناچی
+
+    dx = x_end - x_start
+    dy = y_end - y_start
+    dist = np.hypot(dx, dy)
+    target_angle = np.arctan2(dy, dx)
+
+    # تولید زاویه‌ها (theta)
+    theta = np.linspace(0, loops * 2 * np.pi, num_points)
+
+    # شعاع لگاریتمی (منهای 1 تا دقیقاً از نقطه صفر یعنی شعاع 0 شروع شود)
+    r = np.exp(b * theta) - 1
+
+    max_r = r[-1]
+    if max_r == 0:
+        return np.array([x_start, x_end]), np.array([y_start, y_end])
+
+    scale = dist / max_r
+
+    # مختصات دکارتی استاندارد
+    x_std = r * np.cos(theta) * scale
+    y_std = r * np.sin(theta) * scale
+
+    # محاسبه زاویه انتهایی اسپیرال تولید شده برای چرخش و انطباق با نقطه مقصد
+    end_angle_std = np.arctan2(y_std[-1], x_std[-1])
+    rotation = target_angle - end_angle_std
+
+    # اعمال ماتریکس چرخش
+    x_rot = x_std * np.cos(rotation) - y_std * np.sin(rotation)
+    y_rot = x_std * np.sin(rotation) + y_std * np.cos(rotation)
+
+    # انتقال به نقطه شروع
+    return x_rot + x_start, y_rot + y_start
+
+
+def map_ltf_to_htf_spiral(ltf_df, htf_df):
+    """
+    این تابع جادوی اصلی است:
+    مختصات تایم فریم‌های پایین را به مختصات فضاییِ اسپیرال‌های تایم فریم بالا متصل می‌کند.
+    """
+    htf_paths = []
+    ltf_paths = []
+
+    # مقیاس‌بندی قیمت و زمان برای اینکه در یک فضای هندسی قابل دیدن باشند
+    # (چون زمان اعداد بزرگی به ثانیه است و قیمت کوچک است)
+    min_ts = htf_df["ts_num"].min()
+    price_scale = (htf_df["ts_num"].max() - min_ts) / (htf_df["high"].max() - htf_df["low"].min())
+
+    # رسم زنجیره HTF (تایم فریم بالا)
+    htf_curve_data = []  # برای نگهداری تمام نقاط منحنی مادر جهت نگاشت فرزندها
+
+    for i in range(len(htf_df)):
+        row = htf_df.iloc[i]
+        # شروع از زمان و قیمت اوپن
+        x0 = row["ts_num"] - min_ts
+        y0 = row["open"] * price_scale
+        # پایان در زمان بسته شدن و قیمت کلوز
+        # برای زنجیروار شدن، زمان پایان را کندل بعدی در نظر می‌گیریم
+        x1 = x0 + (int(HTF_INTERVAL) * 60)
+        y1 = row["close"] * price_scale
+
+        sx, sy = get_golden_spiral_path(x0, y0, x1, y1, num_points=100, loops=1.5)
+
+        # ذخیره نقاط برای چارت
+        htf_paths.append(go.Scatter(
+            x=sx, y=sy / price_scale, mode='lines',
+            line=dict(color=GOLD, width=3, shape='spline'),
+            name=f"HTF Spiral {i}", hoverinfo='none', showlegend=False
+        ))
+
+        # ذخیره متادیتا برای نگاشت تایم فریم پایین
+        htf_curve_data.append({
+            "start_time": row["ts_num"],
+            "end_time": row["ts_num"] + (int(HTF_INTERVAL) * 60),
+            "sx": sx, "sy": sy
+        })
+
+    # رسم زنجیره LTF (تایم فریم پایین) سوار بر HTF
+    for i in range(len(ltf_df)):
+        row = ltf_df.iloc[i]
+        ts = row["ts_num"]
+
+        # پیدا کردن منحنی مادر مربوطه
+        parent = next((p for p in htf_curve_data if p["start_time"] <= ts < p["end_time"]), None)
+
+        if parent:
+            # محاسبه درصد پیشرفت زمان کندل فرزند در طول عمر کندل مادر
+            progress_ratio = (ts - parent["start_time"]) / (parent["end_time"] - parent["start_time"])
+            idx = int(progress_ratio * (len(parent["sx"]) - 1))
+
+            # نقطه شروع اسپیرال فرزند روی منحنی مادر است
+            base_x = parent["sx"][idx]
+            base_y = parent["sy"][idx]
+
+            # نقطه پایان اسپیرال فرزند (نوسان قیمت خودش در مقیاس کوچک)
+            x_end = base_x + (int(LTF_INTERVAL) * 60) / 3  # فشرده سازی زمانی روی اسپیرال
+            y_end = base_y + (row["close"] - row["open"]) * price_scale
+
+            lsx, lsy = get_golden_spiral_path(base_x, base_y, x_end, y_end, num_points=30, loops=1)
+
+            ltf_paths.append(go.Scatter(
+                x=lsx, y=lsy / price_scale, mode='lines',
+                line=dict(color=CYAN, width=1.5),
+                opacity=0.8, name=f"LTF Spiral {i}", showlegend=False
+            ))
+
+    return htf_paths + ltf_paths
+
+
+# ==============================================================================
+# 3) رابط کاربری Dash
+# ==============================================================================
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.CYBORG])
+app.title = "Golden Spiral Fractals"
+
+app.layout = html.Div([
+    dbc.Container([
+        html.H3("🌀 سیستم هندسه فراکتال: اسپیرال طلایی زمان/قیمت",
+                style={"color": GOLD, "textAlign": "center", "marginTop": "20px"}),
+        html.P(
+            "در این سیستم، کندل‌های تایم‌فریم بالا (طلا) اسپیرال‌های لگاریتمی می‌سازند و کندل‌های تایم‌فریم پایین (فیروزه) روی آن‌ها می‌چرخند و رسم می‌شوند.",
+            style={"color": MUT, "textAlign": "center"}),
+
+        dbc.Row([
+            dbc.Col([
+                html.Label("نماد:", style={"color": MUT}),
+                dcc.Input(id="symbol-input", value=DEFAULT_SYMBOL, type="text",
+                          className="form-control bg-dark text-light")
+            ], md=4),
+            dbc.Col([
+                dbc.Button("🌌 رسم چرخه‌ی فراکتال", id="draw-btn", color="warning", className="mt-4 w-100",
+                           style={"fontWeight": "bold"})
+            ], md=4)
+        ], className="justify-content-center mt-3"),
+
+        dcc.Loading(
+            id="loading-chart", type="circle", color=GOLD,
+            children=dcc.Graph(id="spiral-chart", style={"height": "80vh", "marginTop": "20px"})
+        )
+    ])
+], style={"background": BG, "minHeight": "100vh"})
+
+
+# ==============================================================================
+# 4) کال‌بک رسم چارت
+# ==============================================================================
+@app.callback(
+    Output("spiral-chart", "figure"),
+    Input("draw-btn", "n_clicks"),
+    State("symbol-input", "value")
+)
+def update_spiral_chart(n_clicks, symbol):
+    symbol = (symbol or DEFAULT_SYMBOL).upper()
+
+    # دریافت دیتای مادر (مثلاً 50 کندل 1 ساعته)
+    df_htf = get_klines(symbol, HTF_INTERVAL, limit=30)
+    # دریافت دیتای فرزند (مثلاً 200 کندل 15 دقیقه)
+    df_ltf = get_klines(symbol, LTF_INTERVAL, limit=120)
+
+    if df_htf.empty or df_ltf.empty:
+        return go.Figure(layout=dict(paper_bgcolor=BG, plot_bgcolor=CARD, title="دریافت دیتا ناموفق بود"))
+
+    # محاسبه مسیرهای هندسی
+    traces = map_ltf_to_htf_spiral(df_ltf, df_htf)
+
+    fig = go.Figure(data=traces)
+
+    # از آنجا که نمودار اسپیرال در زمان به عقب برمی‌گردد، ما نمی‌توانیم محور X را به عنوان تاریخ استاندارد فرمت کنیم.
+    # محورها را به صورت فضای هندسی خالص تنظیم می‌کنیم.
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor=BG,
+        plot_bgcolor=CARD,
+        title=dict(text=f"Fractal Resonance: {symbol} (HTF:{HTF_INTERVAL}m / LTF:{LTF_INTERVAL}m)",
+                   font=dict(color=GOLD)),
+        xaxis=dict(showgrid=False, zeroline=False, visible=False),  # مخفی کردن محور زمان (چون پیچ خورده است)
+        yaxis=dict(showgrid=True, gridcolor=LINE, title="Price Space"),
+        margin=dict(l=40, r=40, t=60, b=40),
+        hovermode="closest"
+    )
+
+    return fig
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=8070, use_reloader=False)

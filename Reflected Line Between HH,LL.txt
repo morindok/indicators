@@ -1,0 +1,149 @@
+//@version=5
+indicator("HH/LL ÈÇ Ïæ ÎØ ÈÇÒÊÇÈí æ ÇäÚ˜ÇÓ ˜äÏá", overlay=true)
+
+// ÊäÙíãÇÊ
+lookback = input.int(100, "Lookback Period", minval=1, maxval=5000)
+angle1 = input.float(45, "Angle Line 1 (degrees)", minval=0, maxval=89)
+angle2 = input.float(30, "Angle Line 2 (degrees)", minval=0, maxval=89)
+speed = input.float(0.1, "Speed", minval=0.01, maxval=10)
+startTime = input.time(timestamp("2024-01-01 00:00"), "Start Time")
+showReflection1 = input.bool(false, "Show Reflection for Line 1")
+showReflection2 = input.bool(false, "Show Reflection for Line 2")
+reflectPrice1 = input.bool(false, "Reflect Price with Line 1")
+reflectPrice2 = input.bool(false, "Reflect Price with Line 2")
+
+// ãÍÇÓÈå HH æ LL
+hh = ta.highest(high, lookback)
+ll = ta.lowest(low, lookback)
+
+// ÑÓã ÎØæØ HH æ LL
+plot(hh, color=color.red, linewidth=2, title="HH")
+plot(ll, color=color.green, linewidth=2, title="LL")
+
+// ãÊÛíÑåÇí ÎØ ÈÇÒÊÇÈí Çæá (ÔÑæÚ ÇÒ LL)
+var float currentY1 = na
+var int direction1 = 1
+var bool started = false
+var float prevY1 = na
+var float cumulativeSlope1 = 0.0
+
+// ãÊÛíÑåÇí ÎØ ÈÇÒÊÇÈí Ïæã (ÔÑæÚ ÇÒ HH)
+var float currentY2 = na
+var int direction2 = -1
+var float prevY2 = na
+var float cumulativeSlope2 = 0.0
+
+// ãÍÇÓÈå ÊÛííÑ ÚãæÏí
+priceRange = hh - ll
+angleRad1 = angle1 * math.pi / 180
+angleRad2 = angle2 * math.pi / 180
+deltaY1 = priceRange * speed * 0.01 * math.tan(angleRad1)
+deltaY2 = priceRange * speed * 0.01 * math.tan(angleRad2)
+
+// ÔÑæÚ ÎØæØ
+if time >= startTime and not started
+    currentY1 := ll
+    direction1 := 1
+    prevY1 := ll
+    cumulativeSlope1 := 0.0
+    currentY2 := hh
+    direction2 := -1
+    prevY2 := hh
+    cumulativeSlope2 := 0.0
+    started := true
+
+// ÈåÑæÒÑÓÇäí ÎØ Çæá
+if started
+    prevY1 := currentY1
+    newY1 = currentY1 + direction1 * deltaY1
+    
+    if newY1 >= hh
+        excess = newY1 - hh
+        currentY1 := hh - excess
+        direction1 := -1
+        cumulativeSlope1 := cumulativeSlope1 + (hh - prevY1)
+    else if newY1 <= ll
+        excess = ll - newY1
+        currentY1 := ll + excess
+        direction1 := 1
+        cumulativeSlope1 := cumulativeSlope1 + (ll - prevY1)
+    else
+        currentY1 := newY1
+        cumulativeSlope1 := cumulativeSlope1 + (currentY1 - prevY1)
+
+// ÈåÑæÒÑÓÇäí ÎØ Ïæã
+if started
+    prevY2 := currentY2
+    newY2 = currentY2 + direction2 * deltaY2
+    
+    if newY2 >= hh
+        excess = newY2 - hh
+        currentY2 := hh - excess
+        direction2 := -1
+        cumulativeSlope2 := cumulativeSlope2 + (hh - prevY2)
+    else if newY2 <= ll
+        excess = ll - newY2
+        currentY2 := ll + excess
+        direction2 := 1
+        cumulativeSlope2 := cumulativeSlope2 + (ll - prevY2)
+    else
+        currentY2 := newY2
+        cumulativeSlope2 := cumulativeSlope2 + (currentY2 - prevY2)
+
+// ÑÓã ÎØæØ ÈÇÒÊÇÈí
+plot(started ? currentY1 : na, color=color.yellow, linewidth=2, title="Line 1 (from LL)", style=plot.style_line)
+plot(started ? currentY2 : na, color=color.orange, linewidth=2, title="Line 2 (from HH)", style=plot.style_line)
+
+// ãÍÇÓÈå ˜äÏáåÇí ãäÚ˜Ó ÔÏå äÓÈÊ Èå ÎØ Çæá (ÈÏæä ÔíÈ ÊÌãÚí)
+reflectedOpen1 = showReflection1 and started ? 2 * currentY1 - open : na
+reflectedHigh1 = showReflection1 and started ? 2 * currentY1 - low : na
+reflectedLow1 = showReflection1 and started ? 2 * currentY1 - high : na
+reflectedClose1 = showReflection1 and started ? 2 * currentY1 - close : na
+
+// ãÍÇÓÈå ˜äÏáåÇí ãäÚ˜Ó ÔÏå äÓÈÊ Èå ÎØ Ïæã (ÈÏæä ÔíÈ ÊÌãÚí)
+reflectedOpen2 = showReflection2 and started ? 2 * currentY2 - open : na
+reflectedHigh2 = showReflection2 and started ? 2 * currentY2 - low : na
+reflectedLow2 = showReflection2 and started ? 2 * currentY2 - high : na
+reflectedClose2 = showReflection2 and started ? 2 * currentY2 - close : na
+
+// ãÍÇÓÈå ˜äÏáåÇí ãäÚ˜Ó ÔÏå ÈÇ ÔíÈ ÊÌãÚí ÈÑÇí ÎØ Çæá
+adjustedOpen1 = open + cumulativeSlope1
+adjustedHigh1 = high + cumulativeSlope1
+adjustedLow1 = low + cumulativeSlope1
+adjustedClose1 = close + cumulativeSlope1
+
+reflectedPriceOpen1 = reflectPrice1 and started ? 2 * currentY1 - adjustedOpen1 : na
+reflectedPriceHigh1 = reflectPrice1 and started ? 2 * currentY1 - adjustedLow1 : na
+reflectedPriceLow1 = reflectPrice1 and started ? 2 * currentY1 - adjustedHigh1 : na
+reflectedPriceClose1 = reflectPrice1 and started ? 2 * currentY1 - adjustedClose1 : na
+
+// ãÍÇÓÈå ˜äÏáåÇí ãäÚ˜Ó ÔÏå ÈÇ ÔíÈ ÊÌãÚí ÈÑÇí ÎØ Ïæã
+adjustedOpen2 = open + cumulativeSlope2
+adjustedHigh2 = high + cumulativeSlope2
+adjustedLow2 = low + cumulativeSlope2
+adjustedClose2 = close + cumulativeSlope2
+
+reflectedPriceOpen2 = reflectPrice2 and started ? 2 * currentY2 - adjustedOpen2 : na
+reflectedPriceHigh2 = reflectPrice2 and started ? 2 * currentY2 - adjustedLow2 : na
+reflectedPriceLow2 = reflectPrice2 and started ? 2 * currentY2 - adjustedHigh2 : na
+reflectedPriceClose2 = reflectPrice2 and started ? 2 * currentY2 - adjustedClose2 : na
+
+// ÑÓã ˜äÏáåÇí ãäÚ˜Ó ÔÏå ÈÑÇí ÎØ Çæá (ÈÏæä ÔíÈ)
+plotcandle(reflectedOpen1, reflectedHigh1, reflectedLow1, reflectedClose1, 
+           color=color.new(color.yellow, 50), wickcolor=color.new(color.yellow, 50), 
+           bordercolor=color.new(color.yellow, 50), title="Reflected Candles Line 1")
+
+// ÑÓã ˜äÏáåÇí ãäÚ˜Ó ÔÏå ÈÑÇí ÎØ Ïæã (ÈÏæä ÔíÈ)
+plotcandle(reflectedOpen2, reflectedHigh2, reflectedLow2, reflectedClose2, 
+           color=color.new(color.orange, 50), wickcolor=color.new(color.orange, 50), 
+           bordercolor=color.new(color.orange, 50), title="Reflected Candles Line 2")
+
+// ÑÓã ˜äÏáåÇí ãäÚ˜Ó ÔÏå ÈÇ ÔíÈ ÊÌãÚí ÈÑÇí ÎØ Çæá
+plotcandle(reflectedPriceOpen1, reflectedPriceHigh1, reflectedPriceLow1, reflectedPriceClose1, 
+           color=color.new(color.blue, 30), wickcolor=color.new(color.blue, 30), 
+           bordercolor=color.new(color.blue, 30), title="Reflected Price Candles Line 1")
+
+// ÑÓã ˜äÏáåÇí ãäÚ˜Ó ÔÏå ÈÇ ÔíÈ ÊÌãÚí ÈÑÇí ÎØ Ïæã
+plotcandle(reflectedPriceOpen2, reflectedPriceHigh2, reflectedPriceLow2, reflectedPriceClose2, 
+           color=color.new(color.purple, 30), wickcolor=color.new(color.purple, 30), 
+           bordercolor=color.new(color.purple, 30), title="Reflected Price Candles Line 2")

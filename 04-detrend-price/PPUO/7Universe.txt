@@ -1,0 +1,78 @@
+//@version=5
+indicator("Fibonacci Symmetric 7 MA (Adjustable Center)", overlay=true)
+
+// === Input ===
+src = close
+gold = input.float(1.618, "Golden Ratio Multiplier", step=0.001)
+
+// Fibonacci lengths
+len1 = input.int(144,  "MA 1 Length")
+len2 = input.int(89,  "MA 2 Length")
+len3 = input.int(55, "MA 3 Length")
+len4 = input.int(21, "MA 4 Length")
+len5 = input.int(55, "MA 5 Length")
+len6 = input.int(89, "MA 6 Length")
+len7 = input.int(144, "MA 7 Length")
+
+// Center selection
+centerIndex = input.int(5, "Center MA Number", minval=1, maxval=7)
+
+// === Moving averages ===
+ma1 = ta.sma(src, len1)
+ma2 = ta.sma(src, len2)
+ma3 = ta.sma(src, len3)
+ma4 = ta.sma(src, len4)
+ma5 = ta.sma(src, len5)
+ma6 = ta.sma(src, len6)
+ma7 = ta.sma(src, len7)
+
+// Get selected center MA
+centerMA = switch centerIndex
+    1 => ma1
+    2 => ma2
+    3 => ma3
+    4 => ma4
+    5 => ma5
+    6 => ma6
+    => ma7
+
+// Build 3 upper and 3 lower symmetric levels
+dist1 = math.abs(centerMA - ma1) * gold
+dist2 = math.abs(centerMA - ma2) * gold
+dist3 = math.abs(centerMA - ma3) * gold
+dist4 = math.abs(centerMA - ma4) * gold
+dist5 = math.abs(centerMA - ma5) * gold
+dist6 = math.abs(centerMA - ma6) * gold
+dist7 = math.abs(centerMA - ma7) * gold
+
+// Pick the first 3 distances from MAs other than the center
+dA = centerIndex != 1 ? dist1 : dist2
+dB = centerIndex <= 2 ? dist3 : centerIndex == 3 ? dist4 : dist2
+dC = centerIndex <= 3 ? dist4 : centerIndex == 4 ? dist5 : dist3
+
+upper1 = centerMA + dA
+upper2 = centerMA + dB
+upper3 = centerMA + dC
+
+lower1 = centerMA - dA
+lower2 = centerMA - dB
+lower3 = centerMA - dC
+
+// === Plots ===
+plot(ma1, title="MA 1", color=color.new(color.teal, 0))
+plot(ma2, title="MA 2", color=color.new(color.blue, 0))
+plot(ma3, title="MA 3", color=color.new(color.purple, 0))
+plot(ma4, title="MA 4", color=color.new(color.orange, 0))
+plot(ma5, title="MA 5", color=color.new(color.yellow, 0))
+plot(ma6, title="MA 6", color=color.new(color.fuchsia, 0))
+plot(ma7, title="MA 7", color=color.new(color.red, 0))
+
+plot(centerMA, title="Center MA", color=color.white, linewidth=3)
+
+plot(upper1, title="Upper 1", color=color.new(color.green, 0), linewidth=1)
+plot(upper2, title="Upper 2", color=color.new(color.green, 15), linewidth=1)
+plot(upper3, title="Upper 3", color=color.new(color.green, 30), linewidth=1)
+
+plot(lower1, title="Lower 1", color=color.new(color.red, 0), linewidth=1)
+plot(lower2, title="Lower 2", color=color.new(color.red, 15), linewidth=1)
+plot(lower3, title="Lower 3", color=color.new(color.red, 30), linewidth=1)

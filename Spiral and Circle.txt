@@ -1,0 +1,41 @@
+//@version=5
+// ÇÖÇÝå ÔÏä max_lines_count ÈÑÇí ÇÌÇÒå ÑÓã ÈíÔ ÇÒ 50 ÎØ
+indicator("Circle & Fibonacci Spiral", overlay=true, max_lines_count=500)
+
+t1 = input.time(0, "Center Time (t1)", confirm=true)
+p1 = input.price(0, "Center Price (p1)", confirm=true)
+t2 = input.time(0, "Scale Time (t2)", confirm=true)
+p2 = input.price(0, "Scale Price (p2)", confirm=true)
+t3 = input.time(0, "Radius Time (t3)", confirm=true)
+
+float r_time = math.abs(t3 - t1)
+float r_price = math.abs(p2 - p1)
+
+// --- ÑÓã ÏÇíÑå ÈÇ Plot ---
+bool in_circle_range = (time >= t1 - r_time) and (time <= t1 + r_time)
+float x = (in_circle_range and r_time > 0) ? (time - t1) / r_time : na
+float y_offset = in_circle_range ? r_price * math.sqrt(math.max(0, 1 - math.pow(x, 2))) : na
+
+plot(in_circle_range ? p1 + y_offset : na, color=color.blue, style=plot.style_linebr, linewidth=2, title="Upper Half")
+plot(in_circle_range ? p1 - y_offset : na, color=color.blue, style=plot.style_linebr, linewidth=2, title="Lower Half")
+
+// --- ÑÓã ÇÓíÑÇá ÝíÈæäÇí ÈÇ line.new ---
+if barstate.islast and r_time > 0 and r_price > 0
+    int prev_t_spi = na
+    float prev_p_spi = na
+    
+    float b = 0.3063489 
+    
+    for i = 0 to 200
+        float theta = i * 0.15
+        
+        float growth = (math.exp(b * theta) - 1) / 5.0
+        
+        int curr_t_spi = math.round(t1 + (r_time * growth * math.cos(theta)))
+        float curr_p_spi = p1 + (r_price * growth * math.sin(theta))
+        
+        if not na(prev_t_spi)
+            line.new(prev_t_spi, prev_p_spi, curr_t_spi, curr_p_spi, xloc=xloc.bar_time, color=color.purple, width=2)
+        
+        prev_t_spi := curr_t_spi
+        prev_p_spi := curr_p_spi

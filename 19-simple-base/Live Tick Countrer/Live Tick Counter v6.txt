@@ -1,0 +1,95 @@
+//@version=5
+indicator("Live Tick Height Counter MTF by @BITMOON618 V5", overlay=true, max_labels_count=500)
+
+// --- Inputs ---
+string htf       = input.timeframe("5", "Target Higher Timeframe (MTF)")
+int    lookback  = input.int(50, "Lookback Bars (History)", minval=1, maxval=480)
+
+// --- Live (per-tick) variables ---
+varip float lastPrice = na
+// ÊÛííÑ ãÊÛíÑåÇ Èå float ÈÑÇí ÐÎíÑå ÇÑÊÝÇÚ ÏÞíÞ Êí˜åÇ
+varip float upTicks   = 0.0
+varip float downTicks = 0.0
+varip int   last_htf_time = na
+
+// --- Persistent history ---
+var label[] history_labels = array.new_label()
+var float[] hUpTicks = array.new_float()
+var float[] hDnTicks = array.new_float()
+
+// Moving label for the live bar
+var label live_label = label.new(na, na, "", color=color.new(color.blue, 70), textcolor=color.white, style=label.style_label_down)
+
+// --- Cumulative probability (history + current live HTF bar) ---
+f_probUp() =>
+    float sUpT = upTicks
+    float sDnT = downTicks
+    int sz = array.size(hUpTicks)
+    int nStart = math.max(0, sz - lookback)
+    if sz > 0
+        for i = nStart to sz - 1
+            sUpT += array.get(hUpTicks, i)
+            sDnT += array.get(hDnTicks, i)
+    float totT = sUpT + sDnT
+    totT > 0 ? (sUpT / totT) * 100.0 : 50.0
+
+// --- MTF Boundary Detection ---
+current_htf_time = time(htf)
+
+// --- Live market only ---
+if barstate.isrealtime
+    
+    if na(last_htf_time) or current_htf_time != last_htf_time
+        
+        if not na(last_htf_time)
+            array.push(hUpTicks, upTicks)
+            array.push(hDnTicks, downTicks)
+            
+            float saved_pUp = f_probUp()
+            color savedCol = saved_pUp > 55 ? color.new(color.green, 40) : saved_pUp < 45 ? color.new(color.red, 40) : color.new(color.gray, 20)
+            
+            string saved_txt = "Up Volume: " + str.tostring(upTicks, "#.#") + "\nDown Volume: " + str.tostring(downTicks, "#.#")
+            label saved_lbl = label.new(bar_index[1], high[1], saved_txt, color=savedCol, textcolor=color.white, style=label.style_label_down)
+            array.push(history_labels, saved_lbl)
+
+            if array.size(history_labels) > 490
+                label.delete(array.shift(history_labels))
+            if array.size(hUpTicks) > 490
+                array.shift(hUpTicks)
+                array.shift(hDnTicks)
+
+        upTicks   := 0.0
+        downTicks := 0.0
+        lastPrice := open
+        last_htf_time := current_htf_time
+
+    // ÈÑÑÓí ÇÑÊÝÇÚ Êí˜åÇ ÏÑ áÍÙå
+    if not na(lastPrice)
+        float diff = close - lastPrice
+        if diff != 0
+            // ãÍÇÓÈå ãíÒÇä ÍÑ˜Ê ÈÑ ÇÓÇÓ ãÞíÇÓ Êí˜ ÇÑÊ
+            float tick_height = math.abs(diff) / syminfo.mintick 
+            
+            if diff > 0
+                upTicks += tick_height
+            else
+                downTicks += tick_height
+            
+    lastPrice := close
+
+    // ãÍÇÓÈå ÇÍÊãÇá Èå ÕæÑÊ ÒäÏå
+    float pUp = f_probUp()
+    float pDn = 100.0 - pUp
+
+    // Ñä áíÈá ÈÑ ÇÓÇÓ ÇÍÊãÇá
+    color lblCol = pUp > 55 ? color.new(color.green, 60) : pUp < 45 ? color.new(color.red, 60) : color.new(color.blue, 70)
+
+    string txt = "MTF: " + htf + 
+             "\nUp Dist: "      + str.tostring(upTicks, "#.#")   + 
+             "\nDown Dist: "    + str.tostring(downTicks, "#.#") + 
+             "\nUP Prob: "      + str.tostring(pUp, "#.#") + "%" +
+             "\nDOWN Prob: "    + str.tostring(pDn, "#.#") + "%"
+
+    label.set_xy(live_label, bar_index, high + ta.tr * 0.5)
+    label.set_text(live_label, txt)
+    label.set_color(live_label, lblCol)

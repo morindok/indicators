@@ -1,0 +1,185 @@
+//@version=5
+indicator("Fibo Wave MA - Auto Path (Plot)", overlay=true)
+
+// =============================================================================
+//                             INPUTS
+// =============================================================================
+t1 = input.time(0, title="äÞØå ãæÌ 1 (ÒãÇä)", confirm=true, inline="p1", group="äÞÇØ ãÑÌÚ ãæÌ")
+p1 = input.price(0, title="äÞØå 1 (ÞíãÊ)", confirm=true, inline="p1", group="äÞÇØ ãÑÌÚ ãæÌ")
+t2 = input.time(0, title="äÞØå ãæÌ 2 (ÒãÇä)", confirm=true, inline="p2", group="äÞÇØ ãÑÌÚ ãæÌ")
+p2 = input.price(0, title="äÞØå 2 (ÞíãÊ)", confirm=true, inline="p2", group="äÞÇØ ãÑÌÚ ãæÌ")
+
+sym_center_ratio = input.float(0.5, title="äÓÈÊ ãÑ˜Ò ÊÞÇÑä ãæÌ", step=0.1, group="ÊäÙíãÇÊ ãæÌ")
+reset_wave       = input.bool(true,  title="ÑíÓÊ ãæÌ Ó ÇÒ n ÏæÑå", group="ÊäÙíãÇÊ ãæÌ")
+use_hh_ll_amp    = input.bool(false, title="ÇÑÊÝÇÚ ãæÌ ÈÑ ÇÓÇÓ ÝÇÕáå ÊÇ HH/LL", group="ÊäÙíãÇÊ ãæÌ")
+hh_ll_len        = input.int(50, title="ÏæÑå HH/LL ÈÑÇí ÇÑÊÝÇÚ ãæÌ", minval=1, group="ÊäÙíãÇÊ ãæÌ")
+
+ma_type        = input.string("SMA", title="äæÚ ãææíä ÇæÑíÌ", options=["SMA", "EMA", "WMA"], group="ÊäÙíãÇÊ ãææíä ÇæÑíÌ")
+ma_src         = input.source(close, title="ãäÈÚ ãææíä ÇæÑíÌ", group="ÊäÙíãÇÊ ãææíä ÇæÑíÌ")
+
+show_fibo_ma   = input.bool(true, title="äãÇíÔ ãææíä ÝíÈæ", group="ãææíä ÝíÈæ")
+use_ma_gap_amp = input.bool(true, title="ÇÑÊÝÇÚ ãæÌ = ÝÇÕáå Ïæ ãææíä", group="ãææíä ÝíÈæ")
+
+use_price_mirror = input.bool(true, title="ÊÞÇÑä ÞíãÊ äÓÈÊ Èå ãæÌ ÝíÈæ", group="ÊÞÇÑä ÞíãÊ")
+mirror_src       = input.source(close, title="ãäÈÚ ÞíãÊ ÈÑÇí ÊÞÇÑä", group="ÊÞÇÑä ÞíãÊ")
+
+show_sym_p1      = input.bool(false, title="äãÇíÔ ÊÞÇÑä ÞíãÊ äÓÈÊ Èå äÞØå 1", group="ÊÞÇÑä ÞíãÊ")
+show_sym_p2      = input.bool(false, title="äãÇíÔ ÊÞÇÑä ÞíãÊ äÓÈÊ Èå äÞØå 2", group="ÊÞÇÑä ÞíãÊ")
+
+// =============================================================================
+//                             CALCULATIONS
+// =============================================================================
+bar_ms   = timeframe.in_seconds(timeframe.period) * 1000
+mid_time = math.round(t1 + (t2 - t1) * sym_center_ratio)
+
+int wave_period      = math.max(1, math.round(math.abs(t2 - t1) / bar_ms))
+int wave_period_fibo = math.max(1, math.round(wave_period * 1.618))
+
+float base_ma = na
+float fibo_ma = na
+
+if ma_type == "SMA"
+    base_ma := ta.sma(ma_src, wave_period)
+    fibo_ma := ta.sma(ma_src, wave_period_fibo)
+else if ma_type == "EMA"
+    base_ma := ta.ema(ma_src, wave_period)
+    fibo_ma := ta.ema(ma_src, wave_period_fibo)
+else if ma_type == "WMA"
+    base_ma := ta.wma(ma_src, wave_period)
+    fibo_ma := ta.wma(ma_src, wave_period_fibo)
+
+float hh          = ta.highest(high, hh_ll_len)
+float ll          = ta.lowest(low,   hh_ll_len)
+float hh_ll_range = hh - ll
+float mid_hh_ll   = (hh + ll) / 2
+float dist_to_mid = math.abs(close - mid_hh_ll)
+float ma_gap      = math.abs(base_ma - fibo_ma)
+
+float base_amp = na
+if use_ma_gap_amp
+    base_amp := ma_gap > 0 ? ma_gap : ta.atr(14)
+else if use_hh_ll_amp
+    base_amp := hh_ll_range > 0 ? dist_to_mid : ta.atr(14)
+else
+    base_amp := math.abs(p2 - p1) != 0 ? math.abs(p2 - p1) / 2 : ta.atr(14)
+
+float relative_x  = (time - mid_time) / bar_ms
+float dist_bars   = math.abs(relative_x)
+int   max_cycles  = 5
+int   cycle_index = reset_wave ? math.floor((dist_bars % (wave_period * max_cycles)) / wave_period) : math.floor(dist_bars / wave_period)
+float max_fibo    = math.pow(1.618, max_cycles - 1)
+float fibo_amp    = (math.pow(1.618, cycle_index) / max_fibo) * base_amp
+float wave        = math.sin(relative_x * 2 * math.pi / wave_period) * fibo_amp
+
+float wavy_ma        = base_ma + wave
+float mirrored_price = 2.0 * wavy_ma - mirror_src
+
+// ãÍÇÓÈå ÊÞÇÑä ÞíãÊ äÓÈÊ Èå ÓØæÍ ÇäÊÎÇÈí
+float mirrored_against_p1 = 2.0 * p1 - mirror_src
+float mirrored_against_p2 = 2.0 * p2 - mirror_src
+
+// =============================================================================
+//                     AUTO PATH LOGIC - ÏÞíÞÇð ÇÒ flat_connector2
+// =============================================================================
+var int   mode      = 0
+var float temp_high = na
+var float temp_low  = na
+
+var float global_path1 = na
+var float global_path2 = na
+
+// ÒãÇä æ ÞíãÊ Çæáíä ÈÇÑ ˜å na äÈæÏäÏ
+var float f1_p = na
+var int   f1_t = na
+var float f2_p = na
+var int   f2_t = na
+var line  ln   = na
+
+// ÝÑíÒ æ ÊÞÇØÚ
+var bool  is_frozen   = false
+var float cross_price = na
+var int   cross_t     = na
+
+if use_price_mirror and time >= t2 and not is_frozen
+
+    if mirrored_price > wavy_ma
+        if mode != 1
+            mode      := 1
+            temp_high := mirrored_price
+        else
+            if mirrored_price > temp_high
+                temp_high := mirrored_price
+
+    if mirrored_price < wavy_ma
+        if mode != -1
+            mode     := -1
+            temp_low := mirrored_price
+        else
+            if mirrored_price < temp_low
+                temp_low := mirrored_price
+
+    if ta.crossover(mirrored_price, wavy_ma)
+        global_path1 := temp_low
+        // global_path2 := na // <--- Çíä ÎØ ÍÐÝ ÔÏ ÊÇ ÝÑíÒ ÔæÏ
+
+    if ta.crossunder(mirrored_price, wavy_ma)
+        global_path2 := temp_high
+        // global_path1 := na // <--- Çíä ÎØ ÍÐÝ ÔÏ ÊÇ ÝÑíÒ ÔæÏ
+
+    // Çæáíä ÈÇÑí ˜å global_path1 ÇÒ na ÎÇÑÌ ÔÏ
+    if na(f1_p) and not na(global_path1)
+        f1_p := global_path1
+        f1_t := time
+
+    // Çæáíä ÈÇÑí ˜å global_path2 ÇÒ na ÎÇÑÌ ÔÏ
+    if na(f2_p) and not na(global_path2)
+        f2_p := global_path2
+        f2_t := time
+
+    // åÑ Ïæ ËÈÊ ÔÏäÏ ? ÎØ ÑÓã + ÊÞÇØÚ + ÝÑíÒ
+    if not na(f1_p) and not na(f2_p) and na(ln)
+        ln := line.new(f1_t, f1_p, f2_t, f2_p, xloc=xloc.bar_time, color=color.lime, width=2)
+
+        // ÔíÈ áÇÑíÊãí
+        float m = (math.log10(f2_p) - math.log10(f1_p)) / (f2_t - f1_t)
+
+        // ÔíÈ ãäÝí ? ÝÑíÒ ÈÇ ÎØ ÞÑãÒ
+        if m < 0
+            line.set_color(ln, color.red)
+            is_frozen := true
+
+        else
+            // ÇÓ˜ä ÈÇÑåÇí Èíä f1 æ f2 ÈÑÇí íÇÝÊä ÊÞÇØÚ ÈÇ wavy_ma
+            int lb = int((f2_t - f1_t) / bar_ms)
+            if lb > 0 and lb < 500
+                for i = 1 to lb
+                    float t_i    = f1_t + i * bar_ms
+                    float t_prev = f1_t + (i - 1) * bar_ms
+                    float line_i = math.pow(10.0, math.log10(f1_p) + m * (t_i    - f1_t))
+                    float line_p = math.pow(10.0, math.log10(f1_p) + m * (t_prev - f1_t))
+                    float wma_i  = wavy_ma[lb - i]
+                    float wma_p  = wavy_ma[lb - i + 1]
+                    if not na(wma_i) and not na(wma_p) and na(cross_price)
+                        if (line_p - wma_p) * (line_i - wma_i) < 0
+                            float ratio = (wma_p - line_p) / ((line_i - wma_i) - (line_p - wma_p))
+                            cross_price := wma_p + ratio * (wma_i - wma_p)
+                            cross_t     := int(t_prev + ratio * bar_ms)
+
+            is_frozen := true
+
+// =============================================================================
+//                             PLOTTING
+// =============================================================================
+plot(base_ma, color=color.new(color.gray, 50), linewidth=1, title="ãææíä ÇæÑíÌ Çíå")
+plot(show_fibo_ma or use_ma_gap_amp ? fibo_ma : na, color=color.new(color.blue, 40), linewidth=1, title="ãææíä ÝíÈæ")
+plot(wavy_ma, color=color.orange, linewidth=2, title="ãææíä ÇæÑíÌ ãæÌÏÇÑ (Fibo)")
+plot(use_price_mirror ? mirror_src     : na, color=color.new(color.gray, 30), linewidth=1, title="ÞíãÊ ÇÕáí")
+plot(use_price_mirror ? mirrored_price : na, color=color.new(color.red,  20), linewidth=2, title="ÞíãÊ ãÊÞÇÑä ãæÌ")
+
+// ÑÓã ÊÞÇÑä äÓÈÊ Èå ÓØæÍ ÇäÊÎÇÈí (P1 æ P2)
+plot(show_sym_p1 and p1 != 0 ? mirrored_against_p1 : na, color=color.new(color.fuchsia, 30), linewidth=2, title="ÞíãÊ ãÊÞÇÑä äÞØå 1")
+plot(show_sym_p2 and p2 != 0 ? mirrored_against_p2 : na, color=color.new(color.purple,  30), linewidth=2, title="ÞíãÊ ãÊÞÇÑä äÞØå 2")
+
+// ÇÝÒæÏä style=plot.style_line ÈÑÇí íæÓÊí æ ÇãÊÏÇÏ ÎØæØ ÝáÊ Èå ÓãÊ ÑÇÓÊ
+plot(global_path1, color=color.aqua,   linewidth=2, style=plot.style_line, title="ÝáÊ Çæá (ÂÈí)")
+plot(global_path2, color=color.yellow, linewidth=2, style=plot.style_line, title="ÝáÊ Ïæã (ÒÑÏ)")

@@ -1,0 +1,329 @@
+//@version=5
+indicator("Auto Fractal Slope Projection with Elliott Ratios", overlay=true, max_lines_count=500, max_labels_count=500)
+
+//  ‰ŸÌ„«  ›—ò «·
+n = input.int(title="Fractal Periods", defval=3)
+fractalsToAnalyze = input.int(10, "Number of Fractals to Analyze", minval=5, maxval=20)
+startTime = input.time(timestamp("2024-01-01 00:00"), "Analysis Start Time", confirm=true)
+
+//  ‰ŸÌ„«  „Õ«”»Â ‘Ì»
+averageMethod = input.string("Arithmetic", "Average Method", options=["Arithmetic", "Weighted", "Exponential", "Median", "Harmonic"])
+slopeMultiplier = input.float(1.0, "Slope Multiplier", maxval=10.0, step=0.1)
+
+// ›Ì· —Â«Ì »Â»Êœ Ì«› Â
+useVolumeFilter = input.bool(true, "Use Volume Filter", group="Filters")
+volumeThreshold = input.float(1.2, "Volume Threshold", minval=0.5, maxval=3.0, step=0.1, group="Filters")
+useATRFilter = input.bool(true, "Use ATR Filter", group="Filters")
+atrPeriod = input.int(14, "ATR Period", minval=5, maxval=50, group="Filters")
+atrMultiplier = input.float(1.5, "ATR Multiplier", minval=0.5, maxval=5.0, step=0.1, group="Filters")
+
+// ‰”» ùÂ«Ì «·ÌÊ 
+enableElliottRatios = input.bool(true, "‰„«Ì‘ ‰”» ùÂ«Ì «·ÌÊ ", group="Elliott Wave")
+showFib236 = input.bool(true, "0.236", inline="fib1", group="Elliott Wave")
+showFib382 = input.bool(true, "0.382", inline="fib1", group="Elliott Wave")
+showFib500 = input.bool(true, "0.500", inline="fib2", group="Elliott Wave")
+showFib618 = input.bool(true, "0.618", inline="fib2", group="Elliott Wave")
+showFib786 = input.bool(true, "0.786", inline="fib3", group="Elliott Wave")
+showFib1000 = input.bool(true, "1.000", inline="fib3", group="Elliott Wave")
+showFib1272 = input.bool(true, "1.272", inline="fib4", group="Elliott Wave")
+showFib1618 = input.bool(true, "1.618", inline="fib4", group="Elliott Wave")
+showFib2618 = input.bool(true, "2.618", inline="fib5", group="Elliott Wave")
+
+// „Õ«”»Â ATR Ê ÕÃ„ „Ì«‰êÌ‰
+atrValue = ta.atr(atrPeriod)
+avgVolume = ta.sma(volume, 20)
+
+//  ‘ŒÌ’ ›—ò «·ùÂ«Ì »«·«
+bool upflagDownFrontier = true
+bool upflagUpFrontier0 = true
+bool upflagUpFrontier1 = true
+bool upflagUpFrontier2 = true
+bool upflagUpFrontier3 = true
+bool upflagUpFrontier4 = true
+
+for i = 1 to n
+    upflagDownFrontier := upflagDownFrontier and (high[n-i] < high[n])
+    upflagUpFrontier0 := upflagUpFrontier0 and (high[n+i] < high[n])
+    upflagUpFrontier1 := upflagUpFrontier1 and (high[n+1] <= high[n] and high[n+i + 1] < high[n])
+    upflagUpFrontier2 := upflagUpFrontier2 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i + 2] < high[n])
+    upflagUpFrontier3 := upflagUpFrontier3 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i + 3] < high[n])
+    upflagUpFrontier4 := upflagUpFrontier4 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i + 4] < high[n])
+
+flagUpFrontier = upflagUpFrontier0 or upflagUpFrontier1 or upflagUpFrontier2 or upflagUpFrontier3 or upflagUpFrontier4
+volumeConfirmUp = useVolumeFilter ? volume[n] > avgVolume[n] * volumeThreshold : true
+upFractal = (upflagDownFrontier and flagUpFrontier and volumeConfirmUp)
+
+//  ‘ŒÌ’ ›—ò «·ùÂ«Ì Å«ÌÌ‰
+bool downflagDownFrontier = true
+bool downflagUpFrontier0 = true
+bool downflagUpFrontier1 = true
+bool downflagUpFrontier2 = true
+bool downflagUpFrontier3 = true
+bool downflagUpFrontier4 = true
+
+for i = 1 to n
+    downflagDownFrontier := downflagDownFrontier and (low[n-i] > low[n])
+    downflagUpFrontier0 := downflagUpFrontier0 and (low[n+i] > low[n])
+    downflagUpFrontier1 := downflagUpFrontier1 and (low[n+1] >= low[n] and low[n+i + 1] > low[n])
+    downflagUpFrontier2 := downflagUpFrontier2 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i + 2] > low[n])
+    downflagUpFrontier3 := downflagUpFrontier3 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i + 3] > low[n])
+    downflagUpFrontier4 := downflagUpFrontier4 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i + 4] > low[n])
+
+flagDownFrontier = downflagUpFrontier0 or downflagUpFrontier1 or downflagUpFrontier2 or downflagUpFrontier3 or downflagUpFrontier4
+volumeConfirmDown = useVolumeFilter ? volume[n] > avgVolume[n] * volumeThreshold : true
+downFractal = (downflagDownFrontier and flagDownFrontier and volumeConfirmDown)
+
+// –ŒÌ—Â ›—ò «·ùÂ«
+var float[] fractalPrices_high = array.new_float(0)
+var int[] fractalTimes_high = array.new_int(0)
+var float[] fractalStrength_high = array.new_float(0)
+
+var float[] fractalPrices_low = array.new_float(0)
+var int[] fractalTimes_low = array.new_int(0)
+var float[] fractalStrength_low = array.new_float(0)
+
+// „Õ«”»Â ﬁœ—  ›—ò «·
+calcFractalStrength(price, vol, avgVol) =>
+    volStrength = vol / avgVol
+    priceStrength = useATRFilter ? math.abs(price - close[n]) / atrValue[n] : 1.0
+    volStrength * priceStrength
+
+// Ã„⁄ù¬Ê—Ì ›—ò «·ùÂ« ﬁ»· «“ “„«‰ ‘—Ê⁄
+if time[n] < startTime
+    if upFractal
+        strength = calcFractalStrength(high[n], volume[n], avgVolume[n])
+        array.push(fractalPrices_high, high[n])
+        array.push(fractalTimes_high, time[n])
+        array.push(fractalStrength_high, strength)
+    
+    if downFractal
+        strength = calcFractalStrength(low[n], volume[n], avgVolume[n])
+        array.push(fractalPrices_low, low[n])
+        array.push(fractalTimes_low, time[n])
+        array.push(fractalStrength_low, strength)
+
+//  «»⁄ „Õ«”»Â „Ì«‰êÌ‰
+calculateAverage(slopes, weights, method) =>
+    float result = na
+    int size = array.size(slopes)
+    
+    if size > 0
+        if method == "Arithmetic"
+            sum = 0.0
+            for i = 0 to size - 1
+                sum := sum + array.get(slopes, i)
+            result := sum / size
+        
+        else if method == "Weighted"
+            sumWeighted = 0.0
+            sumWeights = 0.0
+            for i = 0 to size - 1
+                weight = array.get(weights, i)
+                sumWeighted := sumWeighted + (array.get(slopes, i) * weight)
+                sumWeights := sumWeights + weight
+            result := sumWeights > 0 ? sumWeighted / sumWeights : na
+        
+        else if method == "Exponential"
+            alpha = 0.3
+            ema = array.get(slopes, 0)
+            for i = 1 to size - 1
+                ema := alpha * array.get(slopes, i) + (1 - alpha) * ema
+            result := ema
+        
+        else if method == "Median"
+            sortedSlopes = array.copy(slopes)
+            array.sort(sortedSlopes)
+            midIndex = math.floor(size / 2)
+            result := array.get(sortedSlopes, midIndex)
+        
+        else if method == "Harmonic"
+            sumReciprocal = 0.0
+            for i = 0 to size - 1
+                slope = array.get(slopes, i)
+                if slope != 0
+                    sumReciprocal := sumReciprocal + (1 / slope)
+            result := sumReciprocal != 0 ? size / sumReciprocal : na
+    
+    result
+
+// „ €Ì—Â«Ì ŒÿÊÿ Ê »—ç”»ùÂ«
+var line[] segmentLines_high = array.new_line(0)
+var line[] segmentLines_low = array.new_line(0)
+var line[] projectionLines_high = array.new_line(0)
+var line[] projectionLines_low = array.new_line(0)
+var label[] projectionLabels_high = array.new_label(0)
+var label[] projectionLabels_low = array.new_label(0)
+
+//  Õ·Ì· œ— ¬Œ—Ì‰ ò‰œ·
+if barstate.islast
+    int totalFractals_high = array.size(fractalPrices_high)
+    int totalFractals_low = array.size(fractalPrices_low)
+    
+    // Å«ò ò—œ‰ ŒÿÊÿ ﬁ»·Ì
+    if array.size(segmentLines_high) > 0
+        for i = 0 to array.size(segmentLines_high) - 1
+            line.delete(array.get(segmentLines_high, i))
+        array.clear(segmentLines_high)
+    
+    if array.size(segmentLines_low) > 0
+        for i = 0 to array.size(segmentLines_low) - 1
+            line.delete(array.get(segmentLines_low, i))
+        array.clear(segmentLines_low)
+    
+    if array.size(projectionLines_high) > 0
+        for i = 0 to array.size(projectionLines_high) - 1
+            line.delete(array.get(projectionLines_high, i))
+        array.clear(projectionLines_high)
+    
+    if array.size(projectionLines_low) > 0
+        for i = 0 to array.size(projectionLines_low) - 1
+            line.delete(array.get(projectionLines_low, i))
+        array.clear(projectionLines_low)
+    
+    if array.size(projectionLabels_high) > 0
+        for i = 0 to array.size(projectionLabels_high) - 1
+            label.delete(array.get(projectionLabels_high, i))
+        array.clear(projectionLabels_high)
+    
+    if array.size(projectionLabels_low) > 0
+        for i = 0 to array.size(projectionLabels_low) - 1
+            label.delete(array.get(projectionLabels_low, i))
+        array.clear(projectionLabels_low)
+    
+    //  Õ·Ì· ›—ò «·ùÂ«Ì High
+    if totalFractals_high >= fractalsToAnalyze
+        int startIndex = totalFractals_high - fractalsToAnalyze
+        var float[] slopes_high = array.new_float(0)
+        var float[] weights_high = array.new_float(0)
+        array.clear(slopes_high)
+        array.clear(weights_high)
+        
+        // —”„ ŒÿÊÿ »Ì‰ ›—ò «·ùÂ« Ê „Õ«”»Â ‘Ì»ùÂ«
+        for i = startIndex to totalFractals_high - 2
+            p1 = array.get(fractalPrices_high, i)
+            p2 = array.get(fractalPrices_high, i + 1)
+            t1 = array.get(fractalTimes_high, i)
+            t2 = array.get(fractalTimes_high, i + 1)
+            s1 = array.get(fractalStrength_high, i)
+            s2 = array.get(fractalStrength_high, i + 1)
+            
+            weight = (s1 + s2) / 2
+            slope = (p2 - p1) / math.max(t2 - t1, 1)
+            
+            array.push(slopes_high, slope)
+            array.push(weights_high, weight)
+            
+            lineColor = weight > 1.5 ? color.new(color.blue, 30) : color.new(color.gray, 50)
+            lineWidth = weight > 1.5 ? 2 : 1
+            
+            segLine = line.new(t1, p1, t2, p2, xloc=xloc.bar_time, color=lineColor, width=lineWidth)
+            array.push(segmentLines_high, segLine)
+        
+        // „Õ«”»Â „Ì«‰êÌ‰ ‘Ì»
+        avgSlope_high = calculateAverage(slopes_high, weights_high, averageMethod) * slopeMultiplier
+        
+        if not na(avgSlope_high)
+            lastPrice = array.get(fractalPrices_high, totalFractals_high - 1)
+            lastTime = array.get(fractalTimes_high, totalFractals_high - 1)
+            futureTime = lastTime + (lastTime - array.get(fractalTimes_high, startIndex))
+            
+            if enableElliottRatios
+                // —”„ ‰”» ùÂ«Ì «·ÌÊ 
+                fibRatios = array.from(0.236, 0.382, 0.500, 0.618, 0.786, 1.000, 1.272, 1.618, 2.618)
+                fibColors = array.from(color.purple, color.orange, color.yellow, color.green, color.teal, color.blue, color.maroon, color.red, color.fuchsia)
+                fibShows = array.from(showFib236, showFib382, showFib500, showFib618, showFib786, showFib1000, showFib1272, showFib1618, showFib2618)
+                
+                for i = 0 to array.size(fibRatios) - 1
+                    if array.get(fibShows, i)
+                        ratio = array.get(fibRatios, i)
+                        fibSlope = avgSlope_high * ratio
+                        futurePrice = lastPrice + fibSlope * (futureTime - lastTime)
+                        
+                        lineWidth = ratio == 1.000 ? 3 : 2
+                        lineColor = array.get(fibColors, i)
+                        
+                        fibLine = line.new(lastTime, lastPrice, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(lineColor, 30), width=lineWidth, extend=extend.right)
+                        array.push(projectionLines_high, fibLine)
+                        
+                        fibLabel = label.new(futureTime, futurePrice, str.tostring(ratio, "#.###"), xloc=xloc.bar_time, color=color.new(lineColor, 80), textcolor=lineColor, style=label.style_label_left, size=size.small)
+                        array.push(projectionLabels_high, fibLabel)
+            else
+                // Œÿ ÅÌ‘ù»Ì‰Ì ⁄«œÌ
+                futurePrice = lastPrice + avgSlope_high * (futureTime - lastTime)
+                projLine = line.new(lastTime, lastPrice, futureTime, futurePrice, xloc=xloc.bar_time, color=color.blue, width=2, extend=extend.right)
+                array.push(projectionLines_high, projLine)
+                
+                inverseFuturePrice = lastPrice - avgSlope_high * (futureTime - lastTime)
+                invLine = line.new(lastTime, lastPrice, futureTime, inverseFuturePrice, xloc=xloc.bar_time, color=color.red, width=2, extend=extend.right)
+                array.push(projectionLines_high, invLine)
+    
+    //  Õ·Ì· ›—ò «·ùÂ«Ì Low
+    if totalFractals_low >= fractalsToAnalyze
+        int startIndex = totalFractals_low - fractalsToAnalyze
+        var float[] slopes_low = array.new_float(0)
+        var float[] weights_low = array.new_float(0)
+        array.clear(slopes_low)
+        array.clear(weights_low)
+        
+        // —”„ ŒÿÊÿ »Ì‰ ›—ò «·ùÂ« Ê „Õ«”»Â ‘Ì»ùÂ«
+        for i = startIndex to totalFractals_low - 2
+            p1 = array.get(fractalPrices_low, i)
+            p2 = array.get(fractalPrices_low, i + 1)
+            t1 = array.get(fractalTimes_low, i)
+            t2 = array.get(fractalTimes_low, i + 1)
+            s1 = array.get(fractalStrength_low, i)
+            s2 = array.get(fractalStrength_low, i + 1)
+            
+            weight = (s1 + s2) / 2
+            slope = (p2 - p1) / math.max(t2 - t1, 1)
+            
+            array.push(slopes_low, slope)
+            array.push(weights_low, weight)
+            
+            lineColor = weight > 1.5 ? color.new(color.green, 30) : color.new(color.gray, 50)
+            lineWidth = weight > 1.5 ? 2 : 1
+            
+            segLine = line.new(t1, p1, t2, p2, xloc=xloc.bar_time, color=lineColor, width=lineWidth, style=line.style_dashed)
+            array.push(segmentLines_low, segLine)
+        
+        // „Õ«”»Â „Ì«‰êÌ‰ ‘Ì»
+        avgSlope_low = calculateAverage(slopes_low, weights_low, averageMethod) * slopeMultiplier
+        
+        if not na(avgSlope_low)
+            lastPrice = array.get(fractalPrices_low, totalFractals_low - 1)
+            lastTime = array.get(fractalTimes_low, totalFractals_low - 1)
+            futureTime = lastTime + (lastTime - array.get(fractalTimes_low, startIndex))
+            
+            if enableElliottRatios
+                // —”„ ‰”» ùÂ«Ì «·ÌÊ 
+                fibRatios = array.from(0.236, 0.382, 0.500, 0.618, 0.786, 1.000, 1.272, 1.618, 2.618)
+                fibColors = array.from(color.purple, color.orange, color.yellow, color.green, color.teal, color.blue, color.maroon, color.red, color.fuchsia)
+                fibShows = array.from(showFib236, showFib382, showFib500, showFib618, showFib786, showFib1000, showFib1272, showFib1618, showFib2618)
+                
+                for i = 0 to array.size(fibRatios) - 1
+                    if array.get(fibShows, i)
+                        ratio = array.get(fibRatios, i)
+                        fibSlope = avgSlope_low * ratio
+                        futurePrice = lastPrice + fibSlope * (futureTime - lastTime)
+                        
+                        lineWidth = ratio == 1.000 ? 3 : 2
+                        lineColor = array.get(fibColors, i)
+                        
+                        fibLine = line.new(lastTime, lastPrice, futureTime, futurePrice, xloc=xloc.bar_time, color=color.new(lineColor, 30), width=lineWidth, extend=extend.right, style=line.style_dashed)
+                        array.push(projectionLines_low, fibLine)
+                        
+                        fibLabel = label.new(futureTime, futurePrice, str.tostring(ratio, "#.###"), xloc=xloc.bar_time, color=color.new(lineColor, 80), textcolor=lineColor, style=label.style_label_right, size=size.small)
+                        array.push(projectionLabels_low, fibLabel)
+            else
+                // Œÿ ÅÌ‘ù»Ì‰Ì ⁄«œÌ
+                futurePrice = lastPrice + avgSlope_low * (futureTime - lastTime)
+                projLine = line.new(lastTime, lastPrice, futureTime, futurePrice, xloc=xloc.bar_time, color=color.blue, width=2, extend=extend.right, style=line.style_dashed)
+                array.push(projectionLines_low, projLine)
+                
+                inverseFuturePrice = lastPrice - avgSlope_low * (futureTime - lastTime)
+                invLine = line.new(lastTime, lastPrice, futureTime, inverseFuturePrice, xloc=xloc.bar_time, color=color.red, width=2, extend=extend.right, style=line.style_dashed)
+                array.push(projectionLines_low, invLine)
+
+// ‰„«Ì‘ ›—ò «·ùÂ«
+plotshape(downFractal and time[n] < startTime, style=shape.triangledown, location=location.belowbar, offset=-n, color=color.new(color.red, 0), size=size.tiny)
+plotshape(upFractal and time[n] < startTime, style=shape.triangleup, location=location.abovebar, offset=-n, color=color.new(color.green, 0), size=size.tiny)

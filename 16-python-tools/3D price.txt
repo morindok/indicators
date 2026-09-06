@@ -1,0 +1,741 @@
+# -*- coding: utf-8 -*-
+"""
+Live Bitcoin Dashboard {Morindok}
+œ«‘»Ê—œ “‰œÂ »Ì ùòÊÌ‰ - ‰”ŒÂ Python / Dash
+„‰»⁄ œ«œÂ: Yahoo Finance (yfinance)
+
+ÊÌéêÌ «’·Ì «Ì‰ ‰”ŒÂ:
+- ‰„Êœ«— ´ﬁÌ„ -“„«‰ª »Â ’Ê—  „”Ì— —‰êÌ (”»“/ﬁ—„“/“—œ) —”„ „Ìù‘Êœ òÂ »— «”«”
+   Õ·Ì· €·ÿ«‰ (rolling) —«»ÿÂùÌ ÕÃ„ Ê ﬁÌ„  (Â„«‰ „‰ÿﬁ ´‰„«Ì »Ì‰«»Ì‰Ì ÕÃ„-ﬁÌ„ ª)
+  ”«Œ Â ‘œÂ «” . Â— »Œ‘ «“ „”Ì— »— «”«” Ê÷⁄Ì  „Õ·Ì —Ê‰œ —‰ê „ÌùêÌ—œ:
+    ”»“  -> ‘Ì» Ê Â„»” êÌ ÕÃ„/ﬁÌ„  „À»  Ê ﬁÌ„  —Ê »Â —‘œ (’⁄ÊœÌ)
+    ﬁ—„“ -> ‘Ì» Ê Â„»” êÌ ÕÃ„/ﬁÌ„  „‰›Ì Ê ﬁÌ„  —Ê »Â ò«Â‘ (‰“Ê·Ì)
+    “—œ  -> »œÊ‰ ”Ìê‰«· Ê«÷Õ (Œ‰ÀÌ)
+"""
+
+import numpy as np
+import pandas as pd
+import yfinance as yf
+import plotly.graph_objects as go
+
+from dash import Dash, dcc, html, Input, Output, State, callback_context
+from datetime import datetime
+
+# ---------------------------------------------------------------------------
+#  ‰ŸÌ„«  ò·Ì
+# ---------------------------------------------------------------------------
+TICKER = "BTC-USD"
+PERIOD = "2d"            # »«“ÂùÌ œ—Ì«›  œ«œÂ «“ Ì«ÂÊ ›«Ì‰‰”
+INTERVAL = "1h"          # ›«’·ÂùÌ ò‰œ·ùÂ« (”«⁄ Ì° „‘«»Â ‰”ŒÂùÌ CoinGecko ﬁ»·Ì)
+TREND_WINDOW = 10        # «‰œ«“ÂùÌ Å‰Ã—ÂùÌ €·ÿ«‰ »—«Ì  Õ·Ì· ÕÃ„-ﬁÌ„ 
+REFRESH_MS = 60 * 1000   # »—Ê“—”«‰Ì Â— ?? À«‰ÌÂ
+
+COLOR_BULL = "#00cc96"
+COLOR_BEAR = "#ef553b"
+COLOR_NEUTRAL = "#f2c14e"
+COLOR_TEXT = "#f3f6ff"
+COLOR_MUTED = "#aeb9d6"
+COLOR_ACCENT = "#51d0ff"
+COLOR_BORDER = "rgba(255,255,255,0.12)"
+COLOR_PANEL = "rgba(255,255,255,0.06)"
+COLOR_PANEL_STRONG = "rgba(255,255,255,0.09)"
+BG_DARK = "#0b1020"
+
+LABEL_TEXT = {
+    "bull": "—Ê‰œ ’⁄ÊœÌ (ÕÃ„-ﬁÌ„ )",
+    "bear": "—Ê‰œ ‰“Ê·Ì (ÕÃ„-ﬁÌ„ )",
+    "neutral": "Œ‰ÀÌ",
+}
+LABEL_COLOR = {"bull": COLOR_BULL, "bear": COLOR_BEAR, "neutral": COLOR_NEUTRAL}
+
+VIEW_TITLES = {
+    "default": "‰„«Ì ›⁄·Ì: ÅÌ‘ù›—÷",
+    "volume_price": "‰„«Ì ›⁄·Ì: »Ì‰«»Ì‰Ì ÕÃ„-ﬁÌ„ ",
+    "time_price_volume": "‰„«Ì ›⁄·Ì: »Ì‰«»Ì‰Ì “„«‰-ﬁÌ„ -ÕÃ„",
+}
+
+
+# ---------------------------------------------------------------------------
+# œ—Ì«›  œ«œÂ «“ Yahoo Finance
+# ---------------------------------------------------------------------------
+def fetch_ohlcv():
+    """œ—Ì«›  œ«œÂùÌ ﬁÌ„  Ê ÕÃ„ »Ì ùòÊÌ‰ «“ Ì«ÂÊ ›«Ì‰‰”."""
+    df = yf.download(
+        tickers=TICKER,
+        period=PERIOD,
+        interval=INTERVAL,
+        progress=False,
+        auto_adjust=True,
+    )
+
+    if df is None or df.empty:
+        raise ValueError("œ«œÂù«Ì «“ Yahoo Finance œ—Ì«›  ‰‘œ")
+
+    # yfinance ê«ÂÌ ” Ê‰ùÂ«Ì ç‰œ”ÿÕÌ »—„Ìùê—œ«‰œ
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    df = df.reset_index()
+    time_col = "Datetime" if "Datetime" in df.columns else "Date"
+
+    out = pd.DataFrame({
+        "time": pd.to_datetime(df[time_col]),
+        "price": df["Close"].astype(float),
+        "volume": df["Volume"].astype(float),
+    }).dropna()
+
+    out = out.sort_values("time").reset_index(drop=True)
+
+    if out.empty:
+        raise ValueError("Å” «“ Å«òù”«“Ì° œ«œÂùÌ „⁄ »—Ì »«ﬁÌ ‰„«‰œ")
+
+    return out
+
+
+# ---------------------------------------------------------------------------
+#  Õ·Ì· €·ÿ«‰ ‰„«Ì ´ÕÃ„-ﬁÌ„ ª »—«Ì —‰êù¬„Ì“Ì „”Ì— ﬁÌ„ -“„«‰
+# ---------------------------------------------------------------------------
+def classify_rolling_volume_price_trend(df, window=TREND_WINDOW):
+    """
+    »—«Ì Â— ‰ﬁÿÂ° »« «” ›«œÂ «“ ¬Œ—Ì‰ `window` ‰ﬁÿÂ° —«»ÿÂùÌ ÕÃ„ Ê ﬁÌ„  —«
+    „Ìù”‰Ãœ (‰—„«·ù”«“Ì z-score° ‘Ì» —ê—”ÌÊ‰ ŒÿÌ Ê ÷—Ì» Â„»” êÌ) Ê »—ç”»
+    bull / bear / neutral  Ê·Ìœ „Ìùò‰œ.
+    """
+    n = len(df)
+    labels = ["neutral"] * n
+    corr_values = [0.0] * n
+
+    volumes = df["volume"].values
+    prices = df["price"].values
+
+    for i in range(n):
+        start = max(0, i - window + 1)
+        x = volumes[start:i + 1]
+        y = prices[start:i + 1]
+
+        if len(x) < 4:
+            continue
+
+        x_std = x.std()
+        y_std = y.std()
+
+        if x_std == 0 or y_std == 0:
+            continue
+
+        x_norm = (x - x.mean()) / x_std
+        y_norm = (y - y.mean()) / y_std
+
+        slope = np.polyfit(x_norm, y_norm, 1)[0]
+        corr = float(np.corrcoef(x_norm, y_norm)[0, 1])
+        price_change_pct = ((y[-1] - y[0]) / y[0]) * 100 if y[0] else 0.0
+
+        corr_values[i] = corr
+
+        if slope > 0.2 and corr > 0.2 and price_change_pct > 0:
+            labels[i] = "bull"
+        elif slope < -0.2 and corr < -0.2 and price_change_pct < 0:
+            labels[i] = "bear"
+        else:
+            labels[i] = "neutral"
+
+    return labels, corr_values
+
+
+# ---------------------------------------------------------------------------
+# ¬„«— Ê ÅÌ‘‰Â«œ „⁄«„·« Ì („‘«»Â buildStatisticalAnalysis ‰”ŒÂùÌ Ã«Ê««”ò—ÌÅ )
+# ---------------------------------------------------------------------------
+def build_statistical_analysis(df):
+    prices = df["price"].values
+    volumes = df["volume"].values
+
+    last_price = prices[-1]
+    first_price = prices[0]
+    max_price = prices.max()
+    min_price = prices.min()
+    avg_price = prices.mean()
+    avg_volume = volumes.mean()
+    price_std = prices.std()
+    volatility_pct = (price_std / avg_price) * 100 if avg_price else 0.0
+    price_change_pct = ((last_price - first_price) / first_price) * 100 if first_price else 0.0
+
+    recent_prices = prices[-5:]
+    short_momentum = (
+        ((recent_prices[-1] - recent_prices[0]) / recent_prices[0]) * 100
+        if len(recent_prices) >= 2 and recent_prices[0] else 0.0
+    )
+
+    bullish_volume = 0.0
+    bearish_volume = 0.0
+    for i in range(1, len(df)):
+        if prices[i] >= prices[i - 1]:
+            bullish_volume += volumes[i]
+        else:
+            bearish_volume += volumes[i]
+
+    total_dir_volume = bullish_volume + bearish_volume
+    volume_bias = ((bullish_volume - bearish_volume) / total_dir_volume) * 100 if total_dir_volume else 0.0
+
+    if volumes.std() != 0 and prices.std() != 0:
+        price_volume_corr = float(np.corrcoef(volumes, prices)[0, 1])
+    else:
+        price_volume_corr = 0.0
+
+    range_pct = ((max_price - min_price) / avg_price) * 100 if avg_price else 0.0
+
+    recommendation = "‰êÂœ«—Ì / ’»—"
+    signal_class = "wait"
+    summary = "»«“«— œ— Ê÷⁄Ì  Œ‰ÀÌ ﬁ—«— œ«—œ Ê »Â — «”   «  «ÌÌœ »Ì‘ — —Ê‰œ° »« «Õ Ì«ÿ ⁄„· ‘Êœ."
+
+    if short_momentum > 0.35 and price_volume_corr > 0.2 and volume_bias > 8 and price_change_pct > 0:
+        recommendation = "ÅÌ‘‰Â«œ ¬„«—Ì: Œ—Ìœ òÊ «Âù„œ "
+        signal_class = "buy"
+        summary = "„Ê„‰ Ê„ òÊ «Âù„œ  „À»  «” ° ÕÃ„ ’⁄ÊœÌ »— ÕÃ„ ‰“Ê·Ì €·»Â œ«—œ Ê Â„»” êÌ ﬁÌ„  Ê ÕÃ„ ‰‘«‰Â Õ„«Ì  «“ —Ê‰œ ’⁄ÊœÌ «” ."
+    elif short_momentum < -0.35 and price_volume_corr < -0.1 and volume_bias < -8 and price_change_pct < 0:
+        recommendation = "ÅÌ‘‰Â«œ ¬„«—Ì: ›—Ê‘ / ò«Â‘ —Ì”ò"
+        signal_class = "sell"
+        summary = "›‘«— ›—Ê‘ œ— œ«œÂùÂ«Ì «ŒÌ— »Ì‘ — «” ° ÕÃ„ ‰“Ê·Ì €«·» ‘œÂ Ê ”«Œ «— òÊ «Âù„œ  «“ ÷⁄› ﬁÌ„  Õ„«Ì  „Ìùò‰œ."
+    elif volatility_pct > 1.8 and abs(short_momentum) < 0.25:
+        recommendation = "ÅÌ‘‰Â«œ ¬„«—Ì: ’»— »—«Ì ‘ò” "
+        signal_class = "wait"
+        summary = "‰Ê”«‰ »«·«”  «„« ÃÂ  —Ê‰œ Ê«÷Õ ‰Ì” ∫ Ê—Êœ ⁄ÃÊ·«‰Â „Ìù Ê«‰œ —Ì”òùÅ–Ì— »«‘œ."
+
+    stats = [
+        f"»Ì‘ —Ì‰ ﬁÌ„ : {fmt_currency(max_price)}",
+        f"ò„ —Ì‰ ﬁÌ„ : {fmt_currency(min_price)}",
+        f"„Ì«‰êÌ‰ ﬁÌ„ : {fmt_currency(avg_price)}",
+        f"«‰Õ—«› „⁄Ì«— ﬁÌ„ : {fmt_currency(price_std)}",
+        f"œ«„‰Â ‰Ê”«‰ ‰”»Ì: {range_pct:.2f}%",
+        f"„Ê„‰ Ê„ 5 ‰ﬁÿÂ ¬Œ—: {short_momentum:.2f}%",
+        f"„Ì«‰êÌ‰ ÕÃ„: {fmt_number(avg_volume)}",
+        f"ÕÃ„ ’⁄ÊœÌ / ‰“Ê·Ì: {fmt_number(bullish_volume)} / {fmt_number(bearish_volume)}",
+        f"”ÊêÌ—Ì ÕÃ„: {volume_bias:.2f}%",
+        f"Â„»” êÌ ﬁÌ„  Ê ÕÃ„: {price_volume_corr:.2f}",
+    ]
+
+    return {
+        "stats": stats,
+        "recommendation": recommendation,
+        "signal_class": signal_class,
+        "summary": summary,
+        "metrics": {
+            "last_price": last_price,
+            "price_change_pct": price_change_pct,
+            "avg_volume": avg_volume,
+            "volatility_pct": volatility_pct,
+        },
+    }
+
+
+def analyze_middle_view_trend(df, window=TREND_WINDOW):
+    """„ ‰ Œ·«’ÂùÌ ‰Ê«— —Ê‰œ° »— «”«” ¬Œ—Ì‰ Å‰Ã—Â «“ ‰„«Ì ÕÃ„-ﬁÌ„ ."""
+    if len(df) < 4:
+        return "œ«œÂ ò«›Ì »—«Ì  Õ·Ì· ÊÃÊœ ‰œ«—œ.", COLOR_NEUTRAL
+
+    labels, corrs = classify_rolling_volume_price_trend(df, window=window)
+    last_label = labels[-1]
+    last_corr = corrs[-1]
+
+    recent = df.tail(min(window, len(df)))
+    price_change_pct = (
+        ((recent["price"].iloc[-1] - recent["price"].iloc[0]) / recent["price"].iloc[0]) * 100
+        if recent["price"].iloc[0] else 0.0
+    )
+
+    word = {"bull": "’⁄ÊœÌ", "bear": "‰“Ê·Ì", "neutral": "Œ‰ÀÌ"}[last_label]
+    text = f" Õ·Ì· ‰„«Ì ÕÃ„-ﬁÌ„ : {word} | Â„»” êÌ: {last_corr:.2f} |  €ÌÌ— ﬁÌ„ : {price_change_pct:.2f}%"
+    return text, LABEL_COLOR[last_label]
+
+
+# ---------------------------------------------------------------------------
+#  Ê«»⁄ ò„òÌ ﬁ«·»ù»‰œÌ
+# ---------------------------------------------------------------------------
+def fmt_currency(value):
+    return f"${value:,.2f}"
+
+
+def fmt_number(value):
+    return f"{value:,.0f}"
+
+
+def get_camera(view_mode):
+    if view_mode == "volume_price":
+        return dict(eye=dict(x=0.05, y=2.8, z=0.35))
+    if view_mode == "time_price_volume":
+        return dict(eye=dict(x=2.6, y=0.8, z=1.7))
+    return dict(eye=dict(x=1.6, y=1.6, z=1.2))
+
+
+def get_volume_direction_colors(df):
+    prices = df["price"].values
+    colors = [COLOR_NEUTRAL]
+    for i in range(1, len(prices)):
+        colors.append(COLOR_BULL if prices[i] >= prices[i - 1] else COLOR_BEAR)
+    return colors
+
+
+DARK_LAYOUT = dict(
+    template="plotly_dark",
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    font=dict(color=COLOR_TEXT),
+)
+
+
+# ---------------------------------------------------------------------------
+# ”«Œ  ‰„Êœ«—Â«
+# ---------------------------------------------------------------------------
+def build_3d_figure(df, view_mode, source_name="Yahoo Finance"):
+    title_map = {
+        "default": "Bitcoin 3D View: Time - Price - Volume",
+        "volume_price": "Bitcoin 3D View: Volume - Price",
+        "time_price_volume": "Bitcoin 3D View: Time - Price - Volume Angle",
+    }
+
+    hover_text = [
+        f"Time: {t.strftime('%Y-%m-%d %H:%M')}<br>Price: {fmt_currency(p)}<br>Volume: {fmt_number(v)}"
+        for t, p, v in zip(df["time"], df["price"], df["volume"])
+    ]
+
+    fig = go.Figure(data=[go.Scatter3d(
+        x=df["time"], y=df["price"], z=df["volume"],
+        mode="lines+markers",
+        marker=dict(size=5, color=df["price"], colorscale="Viridis", colorbar=dict(title="Price")),
+        line=dict(color="cyan", width=4),
+        name="BTC 3D",
+        text=hover_text,
+        hoverinfo="text",
+    )])
+
+    fig.update_layout(
+        **DARK_LAYOUT,
+        title=f"{title_map.get(view_mode, title_map['default'])} ({source_name})",
+        scene=dict(
+            xaxis=dict(title="Time", gridcolor="rgba(255,255,255,0.08)"),
+            yaxis=dict(title="Price (USD)", gridcolor="rgba(255,255,255,0.08)"),
+            zaxis=dict(title="Volume", gridcolor="rgba(255,255,255,0.08)"),
+            camera=get_camera(view_mode),
+            bgcolor="rgba(0,0,0,0)",
+        ),
+        margin=dict(l=0, r=0, b=0, t=50),
+        height=620,
+    )
+    return fig
+
+
+def build_colored_price_time_figure(df, labels, source_name="Yahoo Finance"):
+    """
+    ‰„Êœ«— ´ﬁÌ„ -“„«‰ª »« „”Ì— —‰êÌ: Â— »Œ‘ «“ Œÿ »— «”«” ‰ ÌÃÂùÌ  Õ·Ì·
+    €·ÿ«‰ ‰„«Ì ÕÃ„-ﬁÌ„  (”»“/ﬁ—„“/“—œ) —‰ê „ÌùêÌ—œ.
+    """
+    fig = go.Figure()
+    times = df["time"].tolist()
+    prices = df["price"].tolist()
+
+    shown_legend = set()
+    for i in range(1, len(df)):
+        label = labels[i]
+        color = LABEL_COLOR[label]
+        show_legend = label not in shown_legend
+        shown_legend.add(label)
+
+        fig.add_trace(go.Scatter(
+            x=[times[i - 1], times[i]],
+            y=[prices[i - 1], prices[i]],
+            mode="lines",
+            line=dict(color=color, width=3.5),
+            legendgroup=label,
+            name=LABEL_TEXT[label],
+            showlegend=show_legend,
+            hoverinfo="skip",
+        ))
+
+    hover_text = [
+        f"Time: {t.strftime('%Y-%m-%d %H:%M')}<br>Price: {fmt_currency(p)}<br>Ê÷⁄Ì : {LABEL_TEXT[l]}"
+        for t, p, l in zip(times, prices, labels)
+    ]
+
+    fig.add_trace(go.Scatter(
+        x=times, y=prices,
+        mode="markers",
+        marker=dict(
+            size=7,
+            color=[LABEL_COLOR[l] for l in labels],
+            line=dict(color="rgba(255,255,255,0.3)", width=1),
+        ),
+        name="‰ﬁ«ÿ ﬁÌ„ ",
+        showlegend=False,
+        text=hover_text,
+        hoverinfo="text",
+    ))
+
+    fig.update_layout(
+        **DARK_LAYOUT,
+        title=f"2D View: Price vs Time - —‰êù¬„Ì“Ì »— «”«”  Õ·Ì· ÕÃ„-ﬁÌ„  ({source_name})",
+        xaxis=dict(title="Time", gridcolor="rgba(255,255,255,0.08)"),
+        yaxis=dict(title="Price (USD)", gridcolor="rgba(255,255,255,0.08)"),
+        height=380,
+        margin=dict(l=40, r=20, b=40, t=50),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    return fig
+
+
+def build_volume_price_2d_figure(df, source_name="Yahoo Finance"):
+    hover_text = [
+        f"Time: {t.strftime('%Y-%m-%d %H:%M')}<br>Volume: {fmt_number(v)}<br>Price: {fmt_currency(p)}"
+        for t, v, p in zip(df["time"], df["volume"], df["price"])
+    ]
+
+    fig = go.Figure(data=[go.Scatter(
+        x=df["volume"], y=df["price"],
+        mode="lines+markers",
+        line=dict(color="#ab63fa", width=3),
+        marker=dict(
+            size=7,
+            color=list(range(len(df))),
+            colorscale="Plasma",
+            showscale=True,
+            colorbar=dict(title="Order"),
+        ),
+        name="Volume / Price",
+        text=hover_text,
+        hoverinfo="text",
+    )])
+
+    fig.update_layout(
+        **DARK_LAYOUT,
+        title=f"2D View: Volume vs Price ({source_name})",
+        xaxis=dict(title="Volume", gridcolor="rgba(255,255,255,0.08)"),
+        yaxis=dict(title="Price (USD)", gridcolor="rgba(255,255,255,0.08)"),
+        height=360,
+        margin=dict(l=40, r=20, b=40, t=50),
+    )
+    return fig
+
+
+def build_time_price_volume_2d_figure(df, source_name="Yahoo Finance"):
+    volumes = df["volume"].values
+    min_v, max_v = volumes.min(), volumes.max()
+    colors = get_volume_direction_colors(df)
+
+    if max_v - min_v == 0:
+        marker_size = [12] * len(df)
+    else:
+        marker_size = [9 + 24 * ((v - min_v) / (max_v - min_v)) for v in volumes]
+
+    prices = df["price"].values
+    hover_text = []
+    for i, (t, p, v) in enumerate(zip(df["time"], prices, volumes)):
+        direction = "Œ‰ÀÌ" if i == 0 else ("ÕÃ„ ’⁄ÊœÌ" if prices[i] >= prices[i - 1] else "ÕÃ„ ‰“Ê·Ì")
+        hover_text.append(f"Time: {t.strftime('%Y-%m-%d %H:%M')}<br>Price: {fmt_currency(p)}<br>Volume: {fmt_number(v)}<br>Status: {direction}")
+
+    fig = go.Figure(data=[go.Scatter(
+        x=df["time"], y=df["price"],
+        mode="lines+markers",
+        line=dict(color="#9ecbff", width=2.5),
+        marker=dict(size=marker_size, color=colors, opacity=0.9, line=dict(color="rgba(255,255,255,0.25)", width=1)),
+        name="Time / Price / Volume",
+        text=hover_text,
+        hoverinfo="text",
+    )])
+
+    fig.update_layout(
+        **DARK_LAYOUT,
+        title=f"2D View: Time - Price - Volume ({source_name})",
+        xaxis=dict(title="Time", gridcolor="rgba(255,255,255,0.08)"),
+        yaxis=dict(title="Price (USD)", gridcolor="rgba(255,255,255,0.08)"),
+        height=380,
+        margin=dict(l=40, r=20, b=40, t=50),
+    )
+    return fig
+
+
+def build_empty_figure(message, height=360):
+    fig = go.Figure()
+    fig.update_layout(**DARK_LAYOUT, title=f"Error: {message}", height=height)
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# «” «Ì·ùÂ«Ì ⁄„Ê„Ì („⁄«œ· CSS ‰”ŒÂùÌ HTML)
+# ---------------------------------------------------------------------------
+CARD_STYLE = {
+    "padding": "16px",
+    "borderRadius": "18px",
+    "background": COLOR_PANEL,
+    "border": f"1px solid {COLOR_BORDER}",
+    "boxShadow": "0 12px 36px rgba(0,0,0,0.28)",
+}
+
+CHART_CARD_STYLE = {
+    "padding": "12px",
+    "borderRadius": "22px",
+    "background": COLOR_PANEL,
+    "border": f"1px solid {COLOR_BORDER}",
+    "boxShadow": "0 12px 36px rgba(0,0,0,0.28)",
+}
+
+BUTTON_STYLE = {
+    "padding": "11px 18px",
+    "fontSize": "15px",
+    "cursor": "pointer",
+    "border": f"1px solid {COLOR_BORDER}",
+    "borderRadius": "12px",
+    "background": "linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04))",
+    "color": "white",
+}
+
+BUTTON_ACTIVE_STYLE = {
+    **BUTTON_STYLE,
+    "background": "linear-gradient(135deg, rgba(81,208,255,0.28), rgba(0,212,255,0.08))",
+    "borderColor": "rgba(81,208,255,0.72)",
+}
+
+
+def button_style(is_active):
+    return BUTTON_ACTIVE_STYLE if is_active else BUTTON_STYLE
+
+
+# ---------------------------------------------------------------------------
+# «Å·ÌòÌ‘‰ Dash
+# ---------------------------------------------------------------------------
+app = Dash(__name__)
+app.title = "Live Bitcoin Dashboard"
+
+app.layout = html.Div(
+    style={
+        "direction": "rtl",
+        "minHeight": "100vh",
+        "color": COLOR_TEXT,
+        "fontFamily": "Tahoma, Arial, sans-serif",
+        "background": f"linear-gradient(180deg, #09101d 0%, {BG_DARK} 50%, #0f1327 100%)",
+        "padding": "24px",
+    },
+    children=[
+        dcc.Store(id="view-mode-store", data="default"),
+        dcc.Interval(id="refresh-interval", interval=REFRESH_MS, n_intervals=0),
+
+        html.Div(
+            style={
+                "display": "flex", "alignItems": "center", "justifyContent": "space-between",
+                "gap": "20px", "padding": "22px 24px", "border": f"1px solid {COLOR_BORDER}",
+                "borderRadius": "22px", "background": "linear-gradient(135deg, rgba(81,208,255,0.08), rgba(255,255,255,0.04))",
+                "boxShadow": "0 12px 36px rgba(0,0,0,0.28)", "marginBottom": "18px", "flexWrap": "wrap",
+            },
+            children=[
+                html.Div([
+                    html.H1("Live Bitcoin Dashboard", style={"margin": "0 0 6px 0", "fontSize": "32px"}),
+                    html.P("Å«Ì‘ “‰œÂ »Ì ùòÊÌ‰ »«  Õ·Ì· ﬁÌ„ ° ÕÃ„° —Ê‰œ Ê ”Ìê‰«· ¬„«—Ì („‰»⁄: Yahoo Finance)",
+                           style={"margin": "0", "color": COLOR_MUTED, "fontSize": "15px"}),
+                ]),
+                html.Div(id="last-update-badge", style={
+                    "padding": "10px 14px", "borderRadius": "999px", "border": f"1px solid {COLOR_BORDER}",
+                    "background": "rgba(255,255,255,0.06)", "fontSize": "14px", "whiteSpace": "nowrap",
+                }),
+            ],
+        ),
+
+        html.Div(
+            style={"display": "flex", "justifyContent": "center", "gap": "12px", "margin": "18px 0 16px", "flexWrap": "wrap"},
+            children=[
+                html.Button("‰„«Ì ÅÌ‘ù›—÷", id="btn-default", n_clicks=0),
+                html.Button("‰„«Ì »Ì‰«»Ì‰Ì ÕÃ„-ﬁÌ„ ", id="btn-volume-price", n_clicks=0),
+                html.Button("‰„«Ì »Ì‰«»Ì‰Ì “„«‰-ﬁÌ„ -ÕÃ„", id="btn-time-price-volume", n_clicks=0),
+            ],
+        ),
+
+        html.Div(
+            style={"display": "grid", "gridTemplateColumns": "repeat(4, 1fr)", "gap": "14px", "marginBottom": "16px"},
+            children=[
+                html.Div(style=CARD_STYLE, children=[
+                    html.Div("¬Œ—Ì‰ ﬁÌ„ ", style={"fontSize": "13px", "color": COLOR_MUTED, "marginBottom": "6px"}),
+                    html.Div(id="metric-last-price", style={"fontSize": "22px", "fontWeight": "bold"}),
+                ]),
+                html.Div(style=CARD_STYLE, children=[
+                    html.Div(" €ÌÌ— »«“Â", style={"fontSize": "13px", "color": COLOR_MUTED, "marginBottom": "6px"}),
+                    html.Div(id="metric-change", style={"fontSize": "22px", "fontWeight": "bold"}),
+                ]),
+                html.Div(style=CARD_STYLE, children=[
+                    html.Div("„Ì«‰êÌ‰ ÕÃ„", style={"fontSize": "13px", "color": COLOR_MUTED, "marginBottom": "6px"}),
+                    html.Div(id="metric-volume-avg", style={"fontSize": "22px", "fontWeight": "bold"}),
+                ]),
+                html.Div(style=CARD_STYLE, children=[
+                    html.Div("‰Ê”«‰ ‰”»Ì", style={"fontSize": "13px", "color": COLOR_MUTED, "marginBottom": "6px"}),
+                    html.Div(id="metric-volatility", style={"fontSize": "22px", "fontWeight": "bold"}),
+                ]),
+            ],
+        ),
+
+        html.Div(id="trend-box", style={
+            "padding": "14px 18px", "borderRadius": "16px", "marginBottom": "16px", "fontSize": "17px",
+            "fontWeight": "bold", "textAlign": "center", "color": "white", "background": "#333333",
+            "border": "1px solid rgba(255,255,255,0.08)",
+        }),
+
+        html.Div(style=CHART_CARD_STYLE, children=[dcc.Graph(id="btc-3d-chart")]),
+
+        html.Div(
+            style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "16px", "marginTop": "16px"},
+            children=[
+                html.Div(style=CHART_CARD_STYLE, children=[dcc.Graph(id="btc-price-time-chart")]),
+                html.Div(style=CHART_CARD_STYLE, children=[dcc.Graph(id="btc-volume-price-chart")]),
+            ],
+        ),
+
+        html.Div(style={"marginTop": "16px"}, children=[
+            html.Div(style=CHART_CARD_STYLE, children=[dcc.Graph(id="btc-time-price-volume-chart")]),
+        ]),
+
+        html.Div(
+            style={
+                "marginTop": "18px", "padding": "18px", "borderRadius": "22px",
+                "background": "linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.04))",
+                "border": f"1px solid {COLOR_BORDER}", "boxShadow": "0 12px 36px rgba(0,0,0,0.28)",
+            },
+            children=[
+                html.H2(" Õ·Ì· ¬„«—Ì Ê ÅÌ‘‰Â«œ „⁄«„·« Ì", style={"margin": "0 0 14px 0", "fontSize": "22px"}),
+                html.Div(
+                    style={"display": "grid", "gridTemplateColumns": "1.2fr 1fr", "gap": "16px"},
+                    children=[
+                        html.Div(style={"padding": "16px", "borderRadius": "18px", "background": COLOR_PANEL_STRONG, "border": f"1px solid {COLOR_BORDER}"}, children=[
+                            html.H3("‘«Œ’ùÂ«Ì ¬„«—Ì", style={"margin": "0 0 12px 0", "fontSize": "17px"}),
+                            html.Ul(id="stats-list", style={"margin": 0, "padding": 0, "listStyle": "none", "display": "grid", "gap": "8px", "color": COLOR_MUTED}),
+                        ]),
+                        html.Div(style={"padding": "16px", "borderRadius": "18px", "background": COLOR_PANEL_STRONG, "border": f"1px solid {COLOR_BORDER}"}, children=[
+                            html.H3("Ã„⁄ù»‰œÌ  Õ·Ì·Ì", style={"margin": "0 0 12px 0", "fontSize": "17px"}),
+                            html.Div(id="analysis-text", style={"lineHeight": "2", "color": COLOR_MUTED}),
+                            html.Div(id="signal-box", style={"marginTop": "12px", "padding": "14px", "borderRadius": "14px", "fontSize": "16px", "fontWeight": "bold", "textAlign": "center", "color": "white"}),
+                            html.Div(
+                                "«Ì‰ ÅÌ‘‰Â«œ ’—›« Ìò ”Ìê‰«· ¬„«—Ì òÊ «Âù„œ  »— «”«” œ«œÂùÂ«Ì «ŒÌ— «”  Ê  Ê’ÌÂ „«·Ì ﬁÿ⁄Ì „Õ”Ê» ‰„Ìù‘Êœ.",
+                                style={"marginTop": "12px", "color": COLOR_MUTED, "fontSize": "13px", "lineHeight": "1.8"},
+                            ),
+                        ]),
+                    ],
+                ),
+            ],
+        ),
+    ],
+)
+
+
+# ---------------------------------------------------------------------------
+# ò«·ù»òùÂ«
+# ---------------------------------------------------------------------------
+@app.callback(
+    Output("view-mode-store", "data"),
+    Input("btn-default", "n_clicks"),
+    Input("btn-volume-price", "n_clicks"),
+    Input("btn-time-price-volume", "n_clicks"),
+    prevent_initial_call=True,
+)
+def update_view_mode(n_default, n_volume_price, n_time_price_volume):
+    triggered_id = callback_context.triggered_id
+    mapping = {
+        "btn-default": "default",
+        "btn-volume-price": "volume_price",
+        "btn-time-price-volume": "time_price_volume",
+    }
+    return mapping.get(triggered_id, "default")
+
+
+@app.callback(
+    Output("btn-default", "style"),
+    Output("btn-volume-price", "style"),
+    Output("btn-time-price-volume", "style"),
+    Output("last-update-badge", "children"),
+    Output("trend-box", "children"),
+    Output("trend-box", "style"),
+    Output("metric-last-price", "children"),
+    Output("metric-change", "children"),
+    Output("metric-change", "style"),
+    Output("metric-volume-avg", "children"),
+    Output("metric-volatility", "children"),
+    Output("btc-3d-chart", "figure"),
+    Output("btc-price-time-chart", "figure"),
+    Output("btc-volume-price-chart", "figure"),
+    Output("btc-time-price-volume-chart", "figure"),
+    Output("stats-list", "children"),
+    Output("analysis-text", "children"),
+    Output("signal-box", "children"),
+    Output("signal-box", "style"),
+    Input("refresh-interval", "n_intervals"),
+    Input("view-mode-store", "data"),
+)
+def update_dashboard(_n_intervals, view_mode):
+    trend_box_base_style = {
+        "padding": "14px 18px", "borderRadius": "16px", "marginBottom": "16px", "fontSize": "17px",
+        "fontWeight": "bold", "textAlign": "center", "color": "white",
+        "border": "1px solid rgba(255,255,255,0.08)",
+    }
+    signal_box_base_style = {
+        "marginTop": "12px", "padding": "14px", "borderRadius": "14px", "fontSize": "16px",
+        "fontWeight": "bold", "textAlign": "center", "color": "white",
+    }
+    signal_colors = {
+        "buy": "rgba(0,204,150,0.28)",
+        "sell": "rgba(239,85,59,0.28)",
+        "wait": "rgba(242,193,78,0.28)",
+    }
+
+    btn_styles = (
+        button_style(view_mode == "default"),
+        button_style(view_mode == "volume_price"),
+        button_style(view_mode == "time_price_volume"),
+    )
+
+    try:
+        df = fetch_ohlcv()
+    except Exception as error:
+        empty_3d = build_empty_figure(str(error), height=620)
+        empty_2d = build_empty_figure(str(error), height=380)
+
+        return (
+            *btn_styles,
+            "¬Œ—Ì‰ »—Ê“—”«‰Ì: --",
+            f"Œÿ« œ— œ—Ì«›  œ«œÂ: {error}",
+            {**trend_box_base_style, "background": COLOR_BEAR},
+            "--", "--", {"fontSize": "22px", "fontWeight": "bold"},
+            "--", "--",
+            empty_3d, empty_2d, empty_2d, empty_2d,
+            [html.Li("œ—Ì«›  œ«œÂ «‰Ã«„ ‰‘œ.")],
+            "»Â œ·Ì· Œÿ« «„ò«‰  Ê·Ìœ  Õ·Ì· ¬„«—Ì ÊÃÊœ ‰œ«—œ.",
+            "”Ìê‰«· ‰«„⁄ »— »Â œ·Ì· Œÿ« œ— œ«œÂ",
+            {**signal_box_base_style, "background": signal_colors["sell"]},
+        )
+
+    labels, _corrs = classify_rolling_volume_price_trend(df, window=TREND_WINDOW)
+    trend_text, trend_color = analyze_middle_view_trend(df, window=TREND_WINDOW)
+    analysis = build_statistical_analysis(df)
+
+    final_trend_text = f"{VIEW_TITLES.get(view_mode, VIEW_TITLES['default'])} | {trend_text} | „‰»⁄ œ«œÂ: Yahoo Finance"
+
+    change_pct = analysis["metrics"]["price_change_pct"]
+    change_color = COLOR_BULL if change_pct > 0 else (COLOR_BEAR if change_pct < 0 else COLOR_NEUTRAL)
+
+    fig_3d = build_3d_figure(df, view_mode)
+    fig_price_time = build_colored_price_time_figure(df, labels)
+    fig_volume_price = build_volume_price_2d_figure(df)
+    fig_time_price_volume = build_time_price_volume_2d_figure(df)
+
+    stats_list = [html.Li(item) for item in analysis["stats"]]
+
+    return (
+        *btn_styles,
+        f"¬Œ—Ì‰ »—Ê“—”«‰Ì: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        final_trend_text,
+        {**trend_box_base_style, "background": trend_color},
+        fmt_currency(analysis["metrics"]["last_price"]),
+        f"{change_pct:.2f}%",
+        {"fontSize": "22px", "fontWeight": "bold", "color": change_color},
+        fmt_number(analysis["metrics"]["avg_volume"]),
+        f"{analysis['metrics']['volatility_pct']:.2f}%",
+        fig_3d, fig_price_time, fig_volume_price, fig_time_price_volume,
+        stats_list,
+        analysis["summary"],
+        analysis["recommendation"],
+        {**signal_box_base_style, "background": signal_colors[analysis["signal_class"]]},
+    )
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=8050)

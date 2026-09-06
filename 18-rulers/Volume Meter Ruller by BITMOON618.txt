@@ -1,0 +1,134 @@
+//@version=6
+indicator("ÎØ˜Ô ÚãæÏí æ ÑæİÇíá ÍÌãí ÂíäåÇí ÒãÇä {Morindok} v1", shorttitle="TimeMirrorVol {Morindok}", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500)
+
+// =====================================================================
+// ÊæÖíÍ ÕÇÏŞÇäå İäí (ØÈŞ åãæä ÇÓÊÇäÏÇÑÏí ˜å ÎæÏÊ Ñæí Çä/İíÈæäÇí æ ...
+// íÇÏå ãí˜äí): Çíä ÇÓ˜ÑíÊ Èå ˜äÏáåÇí ÊÇííÏäÔÏåí ÂíäÏå ÏÓÊÑÓí äÏÇÑÏ
+// æ äãíÊæÇäÏ ÏÇÔÊå ÈÇÔÏº Pine Script äíä ŞÇÈáíÊí ÑÇ ÏÑ åí ÓØÍí äãíÏåÏ.
+// íÒí ˜å ÓÇÎÊå ÔÏå «ÊÌÓã ÊŞÇÑäí» ÇÓÊ: ÑæİÇíá ÍÌãíö ÈÇÒå [t1,t2] í˜ÈÇÑ
+// ÈåÕæÑÊ ÈÇ˜ÓåÇí ããÇÓ (ÈÏæä İÇÕáå) ãÍÇÓÈå æ ÑÓã ãíÔæÏ¡ ÓÓ åãÇä Ô˜á
+// ÈåÚäæÇä í˜ Âíäå ÇÒ äŞØå tMirror Èå ÈÚÏ¡ ÈÇ ÓÑÚÊ stepFwd ÈÇÑ ÏÑ åÑ
+// ˜äÏá Èå ÓãÊ ÑÇÓÊ (İÖÇí íÔÑæí ÇÑÊ) ÌÇÈåÌÇ ãíÔæÏ. Çíä ÕÑİÇğ í˜
+// ÇæÑáí ÊŞÇÑäí/ÈÕÑí ÇÒ ÏÇÏåí ĞÔÊå ÇÓÊ¡ äå ÏÇÏåí æÇŞÚí ÂíäÏå.
+// =====================================================================
+
+// ----------------- æÑæÏíåÇ -----------------
+t1 = input.time(timestamp("2024-01-01 00:00"), "ÒãÇä ÔÑæÚ ÈÇÒå ÍÌãí", confirm=true, group="ÈÇÒå ÒãÇäí ãÑÌÚ")
+t2 = input.time(timestamp("2024-01-02 00:00"), "ÒãÇä ÇíÇä ÈÇÒå ÍÌãí", confirm=true, group="ÈÇÒå ÒãÇäí ãÑÌÚ")
+tMirror = input.time(timestamp("2024-01-03 00:00"), "ÒãÇä ÔÑæÚ Âíäå (íÔÑæí)", confirm=true, group="Âíäå ÒãÇäí")
+selectedLevel = input.price(defval=0.0, title="ÓØÍ ãÑÌÚ ŞíãÊí (Ñæí ÇÑÊ ˜áí˜ ˜äíÏ)", confirm=true, group="ÓØÍ ãÑÌÚ")
+
+numBins = input.int(20, "ÊÚÏÇÏ ÈÇ˜ÓåÇí ÍÌãí (ÈíäåÇ)", minval=5, maxval=100, group="ÑæİÇíá ÍÌãí")
+totalWidthBars = input.int(30, "ÚÑÖ ˜á ÑæİÇíá İÔÑÏå (ÊÚÏÇÏ ÈÇÑ)", minval=5, maxval=200, group="ÑæİÇíá ÍÌãí")
+stepFwd = input.int(2, "Çã íÔÑæí Âíäå ÏÑ åÑ ˜äÏá", minval=1, maxval=10, group="Âíäå ÒãÇäí")
+rulerSteps = input.int(10, "ÊÚÏÇÏ áååÇí ÎØ˜Ô ÚãæÏí", minval=3, maxval=40, group="ÎØ˜Ô ÚãæÏí")
+
+// ----------------- ÊÔÎíÕ ÈÇÒå æ ÌãÚÂæÑí äãæäååÇ -----------------
+inRange = time >= t1 and time <= t2
+
+var float rangeHigh = na
+var float rangeLow = na
+var array<float> priceSamples = array.new<float>(0)
+var array<float> volSamples = array.new<float>(0)
+var bool computed = false
+var array<float> volBins = array.new<float>(0)
+
+if inRange
+    rangeHigh := na(rangeHigh) ? high : math.max(rangeHigh, high)
+    rangeLow := na(rangeLow) ? low : math.min(rangeLow, low)
+    array.push(priceSamples, hlc3)
+    array.push(volSamples, volume)
+
+justEnded = not computed and not na(rangeHigh) and time > t2
+
+// ----------------- ãÍÇÓÈåí åíÓÊæÑÇã ÍÌãí äåÇíí -----------------
+if justEnded
+    binSize = (rangeHigh - rangeLow) / numBins
+    array.clear(volBins)
+    for i = 0 to numBins - 1
+        array.push(volBins, 0.0)
+    n = array.size(priceSamples)
+    for i = 0 to n - 1
+        p = array.get(priceSamples, i)
+        v = array.get(volSamples, i)
+        idxRaw = binSize > 0 ? math.floor((p - rangeLow) / binSize) : 0.0
+        idx = int(math.min(numBins - 1, math.max(0, idxRaw)))
+        array.set(volBins, idx, array.get(volBins, idx) + v)
+    computed := true
+
+// ----------------- ÑÓã ÑæİÇíá ÍÌãí ÈåÕæÑÊ ÈÇ˜ÓåÇí ããÇÓ (ÇÓÊÇÊí˜) -----------------
+var array<box> profileBoxes = array.new<box>(0)
+var label angleLabel = na
+
+if justEnded
+    totalVol = array.sum(volBins)
+    binSize2 = (rangeHigh - rangeLow) / numBins
+    xCursor = bar_index
+    for i = 0 to numBins - 1
+        v = array.get(volBins, i)
+        frac = totalVol > 0 ? v / totalVol : 0.0
+        w = math.max(1, math.round(frac * totalWidthBars))
+        yLo = rangeLow + i * binSize2
+        yHi = rangeLow + (i + 1) * binSize2
+        transp = int(math.max(10, 80 - math.min(70, frac * 400)))
+        col = color.new(color.aqua, transp)
+        b = box.new(left=xCursor, top=yHi, right=xCursor + w, bottom=yLo, border_color=color.new(color.aqua, 40), bgcolor=col)
+        array.push(profileBoxes, b)
+        xCursor := xCursor + w
+    scaleAngle = totalWidthBars > 0 ? (rangeHigh - rangeLow) / totalWidthBars : na
+    angleLabel := label.new(x=xCursor, y=rangeHigh, text="ãŞíÇÓ ÒÇæíå İÔÑÏå: " + str.tostring(scaleAngle, format.mintick) + " ÏÑ åÑ ÈÇÑ", style=label.style_label_left, color=color.new(color.orange, 20), textcolor=color.white, size=size.small)
+
+// ----------------- ÑæÌ˜Ôä ÂíäåÇí ãÊÍÑ˜ (íÔÑæí 2 Èå 2) -----------------
+var array<box> mirrorBoxes = array.new<box>(0)
+var int mirrorOffset = 0
+mirrorActive = computed and time >= tMirror
+
+if mirrorActive
+    maxOffset = 499 - totalWidthBars
+    mirrorOffset := (mirrorOffset + stepFwd) % maxOffset
+    if array.size(mirrorBoxes) > 0
+        for i = 0 to array.size(mirrorBoxes) - 1
+            box.delete(array.get(mirrorBoxes, i))
+    array.clear(mirrorBoxes)
+    totalVol2 = array.sum(volBins)
+    binSize3 = (rangeHigh - rangeLow) / numBins
+    xCursor2 = bar_index + mirrorOffset
+    for i = 0 to numBins - 1
+        v = array.get(volBins, i)
+        frac2 = totalVol2 > 0 ? v / totalVol2 : 0.0
+        w2 = math.max(1, math.round(frac2 * totalWidthBars))
+        yLo2 = rangeLow + i * binSize3
+        yHi2 = rangeLow + (i + 1) * binSize3
+        col2 = color.new(color.fuchsia, 55)
+        b2 = box.new(left=xCursor2, top=yHi2, right=xCursor2 + w2, bottom=yLo2, border_color=color.new(color.fuchsia, 20), bgcolor=col2)
+        array.push(mirrorBoxes, b2)
+        xCursor2 := xCursor2 + w2
+
+// ----------------- ÎØ˜Ô ÚãæÏí ÈÇ áíÈá ÇÚÏÇÏ ãåã -----------------
+var array<line> rulerLines = array.new<line>(0)
+var array<label> rulerLabelsArr = array.new<label>(0)
+
+if barstate.islast
+    if array.size(rulerLines) > 0
+        for i = 0 to array.size(rulerLines) - 1
+            line.delete(array.get(rulerLines, i))
+    if array.size(rulerLabelsArr) > 0
+        for i = 0 to array.size(rulerLabelsArr) - 1
+            label.delete(array.get(rulerLabelsArr, i))
+    array.clear(rulerLines)
+    array.clear(rulerLabelsArr)
+    fallbackSpan = (high - low) * 3
+    spanHigh = na(rangeHigh) ? high + fallbackSpan : rangeHigh
+    spanLow = na(rangeLow) ? low - fallbackSpan : rangeLow
+    step = (spanHigh - spanLow) / rulerSteps
+    xL = bar_index - 15
+    xR = bar_index + 5
+    for i = 0 to rulerSteps
+        lvl = spanLow + i * step
+        isSelected = step > 0 and math.abs(lvl - selectedLevel) <= step / 2
+        lcol = isSelected ? color.new(color.yellow, 0) : color.new(color.gray, 60)
+        lw = isSelected ? 2 : 1
+        ln = line.new(x1=xL, y1=lvl, x2=xR, y2=lvl, color=lcol, width=lw)
+        array.push(rulerLines, ln)
+        lb = label.new(x=xL, y=lvl, text=str.tostring(lvl, format.mintick), style=label.style_label_right, color=color.new(color.gray, 100), textcolor=isSelected ? color.yellow : color.gray, size=size.tiny)
+        array.push(rulerLabelsArr, lb)

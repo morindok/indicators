@@ -1,0 +1,179 @@
+//@version=5
+indicator("ãíÇäíäåÇí İíÈæäÇí ÈÇ Polyline æ áíÈá æ MA ÊŞÇØÚ", overlay=true, max_boxes_count=500, max_polylines_count=10, max_labels_count=500)
+
+// ?? æÑæÏíåÇí ÈÇÒå ÒãÇäí ??
+startTime = input.time(defval=timestamp("2024-01-01 00:00"), title="ÒãÇä ÔÑæÚ", confirm=true)
+endTime   = input.time(defval=timestamp("2024-06-01 00:00"), title="ÒãÇä ÇíÇä", confirm=true)
+
+// ?? ÊäÙíãÇÊ äãÇíÔ ÎØæØ ÇÕáí ??
+showLineMain = input.bool(true, title="äãÇíÔ ÎØ ÇÕáí (1)", group="ÊäÙíãÇÊ äãÇíÔ")
+showLine1618 = input.bool(true, title="äãÇíÔ ÎØ 1.618", group="ÊäÙíãÇÊ äãÇíÔ")
+showLine0618 = input.bool(true, title="äãÇíÔ ÎØ 0.618", group="ÊäÙíãÇÊ äãÇíÔ")
+
+// ?? ÊäÙíãÇÊ äãÇíÔ ÊŞÇØÚåÇ ??
+showCross12 = input.bool(true, title="äãÇíÔ ÊŞÇØÚ (ÇÕáí æ 1.618)", group="ÊäÙíãÇÊ ÊŞÇØÚåÇ")
+showCross13 = input.bool(true, title="äãÇíÔ ÊŞÇØÚ (ÇÕáí æ 0.618)", group="ÊäÙíãÇÊ ÊŞÇØÚåÇ")
+showCross23 = input.bool(true, title="äãÇíÔ ÊŞÇØÚ (1.618 æ 0.618)", group="ÊäÙíãÇÊ ÊŞÇØÚåÇ")
+
+// ?? ÊäÙíãÇÊ ãíÇäíä ãÊÍÑ˜ ÊŞÇØÚåÇ ??
+showCrossMA = input.bool(true, title="ÑÓã ãíÇäíä ãÊÍÑ˜ö ÊŞÇØÚåÇ", group="ãíÇäíä ãÊÍÑ˜ ÊŞÇØÚåÇ")
+crossMALen  = input.int(3, title="Øæá ãíÇäíä ÊŞÇØÚåÇ (ÊÚÏÇÏ)", minval=1, group="ãíÇäíä ãÊÍÑ˜ ÊŞÇØÚåÇ")
+
+// ?? ÊÇÈÚ ãÍáí ÈÑÇí ãÍÇÓÈå æ ÑÓã MA ÊŞÇØÚåÇ ??
+f_drawCrossMA(p_arr, t_arr, c) =>
+    int len = array.size(p_arr)
+    if len >= crossMALen
+        var pts = array.new<chart.point>()
+        for i = crossMALen - 1 to len - 1
+            float sum = 0.0
+            for j = 0 to crossMALen - 1
+                sum += array.get(p_arr, i - j)
+            float maVal = sum / crossMALen
+            array.push(pts, chart.point.from_time(array.get(t_arr, i), maVal))
+        polyline.new(pts, xloc=xloc.bar_time, line_color=c, line_width=3) // ÖÎíãÊÑ ÈÑÇí ÊãÇíÒ
+
+// ?? ãÊÛíÑåÇí ÈÇÒå ??
+inRange = time >= startTime and time <= endTime
+var int firstBar = na
+var int lastBar  = na
+
+if inRange
+    if na(firstBar)
+        firstBar := bar_index
+    lastBar := bar_index
+
+var int rangeLength = na
+rangeEnded = not inRange and not na(firstBar)
+if rangeEnded and na(rangeLength)
+    rangeLength := lastBar - firstBar + 1
+
+periodMain = rangeLength
+period1618 = na(periodMain) ? na : int(math.max(1, math.round(periodMain * 1.618)))
+period0618 = na(periodMain) ? na : int(math.max(1, math.round(periodMain * 0.618)))
+
+// ?? ÌÏæá ÇØáÇÚÇÊ ??
+var table infoTable = table.new(position.top_right, 2, 4, bgcolor=color.new(color.black, 80))
+
+// ?? ÂÑÇíååÇ ÈÑÇí ĞÎíÑå ÏÇÏååÇí ˜á ÇÑÊ ??
+var a_close = array.new_float()
+var a_low   = array.new_float() // ÈÑÇí ŞÑÇÑ ÏÇÏä áíÈá ÒíÑ ˜äÏá
+var a_time  = array.new_int()
+array.push(a_close, close)
+array.push(a_low, low)
+array.push(a_time, time)
+
+// ?? ãÍÇÓÈå æ ÑÓã ÏÑ ÂÎÑíä ˜äÏá ??
+if barstate.islast and not na(periodMain)
+    var ptsMain = array.new<chart.point>()
+    var pts1618 = array.new<chart.point>()
+    var pts0618 = array.new<chart.point>()
+    
+    // ÂÑÇíååÇ ÈÑÇí ÊÔÎíÕ ÊŞÇØÚ ÏÑ ĞÔÊå
+    var smaMain_vals = array.new_float()
+    var sma1618_vals = array.new_float()
+    var sma0618_vals = array.new_float()
+    
+    // ÂÑÇíååÇ ÈÑÇí ĞÎíÑå ŞíãÊ æ ÒãÇä ÊŞÇØÚåÇ ÌåÊ ÑÓã MA
+    var price_c12 = array.new_float()
+    var time_c12  = array.new_int()
+    var price_c13 = array.new_float()
+    var time_c13  = array.new_int()
+    var price_c23 = array.new_float()
+    var time_c23  = array.new_int()
+    
+    int size = array.size(a_close)
+    
+    for i = 0 to size - 1
+        float valMain = na
+        float val1618 = na
+        float val0618 = na
+        
+        int currentTime = array.get(a_time, i)
+        float currentLow = array.get(a_low, i)
+        float currentClose = array.get(a_close, i)
+        
+        // ãÍÇÓÈå SMA ÇÕáí
+        if i >= periodMain - 1
+            float sumMain = 0.0
+            for j = 0 to periodMain - 1
+                sumMain += array.get(a_close, i - j)
+            valMain := sumMain / periodMain
+            array.push(ptsMain, chart.point.from_time(currentTime, valMain))
+            
+        // ãÍÇÓÈå SMA 1.618
+        if i >= period1618 - 1
+            float sum1618 = 0.0
+            for j = 0 to period1618 - 1
+                sum1618 += array.get(a_close, i - j)
+            val1618 := sum1618 / period1618
+            array.push(pts1618, chart.point.from_time(currentTime, val1618))
+            
+        // ãÍÇÓÈå SMA 0.618
+        if i >= period0618 - 1
+            float sum0618 = 0.0
+            for j = 0 to period0618 - 1
+                sum0618 += array.get(a_close, i - j)
+            val0618 := sum0618 / period0618
+            array.push(pts0618, chart.point.from_time(currentTime, val0618))
+            
+        array.push(smaMain_vals, valMain)
+        array.push(sma1618_vals, val1618)
+        array.push(sma0618_vals, val0618)
+        
+        // ?? ÊÔÎíÕ ÊŞÇØÚåÇ æ ÑÓã ÓÒãíäå/áíÈá ??
+        if i > 0
+            prevMain = array.get(smaMain_vals, i - 1)
+            prev1618 = array.get(sma1618_vals, i - 1)
+            prev0618 = array.get(sma0618_vals, i - 1)
+            
+            bool crossMain1618 = not na(prevMain) and not na(prev1618) and ((prevMain < prev1618 and valMain > val1618) or (prevMain > prev1618 and valMain < val1618))
+            bool crossMain0618 = not na(prevMain) and not na(prev0618) and ((prevMain < prev0618 and valMain > val0618) or (prevMain > prev0618 and valMain < val0618))
+            bool cross16180618 = not na(prev1618) and not na(prev0618) and ((prev1618 < prev0618 and val1618 > val0618) or (prev1618 > prev0618 and val1618 < val0618))
+            
+            if crossMain1618
+                array.push(price_c12, currentClose)
+                array.push(time_c12, currentTime)
+                if showCross12
+                    box.new(left=currentTime, top=1e12, right=currentTime, bottom=-1e12, xloc=xloc.bar_time, bgcolor=color.new(color.yellow, 75), border_color=na)
+                    label.new(x=currentTime, y=currentLow, text="? 1?1.6", xloc=xloc.bar_time, style=label.style_label_up, color=color.yellow, textcolor=color.black, size=size.small)
+                
+            if crossMain0618
+                array.push(price_c13, currentClose)
+                array.push(time_c13, currentTime)
+                if showCross13
+                    box.new(left=currentTime, top=1e12, right=currentTime, bottom=-1e12, xloc=xloc.bar_time, bgcolor=color.new(color.purple, 75), border_color=na)
+                    label.new(x=currentTime, y=currentLow, text="? 1?0.6", xloc=xloc.bar_time, style=label.style_label_up, color=color.purple, textcolor=color.white, size=size.small)
+                
+            if cross16180618
+                array.push(price_c23, currentClose)
+                array.push(time_c23, currentTime)
+                if showCross23
+                    box.new(left=currentTime, top=1e12, right=currentTime, bottom=-1e12, xloc=xloc.bar_time, bgcolor=color.new(color.orange, 75), border_color=na)
+                    label.new(x=currentTime, y=currentLow, text="? 1.6?0.6", xloc=xloc.bar_time, style=label.style_label_up, color=color.orange, textcolor=color.black, size=size.small)
+
+    // ÑÓã ÎØæØ Polyline
+    if showLineMain
+        polyline.new(ptsMain, xloc=xloc.bar_time, line_color=color.blue, line_width=2)
+    if showLine1618
+        polyline.new(pts1618, xloc=xloc.bar_time, line_color=color.red, line_width=2)
+    if showLine0618
+        polyline.new(pts0618, xloc=xloc.bar_time, line_color=color.green, line_width=2)
+
+    // ÑÓã ãíÇäíä ãÊÍÑ˜ö ÊŞÇØÚåÇ
+    if showCrossMA
+        if showCross12
+            f_drawCrossMA(price_c12, time_c12, color.yellow)
+        if showCross13
+            f_drawCrossMA(price_c13, time_c13, color.purple)
+        if showCross23
+            f_drawCrossMA(price_c23, time_c23, color.orange)
+
+    // Ñ ˜ÑÏä ÌÏæá ÏÑ ÇíÇä ÑÏÇÒÔ
+    table.cell(infoTable, 0, 0, "MA",          text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 0, "ÏæÑå",        text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 0, 1, "ÇÕáí",        text_color=color.blue,  text_size=size.small)
+    table.cell(infoTable, 1, 1, str.tostring(periodMain),    text_color=color.blue,  text_size=size.small)
+    table.cell(infoTable, 0, 2, "1.618",       text_color=color.red,   text_size=size.small)
+    table.cell(infoTable, 1, 2, str.tostring(period1618),   text_color=color.red,   text_size=size.small)
+    table.cell(infoTable, 0, 3, "0.618",       text_color=color.green, text_size=size.small)
+    table.cell(infoTable, 1, 3, str.tostring(period0618), text_color=color.green, text_size=size.small)

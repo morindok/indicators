@@ -1,0 +1,383 @@
+import dash
+from dash import dcc, html, Input, Output, State
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots  # <--- «Ì‰ Œÿ «÷«›Â ‘œ
+import yfinance as yf
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+import threading
+import time
+
+# ·Ì”  30 «—“ ò—ÌÅ Ê
+CRYPTO_SYMBOLS = [
+    'BTC-USD', 'ETH-USD', 'BNB-USD', 'ADA-USD', 'XRP-USD',
+    'SOL-USD', 'DOT-USD', 'DOGE-USD', 'AVAX-USD', 'SHIB-USD',
+    'MATIC-USD', 'LTC-USD', 'TRX-USD', 'UNI-USD', 'LINK-USD',
+    'XLM-USD', 'ATOM-USD', 'ETC-USD', 'XMR-USD', 'BCH-USD',
+    'ALGO-USD', 'FIL-USD', 'AAVE-USD', 'ICP-USD', 'NEAR-USD',
+    'VET-USD', 'FTM-USD', 'SAND-USD', 'MANA-USD', 'AXS-USD'
+]
+
+# œ«œÂùÂ«Ì ò‘ ‘œÂ
+cached_data = {}
+last_update = None
+
+
+def fetch_crypto_data():
+    """œ—Ì«›  œ«œÂùÂ«Ì 30 «—“ ò—ÌÅ Ê"""
+    global cached_data, last_update
+    data_dict = {}
+
+    for symbol in CRYPTO_SYMBOLS:
+        try:
+            ticker = yf.Ticker(symbol)
+            # œ—Ì«›  œ«œÂùÂ«Ì 5 œﬁÌﬁÂù«Ì »—«Ì 2 —Ê“ ê–‘ Â
+            df = ticker.history(period='2d', interval='5m')
+            if not df.empty:
+                data_dict[symbol] = df
+        except Exception as e:
+            print(f"Error fetching {symbol}: {e}")
+            continue
+
+    cached_data = data_dict
+    last_update = datetime.now()
+    return data_dict
+
+
+def calculate_money_flow(df):
+    """„Õ«”»Â Ã—Ì«‰ ÅÊ·"""
+    if df.empty:
+        return 50  # „ﬁœ«— ÅÌ‘ù›—÷ œ— ’Ê—  Œ«·Ì »Êœ‰ œÌ «
+
+    typical_price = (df['High'] + df['Low'] + df['Close']) / 3
+    raw_money_flow = typical_price * df['Volume']
+
+    positive_flow = raw_money_flow[typical_price > typical_price.shift(1)].sum()
+    negative_flow = raw_money_flow[typical_price < typical_price.shift(1)].sum()
+
+    if negative_flow == 0:
+        return 100
+
+    money_flow_ratio = positive_flow / negative_flow
+    mfi = 100 - (100 / (1 + money_flow_ratio))
+
+    return mfi
+
+
+def calculate_volume_profile(df, bins=20):
+    """„Õ«”»Â Å—Ê›«Ì· ÕÃ„"""
+    if df.empty:
+        return pd.DataFrame()
+
+    price_range = np.linspace(df['Low'].min(), df['High'].max(), bins)
+    volume_profile = []
+
+    for i in range(len(price_range) - 1):
+        low = price_range[i]
+        high = price_range[i + 1]
+        mid = (low + high) / 2
+
+        mask = (df['Low'] <= high) & (df['High'] >= low)
+        vol = df.loc[mask, 'Volume'].sum()
+
+        volume_profile.append({
+            'Price': mid,
+            'Volume': vol
+        })
+
+    return pd.DataFrame(volume_profile)
+
+
+# «ÌÃ«œ «Å·ÌòÌ‘‰ Dash
+app = dash.Dash(__name__)
+app.title = "œ«‘»Ê—œ Ã—Ì«‰ ÅÊ· ò—ÌÅ Ê"
+
+# ·«ÌÂù»‰œÌ œ«‘»Ê—œ
+app.layout = html.Div([
+    # Âœ—
+    html.Div([
+        html.H1("?? œ«‘»Ê—œ Ã—Ì«‰ ÅÊ· ò—ÌÅ Ê",
+                style={'textAlign': 'center', 'color': '#00D9FF', 'marginBottom': '10px'}),
+        html.Div(id='update-time', style={'textAlign': 'center', 'color': '#888', 'fontSize': '14px'}),
+    ], style={'backgroundColor': '#1a1a2e', 'padding': '20px', 'borderRadius': '10px', 'marginBottom': '20px'}),
+
+    # «‰ Œ«» «—“
+    html.Div([
+        html.Label("«‰ Œ«» «—“:", style={'color': 'white', 'fontSize': '16px', 'marginRight': '10px'}),
+        dcc.Dropdown(
+            id='crypto-selector',
+            options=[{'label': sym.replace('-USD', ''), 'value': sym} for sym in CRYPTO_SYMBOLS],
+            value='BTC-USD',
+            style={'width': '300px', 'display': 'inline-block'}
+        ),
+    ], style={'backgroundColor': '#16213e', 'padding': '15px', 'borderRadius': '10px', 'marginBottom': '20px'}),
+
+    # ‰„Êœ«—Â«Ì «’·Ì
+    html.Div([
+        # ‰„Êœ«— Ã—Ì«‰ ÅÊ· Â„Â «—“Â«
+        html.Div([
+            html.H3("?? Ã—Ì«‰ ÅÊ· œ— 30 «—“ (Money Flow Index)",
+                    style={'color': '#00D9FF', 'textAlign': 'center'}),
+            dcc.Graph(id='money-flow-chart', style={'height': '500px'})
+        ], style={'width': '100%', 'backgroundColor': '#1a1a2e', 'padding': '15px',
+                  'borderRadius': '10px', 'marginBottom': '20px'}),
+
+        # ‰„Êœ«— ÕÃ„  Ã„⁄Ì
+        html.Div([
+            html.H3("?? ÕÃ„ „⁄«„·«   Ã„⁄Ì",
+                    style={'color': '#00D9FF', 'textAlign': 'center'}),
+            dcc.Graph(id='cumulative-volume-chart', style={'height': '400px'})
+        ], style={'width': '100%', 'backgroundColor': '#1a1a2e', 'padding': '15px',
+                  'borderRadius': '10px', 'marginBottom': '20px'}),
+    ]),
+
+    #  Õ·Ì· «—“ «‰ Œ«» ‘œÂ
+    html.Div([
+        # ‰„Êœ«— ﬁÌ„  Ê ÕÃ„
+        html.Div([
+            html.H3(id='selected-crypto-title',
+                    style={'color': '#00D9FF', 'textAlign': 'center'}),
+            dcc.Graph(id='price-volume-chart', style={'height': '400px'})
+        ], style={'width': '60%', 'backgroundColor': '#1a1a2e', 'padding': '15px',
+                  'borderRadius': '10px', 'marginRight': '20px', 'display': 'inline-block'}),
+
+        # Å—Ê›«Ì· ÕÃ„
+        html.Div([
+            html.H3("?? Å—Ê›«Ì· ÕÃ„",
+                    style={'color': '#00D9FF', 'textAlign': 'center'}),
+            dcc.Graph(id='volume-profile-chart', style={'height': '400px'})
+        ], style={'width': '35%', 'backgroundColor': '#1a1a2e', 'padding': '15px',
+                  'borderRadius': '10px', 'display': 'inline-block', 'verticalAlign': 'top'}),
+    ], style={'marginBottom': '20px'}),
+
+    # ¬„«— Ê «ÿ·«⁄« 
+    html.Div([
+        html.Div(id='stats-panel', style={'color': 'white', 'fontSize': '16px'})
+    ], style={'backgroundColor': '#16213e', 'padding': '20px', 'borderRadius': '10px'}),
+
+    # »Âù—Ê“—”«‰Ì ŒÊœò«— Â— 30 À«‰ÌÂ
+    dcc.Interval(
+        id='interval-component',
+        interval=30 * 1000,  # 30 À«‰ÌÂ
+        n_intervals=0
+    ),
+
+], style={'backgroundColor': '#0f0f23', 'padding': '20px', 'minHeight': '100vh'})
+
+
+@app.callback(
+    [Output('money-flow-chart', 'figure'),
+     Output('cumulative-volume-chart', 'figure'),
+     Output('price-volume-chart', 'figure'),
+     Output('volume-profile-chart', 'figure'),
+     Output('selected-crypto-title', 'children'),
+     Output('stats-panel', 'children'),
+     Output('update-time', 'children')],
+    [Input('interval-component', 'n_intervals'),
+     Input('crypto-selector', 'value')]
+)
+def update_dashboard(n, selected_crypto):
+    global cached_data, last_update
+
+    # œ—Ì«›  œ«œÂùÂ«
+    if not cached_data or (last_update and (datetime.now() - last_update).seconds > 30):
+        fetch_crypto_data()
+
+    data = cached_data
+
+    # 1. ‰„Êœ«— Ã—Ì«‰ ÅÊ· Â„Â «—“Â«
+    mfi_data = []
+    for symbol in CRYPTO_SYMBOLS:
+        if symbol in data:
+            mfi = calculate_money_flow(data[symbol])
+            mfi_data.append({'Symbol': symbol.replace('-USD', ''), 'MFI': mfi})
+
+    mfi_df = pd.DataFrame(mfi_data)
+    mfi_df = mfi_df.sort_values('MFI', ascending=True)
+
+    fig_mfi = go.Figure()
+    fig_mfi.add_trace(go.Bar(
+        x=mfi_df['MFI'],
+        y=mfi_df['Symbol'],
+        orientation='h',
+        marker=dict(
+            color=mfi_df['MFI'],
+            colorscale='RdYlGn',
+            showscale=True,
+            colorbar=dict(title="MFI")
+        )
+    ))
+    fig_mfi.update_layout(
+        plot_bgcolor='#1a1a2e',
+        paper_bgcolor='#1a1a2e',
+        font=dict(color='white'),
+        xaxis=dict(title='‘«Œ’ Ã—Ì«‰ ÅÊ· (MFI)', color='white'),
+        yaxis=dict(color='white'),
+        margin=dict(l=100, r=50, t=30, b=50)
+    )
+    fig_mfi.add_vline(x=50, line_dash="dash", line_color="gray")
+
+    # 2. ‰„Êœ«— ÕÃ„  Ã„⁄Ì
+    cum_vol_data = []
+    for symbol in CRYPTO_SYMBOLS[:10]:  # 10 «—“ »— —
+        if symbol in data:
+            df = data[symbol]
+            cum_vol = df['Volume'].cumsum()
+            cum_vol_data.append({
+                'Symbol': symbol.replace('-USD', ''),
+                'Time': df.index,
+                'CumulativeVolume': cum_vol.values
+            })
+
+    fig_cum_vol = go.Figure()
+    colors = px.colors.qualitative.Plotly
+    for i, item in enumerate(cum_vol_data):
+        fig_cum_vol.add_trace(go.Scatter(
+            x=item['Time'],
+            y=item['CumulativeVolume'],
+            name=item['Symbol'],
+            line=dict(color=colors[i % len(colors)], width=2)
+        ))
+
+    fig_cum_vol.update_layout(
+        plot_bgcolor='#1a1a2e',
+        paper_bgcolor='#1a1a2e',
+        font=dict(color='white'),
+        xaxis=dict(title='“„«‰', color='white'),
+        yaxis=dict(title='ÕÃ„  Ã„⁄Ì', color='white'),
+        legend=dict(bgcolor='rgba(0,0,0,0)', font=dict(color='white')),
+        margin=dict(l=50, r=50, t=30, b=50)
+    )
+
+    # 3. ‰„Êœ«— ﬁÌ„  Ê ÕÃ„ «—“ «‰ Œ«» ‘œÂ
+    if selected_crypto in data:
+        df = data[selected_crypto]
+
+        # «” ›«œÂ «“ make_subplots »—«Ì  —òÌ» ‰„Êœ«— ﬁÌ„  Ê ÕÃ„
+        fig_price_vol = make_subplots(
+            rows=2, cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.03,
+            row_heights=[0.7, 0.3]
+        )
+
+        # ò‰œ· «” Ìò
+        fig_price_vol.add_trace(
+            go.Candlestick(
+                x=df.index,
+                open=df['Open'],
+                high=df['High'],
+                low=df['Low'],
+                close=df['Close'],
+                name='ﬁÌ„ '
+            ),
+            row=1, col=1
+        )
+
+        # ÕÃ„
+        vol_colors = ['red' if close < open else 'green'
+                      for open, close in zip(df['Open'], df['Close'])]
+        fig_price_vol.add_trace(
+            go.Bar(
+                x=df.index,
+                y=df['Volume'],
+                name='ÕÃ„',
+                marker_color=vol_colors
+            ),
+            row=2, col=1
+        )
+
+        fig_price_vol.update_layout(
+            plot_bgcolor='#1a1a2e',
+            paper_bgcolor='#1a1a2e',
+            font=dict(color='white'),
+            xaxis_rangeslider_visible=False,
+            margin=dict(l=50, r=50, t=30, b=50)
+        )
+        fig_price_vol.update_xaxes(color='white', row=1, col=1)
+        fig_price_vol.update_xaxes(color='white', row=2, col=1)
+        fig_price_vol.update_yaxes(color='white', row=1, col=1)
+        fig_price_vol.update_yaxes(color='white', row=2, col=1)
+
+        title = f"??  Õ·Ì· {selected_crypto.replace('-USD', '')}"
+
+        # 4. Å—Ê›«Ì· ÕÃ„
+        vol_profile = calculate_volume_profile(df, bins=15)
+
+        fig_vol_profile = go.Figure()
+        if not vol_profile.empty:
+            fig_vol_profile.add_trace(go.Bar(
+                x=vol_profile['Volume'],
+                y=vol_profile['Price'],
+                orientation='h',
+                marker=dict(
+                    color=vol_profile['Volume'],
+                    colorscale='Viridis',
+                    showscale=True
+                )
+            ))
+        fig_vol_profile.update_layout(
+            plot_bgcolor='#1a1a2e',
+            paper_bgcolor='#1a1a2e',
+            font=dict(color='white'),
+            xaxis=dict(title='ÕÃ„', color='white'),
+            yaxis=dict(title='ﬁÌ„ ', color='white'),
+            margin=dict(l=50, r=50, t=30, b=50)
+        )
+
+        # 5. ¬„«—
+        current_price = df['Close'].iloc[-1]
+        price_change = ((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100
+        total_volume = df['Volume'].sum()
+        avg_volume = df['Volume'].mean()
+        mfi = calculate_money_flow(df)
+
+        stats = html.Div([
+            html.Div([
+                html.Span(f"?? ﬁÌ„  ›⁄·Ì: ", style={'fontWeight': 'bold'}),
+                html.Span(f"${current_price:,.2f}"),
+            ], style={'marginBottom': '10px'}),
+            html.Div([
+                html.Span(f"??  €ÌÌ— ﬁÌ„ : ", style={'fontWeight': 'bold'}),
+                html.Span(f"{price_change:+.2f}%",
+                          style={'color': '#00ff00' if price_change > 0 else '#ff0000'}),
+            ], style={'marginBottom': '10px'}),
+            html.Div([
+                html.Span(f"?? ÕÃ„ ò·: ", style={'fontWeight': 'bold'}),
+                html.Span(f"{total_volume:,.0f}"),
+            ], style={'marginBottom': '10px'}),
+            html.Div([
+                html.Span(f"?? „Ì«‰êÌ‰ ÕÃ„: ", style={'fontWeight': 'bold'}),
+                html.Span(f"{avg_volume:,.0f}"),
+            ], style={'marginBottom': '10px'}),
+            html.Div([
+                html.Span(f"?? ‘«Œ’ Ã—Ì«‰ ÅÊ· (MFI): ", style={'fontWeight': 'bold'}),
+                html.Span(f"{mfi:.2f}",
+                          style={'color': '#00ff00' if mfi > 50 else '#ff0000'}),
+            ], style={'marginBottom': '10px'}),
+            html.Div([
+                html.Span(f"?? Ê÷⁄Ì : ", style={'fontWeight': 'bold'}),
+                html.Span("Œ—Ìœ ﬁÊÌ" if mfi > 70 else "›‘«— Œ—Ìœ" if mfi > 50 else
+                "Œ‰ÀÌ" if mfi > 30 else "›‘«— ›—Ê‘" if mfi > 20 else "›—Ê‘ ﬁÊÌ",
+                          style={'color': '#00ff00' if mfi > 50 else '#ff0000', 'fontWeight': 'bold'}),
+            ]),
+        ])
+    else:
+        fig_price_vol = go.Figure()
+        fig_vol_profile = go.Figure()
+        title = "œ«œÂù«Ì „ÊÃÊœ ‰Ì” "
+        stats = html.Div("·ÿ›« «—“ œÌê—Ì «‰ Œ«» ò‰Ìœ")
+
+    update_time = f"¬Œ—Ì‰ »Âù—Ê“—”«‰Ì: {last_update.strftime('%Y-%m-%d %H:%M:%S')}" if last_update else ""
+
+    return fig_mfi, fig_cum_vol, fig_price_vol, fig_vol_profile, title, stats, update_time
+
+
+if __name__ == '__main__':
+    # œ—Ì«›  «Ê·ÌÂ œ«œÂùÂ«
+    print("œ— Õ«· œ—Ì«›  œ«œÂùÂ«Ì «Ê·ÌÂ... («Ì‰ „—Õ·Â „„ò‰ «”  ç‰œ À«‰ÌÂ ÿÊ· »ò‘œ)")
+    fetch_crypto_data()
+    print("‘—Ê⁄ œ«‘»Ê—œ...")
+    app.run(debug=True, host='0.0.0.0', port=8050)

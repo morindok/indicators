@@ -1,0 +1,160 @@
+//@version=6
+indicator("Mirrored Price & Parallel Lines", overlay=true, max_bars_back=5000, max_lines_count=500)
+
+t1 = input.time(0, title="Point 1", confirm=true, inline="p1")
+p1 = input.price(0, title="", confirm=true, inline="p1")
+t2 = input.time(0, title="Point 2", confirm=true, inline="p2")
+p2 = input.price(0, title="", confirm=true, inline="p2")
+
+apply_on_original           = input.bool(false, title="Apply On Original Price")
+show_vertical_lines         = input.bool(false, title="Show Vertical Lines")
+show_horizontal_cross_lines = input.bool(false, title="Show Horizontal Cross Lines")
+reverse_reflex              = input.bool(false, title="Reverse Reflex (Symmetric to Bounds)")
+invert_slope                = input.bool(false, title="Invert Slope")
+
+var float max_dist = 0.0
+
+var line baseLine  = na
+var line upperLine = na
+var line lowerLine = na
+
+var polyline mirrorLine      = na
+var polyline originalLine    = na
+var polyline p1MirrorLine    = na
+var polyline p2MirrorLine    = na
+
+var line[] vlines = array.new_line()
+var line[] hlines = array.new_line()
+
+if bar_index == 0
+    max_dist := 0.0
+
+// max_dist only from t1..t2
+if t1 != 0 and t2 != 0 and t1 != t2
+    slope_ref = (p2 - p1) / (t2 - t1)
+    if invert_slope
+        slope_ref := -slope_ref
+        
+    line_ref  = p1 + slope_ref * (time - t1)
+    first_mirror_ref = 2.0 * line_ref - close
+    dist_ref = math.abs(close - first_mirror_ref)
+    
+    if time >= math.min(t1, t2) and time <= math.max(t1, t2)
+        max_dist := math.max(max_dist, dist_ref)
+
+if barstate.islast and t1 != 0 and t2 != 0 and t1 != t2 and max_dist > 0
+    // cleanup
+    if not na(baseLine)
+        line.delete(baseLine)
+    if not na(upperLine)
+        line.delete(upperLine)
+    if not na(lowerLine)
+        line.delete(lowerLine)
+
+    if not na(mirrorLine)
+        polyline.delete(mirrorLine)
+    if not na(originalLine)
+        polyline.delete(originalLine)
+    if not na(p1MirrorLine)
+        polyline.delete(p1MirrorLine)
+    if not na(p2MirrorLine)
+        polyline.delete(p2MirrorLine)
+
+    while array.size(vlines) > 0
+        line.delete(array.pop(vlines))
+    while array.size(hlines) > 0
+        line.delete(array.pop(hlines))
+
+    pts_mirror   = array.new<chart.point>()
+    pts_original = array.new<chart.point>()
+    pts_p1_m     = array.new<chart.point>()
+    pts_p2_m     = array.new<chart.point>()
+
+    bars_count = math.min(bar_index, 5000)
+
+    float prev_diff = na
+    float prev_red = na
+    float prev_green = na
+
+    for i = bars_count to 0
+        tm = time[i]
+        cl = close[i]
+
+        slope = (p2 - p1) / (t2 - t1)
+        if invert_slope
+            slope := -slope
+            
+        line_value = p1 + slope * (tm - t1)
+
+        upper_value = line_value + max_dist
+        lower_value = line_value - max_dist
+
+        // red line: mirrored around sloped base line
+        mirrored_price = 2.0 * line_value - cl
+        
+        if reverse_reflex
+            // Reverse reflex: Mirror around upper/lower bounds depending on position
+            mirrored_price := mirrored_price >= line_value ? (2.0 * upper_value - mirrored_price) : (2.0 * lower_value - mirrored_price)
+        else
+            // Normal reflex: bounce into channel
+            for j = 0 to 100
+                mirrored_price :=
+                     mirrored_price > upper_value ? 2.0 * upper_value - mirrored_price :
+                     mirrored_price < lower_value ? 2.0 * lower_value - mirrored_price :
+                     mirrored_price
+
+        // green line: original price
+        adjusted_original = cl
+        
+        if reverse_reflex
+            // Reverse reflex: Mirror around upper/lower bounds depending on position
+            adjusted_original := adjusted_original >= line_value ? (2.0 * upper_value - adjusted_original) : (2.0 * lower_value - adjusted_original)
+        else
+            // Normal reflex: bounce into channel
+            for j = 0 to 100
+                adjusted_original :=
+                     adjusted_original > upper_value ? 2.0 * upper_value - adjusted_original :
+                     adjusted_original < lower_value ? 2.0 * lower_value - adjusted_original :
+                     adjusted_original
+
+        // horizontal mirrors relative to p1 and p2 only
+        p1_mirrored_price = 2.0 * p1 - cl
+        p2_mirrored_price = 2.0 * p2 - cl
+
+        array.push(pts_mirror, chart.point.from_time(tm, mirrored_price))
+        array.push(pts_p1_m, chart.point.from_time(tm, p1_mirrored_price))
+        array.push(pts_p2_m, chart.point.from_time(tm, p2_mirrored_price))
+
+        if apply_on_original
+            array.push(pts_original, chart.point.from_time(tm, adjusted_original))
+
+        diff = apply_on_original ? mirrored_price - adjusted_original : na
+        crossed = apply_on_original and not na(prev_diff) and
+             (diff == 0 or (diff > 0 and prev_diff < 0) or (diff < 0 and prev_diff > 0))
+
+        // vertical lines at red/green intersection
+        if crossed and show_vertical_lines
+            array.push(vlines, line.new(tm, low[i], tm, high[i], xloc.bar_time, extend.both, color.white, line.style_solid, 1))
+
+        // horizontal lines at red/green intersection price
+        if crossed and show_horizontal_cross_lines
+            cross_price = (mirrored_price + adjusted_original) / 2.0
+            array.push(hlines, line.new(tm, cross_price, time, cross_price, xloc.bar_time, extend.right, color.aqua, line.style_dotted, 1))
+
+        prev_diff := diff
+        prev_red := mirrored_price
+        prev_green := adjusted_original
+
+    // Calculate p2 adjusted for the lines drawing
+    p2_adj = invert_slope ? p1 - (p2 - p1) : p2
+
+    baseLine  := line.new(t1, p1, t2, p2_adj, xloc.bar_time, extend.both, color.blue, line.style_solid, 2)
+    upperLine := line.new(t1, p1 + max_dist, t2, p2_adj + max_dist, xloc.bar_time, extend.both, color.gray, line.style_dashed, 1)
+    lowerLine := line.new(t1, p1 - max_dist, t2, p2_adj - max_dist, xloc.bar_time, extend.both, color.gray, line.style_dashed, 1)
+
+    mirrorLine   := polyline.new(pts_mirror, xloc=xloc.bar_time, line_color=color.red, line_width=2)
+    p1MirrorLine := polyline.new(pts_p1_m, xloc=xloc.bar_time, line_color=color.orange, line_width=2)
+    p2MirrorLine := polyline.new(pts_p2_m, xloc=xloc.bar_time, line_color=color.yellow, line_width=2)
+
+    if apply_on_original
+        originalLine := polyline.new(pts_original, xloc=xloc.bar_time, line_color=color.lime, line_width=2)

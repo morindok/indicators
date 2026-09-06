@@ -1,0 +1,171 @@
+//@version=5
+indicator("Fractal Mirror Levels", overlay=true, max_lines_count=500, max_bars_back=500)
+
+t1 = input.time(0, "Point 1", confirm=true, inline="p1")
+p1 = input.price(0, "", confirm=true, inline="p1")
+t2 = input.time(0, "Point 2", confirm=true, inline="p2")
+p2 = input.price(0, "", confirm=true, inline="p2")
+
+n                  = input.int(2,   "Fractal Periods", minval=2)
+maxFrac            = input.int(10,  "Max Fractals",    minval=1, maxval=100)
+swapLevels         = input.bool(false, "Swap Levels")
+dynLevels          = input.bool(true, "Dynamic Levels")
+dynStartFromPoints = input.bool(true, "Start Dynamic Levels from Points")
+autoParams         = input.bool(false, "Auto Fractal Params (based on range length)")
+
+rangeStart = math.min(t1, t2)
+rangeEnd   = math.max(t1, t2)
+rangeHigh  = math.max(p1, p2)
+rangeLow   = math.min(p1, p2)
+
+var int rangeBars = 0
+if time >= rangeStart and time <= rangeEnd
+    rangeBars := rangeBars + 1
+
+autoN       = math.max(2, math.round(math.sqrt(rangeBars / 2)))
+autoMaxFrac = math.max(3, math.round(math.log(rangeBars + 1) * 3))
+
+activeN       = autoParams ? autoN       : n
+activeMaxFrac = autoParams ? autoMaxFrac : maxFrac
+
+beforeRange    = time[activeN] < rangeStart
+afterRange     = time > rangeEnd
+dynActiveRange = dynStartFromPoints ? (time >= rangeStart) : afterRange
+
+bool upflagDownFrontier = true
+bool upflagUpFrontier0  = true
+bool upflagUpFrontier1  = true
+bool upflagUpFrontier2  = true
+bool upflagUpFrontier3  = true
+bool upflagUpFrontier4  = true
+for i = 1 to activeN
+    upflagDownFrontier := upflagDownFrontier and high[activeN-i] < high[activeN]
+    upflagUpFrontier0  := upflagUpFrontier0  and high[activeN+i] < high[activeN]
+    upflagUpFrontier1  := upflagUpFrontier1  and high[activeN+1] <= high[activeN] and high[activeN+i+1] < high[activeN]
+    upflagUpFrontier2  := upflagUpFrontier2  and high[activeN+1] <= high[activeN] and high[activeN+2] <= high[activeN] and high[activeN+i+2] < high[activeN]
+    upflagUpFrontier3  := upflagUpFrontier3  and high[activeN+1] <= high[activeN] and high[activeN+2] <= high[activeN] and high[activeN+3] <= high[activeN] and high[activeN+i+3] < high[activeN]
+    upflagUpFrontier4  := upflagUpFrontier4  and high[activeN+1] <= high[activeN] and high[activeN+2] <= high[activeN] and high[activeN+3] <= high[activeN] and high[activeN+4] <= high[activeN] and high[activeN+i+4] < high[activeN]
+upFractal = upflagDownFrontier and (upflagUpFrontier0 or upflagUpFrontier1 or upflagUpFrontier2 or upflagUpFrontier3 or upflagUpFrontier4)
+
+bool downflagDownFrontier = true
+bool downflagUpFrontier0  = true
+bool downflagUpFrontier1  = true
+bool downflagUpFrontier2  = true
+bool downflagUpFrontier3  = true
+bool downflagUpFrontier4  = true
+for i = 1 to activeN
+    downflagDownFrontier := downflagDownFrontier and low[activeN-i] > low[activeN]
+    downflagUpFrontier0  := downflagUpFrontier0  and low[activeN+i] > low[activeN]
+    downflagUpFrontier1  := downflagUpFrontier1  and low[activeN+1] >= low[activeN] and low[activeN+i+1] > low[activeN]
+    downflagUpFrontier2  := downflagUpFrontier2  and low[activeN+1] >= low[activeN] and low[activeN+2] >= low[activeN] and low[activeN+i+2] > low[activeN]
+    downflagUpFrontier3  := downflagUpFrontier3  and low[activeN+1] >= low[activeN] and low[activeN+2] >= low[activeN] and low[activeN+3] >= low[activeN] and low[activeN+i+3] > low[activeN]
+    downflagUpFrontier4  := downflagUpFrontier4  and low[activeN+1] >= low[activeN] and low[activeN+2] >= low[activeN] and low[activeN+3] >= low[activeN] and low[activeN+4] >= low[activeN] and low[activeN+i+4] > low[activeN]
+downFractal = downflagDownFrontier and (downflagUpFrontier0 or downflagUpFrontier1 or downflagUpFrontier2 or downflagUpFrontier3 or downflagUpFrontier4)
+
+var float upSum   = 0.0
+var int   upCount = 0
+var float dnSum   = 0.0
+var int   dnCount = 0
+
+if upFractal and beforeRange and upCount < activeMaxFrac
+    upSum   := upSum + high[activeN]
+    upCount := upCount + 1
+
+if downFractal and beforeRange and dnCount < activeMaxFrac
+    dnSum   := dnSum + low[activeN]
+    dnCount := dnCount + 1
+
+upAvg = upCount > 0 ? upSum / upCount : na
+dnAvg = dnCount > 0 ? dnSum / dnCount : na
+
+fractalGap   = not na(upAvg) and not na(dnAvg) ? math.abs(upAvg - dnAvg) : na
+staticTop    = not na(fractalGap) ? (swapLevels ? rangeLow  - fractalGap : rangeHigh + fractalGap) : na
+staticBottom = not na(fractalGap) ? (swapLevels ? rangeHigh + fractalGap : rangeLow  - fractalGap) : na
+
+var float dynUpSum   = 0.0
+var int   dynUpCount = 0
+var float dynDnSum   = 0.0
+var int   dynDnCount = 0
+var bool  topHit     = false
+var bool  botHit     = false
+var float dynTop     = na
+var float dynBot     = na
+
+if dynLevels and dynActiveRange
+    if upFractal and not topHit
+        dynUpSum   := dynUpSum + high[activeN]
+        dynUpCount := dynUpCount + 1
+    if downFractal and not botHit
+        dynDnSum   := dynDnSum + low[activeN]
+        dynDnCount := dynDnCount + 1
+
+    dynUpAvgNow = dynUpCount > 0 ? dynUpSum / dynUpCount : na
+    dynDnAvgNow = dynDnCount > 0 ? dynDnSum / dynDnCount : na
+    dynGapNow   = not na(dynUpAvgNow) and not na(dynDnAvgNow) ? math.abs(dynUpAvgNow - dynDnAvgNow) : na
+
+    if not na(dynGapNow)
+        dynTop := rangeHigh + dynGapNow
+        dynBot := rangeLow  - dynGapNow
+
+    if not na(dynTop) and high >= dynTop
+        topHit := true
+    if not na(dynBot) and low <= dynBot
+        botHit := true
+
+activeTop    = dynLevels ? dynTop    : staticTop
+activeBottom = dynLevels ? dynBot    : staticBottom
+activeAxis   = not na(activeTop) and not na(activeBottom) ? (activeTop + activeBottom) / 2 : na
+
+showTop = dynLevels ? (not na(dynTop) and not topHit) : not na(staticTop)
+showBot = dynLevels ? (not na(dynBot) and not botHit) : not na(staticBottom)
+
+midO = not na(activeAxis)   ? 2 * activeAxis   - open  : na
+midC = not na(activeAxis)   ? 2 * activeAxis   - close : na
+midH = not na(activeAxis)   ? 2 * activeAxis   - low   : na
+midL = not na(activeAxis)   ? 2 * activeAxis   - high  : na
+
+topO = not na(activeTop)    ? 2 * activeTop    - open  : na
+topC = not na(activeTop)    ? 2 * activeTop    - close : na
+topH = not na(activeTop)    ? 2 * activeTop    - low   : na
+topL = not na(activeTop)    ? 2 * activeTop    - high  : na
+
+botO = not na(activeBottom) ? 2 * activeBottom - open  : na
+botC = not na(activeBottom) ? 2 * activeBottom - close : na
+botH = not na(activeBottom) ? 2 * activeBottom - low   : na
+botL = not na(activeBottom) ? 2 * activeBottom - high  : na
+
+midUp = not na(midC) and midC >= midO
+topUp = not na(topC) and topC >= topO
+botUp = not na(botC) and botC >= botO
+
+plotcandle(midO, midH, midL, midC, "Mirror Mid",    color.new(midUp ? color.purple : color.fuchsia, 30), color.new(midUp ? color.purple : color.fuchsia, 30), bordercolor=color.new(midUp ? color.purple : color.fuchsia, 0), wickcolor=color.new(color.purple, 20))
+plotcandle(topO, topH, topL, topC, "Mirror Top",    color.new(topUp ? color.teal   : color.aqua,   30), color.new(topUp ? color.teal   : color.aqua,   30), bordercolor=color.new(topUp ? color.teal   : color.aqua,   0), wickcolor=color.new(color.teal,   20))
+plotcandle(botO, botH, botL, botC, "Mirror Bottom", color.new(botUp ? color.orange : color.red,    30), color.new(botUp ? color.orange : color.red,    30), bordercolor=color.new(botUp ? color.orange : color.red,    0), wickcolor=color.new(color.red,    20))
+
+plot(showTop ? activeTop    : na, "Level Top",    color=color.new(color.teal,  0), linewidth=2)
+plot(showBot ? activeBottom : na, "Level Bottom", color=color.new(color.red,   0), linewidth=2)
+plot(not na(activeAxis) ? activeAxis : na, "Axis", color=color.new(color.gray, 50), linewidth=1)
+
+line.new(t1, p1, t2, p2, xloc=xloc.bar_time, extend=extend.none, color=color.blue, width=2)
+
+// --- ÈÎÔ ÓíäÇáåÇ æ ÂáÇÑãåÇí ÈÑÎæÑÏ ÈÇ ÓØæÍ ---
+
+// ÊÔÎíÕ ÈÑÎæÑÏ Èå ÓØÍ ÇÓÊÇÊí˜
+hitTopStatic = not dynLevels and not na(staticTop) and high >= staticTop and high[1] < staticTop[1]
+hitBotStatic = not dynLevels and not na(staticBottom) and low <= staticBottom and low[1] > staticBottom[1]
+
+// ÊÔÎíÕ ÈÑÎæÑÏ Èå ÓØÍ ÏÇíäÇãí˜
+hitTopDyn = dynLevels and not na(dynTop) and high >= dynTop and not topHit[1]
+hitBotDyn = dynLevels and not na(dynBot) and low <= dynBot and not botHit[1]
+
+// ÊÑ˜íÈ ÓíäÇáåÇ
+hitTopLevel = hitTopStatic or hitTopDyn
+hitBotLevel = hitBotStatic or hitBotDyn
+
+// äãÇíÔ ÇÔ˜Çá ÓíäÇá Ñæí äãæÏÇÑ
+plotshape(hitTopLevel, title="Hit Top Level", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small)
+plotshape(hitBotLevel, title="Hit Bottom Level", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small)
+
+// ÊÚÑíÝ ÂáÇÑãåÇ ÈÑÇí ÊÑíÏíäæíæ
+alertcondition(hitTopLevel, title="Top Level Hit", message="Price has hit the Top Mirror Level")
+alertcondition(hitBotLevel, title="Bottom Level Hit", message="Price has hit the Bottom Mirror Level")

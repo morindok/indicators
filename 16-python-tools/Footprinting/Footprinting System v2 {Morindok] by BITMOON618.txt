@@ -1,0 +1,1884 @@
+import dash
+from dash import dcc, html, Input, Output, State, callback_context
+import plotly.graph_objs as go
+import plotly.subplots as sp
+import plotly.express as px
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import dash_bootstrap_components as dbc
+from datetime import datetime, timedelta
+import time
+import json
+
+# =============================================================================
+# APP INITIALIZATION
+# =============================================================================
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+server = app.server
+
+# =============================================================================
+# CUSTOM STYLES & ANIMATIONS
+# =============================================================================
+app.index_string = """
+<!DOCTYPE html>
+<html>
+<head>
+    {%metas%}
+    <title>Order Flow Pro — Live Market Intelligence</title>
+    {%css%}
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-primary: #0b0e17;
+            --bg-secondary: #111827;
+            --bg-card: #151c2c;
+            --bg-card-hover: #1a2236;
+            --border-color: rgba(59, 130, 246, 0.15);
+            --border-glow: rgba(59, 130, 246, 0.08);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-blue: #3b82f6;
+            --accent-cyan: #06b6d4;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --accent-amber: #f59e0b;
+            --accent-purple: #8b5cf6;
+            --accent-pink: #ec4899;
+            --gradient-primary: linear-gradient(135deg, #1e3a5f 0%, #0f172a 50%, #1a103c 100%);
+            --gradient-card: linear-gradient(145deg, rgba(30, 58, 95, 0.15) 0%, rgba(15, 23, 42, 0.25) 100%);
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+            --shadow-md: 0 4px 20px rgba(0,0,0,0.4);
+            --shadow-lg: 0 10px 40px rgba(0,0,0,0.5);
+            --shadow-glow-green: 0 0 20px rgba(16, 185, 129, 0.15);
+            --shadow-glow-red: 0 0 20px rgba(239, 68, 68, 0.15);
+            --shadow-glow-blue: 0 0 20px rgba(59, 130, 246, 0.15);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
+
+        .bg-particles {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 0;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        .bg-particles::before {
+            content: '';
+            position: absolute;
+            top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            background: 
+                radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 50% 50%, rgba(6, 182, 212, 0.02) 0%, transparent 50%);
+            animation: floatBg 30s ease-in-out infinite;
+        }
+        @keyframes floatBg {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            33% { transform: translate(30px, -30px) rotate(1deg); }
+            66% { transform: translate(-20px, 20px) rotate(-1deg); }
+        }
+
+        .main-container {
+            position: relative;
+            z-index: 1;
+            padding: 24px;
+            max-width: 1920px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: var(--gradient-card);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            margin-bottom: 24px;
+            padding: 32px 40px;
+            box-shadow: var(--shadow-lg);
+            position: relative;
+            overflow: hidden;
+        }
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple), var(--accent-cyan), var(--accent-blue));
+            background-size: 300% 100%;
+            animation: shimmer 4s linear infinite;
+        }
+        @keyframes shimmer {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 300% 50%; }
+        }
+        .header-title {
+            text-align: center;
+            font-size: 2.4rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin: 0 0 8px 0;
+            background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #22d3ee 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .header-subtitle {
+            text-align: center;
+            font-size: 1rem;
+            color: var(--text-secondary);
+            font-weight: 400;
+            letter-spacing: 0.02em;
+        }
+        .header-badges {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .header-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            border: 1px solid;
+        }
+        .badge-live {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: var(--accent-red);
+        }
+        .badge-live.active {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: rgba(16, 185, 129, 0.3);
+            color: var(--accent-green);
+        }
+        .badge-beta {
+            background: rgba(245, 158, 11, 0.1);
+            border-color: rgba(245, 158, 11, 0.3);
+            color: var(--accent-amber);
+        }
+        .badge-pro {
+            background: rgba(139, 92, 246, 0.1);
+            border-color: rgba(139, 92, 246, 0.3);
+            color: var(--accent-purple);
+        }
+
+        .card {
+            background: var(--gradient-card);
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-md);
+            margin-bottom: 20px;
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .card:hover {
+            border-color: rgba(59, 130, 246, 0.25);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.5), 0 0 0 1px rgba(59, 130, 246, 0.1);
+        }
+        .card-header {
+            background: linear-gradient(90deg, rgba(30, 58, 95, 0.4), rgba(15, 23, 42, 0.3));
+            padding: 18px 24px;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            letter-spacing: -0.01em;
+        }
+        .card-header-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+        }
+        .card-header-icon.blue { background: rgba(59, 130, 246, 0.15); color: var(--accent-blue); }
+        .card-header-icon.green { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); }
+        .card-header-icon.purple { background: rgba(139, 92, 246, 0.15); color: var(--accent-purple); }
+        .card-header-icon.amber { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); }
+        .card-header-icon.cyan { background: rgba(6, 182, 212, 0.15); color: var(--accent-cyan); }
+        .card-body { padding: 24px; }
+
+        .form-control-custom, .form-select-custom {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            color: var(--text-primary);
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            font-family: 'Inter', sans-serif;
+        }
+        .form-control-custom:focus, .form-select-custom:focus {
+            background: rgba(20, 30, 50, 0.9);
+            border-color: var(--accent-blue);
+            color: var(--text-primary);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+            outline: none;
+        }
+        .form-label-custom {
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 8px;
+            display: block;
+        }
+        .form-group { margin-bottom: 16px; }
+
+        .btn-custom {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            border: none;
+            border-radius: 10px;
+            padding: 12px 24px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+            color: white;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-family: 'Inter', sans-serif;
+            letter-spacing: 0.01em;
+        }
+        .btn-custom:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(37, 99, 235, 0.4);
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+        }
+        .btn-custom:active { transform: translateY(0); }
+        .btn-live {
+            background: linear-gradient(135deg, #dc2626, #b91c1c);
+            box-shadow: 0 4px 15px rgba(220, 38, 38, 0.3);
+        }
+        .btn-live:hover {
+            box-shadow: 0 8px 25px rgba(220, 38, 38, 0.4);
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+        }
+        .btn-live.active {
+            background: linear-gradient(135deg, #059669, #047857);
+            box-shadow: 0 4px 15px rgba(5, 150, 105, 0.3);
+            animation: none;
+        }
+        .btn-live.active:hover {
+            box-shadow: 0 8px 25px rgba(5, 150, 105, 0.4);
+            background: linear-gradient(135deg, #10b981, #059669);
+        }
+        .btn-live .pulse-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse-dot 2s infinite;
+        }
+        .btn-live.active .pulse-dot { animation: pulse-dot-green 2s infinite; }
+        @keyframes pulse-dot {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        @keyframes pulse-dot-green {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        .market-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin: 20px 0;
+        }
+        .stat-box {
+            background: linear-gradient(145deg, rgba(20, 30, 50, 0.6), rgba(15, 23, 42, 0.4));
+            border-radius: 14px;
+            padding: 20px 16px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+        .stat-box::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .stat-box:hover {
+            transform: translateY(-3px);
+            border-color: rgba(59, 130, 246, 0.3);
+            box-shadow: var(--shadow-md);
+        }
+        .stat-box:hover::before { opacity: 1; }
+        .stat-icon {
+            font-size: 1.2rem;
+            margin-bottom: 8px;
+            opacity: 0.7;
+        }
+        .stat-value {
+            font-size: 1.6rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            letter-spacing: -0.02em;
+        }
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+        .stat-change {
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-top: 4px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .stat-positive { color: var(--accent-green); }
+        .stat-negative { color: var(--accent-red); }
+        .stat-neutral { color: var(--accent-cyan); }
+
+        .signal-card {
+            background: linear-gradient(145deg, rgba(20, 30, 50, 0.6), rgba(15, 23, 42, 0.4));
+            border-radius: 14px;
+            padding: 20px;
+            margin-bottom: 14px;
+            border-left: 4px solid;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        .signal-card::after {
+            content: '';
+            position: absolute;
+            top: 0; right: 0;
+            width: 100px; height: 100px;
+            border-radius: 50%;
+            opacity: 0.03;
+            transform: translate(30%, -30%);
+        }
+        .signal-card:hover {
+            transform: translateX(4px) translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+        .signal-buy {
+            border-left-color: var(--accent-green);
+            background: linear-gradient(145deg, rgba(16, 185, 129, 0.05), rgba(15, 23, 42, 0.4));
+        }
+        .signal-buy::after { background: var(--accent-green); }
+        .signal-sell {
+            border-left-color: var(--accent-red);
+            background: linear-gradient(145deg, rgba(239, 68, 68, 0.05), rgba(15, 23, 42, 0.4));
+        }
+        .signal-sell::after { background: var(--accent-red); }
+        .signal-neutral {
+            border-left-color: var(--accent-cyan);
+            background: linear-gradient(145deg, rgba(6, 182, 212, 0.05), rgba(15, 23, 42, 0.4));
+        }
+        .signal-neutral::after { background: var(--accent-cyan); }
+
+        .signal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .signal-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .signal-buy .signal-title { color: var(--accent-green); }
+        .signal-sell .signal-title { color: var(--accent-red); }
+        .signal-neutral .signal-title { color: var(--accent-cyan); }
+
+        .signal-badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .badge-buy { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); }
+        .badge-sell { background: rgba(239, 68, 68, 0.15); color: var(--accent-red); }
+        .badge-neutral { background: rgba(6, 182, 212, 0.15); color: var(--accent-cyan); }
+
+        .signal-details {
+            font-size: 0.88rem;
+            line-height: 1.7;
+            color: var(--text-secondary);
+            margin-bottom: 14px;
+        }
+
+        .confidence-section { margin-bottom: 14px; }
+        .confidence-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        .confidence-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .confidence-value {
+            font-size: 0.85rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .confidence-bar {
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(100, 116, 139, 0.2);
+            overflow: hidden;
+        }
+        .confidence-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+        .confidence-fill::after {
+            content: '';
+            position: absolute;
+            top: 0; right: 0; bottom: 0;
+            width: 20px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2));
+        }
+
+        .price-targets {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .price-target {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.82rem;
+            font-family: 'JetBrains Mono', monospace;
+            border: 1px solid;
+        }
+        .target-entry {
+            background: rgba(59, 130, 246, 0.08);
+            color: var(--accent-blue);
+            border-color: rgba(59, 130, 246, 0.25);
+        }
+        .target-tp {
+            background: rgba(16, 185, 129, 0.08);
+            color: var(--accent-green);
+            border-color: rgba(16, 185, 129, 0.25);
+        }
+        .target-sl {
+            background: rgba(239, 68, 68, 0.08);
+            color: var(--accent-red);
+            border-color: rgba(239, 68, 68, 0.25);
+        }
+        .target-label {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            opacity: 0.7;
+        }
+
+        .history-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(59, 130, 246, 0.08);
+            transition: all 0.2s;
+            border-radius: 8px;
+        }
+        .history-item:hover { background: rgba(59, 130, 246, 0.04); }
+        .history-time {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            font-family: 'JetBrains Mono', monospace;
+            min-width: 70px;
+        }
+        .history-type { margin: 0 12px; }
+        .history-price {
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-primary);
+            margin: 0 12px;
+            min-width: 100px;
+        }
+        .history-confidence {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            margin-left: auto;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .history-reason {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            margin-left: 12px;
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .analytics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+        .analytics-card {
+            background: linear-gradient(145deg, rgba(20, 30, 50, 0.5), rgba(15, 23, 42, 0.3));
+            border-radius: 14px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            transition: all 0.3s;
+        }
+        .analytics-card:hover { border-color: rgba(59, 130, 246, 0.25); }
+        .analytics-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 12px;
+        }
+        .analytics-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            margin-bottom: 4px;
+        }
+        .analytics-subtitle {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .timestamp {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            text-align: right;
+            margin-top: 12px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .timestamp i { margin-right: 6px; }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+        .empty-state i {
+            font-size: 3rem;
+            margin-bottom: 16px;
+            opacity: 0.3;
+        }
+        .empty-state p { font-size: 1rem; }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(59, 130, 246, 0.3);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(59, 130, 246, 0.5); }
+
+        @media (max-width: 768px) {
+            .header-title { font-size: 1.6rem; }
+            .main-container { padding: 12px; }
+            .market-stats { grid-template-columns: repeat(2, 1fr); }
+            .analytics-grid { grid-template-columns: 1fr; }
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-in { animation: fadeInUp 0.5s ease-out forwards; }
+        .animate-delay-1 { animation-delay: 0.1s; }
+        .animate-delay-2 { animation-delay: 0.2s; }
+        .animate-delay-3 { animation-delay: 0.3s; }
+        .animate-delay-4 { animation-delay: 0.4s; }
+
+        .Select-control {
+            background: rgba(15, 23, 42, 0.8) !important;
+            border: 1px solid rgba(59, 130, 246, 0.2) !important;
+            border-radius: 10px !important;
+        }
+        .Select-value-label { color: var(--text-primary) !important; }
+        .Select-menu-outer {
+            background: var(--bg-secondary) !important;
+            border: 1px solid var(--border-color) !important;
+            border-radius: 10px !important;
+        }
+        .Select-option {
+            background: var(--bg-secondary) !important;
+            color: var(--text-primary) !important;
+        }
+        .Select-option:hover { background: rgba(59, 130, 246, 0.1) !important; }
+        .Select-option.is-selected { background: rgba(59, 130, 246, 0.2) !important; }
+        .Select-arrow-zone { color: var(--text-muted) !important; }
+    </style>
+</head>
+<body>
+    <div class="bg-particles"></div>
+    {%app_entry%}
+    <footer>{%config%}{%scripts%}{%renderer%}</footer>
+</body>
+</html>
+"""
+
+# =============================================================================
+# LAYOUT
+# =============================================================================
+app.layout = dbc.Container([
+    html.Div(className='main-container', children=[
+
+        html.Div(className='header animate-in', children=[
+            html.H1("ORDER FLOW PRO", className='header-title'),
+            html.P("Advanced Market Intelligence & Real-Time Signal Engine", className='header-subtitle'),
+            html.Div(className='header-badges', children=[
+                html.Span([
+                    html.I(className='fas fa-circle', style={'fontSize': '0.5rem'}),
+                    " Live"
+                ], className='header-badge badge-live', id='live-badge'),
+                html.Span("v2.0", className='header-badge badge-beta'),
+                html.Span("PRO", className='header-badge badge-pro'),
+            ])
+        ]),
+
+        dbc.Card(className='card animate-in animate-delay-1', children=[
+            dbc.CardHeader([
+                html.Span(className='card-header-icon blue', children=[html.I(className='fas fa-sliders-h')]),
+                "Analysis Controls"
+            ], className='card-header'),
+            dbc.CardBody([
+                dbc.Row([
+                    dbc.Col([
+                        html.Label("Symbol", className='form-label-custom'),
+                        dbc.Input(
+                            id='symbol-input',
+                            type='text',
+                            placeholder='BTC-USD, ETH-USD, AAPL...',
+                            value='BTC-USD',
+                            className='form-control-custom'
+                        )
+                    ], width=12, md=3, className='form-group'),
+                    dbc.Col([
+                        html.Label("Interval", className='form-label-custom'),
+                        dcc.Dropdown(
+                            id='interval-dropdown',
+                            options=[
+                                {'label': '1 Minute', 'value': '1m'},
+                                {'label': '5 Minutes', 'value': '5m'},
+                                {'label': '15 Minutes', 'value': '15m'},
+                                {'label': '30 Minutes', 'value': '30m'},
+                                {'label': '1 Hour', 'value': '1h'},
+                                {'label': '4 Hours', 'value': '4h'},
+                                {'label': '1 Day', 'value': '1d'},
+                            ],
+                            value='15m',
+                            clearable=False,
+                            className='form-select-custom'
+                        )
+                    ], width=12, md=3, className='form-group'),
+                    dbc.Col([
+                        html.Label("Period", className='form-label-custom'),
+                        dcc.Dropdown(
+                            id='period-dropdown',
+                            options=[
+                                {'label': '1 Day', 'value': '1d'},
+                                {'label': '5 Days', 'value': '5d'},
+                                {'label': '1 Month', 'value': '1mo'},
+                                {'label': '3 Months', 'value': '3mo'},
+                                {'label': '6 Months', 'value': '6mo'},
+                                {'label': '1 Year', 'value': '1y'},
+                            ],
+                            value='5d',
+                            clearable=False,
+                            className='form-select-custom'
+                        )
+                    ], width=12, md=3, className='form-group'),
+                    dbc.Col([
+                        html.Label("Live Mode", className='form-label-custom'),
+                        dbc.Button(
+                            [html.Span(className='pulse-dot'), " Start Live"],
+                            id='live-btn',
+                            className='btn-custom btn-live w-100',
+                            n_clicks=0
+                        )
+                    ], width=12, md=3, className='form-group'),
+                ]),
+                dbc.Row([
+                    dbc.Col([
+                        html.Label("Price Levels", className='form-label-custom'),
+                        dbc.Input(
+                            id='levels-input',
+                            type='number',
+                            value=30,
+                            min=10,
+                            max=100,
+                            className='form-control-custom'
+                        )
+                    ], width=12, md=4, className='form-group'),
+                    dbc.Col([
+                        html.Label("Signal Sensitivity", className='form-label-custom'),
+                        dcc.Dropdown(
+                            id='sensitivity-dropdown',
+                            options=[
+                                {'label': 'Conservative (Fewer Signals)', 'value': 'low'},
+                                {'label': 'Balanced (Recommended)', 'value': 'medium'},
+                                {'label': 'Aggressive (More Signals)', 'value': 'high'},
+                            ],
+                            value='medium',
+                            clearable=False,
+                            className='form-select-custom'
+                        )
+                    ], width=12, md=4, className='form-group'),
+                    dbc.Col([
+                        html.Label(" ", className='form-label-custom'),
+                        dbc.Button(
+                            [html.I(className='fas fa-chart-line'), " Generate Analysis"],
+                            id='generate-btn',
+                            className='btn-custom w-100',
+                            n_clicks=0
+                        )
+                    ], width=12, md=4, className='form-group'),
+                ])
+            ])
+        ]),
+
+        html.Div(id='market-stats', className='market-stats animate-in animate-delay-2'),
+
+        dbc.Row([
+            dbc.Col([
+                dbc.Card(className='card animate-in animate-delay-3', children=[
+                    dbc.CardHeader([
+                        html.Span(className='card-header-icon green', children=[html.I(className='fas fa-chart-bar')]),
+                        "Order Flow Footprint"
+                    ], className='card-header'),
+                    dbc.CardBody([
+                        dcc.Graph(
+                            id='order-flow-chart',
+                            style={'height': '650px'},
+                            config={
+                                'displayModeBar': True,
+                                'scrollZoom': True,
+                                'displaylogo': False,
+                                'modeBarButtonsToRemove': ['lasso2d', 'select2d']
+                            }
+                        ),
+                    ])
+                ]),
+            ], width=12, lg=8),
+
+            dbc.Col([
+                dbc.Card(className='card animate-in animate-delay-3', children=[
+                    dbc.CardHeader([
+                        html.Span(className='card-header-icon purple', children=[html.I(className='fas fa-bullseye')]),
+                        "Live Trading Signals"
+                    ], className='card-header'),
+                    dbc.CardBody([
+                        html.Div(id='signals-container'),
+                        html.Div(id='last-update', className='timestamp')
+                    ])
+                ]),
+            ], width=12, lg=4),
+        ]),
+
+        dbc.Card(className='card animate-in animate-delay-4', children=[
+            dbc.CardHeader([
+                html.Span(className='card-header-icon cyan', children=[html.I(className='fas fa-chart-pie')]),
+                "Market Analytics Dashboard"
+            ], className='card-header'),
+            dbc.CardBody([
+                html.Div(id='analytics-container', className='analytics-grid')
+            ])
+        ]),
+
+        dbc.Card(className='card animate-in animate-delay-4', children=[
+            dbc.CardHeader([
+                html.Span(className='card-header-icon amber', children=[html.I(className='fas fa-history')]),
+                "Signal History"
+            ], className='card-header'),
+            dbc.CardBody([
+                html.Div(id='signal-history')
+            ])
+        ]),
+
+    ])
+], fluid=True)
+
+app.layout.children.append(dcc.Store(id='signal-history-store', data=[]))
+app.layout.children.append(dcc.Interval(id='live-interval', interval=30000, n_intervals=0, disabled=True))
+
+
+# =============================================================================
+# CALLBACK
+# =============================================================================
+@app.callback(
+    [Output('order-flow-chart', 'figure'),
+     Output('market-stats', 'children'),
+     Output('signals-container', 'children'),
+     Output('last-update', 'children'),
+     Output('signal-history', 'children'),
+     Output('signal-history-store', 'data'),
+     Output('live-btn', 'children'),
+     Output('live-btn', 'className'),
+     Output('live-badge', 'className'),
+     Output('analytics-container', 'children')],
+    [Input('generate-btn', 'n_clicks'),
+     Input('live-interval', 'n_intervals'),
+     Input('live-btn', 'n_clicks')],
+    [State('symbol-input', 'value'),
+     State('interval-dropdown', 'value'),
+     State('period-dropdown', 'value'),
+     State('levels-input', 'value'),
+     State('sensitivity-dropdown', 'value'),
+     State('live-btn', 'n_clicks'),
+     State('signal-history-store', 'data')]
+)
+def update_dashboard(generate_clicks, live_intervals, live_clicks, symbol, interval, period,
+                     num_levels, sensitivity, live_state, signal_history):
+    ctx = callback_context
+    if not ctx.triggered:
+        return (create_empty_chart(), "", create_no_signals(), "", "", [],
+                [html.Span(className='pulse-dot'), " Start Live"],
+                "btn-custom btn-live w-100", "header-badge badge-live", [])
+
+    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    if triggered_id == 'live-btn':
+        if live_state % 2 == 1:
+            return (dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+                    dash.no_update, dash.no_update,
+                    [html.Span(className='pulse-dot'), " Live Active"],
+                    "btn-custom btn-live active w-100",
+                    "header-badge badge-live active", dash.no_update)
+        else:
+            return (dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+                    dash.no_update, dash.no_update,
+                    [html.Span(className='pulse-dot'), " Start Live"],
+                    "btn-custom btn-live w-100",
+                    "header-badge badge-live", dash.no_update)
+
+    if triggered_id not in ['generate-btn', 'live-interval']:
+        return (dash.no_update,) * 10
+
+    if not symbol:
+        return (create_error_chart("Please enter a symbol"), "", create_no_signals(), "", "", [],
+                dash.no_update, dash.no_update, dash.no_update, [])
+
+    try:
+        ticker = yf.Ticker(symbol)
+        data = ticker.history(period=period, interval=interval)
+
+        if data.empty:
+            return (create_error_chart(f"No data for {symbol}"), "", create_no_signals(), "", "", [],
+                    dash.no_update, dash.no_update, dash.no_update, [])
+
+        processed = process_order_flow(data, num_levels or 30)
+        signals = generate_signals(processed, sensitivity)
+
+        fig = create_order_flow_chart(processed, symbol, interval, period, signals)
+        stats = create_market_stats(processed, signals)
+        signals_html = create_signals_display(signals)
+        timestamp = f"Last Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+
+        if signal_history is None:
+            signal_history = []
+
+        if signals and len(signals) > 0 and signals[0]['type'] != 'NEUTRAL':
+            new_signal = {
+                'time': datetime.now().strftime('%H:%M:%S'),
+                'type': signals[0]['type'],
+                'price': processed['current_price'],
+                'confidence': signals[0]['confidence'],
+                'reason': signals[0]['reason']
+            }
+            signal_history.insert(0, new_signal)
+            signal_history = signal_history[:20]
+
+        history_html = create_signal_history(signal_history)
+        analytics_html = create_analytics(processed, signals)
+
+        return (fig, stats, signals_html, timestamp, history_html, signal_history,
+                dash.no_update, dash.no_update, dash.no_update, analytics_html)
+
+    except Exception as e:
+        return (create_error_chart(str(e)), "", create_no_signals(), f"Error: {str(e)}", "", [],
+                dash.no_update, dash.no_update, dash.no_update, [])
+
+# =============================================================================
+# PROCESS ORDER FLOW
+# =============================================================================
+def process_order_flow(data, num_levels=30):
+    df = data.copy()
+
+    if len(df) < 2:
+        raise ValueError("Not enough data")
+
+    df['Typical'] = (df['High'] + df['Low'] + df['Close']) / 3
+    df['Volume_Delta'] = df['Close'] - df['Open']
+    df['Is_Bullish'] = df['Close'] > df['Open']
+
+    df['VWAP'] = (df['Typical'] * df['Volume']).cumsum() / df['Volume'].cumsum()
+
+    df['TR'] = np.maximum(df['High'] - df['Low'],
+                          np.maximum(abs(df['High'] - df['Close'].shift(1)),
+                                     abs(df['Low'] - df['Close'].shift(1))))
+    df['ATR'] = df['TR'].rolling(14).mean()
+
+    delta = df['Close'].diff()
+    gain = delta.where(delta > 0, 0).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    df['RSI'] = 100 - (100 / (1 + gain / loss.replace(0, np.nan)))
+
+    df['BB_Middle'] = df['Close'].rolling(20).mean()
+    bb_std = df['Close'].rolling(20).std()
+    df['BB_Upper'] = df['BB_Middle'] + 2 * bb_std
+    df['BB_Lower'] = df['BB_Middle'] - 2 * bb_std
+
+    ema12 = df['Close'].ewm(span=12).mean()
+    ema26 = df['Close'].ewm(span=26).mean()
+    df['MACD'] = ema12 - ema26
+    df['MACD_Signal'] = df['MACD'].ewm(span=9).mean()
+    df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
+
+    price_min = df['Low'].min()
+    price_max = df['High'].max()
+    current_price = df['Close'].iloc[-1]
+    price_range = price_max - price_min
+
+    if price_range == 0:
+        price_range = price_min * 0.01
+
+    price_levels = np.linspace(price_min, price_max, num_levels)
+
+    buy_volume = np.zeros(num_levels)
+    sell_volume = np.zeros(num_levels)
+    total_volume = np.zeros(num_levels)
+
+    for idx in range(len(df)):
+        open_p = df['Open'].iloc[idx]
+        high_p = df['High'].iloc[idx]
+        low_p = df['Low'].iloc[idx]
+        close_p = df['Close'].iloc[idx]
+        volume = df['Volume'].iloc[idx]
+
+        if volume == 0 or pd.isna(volume):
+            continue
+
+        is_bullish = close_p >= open_p
+        candle_range = high_p - low_p
+        if candle_range == 0:
+            candle_range = price_range * 0.01
+
+        for j in range(num_levels):
+            level_price = price_levels[j]
+
+            if low_p <= level_price <= high_p:
+                position = (level_price - low_p) / candle_range
+
+                if is_bullish:
+                    weight = 0.5 + 0.5 * position
+                    buy_volume[j] += volume * weight / num_levels
+                    sell_volume[j] += volume * (1 - weight) / num_levels
+                else:
+                    weight = 0.5 + 0.5 * (1 - position)
+                    sell_volume[j] += volume * weight / num_levels
+                    buy_volume[j] += volume * (1 - weight) / num_levels
+
+                total_volume[j] += volume / num_levels
+
+    total_buy = buy_volume.sum()
+    total_sell = sell_volume.sum()
+    buy_sell_ratio = total_buy / total_sell if total_sell > 0 else 1
+
+    max_buy = buy_volume.max() if buy_volume.max() > 0 else 1
+    max_sell = sell_volume.max() if sell_volume.max() > 0 else 1
+    max_total = total_volume.max() if total_volume.max() > 0 else 1
+
+    buy_normalized = buy_volume / max_buy * 100
+    sell_normalized = sell_volume / max_sell * 100
+    total_normalized = total_volume / max_total * 100
+
+    imbalance = buy_volume - sell_volume
+    max_imbalance = max(abs(imbalance.max()), abs(imbalance.min()))
+    if max_imbalance == 0:
+        max_imbalance = 1
+    imbalance_normalized = imbalance / max_imbalance * 100
+
+    hvn_index = np.argmax(total_volume)
+    lvn_index = np.argmin(total_volume[total_volume > 0]) if np.any(total_volume > 0) else 0
+
+    poc_index = np.argmax(total_volume)
+    poc_price = price_levels[poc_index]
+
+    sorted_indices = np.argsort(total_volume)[::-1]
+    cumsum = np.cumsum(total_volume[sorted_indices])
+    total_vol = total_volume.sum()
+    va_indices = sorted_indices[cumsum <= total_vol * 0.7]
+    if len(va_indices) > 0:
+        va_high = price_levels[va_indices].max()
+        va_low = price_levels[va_indices].min()
+    else:
+        va_high = price_max
+        va_low = price_min
+
+    recent_candles = min(10, len(df))
+    recent_data = df.tail(recent_candles)
+    momentum = (recent_data['Close'].iloc[-1] - recent_data['Close'].iloc[0]) / recent_data['Close'].iloc[0] * 100
+
+    recent_volume = recent_data['Volume'].mean()
+    avg_volume = df['Volume'].mean()
+    volume_trend = (recent_volume - avg_volume) / avg_volume * 100 if avg_volume > 0 else 0
+
+    volatility = df['Close'].pct_change().std() * 100
+    price_change = (df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0] * 100
+    day_high = df['High'].iloc[-1]
+    day_low = df['Low'].iloc[-1]
+
+    current_rsi = df['RSI'].iloc[-1] if not pd.isna(df['RSI'].iloc[-1]) else 50
+    current_macd = df['MACD'].iloc[-1] if not pd.isna(df['MACD'].iloc[-1]) else 0
+    current_vwap = df['VWAP'].iloc[-1] if not pd.isna(df['VWAP'].iloc[-1]) else current_price
+    current_atr = df['ATR'].iloc[-1] if not pd.isna(df['ATR'].iloc[-1]) else price_range * 0.1
+
+    return {
+        'price_levels': price_levels,
+        'buy_volume': buy_volume,
+        'sell_volume': sell_volume,
+        'total_volume': total_volume,
+        'buy_normalized': buy_normalized,
+        'sell_normalized': sell_normalized,
+        'total_normalized': total_normalized,
+        'imbalance': imbalance,
+        'imbalance_normalized': imbalance_normalized,
+        'price_min': price_min,
+        'price_max': price_max,
+        'current_price': current_price,
+        'hvn_price': price_levels[hvn_index],
+        'lvn_price': price_levels[lvn_index],
+        'poc_price': poc_price,
+        'va_high': va_high,
+        'va_low': va_low,
+        'hvn_index': hvn_index,
+        'lvn_index': lvn_index,
+        'total_buy': total_buy,
+        'total_sell': total_sell,
+        'buy_sell_ratio': buy_sell_ratio,
+        'momentum': momentum,
+        'volume_trend': volume_trend,
+        'volatility': volatility,
+        'price_change': price_change,
+        'day_high': day_high,
+        'day_low': day_low,
+        'current_rsi': current_rsi,
+        'current_macd': current_macd,
+        'current_vwap': current_vwap,
+        'current_atr': current_atr,
+        'data': df
+    }
+
+# =============================================================================
+# GENERATE SIGNALS
+# =============================================================================
+def generate_signals(processed, sensitivity='medium'):
+    signals = []
+
+    current_price = processed['current_price']
+    buy_sell_ratio = processed['buy_sell_ratio']
+    momentum = processed['momentum']
+    volume_trend = processed['volume_trend']
+    hvn_price = processed['hvn_price']
+    lvn_price = processed['lvn_price']
+    poc_price = processed['poc_price']
+    va_high = processed['va_high']
+    va_low = processed['va_low']
+    current_rsi = processed['current_rsi']
+    current_macd = processed['current_macd']
+    current_vwap = processed['current_vwap']
+    current_atr = processed['current_atr']
+    buy_normalized = processed['buy_normalized']
+    sell_normalized = processed['sell_normalized']
+
+    if sensitivity == 'low':
+        ratio_threshold = 1.5
+        momentum_threshold = 2
+        volume_threshold = 50
+        rsi_oversold = 25
+        rsi_overbought = 75
+    elif sensitivity == 'medium':
+        ratio_threshold = 1.2
+        momentum_threshold = 1
+        volume_threshold = 30
+        rsi_oversold = 30
+        rsi_overbought = 70
+    else:
+        ratio_threshold = 1.1
+        momentum_threshold = 0.5
+        volume_threshold = 20
+        rsi_oversold = 35
+        rsi_overbought = 65
+
+    if buy_sell_ratio > ratio_threshold:
+        confidence = min(95, (buy_sell_ratio - 1) * 50 + 50)
+        signals.append({
+            'type': 'BUY',
+            'title': 'Strong Buying Pressure',
+            'reason': f'Buy/Sell ratio {buy_sell_ratio:.2f} indicates aggressive buyers',
+            'confidence': confidence,
+            'entry': current_price,
+            'tp': current_price + current_atr * 2,
+            'sl': current_price - current_atr * 1.5
+        })
+    elif buy_sell_ratio < (1 / ratio_threshold):
+        confidence = min(95, (1/buy_sell_ratio - 1) * 50 + 50)
+        signals.append({
+            'type': 'SELL',
+            'title': 'Strong Selling Pressure',
+            'reason': f'Buy/Sell ratio {buy_sell_ratio:.2f} indicates aggressive sellers',
+            'confidence': confidence,
+            'entry': current_price,
+            'tp': current_price - current_atr * 2,
+            'sl': current_price + current_atr * 1.5
+        })
+
+    if momentum > momentum_threshold and volume_trend > volume_threshold:
+        confidence = min(90, abs(momentum) * 20 + 50)
+        signals.append({
+            'type': 'BUY',
+            'title': 'Momentum Breakout',
+            'reason': f'Positive momentum {momentum:.2f}% with high volume {volume_trend:.1f}% above avg',
+            'confidence': confidence,
+            'entry': current_price,
+            'tp': current_price + current_atr * 3,
+            'sl': current_price - current_atr * 1.5
+        })
+    elif momentum < -momentum_threshold and volume_trend > volume_threshold:
+        confidence = min(90, abs(momentum) * 20 + 50)
+        signals.append({
+            'type': 'SELL',
+            'title': 'Momentum Breakdown',
+            'reason': f'Negative momentum {momentum:.2f}% with high volume {volume_trend:.1f}% above avg',
+            'confidence': confidence,
+            'entry': current_price,
+            'tp': current_price - current_atr * 3,
+            'sl': current_price + current_atr * 1.5
+        })
+
+    distance_to_hvn = abs(current_price - hvn_price) / current_price * 100
+    if distance_to_hvn < 1 and momentum > 0:
+        signals.append({
+            'type': 'BUY',
+            'title': 'HVN Support Bounce',
+            'reason': f'Price near High Volume Node ${hvn_price:,.2f} with positive momentum',
+            'confidence': 75,
+            'entry': current_price,
+            'tp': current_price + current_atr * 1.5,
+            'sl': hvn_price * 0.995
+        })
+    elif distance_to_hvn < 1 and momentum < 0:
+        signals.append({
+            'type': 'SELL',
+            'title': 'HVN Resistance Rejection',
+            'reason': f'Price near High Volume Node ${hvn_price:,.2f} with negative momentum',
+            'confidence': 75,
+            'entry': current_price,
+            'tp': current_price - current_atr * 1.5,
+            'sl': hvn_price * 1.005
+        })
+
+    if current_rsi < rsi_oversold and momentum > 0:
+        signals.append({
+            'type': 'BUY',
+            'title': 'RSI Oversold Bounce',
+            'reason': f'RSI at {current_rsi:.1f} (oversold) with positive momentum',
+            'confidence': 80,
+            'entry': current_price,
+            'tp': current_price + current_atr * 2,
+            'sl': current_price - current_atr * 1.5
+        })
+    elif current_rsi > rsi_overbought and momentum < 0:
+        signals.append({
+            'type': 'SELL',
+            'title': 'RSI Overbought Reversal',
+            'reason': f'RSI at {current_rsi:.1f} (overbought) with negative momentum',
+            'confidence': 80,
+            'entry': current_price,
+            'tp': current_price - current_atr * 2,
+            'sl': current_price + current_atr * 1.5
+        })
+
+    vwap_deviation = (current_price - current_vwap) / current_vwap * 100
+    if vwap_deviation < -2 and buy_sell_ratio > 1.1:
+        signals.append({
+            'type': 'BUY',
+            'title': 'VWAP Mean Reversion',
+            'reason': f'Price {abs(vwap_deviation):.2f}% below VWAP with buying pressure',
+            'confidence': 72,
+            'entry': current_price,
+            'tp': current_vwap,
+            'sl': current_price - current_atr * 1.5
+        })
+    elif vwap_deviation > 2 and buy_sell_ratio < 0.9:
+        signals.append({
+            'type': 'SELL',
+            'title': 'VWAP Mean Reversion',
+            'reason': f'Price {vwap_deviation:.2f}% above VWAP with selling pressure',
+            'confidence': 72,
+            'entry': current_price,
+            'tp': current_vwap,
+            'sl': current_price + current_atr * 1.5
+        })
+
+    current_level_idx = np.argmin(np.abs(processed['price_levels'] - current_price))
+    if current_level_idx < len(buy_normalized):
+        local_buy = buy_normalized[current_level_idx]
+        local_sell = sell_normalized[current_level_idx]
+
+        if local_buy > local_sell * 1.5 and local_buy > 30:
+            signals.append({
+                'type': 'BUY',
+                'title': 'Local Buy Imbalance',
+                'reason': f'Strong buying at current level (Buy: {local_buy:.1f}%, Sell: {local_sell:.1f}%)',
+                'confidence': 70,
+                'entry': current_price,
+                'tp': current_price + current_atr,
+                'sl': current_price - current_atr * 0.8
+            })
+        elif local_sell > local_buy * 1.5 and local_sell > 30:
+            signals.append({
+                'type': 'SELL',
+                'title': 'Local Sell Imbalance',
+                'reason': f'Strong selling at current level (Buy: {local_buy:.1f}%, Sell: {local_sell:.1f}%)',
+                'confidence': 70,
+                'entry': current_price,
+                'tp': current_price - current_atr,
+                'sl': current_price + current_atr * 0.8
+            })
+
+    signals.sort(key=lambda x: x['confidence'], reverse=True)
+
+    if not signals:
+        signals.append({
+            'type': 'NEUTRAL',
+            'title': 'No Clear Signal',
+            'reason': 'Market is in balance zone. Wait for clearer setup.',
+            'confidence': 50,
+            'entry': current_price,
+            'tp': None,
+            'sl': None
+        })
+
+    return signals
+
+
+# =============================================================================
+# MARKET STATS
+# =============================================================================
+def create_market_stats(processed, signals):
+    current_price = processed['current_price']
+    buy_sell_ratio = processed['buy_sell_ratio']
+    momentum = processed['momentum']
+    volume_trend = processed['volume_trend']
+    volatility = processed['volatility']
+    price_change = processed['price_change']
+    current_rsi = processed['current_rsi']
+
+    buy_signals = sum(1 for s in signals if s['type'] == 'BUY')
+    sell_signals = sum(1 for s in signals if s['type'] == 'SELL')
+
+    if buy_signals > sell_signals:
+        overall = 'BULLISH'
+        overall_class = 'positive'
+        overall_color = 'stat-positive'
+        overall_icon = 'fa-arrow-trend-up'
+    elif sell_signals > buy_signals:
+        overall = 'BEARISH'
+        overall_class = 'negative'
+        overall_color = 'stat-negative'
+        overall_icon = 'fa-arrow-trend-down'
+    else:
+        overall = 'NEUTRAL'
+        overall_class = 'neutral'
+        overall_color = 'stat-neutral'
+        overall_icon = 'fa-minus'
+
+    return html.Div([
+        html.Div(className=f'stat-box {overall_class}', children=[
+            html.Div(html.I(className=f'fas {overall_icon}'), className='stat-icon'),
+            html.Div(f"${current_price:,.2f}", className=f'stat-value {overall_color}'),
+            html.Div("Current Price", className='stat-label'),
+            html.Div(f"{price_change:+.2f}%", className=f'stat-change {overall_color}')
+        ]),
+        html.Div(className='stat-box', children=[
+            html.Div(html.I(className='fas fa-scale-balanced'), className='stat-icon'),
+            html.Div(f"{buy_sell_ratio:.2f}", className=f'stat-value {"stat-positive" if buy_sell_ratio > 1 else "stat-negative"}'),
+            html.Div("Buy/Sell Ratio", className='stat-label'),
+            html.Div(f"{'Buyers dominate' if buy_sell_ratio > 1 else 'Sellers dominate'}", className='stat-change stat-neutral')
+        ]),
+        html.Div(className='stat-box', children=[
+            html.Div(html.I(className='fas fa-bolt'), className='stat-icon'),
+            html.Div(f"{momentum:.2f}%", className=f'stat-value {"stat-positive" if momentum > 0 else "stat-negative"}'),
+            html.Div("Momentum", className='stat-label'),
+            html.Div(f"{volume_trend:+.1f}% vol", className=f'stat-change {"stat-positive" if volume_trend > 0 else "stat-negative"}')
+        ]),
+        html.Div(className='stat-box', children=[
+            html.Div(html.I(className='fas fa-wave-square'), className='stat-icon'),
+            html.Div(f"{volatility:.2f}%", className='stat-value stat-neutral'),
+            html.Div("Volatility", className='stat-label'),
+            html.Div(f"ATR: ${processed['current_atr']:.2f}", className='stat-change stat-neutral')
+        ]),
+        html.Div(className='stat-box', children=[
+            html.Div(html.I(className='fas fa-gauge-high'), className='stat-icon'),
+            html.Div(f"{current_rsi:.1f}", className=f'stat-value {"stat-positive" if current_rsi > 50 else "stat-negative"}'),
+            html.Div("RSI (14)", className='stat-label'),
+            html.Div(f"{'Overbought' if current_rsi > 70 else 'Oversold' if current_rsi < 30 else 'Neutral'}", className='stat-change stat-neutral')
+        ]),
+        html.Div(className=f'stat-box {overall_class}', children=[
+            html.Div(html.I(className='fas fa-signal'), className='stat-icon'),
+            html.Div(overall, className=f'stat-value {overall_color}'),
+            html.Div("Overall Signal", className='stat-label'),
+            html.Div(f"{buy_signals} Buy / {sell_signals} Sell", className='stat-change stat-neutral')
+        ]),
+    ])
+
+# =============================================================================
+# SIGNALS DISPLAY
+# =============================================================================
+def create_signals_display(signals):
+    if not signals:
+        return create_no_signals()
+
+    signal_cards = []
+    for signal in signals:
+        if signal['type'] == 'BUY':
+            card_class = 'signal-card signal-buy'
+            badge_class = 'badge-buy'
+            icon = 'fa-arrow-up'
+        elif signal['type'] == 'SELL':
+            card_class = 'signal-card signal-sell'
+            badge_class = 'badge-sell'
+            icon = 'fa-arrow-down'
+        else:
+            card_class = 'signal-card signal-neutral'
+            badge_class = 'badge-neutral'
+            icon = 'fa-minus'
+
+        if signal['confidence'] > 80:
+            conf_color = 'var(--accent-green)'
+        elif signal['confidence'] > 60:
+            conf_color = 'var(--accent-amber)'
+        else:
+            conf_color = 'var(--accent-red)'
+
+        targets_html = ''
+        if signal['tp'] and signal['sl']:
+            targets_html = html.Div(className='price-targets', children=[
+                html.Span([
+                    html.Span("Entry", className='target-label'),
+                    f" ${signal['entry']:,.2f}"
+                ], className='price-target target-entry'),
+                html.Span([
+                    html.Span("TP", className='target-label'),
+                    f" ${signal['tp']:,.2f}"
+                ], className='price-target target-tp'),
+                html.Span([
+                    html.Span("SL", className='target-label'),
+                    f" ${signal['sl']:,.2f}"
+                ], className='price-target target-sl'),
+            ])
+
+        signal_cards.append(
+            html.Div(className=card_class, children=[
+                html.Div(className='signal-header', children=[
+                    html.Div([
+                        html.I(className=f'fas {icon}'),
+                        signal['title']
+                    ], className='signal-title'),
+                    html.Span(signal['type'], className=f'signal-badge {badge_class}')
+                ]),
+                html.Div(signal['reason'], className='signal-details'),
+                html.Div(className='confidence-section', children=[
+                    html.Div(className='confidence-header', children=[
+                        html.Span("Confidence", className='confidence-label'),
+                        html.Span(f"{signal['confidence']:.0f}%", className='confidence-value', style={'color': conf_color})
+                    ]),
+                    html.Div(className='confidence-bar', children=[
+                        html.Div(style={
+                            'width': f"{signal['confidence']}%",
+                            'background': conf_color,
+                            'height': '100%'
+                        }, className='confidence-fill')
+                    ]),
+                ]),
+                targets_html
+            ])
+        )
+
+    return html.Div(signal_cards)
+
+def create_no_signals():
+    return html.Div([
+        html.I(className='fas fa-chart-line'),
+        html.P("No active signals. Generate analysis to see signals.", style={'marginTop': '12px'})
+    ], className='empty-state')
+
+# =============================================================================
+# SIGNAL HISTORY
+# =============================================================================
+def create_signal_history(history):
+    if not history:
+        return html.Div([
+            html.I(className='fas fa-clock-rotate-left'),
+            html.P("No signal history yet.", style={'marginTop': '12px'})
+        ], className='empty-state')
+
+    history_items = []
+    for sig in history:
+        if sig['type'] == 'BUY':
+            badge_class = 'badge-buy'
+            icon = 'fa-arrow-up'
+        elif sig['type'] == 'SELL':
+            badge_class = 'badge-sell'
+            icon = 'fa-arrow-down'
+        else:
+            badge_class = 'badge-neutral'
+            icon = 'fa-minus'
+
+        history_items.append(
+            html.Div(className='history-item', children=[
+                html.Span(f"{sig['time']}", className='history-time'),
+                html.Span([
+                    html.I(className=f'fas {icon}'),
+                    f" {sig['type']}"
+                ], className=f'signal-badge {badge_class} history-type'),
+                html.Span(f"${sig['price']:,.2f}", className='history-price'),
+                html.Span(f"({sig['confidence']:.0f}%)", className='history-confidence'),
+                html.Span(sig['reason'][:60] + ('...' if len(sig['reason']) > 60 else ''), className='history-reason'),
+            ])
+        )
+
+    return html.Div(history_items, style={'maxHeight': '400px', 'overflowY': 'auto'})
+
+# =============================================================================
+# ANALYTICS DASHBOARD
+# =============================================================================
+def create_analytics(processed, signals):
+    current_price = processed['current_price']
+    hvn_price = processed['hvn_price']
+    lvn_price = processed['lvn_price']
+    poc_price = processed['poc_price']
+    va_high = processed['va_high']
+    va_low = processed['va_low']
+    current_vwap = processed['current_vwap']
+    current_atr = processed['current_atr']
+    current_rsi = processed['current_rsi']
+    current_macd = processed['current_macd']
+    buy_sell_ratio = processed['buy_sell_ratio']
+    volatility = processed['volatility']
+    volume_trend = processed['volume_trend']
+
+    buy_signals = [s for s in signals if s['type'] == 'BUY']
+    sell_signals = [s for s in signals if s['type'] == 'SELL']
+
+    if buy_signals:
+        top_signal = buy_signals[0]
+        rr = abs(top_signal['tp'] - top_signal['entry']) / abs(top_signal['entry'] - top_signal['sl']) if top_signal['sl'] else 0
+    elif sell_signals:
+        top_signal = sell_signals[0]
+        rr = abs(top_signal['entry'] - top_signal['tp']) / abs(top_signal['sl'] - top_signal['entry']) if top_signal['sl'] else 0
+    else:
+        rr = 0
+
+    vwap_dev = (current_price - current_vwap) / current_vwap * 100
+    macd_signal = "Bullish" if current_macd > 0 else "Bearish"
+
+    total_vol = processed['total_volume'].sum()
+    buy_pct = processed['total_buy'] / total_vol * 100 if total_vol > 0 else 50
+    sell_pct = processed['total_sell'] / total_vol * 100 if total_vol > 0 else 50
+
+    if current_price > va_high:
+        va_position = "Above Value Area"
+        va_color = "var(--accent-green)"
+    elif current_price < va_low:
+        va_position = "Below Value Area"
+        va_color = "var(--accent-red)"
+    else:
+        va_position = "Inside Value Area"
+        va_color = "var(--accent-cyan)"
+
+    return [
+        html.Div(className='analytics-card', children=[
+            html.Div("Volume Profile", className='analytics-title'),
+            html.Div([
+                html.Div(f"POC: ${poc_price:,.2f}", style={'color': 'var(--accent-amber)', 'marginBottom': '8px', 'fontWeight': '600'}),
+                html.Div(f"HVN: ${hvn_price:,.2f}", style={'color': 'var(--text-secondary)', 'marginBottom': '4px'}),
+                html.Div(f"LVN: ${lvn_price:,.2f}", style={'color': 'var(--text-secondary)', 'marginBottom': '4px'}),
+                html.Div(f"VA High: ${va_high:,.2f}", style={'color': 'var(--text-secondary)', 'marginBottom': '4px'}),
+                html.Div(f"VA Low: ${va_low:,.2f}", style={'color': 'var(--text-secondary)', 'marginBottom': '8px'}),
+                html.Div(va_position, style={'color': va_color, 'fontWeight': '700', 'fontSize': '0.9rem'}),
+            ]),
+        ]),
+
+        html.Div(className='analytics-card', children=[
+            html.Div("Volume Analysis", className='analytics-title'),
+            html.Div([
+                html.Div(f"Buy Volume: {buy_pct:.1f}%", style={'color': 'var(--accent-green)', 'marginBottom': '8px', 'fontWeight': '600'}),
+                html.Div(f"Sell Volume: {sell_pct:.1f}%", style={'color': 'var(--accent-red)', 'marginBottom': '8px', 'fontWeight': '600'}),
+                html.Div(f"Ratio: {buy_sell_ratio:.2f}", style={'color': 'var(--accent-blue)', 'marginBottom': '8px', 'fontWeight': '600'}),
+                html.Div(f"Vol Trend: {volume_trend:+.1f}%", style={'color': 'var(--accent-cyan)', 'fontWeight': '600'}),
+            ]),
+        ]),
+
+        html.Div(className='analytics-card', children=[
+            html.Div("Technical Indicators", className='analytics-title'),
+            html.Div([
+                html.Div(f"RSI (14): {current_rsi:.1f}", style={
+                    'color': 'var(--accent-green)' if current_rsi > 50 else 'var(--accent-red)',
+                    'marginBottom': '8px', 'fontWeight': '600'
+                }),
+                html.Div(f"MACD: {current_macd:.4f}", style={
+                    'color': 'var(--accent-green)' if current_macd > 0 else 'var(--accent-red)',
+                    'marginBottom': '8px', 'fontWeight': '600'
+                }),
+                html.Div(f"Signal: {macd_signal}", style={
+                    'color': 'var(--accent-green)' if current_macd > 0 else 'var(--accent-red)',
+                    'marginBottom': '8px', 'fontWeight': '600'
+                }),
+                html.Div(f"ATR: ${current_atr:.2f}", style={'color': 'var(--accent-cyan)', 'fontWeight': '600'}),
+            ]),
+        ]),
+
+        html.Div(className='analytics-card', children=[
+            html.Div("VWAP Analysis", className='analytics-title'),
+            html.Div([
+                html.Div(f"VWAP: ${current_vwap:,.2f}", style={'color': 'var(--accent-purple)', 'marginBottom': '8px', 'fontWeight': '600'}),
+                html.Div(f"Deviation: {vwap_dev:+.2f}%", style={
+                    'color': 'var(--accent-green)' if vwap_dev > 0 else 'var(--accent-red)',
+                    'marginBottom': '8px', 'fontWeight': '600'
+                }),
+                html.Div(f"Current: ${current_price:,.2f}", style={'color': 'var(--text-secondary)', 'fontWeight': '600'}),
+            ]),
+        ]),
+
+        html.Div(className='analytics-card', children=[
+            html.Div("Risk / Reward", className='analytics-title'),
+            html.Div([
+                html.Div(f"R:R = {rr:.2f}", style={
+                    'color': 'var(--accent-green)' if rr >= 2 else 'var(--accent-amber)' if rr >= 1 else 'var(--accent-red)',
+                    'fontSize': '1.8rem', 'fontWeight': '700', 'marginBottom': '8px',
+                    'fontFamily': "'JetBrains Mono', monospace"
+                }),
+                html.Div("Optimal: > 2.0" if rr >= 2 else "Acceptable: 1.0-2.0" if rr >= 1 else "Poor: < 1.0",
+                         style={'color': 'var(--text-muted)', 'fontSize': '0.8rem'}),
+            ]),
+        ]),
+
+        html.Div(className='analytics-card', children=[
+            html.Div("Market Volatility", className='analytics-title'),
+            html.Div([
+                html.Div(f"{volatility:.2f}%", style={
+                    'color': 'var(--accent-amber)' if volatility > 5 else 'var(--accent-cyan)',
+                    'fontSize': '1.8rem', 'fontWeight': '700', 'marginBottom': '8px',
+                    'fontFamily': "'JetBrains Mono', monospace"
+                }),
+                html.Div("High" if volatility > 5 else "Moderate" if volatility > 2 else "Low",
+                         style={'color': 'var(--text-muted)', 'fontSize': '0.8rem'}),
+                html.Div(f"Range: ${processed['day_low']:,.2f} - ${processed['day_high']:,.2f}",
+                         style={'color': 'var(--text-secondary)', 'marginTop': '8px', 'fontSize': '0.8rem'}),
+            ]),
+        ]),
+    ]
+
+
+# =============================================================================
+# CHART CREATION
+# =============================================================================
+def create_empty_chart():
+    fig = go.Figure()
+    fig.add_annotation(
+        text="Configure parameters and click 'Generate Analysis'",
+        xref="paper", yref="paper",
+        x=0.5, y=0.5,
+        showarrow=False,
+        font=dict(size=18, color="#60a5fa", family="Inter")
+    )
+    fig.update_layout(
+        plot_bgcolor='rgba(11, 14, 23, 0.95)',
+        paper_bgcolor='rgba(11, 14, 23, 0.95)',
+        font=dict(color='#94a3b8', family="Inter"),
+        height=650,
+        margin=dict(t=60, b=60, l=60, r=40)
+    )
+    return fig
+
+def create_error_chart(error_msg):
+    fig = go.Figure()
+    fig.add_annotation(
+        text=f"Error: {error_msg}",
+        xref="paper", yref="paper",
+        x=0.5, y=0.5,
+        showarrow=False,
+        font=dict(size=16, color="#ef4444", family="Inter")
+    )
+    fig.update_layout(
+        plot_bgcolor='rgba(11, 14, 23, 0.95)',
+        paper_bgcolor='rgba(11, 14, 23, 0.95)',
+        font=dict(color='#94a3b8', family="Inter"),
+        height=650,
+        margin=dict(t=60, b=60, l=60, r=40)
+    )
+    return fig
+
+def create_order_flow_chart(processed, symbol, interval, period, signals):
+    price_levels = processed['price_levels']
+    buy_norm = processed['buy_normalized']
+    sell_norm = processed['sell_normalized']
+    total_norm = processed['total_normalized']
+    current_price = processed['current_price']
+    hvn_price = processed['hvn_price']
+    poc_price = processed['poc_price']
+    va_high = processed['va_high']
+    va_low = processed['va_low']
+
+    fig = sp.make_subplots(
+        rows=1, cols=2,
+        column_widths=[0.68, 0.32],
+        horizontal_spacing=0.04,
+        subplot_titles=(
+            f'<b>Order Flow Footprint</b> — {symbol}',
+            '<b>Volume Profile</b>'
+        )
+    )
+
+    for i in range(len(price_levels)):
+        if buy_norm[i] > 2:
+            fig.add_trace(
+                go.Bar(
+                    x=[buy_norm[i]],
+                    y=[price_levels[i]],
+                    orientation='h',
+                    marker=dict(
+                        color='rgba(16, 185, 129, 0.85)',
+                        line=dict(color='rgba(16, 185, 129, 0.3)', width=0.5)
+                    ),
+                    showlegend=False,
+                    hoverinfo='text',
+                    hovertext=f'<b>Buy Volume</b><br>Vol: {processed["buy_volume"][i]:,.0f}<br>Price: ${price_levels[i]:.2f}<extra></extra>',
+                    hoverlabel=dict(bgcolor='rgba(16, 185, 129, 0.9)', font=dict(color='white'))
+                ),
+                row=1, col=1
+            )
+
+        if sell_norm[i] > 2:
+            fig.add_trace(
+                go.Bar(
+                    x=[-sell_norm[i]],
+                    y=[price_levels[i]],
+                    orientation='h',
+                    marker=dict(
+                        color='rgba(239, 68, 68, 0.85)',
+                        line=dict(color='rgba(239, 68, 68, 0.3)', width=0.5)
+                    ),
+                    showlegend=False,
+                    hoverinfo='text',
+                    hovertext=f'<b>Sell Volume</b><br>Vol: {processed["sell_volume"][i]:,.0f}<br>Price: ${price_levels[i]:.2f}<extra></extra>',
+                    hoverlabel=dict(bgcolor='rgba(239, 68, 68, 0.9)', font=dict(color='white'))
+                ),
+                row=1, col=1
+            )
+
+    fig.add_shape(
+        type='line',
+        x0=-120, y0=current_price, x1=120, y1=current_price,
+        line=dict(color='#fbbf24', width=2.5, dash='solid'),
+        row=1, col=1
+    )
+    fig.add_annotation(
+        x=105, y=current_price,
+        text=f"  ${current_price:,.2f}",
+        showarrow=False,
+        font=dict(color='#fbbf24', size=12, weight='bold', family="JetBrains Mono"),
+        bgcolor='rgba(251, 191, 36, 0.15)',
+        bordercolor='rgba(251, 191, 36, 0.3)',
+        borderwidth=1,
+        borderpad=4,
+        row=1, col=1
+    )
+
+    fig.add_shape(
+        type='line',
+        x0=-120, y0=poc_price, x1=120, y1=poc_price,
+        line=dict(color='rgba(139, 92, 246, 0.6)', width=1.5, dash='dash'),
+        row=1, col=1
+    )
+    fig.add_annotation(
+        x=-105, y=poc_price,
+        text=f"POC ${poc_price:,.2f}  ",
+        showarrow=False,
+        font=dict(color='#8b5cf6', size=10, family="JetBrains Mono"),
+        row=1, col=1
+    )
+
+    fig.add_shape(
+        type='line',
+        x0=-120, y0=va_high, x1=120, y1=va_high,
+        line=dict(color='rgba(6, 182, 212, 0.4)', width=1, dash='dot'),
+        row=1, col=1
+    )
+    fig.add_shape(
+        type='line',
+        x0=-120, y0=va_low, x1=120, y1=va_low,
+        line=dict(color='rgba(6, 182, 212, 0.4)', width=1, dash='dot'),
+        row=1, col=1
+    )
+
+    if signals:
+        for idx, signal in enumerate(signals[:3]):
+            y_pos = current_price * (1 + (idx - 1) * 0.015)
+            if signal['type'] == 'BUY':
+                color = '#10b981'
+                text = f"? {signal['title']}"
+            elif signal['type'] == 'SELL':
+                color = '#ef4444'
+                text = f"? {signal['title']}"
+            else:
+                color = '#06b6d4'
+                text = f"? {signal['title']}"
+
+            fig.add_annotation(
+                x=85, y=y_pos,
+                text=text,
+                showarrow=False,
+                font=dict(color=color, size=11, weight='bold', family="Inter"),
+                bgcolor='rgba(15, 23, 42, 0.8)',
+                bordercolor=color,
+                borderwidth=1,
+                borderpad=6,
+                row=1, col=1
+            )
+
+    max_total_vol = processed['total_volume'].max()
+    for i in range(len(price_levels)):
+        if total_norm[i] > 1:
+            is_poc = processed['total_volume'][i] == max_total_vol
+            color = 'rgba(251, 191, 36, 0.85)' if is_poc else 'rgba(59, 130, 246, 0.6)'
+            border_color = 'rgba(251, 191, 36, 0.4)' if is_poc else 'rgba(59, 130, 246, 0.2)'
+
+            fig.add_trace(
+                go.Bar(
+                    x=[total_norm[i]],
+                    y=[price_levels[i]],
+                    orientation='h',
+                    marker=dict(color=color, line=dict(color=border_color, width=0.5)),
+                    showlegend=False,
+                    hoverinfo='text',
+                    hovertext=f'<b>{"POC" if is_poc else "Volume"}</b><br>Vol: {processed["total_volume"][i]:,.0f}<br>Price: ${price_levels[i]:.2f}<extra></extra>',
+                    hoverlabel=dict(
+                        bgcolor='rgba(251, 191, 36, 0.9)' if is_poc else 'rgba(59, 130, 246, 0.9)',
+                        font=dict(color='white')
+                    )
+                ),
+                row=1, col=2
+            )
+
+    fig.update_xaxes(
+        range=[-120, 120],
+        title=dict(text='Volume %', font=dict(size=12, color='#64748b')),
+        row=1, col=1,
+        gridcolor='rgba(100, 116, 139, 0.1)',
+        zerolinecolor='rgba(100, 116, 139, 0.2)',
+        tickfont=dict(size=10, color='#64748b')
+    )
+    fig.update_xaxes(
+        range=[0, 120],
+        title=dict(text='Volume %', font=dict(size=12, color='#64748b')),
+        row=1, col=2,
+        gridcolor='rgba(100, 116, 139, 0.1)',
+        zerolinecolor='rgba(100, 116, 139, 0.2)',
+        tickfont=dict(size=10, color='#64748b')
+    )
+    fig.update_yaxes(
+        title=dict(text='Price ($)', font=dict(size=12, color='#64748b')),
+        row=1, col=1,
+        autorange='reversed',
+        gridcolor='rgba(100, 116, 139, 0.1)',
+        tickfont=dict(size=10, color='#64748b', family="JetBrains Mono")
+    )
+    fig.update_yaxes(
+        showticklabels=False,
+        row=1, col=2,
+        autorange='reversed',
+        gridcolor='rgba(100, 116, 139, 0.1)'
+    )
+
+    fig.update_layout(
+        plot_bgcolor='rgba(11, 14, 23, 0.95)',
+        paper_bgcolor='rgba(11, 14, 23, 0.95)',
+        font=dict(color='#94a3b8', family="Inter"),
+        title={
+            'text': f"<b>{symbol}</b>  |  <span style='color:#64748b'>{interval}</span>  |  <span style='color:#64748b'>{period}</span>",
+            'y': 0.98, 'x': 0.5,
+            'font': dict(size=16, color='#e2e8f0', family="Inter"),
+            'xanchor': 'center'
+        },
+        showlegend=False,
+        height=650,
+        margin=dict(t=80, b=60, l=70, r=40),
+        hovermode='closest'
+    )
+
+    return fig
+
+# =============================================================================
+# MAIN
+# =============================================================================
+if __name__ == '__main__':
+    app.run(debug=True, port=8050)

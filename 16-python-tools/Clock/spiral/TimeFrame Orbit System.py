@@ -1,0 +1,475 @@
+# -*- coding: utf-8 -*-
+"""
+Hierarchical Spiral + Fibonacci Orbits (1m → Monthly)
+----------------------------------------------------------------------
+✓ فیبوناچی از 1 دقیقه تا ماهانه
+✓ پیش‌بینی قیمت اربیتالی
+"""
+
+import threading
+import time
+import urllib3
+
+import numpy as np
+import requests
+import dash
+from dash import dcc, html, Input, Output
+import dash_bootstrap_components as dbc
+import plotly.graph_objects as go
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# ==============================================================================
+# 1) تنظیمات
+# ==============================================================================
+SYMBOL = "BTCUSDT"
+CATEGORY = "linear"
+
+API_ENDPOINTS = [
+    "https://api.bybit.com",
+    "https://api.bytick.com",
+    "https://api.bybit.kz",
+]
+
+SESSION = requests.Session()
+SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
+})
+
+APP_STATE = {"price": 0.0, "connected": False, "endpoint": "None", "error": ""}
+KLINE_CACHE = {}
+
+# ==============================================================================
+# 2) تایم‌فریم‌ها
+# ==============================================================================
+
+# --- معمولی ---
+TIMEFRAMES_NORMAL = [
+    {'name': '1M', 'T': 30 * 24 * 3600, 'R': 12.0, 'color': '#FFD700', 'width': 5},
+    {'name': '1W', 'T': 7 * 24 * 3600, 'R': 6.0, 'color': '#FFA500', 'width': 4},
+    {'name': '1D', 'T': 86400, 'R': 3.5, 'color': '#FF6B6B', 'width': 4},
+    {'name': '4H', 'T': 14400, 'R': 2.0, 'color': '#4ECDC4', 'width': 3},
+    {'name': '1H', 'T': 3600, 'R': 1.2, 'color': '#95E1D3', 'width': 2.5},
+    {'name': '15m', 'T': 900, 'R': 0.7, 'color': '#F38181', 'width': 2},
+    {'name': '1m', 'T': 60, 'R': 0.4, 'color': '#AA96DA', 'width': 1.5},
+]
+
+# --- فیبوناچی: 1 دقیقه تا ماهانه ---
+# دنباله فیبوناچی در دقیقه
+FIB_MINUTES = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89,
+               144, 233, 377, 610, 987, 1597, 2584, 4181,
+               6765, 10946, 17711, 28657, 46368]
+
+
+def format_fib_time(minutes):
+    """فرمت‌بندی زمان فیبوناچی"""
+    if minutes < 60:
+        return f"{minutes}m"
+    elif minutes < 1440:
+        h = minutes // 60
+        m = minutes % 60
+        return f"{h}h{m:02d}m"
+    elif minutes < 10080:
+        d = minutes // 1440
+        h = (minutes % 1440) // 60
+        return f"{d}d{h}h"
+    elif minutes < 43200:
+        w = minutes // 10080
+        d = (minutes % 10080) // 1440
+        return f"{w}w{d}d"
+    else:
+        mo = minutes // 43200
+        d = (minutes % 43200) // 1440
+        return f"{mo}mo{d}d"
+
+
+def build_fib_timeframes():
+    """ساخت تایم‌فریم‌های فیبوناچی تا ماهانه"""
+    tfs = []
+
+    # رنگ‌های طیفی
+    colors = [
+        '#FFD700', '#FFC300', '#FFB000', '#FF9D00', '#FF8A00',
+        '#FF7700', '#FF6400', '#FF5100', '#FF3E00', '#FF2B00',
+        '#FF1800', '#FF0500', '#E000FF', '#CC00FF', '#AA00FF',
+        '#8800FF', '#6600FF', '#4400FF', '#2200FF', '#0044FF',
+        '#0088FF', '#00CCFF', '#00FFCC'
+    ]
+
+    for i, minutes in enumerate(FIB_MINUTES):
+        T = minutes * 60  # ثانیه
+        # شعاع لگاریتمی برای range وسیع
+        R = 0.8 + np.log10(minutes + 1) * 3.5
+        color = colors[i % len(colors)]
+        label = format_fib_time(minutes)
+
+        tfs.append({
+            'name': label,
+            'T': T,
+            'R': R,
+            'color': color,
+            'width': max(1.0, 4.0 - i * 0.15),
+            'fib_index': i + 1,
+            'minutes': minutes
+        })
+
+    return tfs
+
+
+TIMEFRAMES_FIB = build_fib_timeframes()
+
+
+# ==============================================================================
+# 3) اتصال به صرافی
+# ==============================================================================
+def api_request(path, params, timeout=10):
+    endpoints = [APP_STATE["endpoint"]] if APP_STATE["endpoint"] != "None" else []
+    endpoints += [ep for ep in API_ENDPOINTS if ep != APP_STATE["endpoint"]]
+
+    for endpoint in endpoints:
+        url = f"{endpoint}{path}"
+        for verify in [True, False]:
+            try:
+                resp = SESSION.get(url, params=params, timeout=timeout, verify=verify)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("retCode") == 0:
+                        APP_STATE["endpoint"] = endpoint
+                        APP_STATE["connected"] = True
+                        return data
+            except:
+                continue
+    APP_STATE["connected"] = False
+    return None
+
+
+def data_loop(stop_flag):
+    while not stop_flag.is_set():
+        try:
+            data = api_request("/v5/market/tickers", {"category": CATEGORY, "symbol": SYMBOL})
+            if data and data.get("result") and data["result"].get("list"):
+                APP_STATE["price"] = float(data["result"]["list"][0].get("lastPrice", 0))
+
+            for tf in TIMEFRAMES_NORMAL:
+                data = api_request("/v5/market/kline", {
+                    "category": CATEGORY, "symbol": SYMBOL,
+                    "interval": tf['name'], "limit": 2
+                })
+                if data and data.get("result") and data["result"].get("list"):
+                    k = data["result"]["list"][0]
+                    KLINE_CACHE[tf['name']] = {
+                        'open': float(k[1]), 'high': float(k[2]),
+                        'low': float(k[3]), 'close': float(k[4])
+                    }
+        except:
+            pass
+        time.sleep(3)
+
+
+threading.Thread(target=data_loop, args=(threading.Event(),), daemon=True).start()
+
+# ==============================================================================
+# 4) رسم اسپیرال‌ها (Orbits)
+# ==============================================================================
+def compute_spirals_normal(t_now):
+    traces = []
+    progress_map = {}
+    cx, cy = 0.0, 0.0
+    acc_angle = 0.0
+    price = APP_STATE["price"]
+
+    for tf in TIMEFRAMES_NORMAL:
+        T = tf['T']
+        R = tf['R']
+        t_start = (t_now // T) * T
+        progress = min((t_now - t_start) / T, 1.0)
+        progress_map[tf['name']] = progress
+
+        kline = KLINE_CACHE.get(tf['name'], {})
+        close_p = kline.get('close', 0)
+        open_p = kline.get('open', 0)
+
+        if open_p > 0 and close_p > 0:
+            change_pct = ((close_p - open_p) / open_p) * 100
+            trend = "📈" if close_p >= open_p else "📉"
+        else:
+            change_pct = 0
+            trend = "➖"
+
+        u = np.linspace(0, 1, 120)
+        theta = 2 * np.pi * u
+        x_f = cx + R * np.cos(theta + acc_angle)
+        y_f = cy + R * np.sin(theta + acc_angle)
+
+        hover = f"<b style='color:{tf['color']}'>{tf['name']}</b><br>📊 {progress * 100:.1f}%<br>"
+        if close_p > 0:
+            hover += f"💰 ${close_p:,.0f} {trend}{change_pct:+.2f}%"
+
+        traces.append(go.Scatter(
+            x=x_f, y=y_f, mode='lines',
+            line=dict(color=tf['color'], width=1.5, dash='dot'),
+            opacity=0.35, showlegend=False,
+            hovertemplate=hover + "<extra></extra>"
+        ))
+
+        n = max(int(120 * progress), 3)
+        u_c = np.linspace(0, progress, n)
+        th_c = 2 * np.pi * u_c
+        x_c = cx + R * np.cos(th_c + acc_angle)
+        y_c = cy + R * np.sin(th_c + acc_angle)
+
+        traces.append(go.Scatter(
+            x=x_c, y=y_c, mode='lines',
+            line=dict(color=tf['color'], width=tf['width']),
+            name=tf['name'], showlegend=True,
+            hovertemplate=f"<b>{tf['name']}</b><br>📍 {progress * 100:.1f}%<extra></extra>"
+        ))
+
+        th_now = 2 * np.pi * progress
+        cur_x = cx + R * np.cos(th_now + acc_angle)
+        cur_y = cy + R * np.sin(th_now + acc_angle)
+
+        for g in [14, 10]:
+            traces.append(go.Scatter(
+                x=[cur_x], y=[cur_y], mode='markers',
+                marker=dict(color=tf['color'], size=g, opacity=0.25),
+                showlegend=False, hoverinfo='skip'
+            ))
+
+        hover_pt = f"<b style='color:{tf['color']}'>{tf['name']}</b><br>📊 {progress * 100:.1f}%<br>"
+        if price > 0:
+            hover_pt += f"💰 ${price:,.2f}"
+
+        traces.append(go.Scatter(
+            x=[cur_x], y=[cur_y], mode='markers',
+            marker=dict(color='#FFF', size=8, line=dict(color=tf['color'], width=2)),
+            showlegend=False,
+            hovertemplate=hover_pt + "<extra></extra>"
+        ))
+
+        la = th_now + acc_angle + np.pi / 4
+        traces.append(go.Scatter(
+            x=[cur_x + R * 0.3 * np.cos(la)], y=[cur_y + R * 0.3 * np.sin(la)],
+            mode='text', text=[f"{tf['name']}<br>{progress * 100:.0f}%"],
+            textfont=dict(color=tf['color'], size=9, family='monospace'),
+            showlegend=False, hoverinfo='skip'
+        ))
+
+        cx, cy = cur_x, cur_y
+        acc_angle += th_now
+
+    return traces, progress_map
+
+
+def compute_spirals_fibonacci(t_now):
+    """اربیت‌های فیبوناچی تا ماهانه"""
+    traces = []
+    progress_map = {}
+
+    cx, cy = 0.0, 0.0
+    acc_angle = 0.0
+    price = APP_STATE["price"]
+
+    for i, tf in enumerate(TIMEFRAMES_FIB):
+        T = tf['T']
+        R = tf['R']
+        t_start = (t_now // T) * T
+        progress = min((t_now - t_start) / T, 1.0)
+        progress_map[tf['name']] = progress
+
+        mins = tf['minutes']
+        label = tf['name']
+
+        # مدار
+        u = np.linspace(0, 1, 100)
+        theta = 2 * np.pi * u
+        x_f = cx + R * np.cos(theta + acc_angle)
+        y_f = cy + R * np.sin(theta + acc_angle)
+
+        hover = (
+            f"<b style='color:{tf['color']}>Fib({tf['fib_index']}) = {label}</b><br>"
+            f"📊 Progress: {progress * 100:.1f}%<br>"
+            f"⏱ Period: {mins} min<br>"
+        )
+        if price > 0:
+            hover += f"💰 ${price:,.2f}"
+
+        traces.append(go.Scatter(
+            x=x_f, y=y_f, mode='lines',
+            line=dict(color=tf['color'], width=1, dash='dot'),
+            opacity=0.4, showlegend=False,
+            hovertemplate=hover + "<extra></extra>"
+        ))
+
+        # مسیر
+        n = max(int(100 * progress), 3)
+        u_c = np.linspace(0, progress, n)
+        th_c = 2 * np.pi * u_c
+        x_c = cx + R * np.cos(th_c + acc_angle)
+        y_c = cy + R * np.sin(th_c + acc_angle)
+
+        traces.append(go.Scatter(
+            x=x_c, y=y_c, mode='lines',
+            line=dict(color=tf['color'], width=tf['width']),
+            name=f"F({tf['fib_index']})={label}", showlegend=True,
+            hovertemplate=f"<b>F({tf['fib_index']})</b><br>{label}<br>📍 {progress * 100:.1f}%<extra></extra>"
+        ))
+
+        # نقطه
+        th_now = 2 * np.pi * progress
+        cur_x = cx + R * np.cos(th_now + acc_angle)
+        cur_y = cy + R * np.sin(th_now + acc_angle)
+
+        for g in [11, 8]:
+            traces.append(go.Scatter(
+                x=[cur_x], y=[cur_y], mode='markers',
+                marker=dict(color=tf['color'], size=g, opacity=0.3),
+                showlegend=False, hoverinfo='skip'
+            ))
+
+        hover_pt = (
+            f"<b style='color:{tf['color']}>Fibonacci {tf['fib_index']}</b><br>"
+            f"⏱ {label}<br>"
+            f"📊 {progress * 100:.1f}%<br>"
+        )
+        if price > 0:
+            hover_pt += f"💰 ${price:,.2f}"
+
+        traces.append(go.Scatter(
+            x=[cur_x], y=[cur_y], mode='markers',
+            marker=dict(color='#FFF', size=6, line=dict(color=tf['color'], width=2)),
+            showlegend=False,
+            hovertemplate=hover_pt + "<extra></extra>"
+        ))
+
+        # برچسب
+        la = th_now + acc_angle + np.pi / 4
+        lx = cur_x + R * 0.2 * np.cos(la)
+        ly = cur_y + R * 0.2 * np.sin(la)
+        traces.append(go.Scatter(
+            x=[lx], y=[ly], mode='text',
+            text=[f"F{tf['fib_index']}<br>{progress * 100:.0f}%"],
+            textfont=dict(color=tf['color'], size=7, family='monospace'),
+            showlegend=False, hoverinfo='skip'
+        ))
+
+        cx, cy = cur_x, cur_y
+        acc_angle += th_now
+
+    return traces, progress_map
+
+
+# ==============================================================================
+# 5) Dash App
+# ==============================================================================
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
+app.title = "🌀 Fibonacci Orbits"
+
+app.layout = html.Div([
+    # هدر
+    html.Div([
+        html.Div([
+            html.H2("🌀 Fibonacci Orbits", style={
+                "fontFamily": "monospace", "textShadow": "0 0 10px #FFD700",
+                "fontSize": "18px", "margin": "0", "color": "#f5efe0",
+                "display": "inline-block"
+            }),
+            html.Span(id="price-display", style={
+                "fontFamily": "monospace", "fontSize": "16px", "color": "#FFD700",
+                "marginLeft": "20px"
+            }),
+        ]),
+        html.Div(id="status-bar", style={"fontFamily": "monospace", "fontSize": "10px", "color": "#888"}),
+
+        # تاگل فیبوناچی
+        html.Div([
+            dbc.Switch(
+                id='fib-toggle',
+                label='🔢 Fibonacci (1m → 1mo)',
+                value=False,
+                style={"fontFamily": "monospace", "fontSize": "12px", "color": "#FFD700"}
+            )
+        ], style={"position": "absolute", "top": "10px", "right": "20px"})
+
+    ], style={"textAlign": "center", "padding": "8px 0", "position": "relative",
+              "backgroundColor": "rgba(10,10,18,0.9)", "borderBottom": "1px solid #333"}),
+
+    # نمودار
+    dcc.Graph(
+        id="spiral-graph",
+        config={'displayModeBar': True, 'scrollZoom': True},
+        style={'height': 'calc(100vh - 80px)', 'backgroundColor': '#0a0a12'}
+    ),
+
+    dcc.Interval(id="interval", interval=2000, n_intervals=0),
+
+], style={"height": "100vh", "overflow": "hidden", "backgroundColor": "#0a0a12"})
+
+
+@app.callback(
+    [Output("spiral-graph", "figure"),
+     Output("price-display", "children"),
+     Output("status-bar", "children")],
+    [Input("interval", "n_intervals"),
+     Input("fib-toggle", "value")]
+)
+def update(n, fib_mode):
+    t_now = time.time()
+
+    # اسپیرال‌ها
+    if fib_mode:
+        spiral_traces, progress_map = compute_spirals_fibonacci(t_now)
+        axis_range = [-22, 22]
+    else:
+        spiral_traces, progress_map = compute_spirals_normal(t_now)
+        axis_range = [-15, 15]
+
+    # Figure
+    fig = go.Figure(data=spiral_traces)
+
+    shapes = []
+    for r in [5, 10, 15, 20]:
+        shapes.append(dict(type="circle", xref="x", yref="y", x0=-r, y0=-r, x1=r, y1=r,
+                           line=dict(color="#1a1a2e", width=1, dash="dot")))
+    for angle in np.linspace(0, 2 * np.pi, 8, endpoint=False):
+        shapes.append(dict(type="line", xref="x", yref="y", x0=0, y0=0,
+                           x1=22 * np.cos(angle), y1=22 * np.sin(angle),
+                           line=dict(color="#1a1a2e", width=0.5, dash="dot")))
+
+    fig.update_layout(
+        plot_bgcolor='#0a0a12', paper_bgcolor='#0a0a12',
+        font=dict(color='#f5efe0'), showlegend=True,
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01,
+                    bgcolor="rgba(10,10,18,0.7)", font=dict(size=7, family="monospace")),
+        shapes=shapes,
+        xaxis=dict(visible=False, scaleanchor="y", scaleratio=1, range=axis_range),
+        yaxis=dict(visible=False, scaleanchor="x", scaleratio=1, range=axis_range),
+        margin=dict(l=0, r=0, t=10, b=0), hovermode='closest',
+        hoverlabel=dict(bgcolor="#1a1a2e", bordercolor="#FFD700",
+                        font=dict(family="monospace", size=11)),
+        uirevision='constant'
+    )
+
+    # وضعیت
+    price = APP_STATE["price"]
+    connected = APP_STATE["connected"]
+    price_text = f"💰 ${price:,.2f}" if price > 0 else "💰 Loading..."
+
+    mode_text = "🔢 Fibonacci (1m→1mo)" if fib_mode else "🌀 Normal TFs"
+    status_text = f"{'🟢' if connected else '🔴'} {mode_text}"
+
+    return fig, price_text, status_text
+
+
+if __name__ == '__main__':
+    print("=" * 70)
+    print("🌀 Fibonacci Orbits Predictor")
+    print("=" * 70)
+    print("Fibonacci Timeframes (1m → Monthly):")
+    for tf in TIMEFRAMES_FIB:
+        print(f"  F({tf['fib_index']:>2}) = {tf['name']:>8} ({tf['minutes']:>6} min)")
+    print("=" * 70)
+    print("Server: http://localhost:8050")
+    print("=" * 70)
+    app.run(debug=True, port=8050, host='0.0.0.0')

@@ -1,0 +1,71 @@
+//@version=5
+indicator("Pro Setup Aggregator & Price Deviation", overlay=false)
+
+// --- 1. MACD (Trend & Momentum) ---
+// ÓíäÇá ÍÑÝåÇí: ÊÞÇØÚ ÎØ ã˜Ïí æ ÎØ ÓíäÇá
+[macdLine, signalLine, _] = ta.macd(close, 12, 26, 9)
+float macd_sig = macdLine > signalLine ? 1 : -1
+
+// --- 2. RSI (Momentum) ---
+// ÓíäÇá ÍÑÝåÇí: ÞÑÇÑíÑí ÈÇáÇí 50 äÔÇäÏåäÏå ÍÝÙ ÑæäÏ ÕÚæÏí ÇÓÊ
+float rsi = ta.rsi(close, 14)
+float rsi_sig = rsi > 50 ? 1 : -1
+
+// --- 3. Ichimoku (Trend & Support/Resistance) ---
+// ÓíäÇá ÍÑÝåÇí: æÖÚíÊ ÞíãÊ äÓÈÊ Èå ÇÈÑ ˜æãæ (Kumo Cloud)
+float tenkan = math.avg(ta.highest(9), ta.lowest(9))
+float kijun = math.avg(ta.highest(26), ta.lowest(26))
+float senkouA = math.avg(tenkan, kijun)
+float senkouB = math.avg(ta.highest(52), ta.lowest(52))
+// ÔíÝÊ ÏÇÏä ÇÈÑ Èå 26 ˜äÏá ÞÈá ÈÑÇí ãÞÇíÓå ÈÇ ÞíãÊ ÝÚáí
+float kumo_top = math.max(senkouA[26], senkouB[26])
+float kumo_bottom = math.min(senkouA[26], senkouB[26])
+float ichimoku_sig = close > kumo_top ? 1 : (close < kumo_bottom ? -1 : 0)
+
+// --- 4. Bollinger Bands (Volatility) ---
+// ÓíäÇá ÍÑÝåÇí: ÞíãÊ ÈÇáÇí ÎØ ãíÇäí (Basis) äÔÇäÏåäÏå ˜äÊÑá ÎÑíÏÇÑÇä ÇÓÊ
+[basis, upper, lower] = ta.bb(close, 20, 2)
+float bb_sig = close > basis ? 1 : -1
+
+// --- 5. CCI (Cyclical Momentum) ---
+// ÓíäÇá ÍÑÝåÇí: ÚÈæÑ ÇÒ ÎØ ÕÝÑ
+float cci = ta.cci(close, 20)
+float cci_sig = cci > 0 ? 1 : -1
+
+// ==========================================
+// --- ãÍÇÓÈÇÊ ÊÌãíÚ æ äÑãÇáÓÇÒí ---
+// ==========================================
+
+// ãÌãæÚ ÓíäÇáåÇ (ÈÇÒå: Èíä -5 ÊÇ +5)
+float total_sig = macd_sig + rsi_sig + ichimoku_sig + bb_sig + cci_sig
+
+// äÑãÇáÓÇÒí ÓíäÇá ÊÌãíÚí Èå ÈÇÒå 0 ÊÇ 100
+float scaled_sig = ((total_sig + 5) / 10) * 100
+
+// äÑãÇáÓÇÒí ÞíãÊ (Close) Èå ÈÇÒå 0 ÊÇ 100 ÏÑ í˜ ÏæÑå 100 ˜äÏáí
+int lookback = 100
+float min_c = ta.lowest(close, lookback)
+float max_c = ta.highest(close, lookback)
+float scaled_price = (max_c != min_c) ? ((close - min_c) / (max_c - min_c)) * 100 : 50
+
+// ==========================================
+// --- ÑÓã ÑÇÝí˜í æ ÊÍáíá ÇäÍÑÇÝ ---
+// ==========================================
+
+// ÑÓã ÎØæØ
+p_price = plot(scaled_price, title="Normalized Price", color=color.white, linewidth=2)
+p_sig = plot(scaled_sig, title="Aggregated Signal (Smart Money)", color=color.blue, linewidth=2)
+
+// ãÍÇÓÈå ãíÒÇä ÇäÍÑÇÝ ()
+float deviation = scaled_price - scaled_sig
+
+// ÑäÂãíÒí ÓÇíå Èíä ÞíãÊ æ ÓíäÇá (Trap Zones)
+// ÇÑ ÞíãÊ Îíáí ÈÇáÇÊÑ ÇÒ ÓíäÇá ÈÇÔÏ (ÞÑãÒ) -> ÊÑíÏÑåÇí ÎÑíÏÇÑ ÏÑ Êáå ÇÝÊÇÏåÇäÏ / ÇÍÊãÇá ÑíÒÔ
+// ÇÑ ÞíãÊ Îíáí ÇííäÊÑ ÇÒ ÓíäÇá ÈÇÔÏ (ÓÈÒ) -> ÊÑíÏÑåÇí ÝÑæÔäÏå ÏÑ Êáå ÇÝÊÇÏåÇäÏ / ÇÍÊãÇá ÕÚæÏ
+color fill_color = deviation > 25 ? color.new(color.red, 70) : deviation < -25 ? color.new(color.green, 70) : color.new(color.gray, 90)
+fill(p_price, p_sig, color=fill_color, title="Trader Trap / Deviation Zone")
+
+// ÎØæØ ÑÇåäãÇ
+hline(80, "Overbought Zone", color=color.new(color.red, 50), linestyle=hline.style_dotted)
+hline(50, "Neutral", color=color.new(color.gray, 50), linestyle=hline.style_dashed)
+hline(20, "Oversold Zone", color=color.new(color.green, 50), linestyle=hline.style_dotted)

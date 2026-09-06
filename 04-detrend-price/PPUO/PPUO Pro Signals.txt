@@ -1,0 +1,99 @@
+//@version=5
+indicator("Parallel Universe Price Forecast", shorttitle="PUPF", overlay=true, precision=2)
+
+// Inputs
+src          = input.source(close, "Source")
+baseLen      = input.int(144, "Main MA Length", minval=1)
+maType       = input.string("EMA", "MA Type", options=["SMA", "EMA", "WMA", "RMA"])
+angleLen     = input.int(8, "Angle Smoothing Length", minval=1)
+normLen      = input.int(144, "Normalization Length", minval=10)
+signalLen    = input.int(34, "Oscillator MA Length", minval=1)
+forecastBars = input.int(3, "Forecast Bars Ahead", minval=1, maxval=50)
+powerFast    = input.float(0.618, "Fast Universe Weight", step=0.001)
+powerSlow    = input.float(1.618, "Slow Universe Weight", step=0.001)
+bandATRLen   = input.int(14, "ATR Length", minval=1)
+bandATRMult  = input.float(1.0, "Forecast Band ATR Mult", step=0.1)
+
+// MA selector
+f_ma(_src, _len, _type) =>
+    _type == "SMA" ? ta.sma(_src, _len) :
+     _type == "EMA" ? ta.ema(_src, _len) :
+     _type == "WMA" ? ta.wma(_src, _len) :
+     ta.rma(_src, _len)
+
+// Derived lengths
+lenSlow = math.max(1, math.round(baseLen * 1.618))
+lenFast = math.max(1, math.round(baseLen * 0.618))
+
+// Detrending
+maSlow = f_ma(src, lenSlow, maType)
+maFast = f_ma(src, lenFast, maType)
+
+detSlow = src - maSlow
+detFast = src - maFast
+
+// Slopes of detrended universes
+slopeSlow = ta.ema(detSlow - detSlow[1], angleLen)
+slopeFast = ta.ema(detFast - detFast[1], angleLen)
+
+// Angle extraction
+angleSlow = math.atan(slopeSlow) * (180.0 / math.pi)
+angleFast = math.atan(slopeFast) * (180.0 / math.pi)
+
+// Universe aggregation
+rawUniverse    = angleSlow * powerSlow + angleFast * powerFast
+universeSmooth = ta.ema(rawUniverse, angleLen)
+
+// Original oscillator normalized to 0..100
+origLo   = ta.lowest(universeSmooth, normLen)
+origHi   = ta.highest(universeSmooth, normLen)
+origSpan = origHi - origLo
+ppuRaw   = origSpan != 0 ? 100.0 * (universeSmooth - origLo) / origSpan : 50.0
+
+// Symmetric oscillator around its own MA
+ppuMa  = f_ma(ppuRaw, signalLen, maType)
+dev    = ppuRaw - ppuMa
+absMax = ta.highest(math.abs(dev), normLen)
+ppuSym = absMax != 0 ? 50.0 + 50.0 * (dev / absMax) : 50.0
+ppuSymClamped = math.max(0.0, math.min(100.0, ppuSym))
+
+// Confidence from symmetry line: 0 near 50, 1 near extremes
+confidence = math.abs(ppuSymClamped - 50.0) / 50.0
+
+// Project each detrended universe forward
+projDetSlow = detSlow + slopeSlow * forecastBars
+projDetFast = detFast + slopeFast * forecastBars
+
+// Rebuild projected prices from each universe
+forecastSlow = maSlow + projDetSlow
+forecastFast = maFast + projDetFast
+
+// Weighted combined forecast
+weightSum   = powerSlow + powerFast
+rawForecast = weightSum != 0 ? (forecastSlow * powerSlow + forecastFast * powerFast) / weightSum : close
+
+// Blend with current price using confidence
+forecastPrice = close + (rawForecast - close) * confidence
+
+// Forecast bands
+atrValue      = ta.atr(bandATRLen)
+bandWidth     = atrValue * bandATRMult * (1.0 - confidence * 0.5)
+forecastUpper = forecastPrice + bandWidth
+forecastLower = forecastPrice - bandWidth
+
+// Plots
+plot(close, title="Close", color=color.new(color.gray, 70), linewidth=1)
+plot(forecastPrice, title="Forecast Price", color=color.aqua, linewidth=3, offset=forecastBars)
+plot(forecastUpper, title="Forecast Upper", color=color.new(color.green, 30), linewidth=1, offset=forecastBars)
+plot(forecastLower, title="Forecast Lower", color=color.new(color.red, 30), linewidth=1, offset=forecastBars)
+
+// Optional visual helpers
+plot(maSlow, title="Slow Universe MA", color=color.new(color.blue, 70), linewidth=1)
+plot(maFast, title="Fast Universe MA", color=color.new(color.orange, 70), linewidth=1)
+
+// Signal markers
+bullish = ppuSymClamped > 50 and forecastPrice > close
+bearish = ppuSymClamped < 50 and forecastPrice < close
+
+plotshape(bullish, title="Bullish Forecast", style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.tiny)
+plotshape(bearish, title="Bearish Forecast", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.tiny)

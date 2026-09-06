@@ -1,0 +1,47 @@
+//@version=5
+indicator("Average Green/Red Candle Heights", overlay=true)
+
+// œ—Ì«›  „ÕœÊœÂ «“ ò«—»—
+t1 = input.time(timestamp("2024-01-01"), title="Select Start of Range", confirm=true)
+t2 = input.time(timestamp("2024-01-02"), title="Select End of Range", confirm=true)
+
+start_time = math.min(t1, t2)
+end_time   = math.max(t1, t2)
+
+// „ €Ì—Â« »—«Ì „Õ«”»Â „Ì«‰êÌ‰
+var float sum_green_height = 0.0
+var int   count_green      = 0
+var float sum_red_height   = 0.0
+var int   count_red        = 0
+var label result_label     = na
+
+in_range = (time >= start_time) and (time <= end_time)
+
+if in_range
+    candle_height = high - low
+    
+    // Ã„⁄ù“‰Ì Ê ‘„«—‘ ò‰œ·ùÂ«Ì ”»“
+    if close > open
+        sum_green_height += candle_height
+        count_green      += 1
+        
+    // Ã„⁄ù“‰Ì Ê ‘„«—‘ ò‰œ·ùÂ«Ì ﬁ—„“
+    else if close < open
+        sum_red_height += candle_height
+        count_red      += 1
+        
+    // „Õ«”»Â „Ì«‰êÌ‰ùÂ« (Ã·ÊêÌ—Ì «“ Œÿ«Ì  ﬁ”Ì„ »— ’›—)
+    avg_green = count_green > 0 ? sum_green_height / count_green : 0.0
+    avg_red   = count_red > 0 ? sum_red_height / count_red : 0.0
+    
+    // „ ‰ ·Ì»·
+    label_text = "Avg Green: " + str.tostring(avg_green, "#.#####") + "\nAvg Red: " + str.tostring(avg_red, "#.#####")
+    
+    // ‰„«Ì‘ —ÊÌ ç«— 
+    if na(result_label)
+        result_label := label.new(x=bar_index, y=high, text=label_text, style=label.style_label_down, color=color.gray, textcolor=color.white)
+    else
+        label.set_xy(result_label, x=bar_index, y=high)
+        label.set_text(result_label, text=label_text)
+
+bgcolor(in_range ? color.new(color.blue, 90) : na)

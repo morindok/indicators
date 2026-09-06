@@ -1,0 +1,713 @@
+# -*- coding: utf-8 -*-
+"""
+🌀 Timeframe Spiral Resonance — اسپیرال تایم‌فریم‌ها
+{Morindok}
+✓ همه تایم‌فریم‌ها به صورت اسپیرال قطبی
+✓ اسپیرال ماهانه = مرجع (Reference Spiral)
+✓ تحلیل هم‌راستایی: اگر همه در زاویه یکسان باشند قیمت کجاست؟
+✓ اتصال زنجیروار اسپیرال‌ها + قیمت لایو روی هر اسپیرال
+✓ نمای قطبی 2D + نمای سه‌بعدی مارپیچ + جدول هم‌راستایی
+"""
+import calendar
+import time
+import webbrowser
+import threading
+from datetime import datetime, timezone
+
+import requests
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import dash
+from dash import dcc, html, Input, Output, State
+import dash_bootstrap_components as dbc
+
+# ==============================================================================
+# 0) تنظیمات و پالت رنگی
+# ==============================================================================
+BG     = "#030308"
+CARD   = "#0a0a18"
+CARD2  = "#101025"
+LINE   = "#252545"
+TXT    = "#e8e8ff"
+MUT    = "#7a7aa8"
+GOLD   = "#ffd700"
+UP     = "#00ffcc"
+DN     = "#ff2266"
+CYAN   = "#00ffff"
+FONT_FAMILY = "Vazirmatn, Tahoma, Arial, sans-serif"
+
+# ------------------------------------------------------------------------------
+# ★ پیکربندی تایم‌فریم‌ها — هر کدام یک اسپیرال
+# cycle = دوره طبیعی آن تایم‌فریم که یک دور کامل اسپیرال را می‌سازد
+# ------------------------------------------------------------------------------
+TF_CONFIG = [
+    {"interval": "M",   "label": "ماهانه",   "cycle": "year",  "color": "#ffd700", "bins": 24, "is_ref": True},
+    {"interval": "W",   "label": "هفتگی",    "cycle": "year",  "color": "#ff7eb9", "bins": 28},
+    {"interval": "D",   "label": "روزانه",   "cycle": "month", "color": "#ff9f43", "bins": 36},
+    {"interval": "240", "label": "۴ساعته",   "cycle": "day",   "color": "#feca57", "bins": 48},
+    {"interval": "60",  "label": "ساعته",    "cycle": "day",   "color": "#7bed9f", "bins": 48},
+    {"interval": "30",  "label": "۳۰دقیقه",  "cycle": "day",   "color": "#2ed573", "bins": 48},
+    {"interval": "15",  "label": "۱۵دقیقه",  "cycle": "day",   "color": "#18dcff", "bins": 48},
+    {"interval": "5",   "label": "۵دقیقه",   "cycle": "day",   "color": "#7d5fff", "bins": 48},
+    {"interval": "1",   "label": "۱دقیقه",   "cycle": "day",   "color": "#ff6b81", "bins": 48},
+]
+
+CYCLE_LABELS = {
+    "year": "چرخه سالانه",
+    "month": "چرخه ماهانه",
+    "week": "چرخه هفتگی",
+    "day": "چرخه روزانه",
+}
+
+DEFAULT_SYMBOL = "BTCUSDT"
+
+# ==============================================================================
+# 1) ارتباط پایدار با Bybit
+# ==============================================================================
+REST_CANDIDATES = [
+    "https://api.bybit.com",
+    "https://api.bytick.com",
+    "https://api.bybit.kz",
+]
+SESSION = requests.Session()
+SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
+    "Referer": "https://www.bybit.com/",
+})
+_ACTIVE_REST_BASE = {"url": None}
+
+
+def bybit_get(path, params, timeout=10):
+    cands = ([_ACTIVE_REST_BASE["url"]] if _ACTIVE_REST_BASE["url"] else []) + \
+            [b for b in REST_CANDIDATES if b != _ACTIVE_REST_BASE["url"]]
+    for base in cands:
+        try:
+            r = SESSION.get(f"{base}{path}", params=params, timeout=timeout)
+            if r.status_code in (403, 451):
+                continue
+            r.raise_for_status()
+            d = r.json()
+            if d.get("retCode") == 0:
+                _ACTIVE_REST_BASE["url"] = base
+                return d
+        except Exception:
+            continue
+    return None
+
+
+def get_klines(symbol, interval, limit=1000):
+    for category in ["linear", "spot"]:
+        d = bybit_get("/v5/market/kline", {
+            "category": category, "symbol": symbol,
+            "interval": interval, "limit": limit,
+        })
+        if d and "list" in (d.get("result") or {}):
+            lst = d["result"]["list"]
+            if lst:
+                df = pd.DataFrame(lst, columns=["ts", "open", "high", "low", "close", "volume", "turnover"])
+                df["ts"] = pd.to_datetime(df["ts"].astype(int), unit="ms")
+                for c in ["open", "high", "low", "close", "volume"]:
+                    df[c] = df[c].astype(float)
+                return df.sort_values("ts").reset_index(drop=True)
+    return pd.DataFrame()
+
+
+# ==============================================================================
+# 2) محاسبه فاز (زاویه) داخل هر چرخه
+# ==============================================================================
+def compute_phase(dt, cycle):
+    """فاز داخل چرخه را در بازه [0, 1) برمی‌گرداند."""
+    if hasattr(dt, "to_pydatetime"):
+        dt = dt.to_pydatetime()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    if cycle == "year":
+        doy = dt.timetuple().tm_yday
+        days_in_year = 366 if calendar.isleap(dt.year) else 365
+        return (doy - 1 + dt.hour / 24.0) / days_in_year
+    elif cycle == "month":
+        dim = calendar.monthrange(dt.year, dt.month)[1]
+        return (dt.day - 1 + dt.hour / 24.0 + dt.minute / 1440.0) / dim
+    elif cycle == "week":
+        wd = dt.weekday()  # دوشنبه = 0
+        return (wd + dt.hour / 24.0 + dt.minute / 1440.0) / 7.0
+    elif cycle == "day":
+        return (dt.hour + dt.minute / 60.0 + dt.second / 3600.0) / 24.0
+    return 0.0
+
+
+def interp_circular(theta_arr, r_arr, angle):
+    """درون‌یابی شعاع در زاویه دلخواه با پیچش دایره‌ای."""
+    th_ext = np.concatenate([theta_arr - 2 * np.pi, theta_arr, theta_arr + 2 * np.pi])
+    r_ext = np.concatenate([r_arr, r_arr, r_arr])
+    return float(np.interp(angle, th_ext, r_ext))
+
+
+# ==============================================================================
+# 3) ساخت الگوی اسپیرال برای یک تایم‌فریم
+# ==============================================================================
+def build_timeframe_spiral(df, cycle, current_price, n_bins=48):
+    """
+    برای هر کندل، فاز داخل چرخه و قیمت را محاسبه و بر اساس فاز bins‌بندی می‌کند.
+    خروجی: theta (رادیان)، r_price (قیمت واقعی)، r_norm (نرمال به قیمت فعلی)، counts
+    """
+    phases = df["ts"].apply(lambda x: compute_phase(x.to_pydatetime(), cycle)).values
+    prices = df["close"].values
+
+    bins = np.linspace(0, 1, n_bins + 1)
+    theta = (bins[:-1] + 0.5 / n_bins) * 2 * np.pi
+    r_price = np.full(n_bins, np.nan)
+    counts = np.zeros(n_bins)
+
+    for b in range(n_bins):
+        m = (phases >= bins[b]) & (phases < bins[b + 1])
+        if m.sum() > 0:
+            r_price[b] = prices[m].mean()
+            counts[b] = m.sum()
+
+    # پر کردن جاهای خالی با درون‌یابی دایره‌ای
+    valid = ~np.isnan(r_price)
+    if valid.sum() >= 2:
+        th_ext = np.concatenate([theta[valid] - 2 * np.pi, theta[valid], theta[valid] + 2 * np.pi])
+        r_ext = np.concatenate([r_price[valid], r_price[valid], r_price[valid]])
+        r_price = np.interp(theta, th_ext, r_ext)
+    elif valid.sum() == 1:
+        r_price[:] = r_price[valid][0]
+    else:
+        r_price[:] = current_price
+
+    r_norm = r_price / current_price if current_price > 0 else r_price
+    return theta, r_price, r_norm, counts
+
+
+# ==============================================================================
+# 4) محاسبه کل سیستم اسپیرال
+# ==============================================================================
+def compute_spiral_system(symbol):
+    now = datetime.now(timezone.utc)
+
+    # دریافت داده همه تایم‌فریم‌ها
+    data = {}
+    for tf in TF_CONFIG:
+        df = get_klines(symbol, tf["interval"], limit=1000)
+        if not df.empty:
+            data[tf["interval"]] = df
+        time.sleep(0.05)
+
+    if not data:
+        return None
+
+    # قیمت فعلی از سریع‌ترین تایم‌فریم موجود
+    current_price = None
+    for iv in ["1", "5", "15", "30", "60", "240", "D", "W", "M"]:
+        if iv in data and not data[iv].empty:
+            current_price = float(data[iv]["close"].iloc[-1])
+            break
+    if current_price is None:
+        return None
+
+    # زاویه مرجع از اسپیرال ماهانه
+    ref_cfg = next(tf for tf in TF_CONFIG if tf.get("is_ref"))
+    ref_cycle = ref_cfg["cycle"]
+    ref_phase = compute_phase(now, ref_cycle)
+    ref_theta = ref_phase * 2 * np.pi
+
+    spirals = []
+    for tf in TF_CONFIG:
+        iv = tf["interval"]
+        if iv not in data:
+            continue
+        df = data[iv]
+        theta, r_price, r_norm, counts = build_timeframe_spiral(
+            df, tf["cycle"], current_price, tf["bins"]
+        )
+        # موقعیت لایو
+        live_phase = compute_phase(now, tf["cycle"])
+        live_theta = live_phase * 2 * np.pi
+        live_price = float(df["close"].iloc[-1])
+        live_r_norm = live_price / current_price
+
+        # قیمت هم‌راستا در زاویه مرجع
+        aligned_r_norm = interp_circular(theta, r_norm, ref_theta)
+        aligned_price = aligned_r_norm * current_price
+        dev_pct = (aligned_price - live_price) / live_price * 100 if live_price > 0 else 0
+
+        spirals.append({
+            "interval": iv, "label": tf["label"], "color": tf["color"],
+            "is_ref": tf.get("is_ref", False), "cycle": tf["cycle"],
+            "theta": theta, "r_price": r_price, "r_norm": r_norm,
+            "live_phase": live_phase, "live_theta": live_theta,
+            "live_price": live_price, "live_r_norm": live_r_norm,
+            "aligned_r_norm": aligned_r_norm, "aligned_price": aligned_price,
+            "dev_pct": dev_pct, "n_samples": int(counts.sum()),
+        })
+
+    # معیار هم‌راستایی: پراکندگی فاز لایو نسبت به فاز مرجع
+    phase_devs = []
+    for s in spirals:
+        d = abs(s["live_phase"] - ref_phase)
+        d = min(d, 1.0 - d)
+        phase_devs.append(d)
+    avg_phase_dev = float(np.mean(phase_devs)) if phase_devs else 0.0
+    alignment_score = max(0.0, 1.0 - avg_phase_dev * 2.0) * 100.0
+
+    return {
+        "symbol": symbol,
+        "current_price": current_price,
+        "ref_theta": ref_theta,
+        "ref_phase": ref_phase,
+        "ref_label": ref_cfg["label"],
+        "ref_cycle_label": CYCLE_LABELS.get(ref_cycle, ref_cycle),
+        "spirals": spirals,
+        "alignment_score": alignment_score,
+        "avg_phase_dev": avg_phase_dev,
+        "now": now,
+    }
+
+
+# ==============================================================================
+# 5) ساخت نمودارها
+# ==============================================================================
+def empty_fig(msg):
+    fig = go.Figure()
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor=BG, plot_bgcolor=CARD,
+        xaxis=dict(visible=False), yaxis=dict(visible=False),
+        font=dict(family=FONT_FAMILY),
+    )
+    fig.add_annotation(x=0.5, y=0.5, xref="paper", yref="paper", text=msg,
+                       showarrow=False, font=dict(size=16, color=DN, family=FONT_FAMILY))
+    return fig
+
+
+def build_polar_figure(sys):
+    fig = go.Figure()
+    fine_theta = np.linspace(0, 2 * np.pi, 361)
+    ref_theta_deg = np.degrees(sys["ref_theta"])
+
+    # منحنی اسپیرال هر تایم‌فریم
+    for s in sys["spirals"]:
+        r_fine = np.array([interp_circular(s["theta"], s["r_norm"], a) for a in fine_theta])
+        fig.add_trace(go.Scatterpolar(
+            r=r_fine, theta=np.degrees(fine_theta),
+            mode="lines",
+            line=dict(color=s["color"], width=3 if s["is_ref"] else 1.4),
+            name=s["label"], opacity=0.95 if s["is_ref"] else 0.75,
+            hovertemplate=f"{s['label']}<br>قیمت نرمال: %{{r:.4f}}<extra></extra>",
+        ))
+
+    max_r = max(float(np.max(s["r_norm"])) for s in sys["spirals"]) * 1.08
+
+    # خط شعاعی زاویه مرجع
+    fig.add_trace(go.Scatterpolar(
+        r=[0, max_r], theta=[ref_theta_deg, ref_theta_deg],
+        mode="lines", line=dict(color=GOLD, width=2.5, dash="dash"),
+        name=f"زاویه مرجع ({sys['ref_label']})",
+    ))
+
+    # نقاط هم‌راستا + زنجیره شعاعی
+    aligned_r = [s["aligned_r_norm"] for s in sys["spirals"]]
+    fig.add_trace(go.Scatterpolar(
+        r=aligned_r, theta=[ref_theta_deg] * len(aligned_r),
+        mode="markers+lines",
+        marker=dict(size=10, color=[s["color"] for s in sys["spirals"]],
+                    line=dict(color="white", width=1.2), symbol="circle"),
+        line=dict(color=GOLD, width=2),
+        name="⛓️ زنجیره هم‌راستا",
+    ))
+
+    # نقاط لایو + شبکه اتصال
+    live_r = [s["live_r_norm"] for s in sys["spirals"]]
+    live_th = [np.degrees(s["live_theta"]) for s in sys["spirals"]]
+    fig.add_trace(go.Scatterpolar(
+        r=live_r + [live_r[0]], theta=live_th + [live_th[0]],
+        mode="markers+lines",
+        marker=dict(size=11, color=[s["color"] for s in sys["spirals"]] + [sys["spirals"][0]["color"]],
+                    symbol="diamond", line=dict(color="white", width=1.2)),
+        line=dict(color=CYAN, width=1.2, dash="dot"),
+        name="💠 قیمت لایو",
+    ))
+
+    fig.update_layout(
+        polar=dict(
+            bgcolor=CARD,
+            radialaxis=dict(gridcolor=LINE, color=MUT, range=[0, max_r], tickfont=dict(size=9)),
+            angularaxis=dict(gridcolor=LINE, color=MUT, direction="clockwise", thetaunit="degrees"),
+        ),
+        paper_bgcolor=BG,
+        font=dict(color=TXT, family=FONT_FAMILY),
+        title=dict(text=f"🌀 اسپیرال تایم‌فریم‌ها — {sys['symbol']} (مرجع: {sys['ref_label']})",
+                   x=0.5, font=dict(color=GOLD, size=15, family=FONT_FAMILY)),
+        showlegend=True,
+        legend=dict(orientation="h", y=-0.08, x=0.5, xanchor="center", font=dict(size=10)),
+        margin=dict(l=60, r=60, t=70, b=60),
+        height=640,
+    )
+    return fig
+
+
+def build_3d_figure(sys):
+    fig = go.Figure()
+    fine_theta = np.linspace(0, 2 * np.pi, 241)
+
+    for i, s in enumerate(sys["spirals"]):
+        r_fine = np.array([interp_circular(s["theta"], s["r_norm"], a) for a in fine_theta])
+        x = r_fine * np.cos(fine_theta)
+        y = r_fine * np.sin(fine_theta)
+        z = np.full_like(fine_theta, float(i))
+        fig.add_trace(go.Scatter3d(
+            x=x, y=y, z=z, mode="lines",
+            line=dict(color=s["color"], width=4 if s["is_ref"] else 2),
+            name=s["label"],
+        ))
+
+    # زنجیره عمودی هم‌راستا در زاویه مرجع
+    xr, yr, zr = [], [], []
+    for i, s in enumerate(sys["spirals"]):
+        r = s["aligned_r_norm"]
+        xr.append(r * np.cos(sys["ref_theta"]))
+        yr.append(r * np.sin(sys["ref_theta"]))
+        zr.append(float(i))
+    fig.add_trace(go.Scatter3d(
+        x=xr, y=yr, z=zr, mode="lines+markers",
+        marker=dict(size=7, color=[s["color"] for s in sys["spirals"]]),
+        line=dict(color=GOLD, width=6),
+        name="⛓️ زنجیره هم‌راستا",
+    ))
+
+    # نقاط لایو
+    xl = [s["live_r_norm"] * np.cos(s["live_theta"]) for s in sys["spirals"]]
+    yl = [s["live_r_norm"] * np.sin(s["live_theta"]) for s in sys["spirals"]]
+    zl = [float(i) for i in range(len(sys["spirals"]))]
+    fig.add_trace(go.Scatter3d(
+        x=xl, y=yl, z=zl, mode="markers",
+        marker=dict(size=8, color=[s["color"] for s in sys["spirals"]], symbol="diamond"),
+        name="💠 لایو",
+    ))
+
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(title="X", gridcolor=LINE, color=MUT, showticklabels=False),
+            yaxis=dict(title="Y", gridcolor=LINE, color=MUT, showticklabels=False),
+            zaxis=dict(title="تایم‌فریم", gridcolor=LINE, color=MUT,
+                       tickvals=list(range(len(sys["spirals"]))),
+                       ticktext=[s["label"] for s in sys["spirals"]], tickfont=dict(size=9)),
+            bgcolor=CARD,
+            camera=dict(eye=dict(x=1.6, y=1.6, z=1.2)),
+        ),
+        paper_bgcolor=BG,
+        font=dict(color=TXT, family=FONT_FAMILY),
+        title=dict(text=f"🌀 برج مارپیچی تایم‌فریم‌ها — {sys['symbol']}",
+                   x=0.5, font=dict(color=CYAN, size=15, family=FONT_FAMILY)),
+        showlegend=True,
+        legend=dict(font=dict(size=10)),
+        margin=dict(l=10, r=10, t=60, b=10),
+        height=640,
+    )
+    return fig
+
+
+# ==============================================================================
+# 6) پنل‌های تحلیلی
+# ==============================================================================
+def build_kpis(sys):
+    ref_theta_deg = np.degrees(sys["ref_theta"])
+    align = sys["alignment_score"]
+    align_color = UP if align >= 70 else (GOLD if align >= 40 else DN)
+    return dbc.Row([
+        dbc.Col(html.Div([
+            html.Div("💵 قیمت فعلی", className="stat-label"),
+            html.Div(f"${sys['current_price']:,.4g}", className="stat-value", style={"color": GOLD, "fontSize": "16px"}),
+        ], className="glass-card", style={"padding": "10px", "textAlign": "center", "border": f"1px solid {GOLD}"}), md=3),
+        dbc.Col(html.Div([
+            html.Div(f"📐 زاویه مرجع ({sys['ref_label']})", className="stat-label"),
+            html.Div(f"{ref_theta_deg:.1f}°", className="stat-value", style={"color": CYAN, "fontSize": "16px"}),
+        ], className="glass-card", style={"padding": "10px", "textAlign": "center"}), md=3),
+        dbc.Col(html.Div([
+            html.Div("🎯 امتیاز هم‌راستایی", className="stat-label"),
+            html.Div(f"{align:.0f}%", className="stat-value", style={"color": align_color, "fontSize": "16px"}),
+        ], className="glass-card", style={"padding": "10px", "textAlign": "center", "border": f"1px solid {align_color}"}), md=3),
+        dbc.Col(html.Div([
+            html.Div("🌀 تعداد اسپیرال‌ها", className="stat-label"),
+            html.Div(f"{len(sys['spirals'])}", className="stat-value", style={"color": TXT, "fontSize": "16px"}),
+        ], className="glass-card", style={"padding": "10px", "textAlign": "center"}), md=3),
+    ])
+
+
+def build_alignment_table(sys):
+    header = html.Tr([
+        html.Th("تایم‌فریم", style={"width": "14%"}),
+        html.Th("چرخه", style={"width": "14%"}),
+        html.Th("فاز لایو", style={"width": "12%"}),
+        html.Th("💵 قیمت لایو", style={"width": "15%"}),
+        html.Th("🎯 قیمت هم‌راستا", style={"width": "15%"}),
+        html.Th("📊 انحراف", style={"width": "12%"}),
+        html.Th("نمونه‌ها", style={"width": "10%"}),
+    ], style={"color": MUT, "fontSize": 10, "textAlign": "center"})
+
+    rows = []
+    for s in sys["spirals"]:
+        ref_badge = " ⭐" if s["is_ref"] else ""
+        dev = s["dev_pct"]
+        dev_color = UP if dev > 0 else (DN if dev < 0 else MUT)
+        phase_deg = s["live_phase"] * 360
+        row_bg = "rgba(255,215,0,0.06)" if s["is_ref"] else "transparent"
+        rows.append(html.Tr([
+            html.Td([
+                html.Span("●", style={"color": s["color"], "marginRight": "4px"}),
+                html.Span(f"{s['label']}{ref_badge}", style={"fontWeight": "bold", "fontSize": "11px"}),
+            ], style={"color": TXT}),
+            html.Td(CYCLE_LABELS.get(s["cycle"], s["cycle"]), style={"color": MUT, "fontSize": "10px"}),
+            html.Td(f"{phase_deg:.0f}°", style={"color": CYAN, "fontSize": "10px"}),
+            html.Td(f"${s['live_price']:,.4g}", style={"color": TXT, "fontSize": "10px"}),
+            html.Td(f"${s['aligned_price']:,.4g}", style={"color": GOLD, "fontWeight": "bold", "fontSize": "10px"}),
+            html.Td(f"{dev:+.2f}%", style={"color": dev_color, "fontWeight": "bold", "fontSize": "10px"}),
+            html.Td(f"{s['n_samples']}", style={"color": MUT, "fontSize": "10px"}),
+        ], style={"textAlign": "center", "background": row_bg}))
+
+    return dbc.Table([html.Thead(header), html.Tbody(rows)],
+                     bordered=False, hover=True, responsive=True, size="sm",
+                     style={"color": TXT})
+
+
+def build_interpretation(sys):
+    ref_theta_deg = np.degrees(sys["ref_theta"])
+    align = sys["alignment_score"]
+
+    # بیشترین و کمترین انحراف
+    sorted_dev = sorted(sys["spirals"], key=lambda x: x["dev_pct"], reverse=True)
+    top = sorted_dev[0]
+    bottom = sorted_dev[-1]
+
+    if align >= 70:
+        align_msg = "🟢 هم‌راستایی قوی: اکثر تایم‌فریم‌ها نزدیک زاویه مرجع هستند."
+        align_color = UP
+    elif align >= 40:
+        align_msg = "🟡 هم‌راستایی متوسط: برخی تایم‌فریم‌ها با مرجع هم‌فازند."
+        align_color = GOLD
+    else:
+        align_msg = "🔴 عدم هم‌راستایی: تایم‌فریم‌ها در فازهای پراکنده‌اند."
+        align_color = DN
+
+    return dbc.Card(dbc.CardBody([
+        html.Div("🧭 تفسیر هم‌راستایی", style={"color": GOLD, "fontWeight": "bold", "fontSize": "14px", "marginBottom": "10px"}),
+        html.Div([
+            html.Div(f"• اسپیرال مرجع ({sys['ref_label']}) در زاویه {ref_theta_deg:.1f}° قرار دارد.",
+                     style={"color": TXT, "fontSize": "12px", "marginBottom": "6px"}),
+            html.Div(align_msg, style={"color": align_color, "fontSize": "12px", "fontWeight": "bold", "marginBottom": "6px"}),
+            html.Div(f"• بیشترین پتانسیل: {top['label']} با انحراف {top['dev_pct']:+.2f}% نسبت به قیمت هم‌راستا.",
+                     style={"color": UP, "fontSize": "12px", "marginBottom": "6px"}),
+            html.Div(f"• کمترین پتانسیل: {bottom['label']} با انحراف {bottom['dev_pct']:+.2f}%.",
+                     style={"color": DN, "fontSize": "12px", "marginBottom": "6px"}),
+            html.Div("• «قیمت هم‌راستا» = جایی که قیمت روی آن اسپیرال قرار می‌گرفت اگر دقیقاً در زاویه مرجع (ماهانه) بود.",
+                     style={"color": MUT, "fontSize": "11px", "marginTop": "8px"}),
+        ]),
+    ]), className="glass-card", style={"margin": "10px 0"})
+
+
+# ==============================================================================
+# 7) اپ Dash
+# ==============================================================================
+FONT_URL = "https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;800&display=swap"
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.CYBORG, FONT_URL],
+                suppress_callback_exceptions=True)
+app.title = "Timeframe Spiral Resonance"
+server = app.server
+
+app.index_string = """<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+{%metas%}
+<title>{%title%}</title>
+{%favicon%}
+{%css%}
+<style>
+body { background: #030308; direction: rtl; text-align: right; }
+* { font-family: 'Vazirmatn', Tahoma, Arial, sans-serif !important; }
+.glass-card {
+    background: linear-gradient(145deg, rgba(16,16,37,0.9), rgba(5,5,15,0.95));
+    border: 1px solid #252545; border-radius: 16px;
+    box-shadow: 0 0 25px rgba(0,255,255,0.08);
+    backdrop-filter: blur(10px); direction: rtl; text-align: right;
+}
+.stat-value { font-weight: 800; font-size: 22px; text-shadow: 0 0 10px currentColor; }
+.stat-label { font-size: 11px; color: #7a7aa8; letter-spacing: 1px; }
+table { direction: rtl; text-align: right; }
+table th, table td { text-align: right !important; padding: 6px 8px !important; }
+input[type="text"] { direction: rtl; text-align: right; background: #101025 !important;
+    border: 1px solid #252545 !important; color: #e8e8ff !important; }
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #0a0a18; }
+::-webkit-scrollbar-thumb { background: #252545; border-radius: 4px; }
+</style>
+</head>
+<body dir="rtl">
+{%app_entry%}
+<footer>
+{%config%}
+{%scripts%}
+{%renderer%}
+</footer>
+</body>
+</html>"""
+
+app.layout = html.Div([
+    html.Div([
+        html.H3("🌀 Timeframe Spiral Resonance", style={
+            "color": CYAN, "fontWeight": 800, "margin": 0,
+            "textShadow": "0 0 20px rgba(0,255,255,0.5)",
+        }),
+        html.Div("اسپیرال تایم‌فریم‌ها با مرجع ماهانه — تحلیل هم‌راستایی زاویه‌ای — Morindok", style={
+            "color": MUT, "fontSize": 13,
+        }),
+    ], style={"maxWidth": 1200, "margin": "15px auto 10px auto", "padding": "0 15px"}),
+
+    dbc.Card(dbc.CardBody(dbc.Row([
+        dbc.Col([
+            html.Label("🪙 نماد", style={"fontSize": 11, "color": MUT}),
+            dcc.Input(id="symbol-input", type="text", value=DEFAULT_SYMBOL,
+                      style={"width": "100%", "padding": 6, "borderRadius": 8}),
+        ], md=3),
+        dbc.Col(
+            dbc.Button("🔄 محاسبه اسپیرال‌ها", id="refresh-btn", color="primary",
+                       className="mt-3", style={"width": "100%", "fontWeight": "bold"}),
+            md=3,
+        ),
+        dbc.Col(html.Div(id="status-text", style={"color": MUT, "fontSize": 12, "marginTop": "28px"}), md=6),
+    ])), className="glass-card", style={"maxWidth": 1200, "margin": "10px auto"}),
+
+    html.Div(id="kpi-row", style={"maxWidth": 1200, "margin": "10px auto"}),
+
+    dbc.Tabs([
+        dbc.Tab(label="🌀 نمای قطبی", tab_id="tab-polar", children=[
+            dbc.Card(dbc.CardBody([
+                dcc.Graph(id="polar-graph", config={"displaylogo": False}),
+            ]), className="glass-card", style={"margin": "15px 0"}),
+        ]),
+        dbc.Tab(label="🏗️ نمای سه‌بعدی", tab_id="tab-3d", children=[
+            dbc.Card(dbc.CardBody([
+                dcc.Graph(id="spiral-3d-graph", config={"displaylogo": False}),
+            ]), className="glass-card", style={"margin": "15px 0"}),
+        ]),
+        dbc.Tab(label="📊 تحلیل هم‌راستایی", tab_id="tab-align", children=[
+            html.Div(id="interpretation-panel", style={"maxWidth": 1200, "margin": "15px auto"}),
+            dbc.Card(dbc.CardBody([
+                html.H5("🔗 جدول هم‌راستایی اسپیرال‌ها", style={
+                    "color": GOLD, "fontSize": "14px", "marginBottom": "10px", "textAlign": "center",
+                }),
+                html.Div(id="alignment-table"),
+            ]), className="glass-card", style={"margin": "10px 0"}),
+        ]),
+    ], id="main-tabs", active_tab="tab-polar", style={"maxWidth": 1200, "margin": "0 auto"}),
+
+    html.Div(
+        "💡 هر تایم‌فریم یک اسپیرال است؛ زاویه = فاز داخل چرخه طبیعی آن، شعاع = قیمت. "
+        "اسپیرال ماهانه مرجع است و «قیمت هم‌راستا» نشان می‌دهد اگر همه اسپیرال‌ها در زاویه مرجع بودند قیمت کجا بود.",
+        style={"fontSize": 11, "color": MUT, "marginTop": 20, "direction": "rtl", "lineHeight": "1.8",
+               "textAlign": "center", "maxWidth": 1200, "margin": "20px auto", "padding": "0 15px 20px 15px"},
+    ),
+
+    dcc.Store(id="spiral-store"),
+    dcc.Interval(id="tick", interval=60_000, n_intervals=0),
+], style={"background": BG, "minHeight": "100vh", "padding": "10px", "fontFamily": FONT_FAMILY})
+
+
+# ==============================================================================
+# 8) Callbacks
+# ==============================================================================
+@app.callback(
+    Output("spiral-store", "data"),
+    Output("status-text", "children"),
+    Input("refresh-btn", "n_clicks"),
+    Input("tick", "n_intervals"),
+    State("symbol-input", "value"),
+)
+def compute_spirals(_click, _tick, symbol):
+    symbol = (symbol or DEFAULT_SYMBOL).upper()
+    sys_data = compute_spiral_system(symbol)
+    if sys_data is None:
+        return None, "🔴 خطا در دریافت داده از Bybit"
+
+    # سریال‌سازی برای ذخیره در Store
+    store = {
+        "symbol": sys_data["symbol"],
+        "current_price": sys_data["current_price"],
+        "ref_theta": sys_data["ref_theta"],
+        "ref_phase": sys_data["ref_phase"],
+        "ref_label": sys_data["ref_label"],
+        "ref_cycle_label": sys_data["ref_cycle_label"],
+        "alignment_score": sys_data["alignment_score"],
+        "avg_phase_dev": sys_data["avg_phase_dev"],
+        "now": sys_data["now"].isoformat(),
+        "spirals": [
+            {
+                "interval": s["interval"], "label": s["label"], "color": s["color"],
+                "is_ref": s["is_ref"], "cycle": s["cycle"],
+                "theta": s["theta"].tolist(), "r_norm": s["r_norm"].tolist(),
+                "live_phase": s["live_phase"], "live_theta": s["live_theta"],
+                "live_price": s["live_price"], "live_r_norm": s["live_r_norm"],
+                "aligned_r_norm": s["aligned_r_norm"], "aligned_price": s["aligned_price"],
+                "dev_pct": s["dev_pct"], "n_samples": s["n_samples"],
+            } for s in sys_data["spirals"]
+        ],
+    }
+    status = f"🟢 محاسبه شد | {len(sys_data['spirals'])} اسپیرال | {sys_data['now'].strftime('%H:%M:%S')}"
+    return store, status
+
+
+def _rebuild_sys(store):
+    if not store:
+        return None
+    spirals = []
+    for s in store["spirals"]:
+        s2 = dict(s)
+        s2["theta"] = np.array(s["theta"])
+        s2["r_norm"] = np.array(s["r_norm"])
+        spirals.append(s2)
+    sys_data = dict(store)
+    sys_data["spirals"] = spirals
+    sys_data["now"] = datetime.fromisoformat(store["now"])
+    return sys_data
+
+
+@app.callback(
+    Output("kpi-row", "children"),
+    Output("polar-graph", "figure"),
+    Output("spiral-3d-graph", "figure"),
+    Output("alignment-table", "children"),
+    Output("interpretation-panel", "children"),
+    Input("spiral-store", "data"),
+)
+def render_outputs(store):
+    sys_data = _rebuild_sys(store)
+    if sys_data is None:
+        return html.Div(), empty_fig("داده‌ای نیست."), empty_fig("داده‌ای نیست."), html.Div(), html.Div()
+
+    kpis = build_kpis(sys_data)
+    polar = build_polar_figure(sys_data)
+    fig3d = build_3d_figure(sys_data)
+    table = build_alignment_table(sys_data)
+    interp = build_interpretation(sys_data)
+    return kpis, polar, fig3d, table, interp
+
+
+# ==============================================================================
+# 9) اجرا
+# ==============================================================================
+def open_browser():
+    webbrowser.open("http://127.0.0.1:8075")
+
+
+if __name__ == "__main__":
+    threading.Timer(2, open_browser).start()
+    print("=" * 60)
+    print("🌀 Timeframe Spiral Resonance")
+    print("   ⭐ اسپیرال مرجع: ماهانه")
+    print("   ⛓️ اتصال زنجیروار اسپیرال‌ها")
+    print("   💠 قیمت لایو روی هر اسپیرال")
+    print("   🌐 آدرس: http://127.0.0.1:8075")
+    print("=" * 60)
+    app.run(debug=True, host="0.0.0.0", port=8075, use_reloader=False)

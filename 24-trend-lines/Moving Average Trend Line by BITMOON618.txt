@@ -1,0 +1,52 @@
+//@version=6
+indicator("Moving Average Trend Line{Morindok} by BITMOON618", overlay=true)
+
+// --- سطح و زمانی که کاربر با کلیک روی چارت انتخاب می‌کند ---
+t_select = input.time(defval=timestamp("2024-01-01T00:00:00"), title="انتخاب زمان روی چارت", confirm=true, inline="p")
+level_input = input.price(defval=0, title="انتخاب سطح قیمتی روی چارت", confirm=true, inline="p")
+
+// --- تنظیمات مووینگ اوریج ---
+ma_len = input.int(50, title="دوره مووینگ اوریج", minval=1, group="تنظیمات سطح داینامیک")
+ma_type = input.string("SMA", title="نوع مووینگ اوریج", options=["SMA", "EMA", "WMA"], group="تنظیمات سطح داینامیک")
+
+// --- توابع پایه ---
+get_ma(type, len) =>
+    float s = ta.sma(close, len)
+    float e = ta.ema(close, len)
+    float w = ta.wma(close, len)
+    type == "EMA" ? e : type == "WMA" ? w : s
+
+// محاسبه سطح داینامیک (سطح انتخابی کاربر که همگام با مووینگ اوریج حرکت می‌کند)
+get_anchored_level() =>
+    float m = get_ma(ma_type, ma_len)
+    var float anchor_ma = na
+    if time <= t_select
+        anchor_ma := m
+    // سطح برابر است با: مووینگ اوریج فعلی + (فاصله‌ی قیمت انتخابی تا مووینگ در زمان کلیک)
+    float dynamic_level = m + (level_input - anchor_ma)
+    dynamic_level
+
+curr_level = get_anchored_level()
+curr_mirr = 2.0 * curr_level - close
+
+// --- نمایش روی چارت ---
+plot(curr_level, title="سطح انتخابی متحرک", color=color.rgb(245, 158, 11), linewidth=2, style=plot.style_line)
+plot(curr_mirr, title="قیمت متقارن", color=color.rgb(192, 132, 252), linewidth=1, style=plot.style_circles)
+
+// --- اسنپ‌شات برای زمان انتخابی ---
+var float sel_curr_level = na
+var float sel_curr_price = na
+var int   sel_bar_index = na
+
+if time <= t_select
+    sel_curr_level := curr_level
+    sel_curr_price := close
+    sel_bar_index := bar_index
+
+var line  sel_line  = na
+var label sel_label = na
+if barstate.islast and not na(sel_bar_index)
+    line.delete(sel_line)
+    label.delete(sel_label)
+    sel_line := line.new(x1=sel_bar_index, y1=sel_curr_level, x2=sel_bar_index, y2=sel_curr_price, xloc=xloc.bar_index, extend=extend.none, color=color.rgb(245, 158, 11), width=2, style=line.style_dashed)
+    sel_label := label.new(x=sel_bar_index, y=sel_curr_price, text="زمان انتخابی", xloc=xloc.bar_index, style=label.style_label_down, color=color.rgb(245, 158, 11), textcolor=color.black, size=size.normal)

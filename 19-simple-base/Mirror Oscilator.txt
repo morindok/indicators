@@ -1,0 +1,36 @@
+//@version=6
+indicator("Mirror Oscillator{Morindok}", overlay=false)
+
+// æÑæÏíåÇí ÏæÑå ÒãÇäí
+n = input.int(100, title="Mirror Periods", minval=2)
+oscLength = input.int(14, title="Oscillator Length", minval=1)
+
+// ãÍÇÓÈå ÎæÏ˜ÇÑ ÓØæÍ ãÈäÇ ÏÑ ÓÑÇÓÑ ÇÑÊ ÈÏæä äíÇÒ Èå ÇäÊÎÇÈ ˜ÇÑÈÑ
+centralLevel = ta.sma(close, n)
+mLevel1 = ta.highest(high, n)
+mLevel2 = ta.lowest(low, n)
+
+// ãÍÇÓÈÇÊ ÈÇÒÊÇÈ ãÊŞÇÑä İÑãæá ÔãÇ (Èå ÕæÑÊ ˜ÇãáÇğ í˜ÎØí)
+cHigh = float(2.0 * centralLevel - low)
+cLow = float(2.0 * centralLevel - high)
+mHigh1 = float(2.0 * mLevel1 - cLow)
+mLow1 = float(2.0 * mLevel1 - cHigh)
+mHigh2 = float(2.0 * mLevel2 - cLow)
+mLow2 = float(2.0 * mLevel2 - cHigh)
+
+// ãíÇäíäíÑí ÇÒ ÓØæÍ ÈÇÒÊÇÈíÇİÊå æíÇ
+avgMirrorHigh = (mHigh1 + mHigh2) / 2.0
+avgMirrorLow = (mLow1 + mLow2) / 2.0
+
+// íÏÇ ˜ÑÏä ÓŞİ æ ˜İ ÏÑ ÏæÑå ÇÓíáÇÊæÑ
+hh = ta.highest(avgMirrorHigh, oscLength)
+ll = ta.lowest(avgMirrorLow, oscLength)
+
+// İÑãæá äæÓÇäÓÇÒ Èíä 0 ÊÇ 100 ÈÇ ãÏíÑíÊ ÎØÇí ÊŞÓíã ÈÑ ÕİÑ
+oscillator = (hh - ll) == 0 ? 50 : (100 * (close - ll) / (hh - ll))
+
+// ÑÓã ÎØæØ ÇÓíáÇÊæÑ æ áæáåÇí ËÇÈÊ ÏÑ ÓÑÇÓÑ ÇÑÊ
+plot(oscillator, title="Auto Mirror Osc", color=color.new(#00e6ff, 0), linewidth=2)
+hline(80, title="Overbought", color=color.new(color.red, 0), linestyle=hline.style_dashed)
+hline(20, title="Oversold", color=color.new(color.green, 0), linestyle=hline.style_dashed)
+hline(50, title="Middle", color=color.new(color.gray, 0), linestyle=hline.style_dotted)

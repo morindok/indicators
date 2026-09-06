@@ -1,0 +1,59 @@
+//@version=5
+indicator("Fibonacci Time Deflection", overlay=true, max_lines_count=500)
+
+time1 = input.time(timestamp("2024-01-01 00:00"), "Start Time", confirm=true)
+time2 = input.time(timestamp("2024-01-31 00:00"), "End Time", confirm=true)
+alternateSlope = input.bool(false, "Alternate Slope Direction")
+
+var float[] fibLevels = array.from(0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.272, 1.618, 2.0, 2.618, 3.618, 4.236)
+var int[] fibTimes = array.new_int()
+var bool timesCalculated = false
+
+if not timesCalculated and time >= time1
+    for i = 0 to array.size(fibLevels) - 1
+        fibTime = time1 + int((time2 - time1) * array.get(fibLevels, i))
+        array.push(fibTimes, fibTime)
+    timesCalculated := true
+
+var float cumulativeSlope = 0.0
+var int lastFibIndex = -1
+var int lastFibBar = na
+
+currentFibIndex = -1
+if array.size(fibTimes) > 0
+    for i = 0 to array.size(fibTimes) - 1
+        fibTime = array.get(fibTimes, i)
+        if time >= fibTime
+            currentFibIndex := i
+
+if currentFibIndex != lastFibIndex and currentFibIndex >= 0
+    if lastFibIndex >= 0 and not na(lastFibBar)
+        barsSinceLastFib = bar_index - lastFibBar
+        if barsSinceLastFib > 0
+            priceChange = close - close[barsSinceLastFib]
+            slope = priceChange / barsSinceLastFib
+            cumulativeSlope += slope
+    lastFibIndex := currentFibIndex
+    lastFibBar := bar_index
+
+deflectedOpen = open
+deflectedHigh = high
+deflectedLow = low
+deflectedClose = close
+
+if currentFibIndex >= 0 and not na(lastFibBar)
+    barsFromFib = bar_index - lastFibBar
+    slopeMultiplier = alternateSlope and currentFibIndex % 2 == 1 ? -1.0 : 1.0
+    deflection = cumulativeSlope * slopeMultiplier * barsFromFib
+    deflectedOpen := open + deflection
+    deflectedHigh := high + deflection
+    deflectedLow := low + deflection
+    deflectedClose := close + deflection
+
+plotcandle(deflectedOpen, deflectedHigh, deflectedLow, deflectedClose, color=deflectedClose >= deflectedOpen ? color.new(color.green, 30) : color.new(color.red, 30), wickcolor=color.gray, bordercolor=color.gray, title="Deflected Candles")
+
+if timesCalculated and time >= time1
+    for i = 0 to array.size(fibTimes) - 1
+        fibTime = array.get(fibTimes, i)
+        if time == fibTime
+            line.new(bar_index, low - (high - low), bar_index, high + (high - low), xloc=xloc.bar_index, color=color.new(color.blue, 50), width=1, style=line.style_dashed)

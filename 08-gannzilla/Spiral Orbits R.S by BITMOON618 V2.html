@@ -1,0 +1,348 @@
+﻿<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ابزار تحلیل اسپیرال گن - نسخه پیشرفته (دقیق)</title>
+    <!-- TailwindCSS for Styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Plotly.js for Charting -->
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <style>
+        body {
+            background-color: #0f172a; /* Slate 900 */
+            color: #f8fafc; /* Slate 50 */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7); /* Slate 800 with opacity */
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+        }
+        /* Scrollbar styling */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 4px; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Promotional Banner -->
+    <div class="bg-gradient-to-r from-blue-700 via-blue-500 to-blue-700 text-white text-center py-3 shadow-lg font-bold tracking-wider z-50">
+        💎 کانال تخصصی تحلیل و ابزارهای مالی: <a href="https://t.me/BITMOON618" target="_blank" class="underline hover:text-yellow-300">@BITMOON618</a> 💎
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-grow p-4 md:p-6 grid grid-cols-1 lg:grid-cols-4 gap-6">
+        
+        <!-- Left Sidebar: Controls -->
+        <div class="glass-panel p-5 flex flex-col gap-4 lg:col-span-1 shadow-2xl">
+            <h2 class="text-xl font-bold text-blue-400 mb-2 border-b border-gray-600 pb-2">تنظیمات اسپیرال گن</h2>
+
+            <!-- Pivots Input -->
+            <div>
+                <label class="block text-sm font-semibold mb-1 text-gray-300">پیووت‌های قیمت (هر خط یک عدد):</label>
+                <textarea id="pivotsInput" rows="4" class="w-full bg-slate-700 text-white rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500" dir="ltr">
+63216.95
+59129.75
+61261.65</textarea>
+            </div>
+
+            <!-- Time Interval (Minutes) -->
+            <div>
+                <label class="block text-sm font-semibold mb-1 text-gray-300">فاصله زمانی پیووت‌ها (به دقیقه):</label>
+                <input type="number" id="timeInterval" value="60" class="w-full bg-slate-700 text-white rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500" dir="ltr">
+                <p class="text-xs text-gray-400 mt-1">تغییر این عدد برای ایجاد رزونانس با تارگت‌ها است (مثلاً ۱۵، ۶۰ یا ۲۴۰ دقیقه).</p>
+            </div>
+
+            <!-- Spiral Type -->
+            <div>
+                <label class="block text-sm font-semibold mb-1 text-gray-300">نوع اسپیرال:</label>
+                <select id="spiralType" class="w-full bg-slate-700 text-white rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="archimedean">آرشمیدس (خطی)</option>
+                    <option value="golden">لگاریتمی (نسبت طلایی)</option>
+                    <option value="fermat">فرما (رادیکالی)</option>
+                    <option value="hyperbolic">هذلولی (معکوس)</option>
+                </select>
+            </div>
+
+            <!-- Step Method -->
+            <div>
+                <label class="block text-sm font-semibold mb-1 text-gray-300">روش محاسبه گام (شعاع):</label>
+                <select id="stepMethod" class="w-full bg-slate-700 text-white rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="toggleManualStep()">
+                    <option value="distance">فاصله واقعی پیووت‌ها</option>
+                    <option value="autofibo">اتوماتیک فیبوناچی (0.618)</option>
+                    <option value="manual">دستی</option>
+                </select>
+            </div>
+
+            <!-- Manual Step Input (Hidden by default) -->
+            <div id="manualStepContainer" class="hidden">
+                <label class="block text-sm font-semibold mb-1 text-gray-300">ضریب گام دستی:</label>
+                <input type="number" id="manualStep" value="1000" class="w-full bg-slate-700 text-white rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500" dir="ltr">
+            </div>
+
+            <button onclick="calculateAndPlot()" class="w-full bg-blue-600 hover:bg-blue-500 transition duration-300 text-white font-bold py-2 rounded shadow-lg mt-2">
+                محاسبه و رسم نمودار
+            </button>
+
+            <!-- Results Panel -->
+            <div class="mt-4 flex-grow flex flex-col">
+                <h3 class="text-md font-bold text-yellow-400 mb-2 border-b border-gray-600 pb-1">گره‌های قدرتمند رزونانس</h3>
+                <div id="intersectionsList" class="bg-slate-800 rounded p-3 overflow-y-auto max-h-48 text-sm font-mono flex-grow border border-slate-600" dir="ltr">
+                    <span class="text-gray-400">منتظر محاسبه...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Content: Chart -->
+        <div class="glass-panel lg:col-span-3 p-4 flex flex-col shadow-2xl relative min-h-[500px]">
+            <div id="chartDiv" class="w-full h-full flex-grow"></div>
+        </div>
+
+    </div>
+
+    <script>
+        // Toggle manual step input visibility
+        function toggleManualStep() {
+            const method = document.getElementById('stepMethod').value;
+            const container = document.getElementById('manualStepContainer');
+            if (method === 'manual') {
+                container.classList.remove('hidden');
+            } else {
+                container.classList.add('hidden');
+            }
+        }
+
+        // Line Segment Intersection Algorithm
+        function getIntersection(p1, p2, p3, p4) {
+            const s1_x = p2.x - p1.x;
+            const s1_y = p2.y - p1.y;
+            const s2_x = p4.x - p3.x;
+            const s2_y = p4.y - p3.y;
+
+            const denom = (-s2_x * s1_y + s1_x * s2_y);
+            if (denom === 0) return null; // Parallel
+
+            const s = (-s1_y * (p1.x - p3.x) + s1_x * (p1.y - p3.y)) / denom;
+            const t = ( s2_x * (p1.y - p3.y) - s2_y * (p1.x - p3.x)) / denom;
+
+            if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
+                return {
+                    x: p1.x + (t * s1_x),
+                    y: p1.y + (t * s1_y)
+                };
+            }
+            return null;
+        }
+
+        // Main function
+        function calculateAndPlot() {
+            // 1. Get Inputs
+            const pivotsText = document.getElementById('pivotsInput').value;
+            const pivots = pivotsText.split('\n').map(p => parseFloat(p.trim())).filter(p => !isNaN(p));
+            
+            if (pivots.length < 2) {
+                alert("لطفاً حداقل دو پیووت معتبر وارد کنید.");
+                return;
+            }
+
+            const timeInterval = parseFloat(document.getElementById('timeInterval').value) || 60;
+            const spiralType = document.getElementById('spiralType').value;
+            const stepMethod = document.getElementById('stepMethod').value;
+            const manualStep = parseFloat(document.getElementById('manualStep').value) || 1000;
+
+            const traces = [];
+            const spiralData = []; 
+
+            // Plot Pivots
+            const pivotX = [];
+            const pivotY = [];
+            for (let i = 0; i < pivots.length; i++) {
+                pivotX.push(i * timeInterval);
+                pivotY.push(pivots[i]);
+            }
+            traces.push({
+                x: pivotX, y: pivotY,
+                mode: 'lines+markers',
+                name: 'قیمت/پیووت‌ها',
+                line: { color: '#ffffff', width: 2, dash: 'dot' },
+                marker: { color: '#fbbf24', size: 10, symbol: 'diamond' }
+            });
+
+            // 2. Generate Spirals
+            const thetaMax = 8 * Math.PI; // 4 rotations
+            const steps = 1080; 
+
+            for (let i = 0; i < pivots.length; i++) {
+                const centerX = i * timeInterval;
+                const centerY = pivots[i];
+                
+                let b = manualStep;
+                if (stepMethod !== 'manual' && i < pivots.length - 1) {
+                    const dx = timeInterval;
+                    const dy = pivots[i+1] - pivots[i];
+                    const distance = Math.sqrt(dx*dx + dy*dy);
+                    b = (stepMethod === 'autofibo') ? distance * 0.618 : distance;
+                } else if (stepMethod !== 'manual' && i === pivots.length - 1 && i > 0) {
+                    const dx = timeInterval;
+                    const dy = pivots[i] - pivots[i-1];
+                    const distance = Math.sqrt(dx*dx + dy*dy);
+                    b = (stepMethod === 'autofibo') ? distance * 0.618 : distance;
+                }
+
+                if (spiralType === 'golden') b = b * 0.05; 
+                if (spiralType === 'hyperbolic') b = b * 50;
+
+                const currentSpiralPoints = [];
+                const sx = [], sy = [];
+
+                for (let j = 0; j <= steps; j++) {
+                    const theta = (j / steps) * thetaMax;
+                    let r = 0;
+
+                    switch(spiralType) {
+                        case 'archimedean':
+                            r = (b / (2 * Math.PI)) * theta; 
+                            break;
+                        case 'golden':
+                            r = b * Math.exp(0.3063489 * theta); 
+                            break;
+                        case 'fermat':
+                            r = b * Math.sqrt(theta);
+                            break;
+                        case 'hyperbolic':
+                            r = theta === 0 ? 0 : b / theta;
+                            break;
+                    }
+
+                    const px = centerX + r * Math.cos(theta);
+                    const py = centerY + r * Math.sin(theta);
+                    
+                    sx.push(px);
+                    sy.push(py);
+                    currentSpiralPoints.push({x: px, y: py});
+                }
+
+                spiralData.push(currentSpiralPoints);
+
+                traces.push({
+                    x: sx, y: sy,
+                    mode: 'lines',
+                    name: `اسپیرال ${i+1}`,
+                    line: { width: 1.5 },
+                    opacity: 0.8
+                });
+            }
+
+            // 3. Find Intersections
+            const intersections = [];
+            for (let i = 0; i < spiralData.length; i++) {
+                for (let j = i + 1; j < spiralData.length; j++) {
+                    const spiralA = spiralData[i];
+                    const spiralB = spiralData[j];
+
+                    for (let a = 0; a < spiralA.length - 1; a++) {
+                        for (let b = 0; b < spiralB.length - 1; b++) {
+                            const intersect = getIntersection(spiralA[a], spiralA[a+1], spiralB[b], spiralB[b+1]);
+                            if (intersect) {
+                                intersections.push(intersect);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Clustering
+            const priceTargets = intersections.map(pt => pt.y).sort((a, b) => b - a);
+            const maxPrice = Math.max(...pivots);
+            const dynamicThreshold = maxPrice * 0.0015; 
+
+            const clusters = [];
+            let currentCluster = [];
+
+            for (let price of priceTargets) {
+                if (currentCluster.length === 0) {
+                    currentCluster.push(price);
+                } else {
+                    const clusterAvg = currentCluster.reduce((a, b) => a + b, 0) / currentCluster.length;
+                    if (Math.abs(clusterAvg - price) <= dynamicThreshold) {
+                        currentCluster.push(price);
+                    } else {
+                        clusters.push([...currentCluster]);
+                        currentCluster = [price];
+                    }
+                }
+            }
+            if (currentCluster.length > 0) clusters.push([...currentCluster]);
+
+            const minIntersectionsRequired = 2; 
+            const validTargets = clusters
+                .filter(cluster => cluster.length >= minIntersectionsRequired)
+                .map(cluster => {
+                    const targetPrice = cluster.reduce((a, b) => a + b, 0) / cluster.length;
+                    return { price: targetPrice, weight: cluster.length };
+                });
+
+            // Update Panel
+            const listContainer = document.getElementById('intersectionsList');
+            if (validTargets.length > 0) {
+                listContainer.innerHTML = validTargets.map(t => 
+                    `<div class="py-2 border-b border-slate-700 flex justify-between items-center">
+                        <span class="text-green-400 font-bold text-lg">🎯 ${t.price.toFixed(2)}</span>
+                        <span class="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded">تراکم: ${t.weight}</span>
+                    </div>`
+                ).join('');
+            } else {
+                listContainer.innerHTML = '<span class="text-red-400">هیچ گره قوی (حداقل ۲ تقاطع نزدیک) یافت نشد.</span>';
+            }
+
+            // 4. Draw Targets
+            if (validTargets.length > 0) {
+                const validPoints = intersections.filter(p => 
+                    validTargets.some(vt => Math.abs(vt.price - p.y) <= dynamicThreshold)
+                );
+
+                traces.push({
+                    x: validPoints.map(p => p.x),
+                    y: validPoints.map(p => p.y),
+                    mode: 'markers',
+                    name: 'گره‌های قوی',
+                    marker: { color: '#ef4444', size: 10, symbol: 'cross', line: { color: 'white', width: 1.5 } }
+                });
+
+                const maxX = (pivots.length * timeInterval) + timeInterval * 2;
+                validTargets.forEach(vt => {
+                    traces.push({
+                        x: [0, maxX],
+                        y: [vt.price, vt.price],
+                        mode: 'lines',
+                        showlegend: false,
+                        hoverinfo: 'skip',
+                        line: { color: 'rgba(74, 222, 128, 0.4)', width: 2, dash: 'dot' }
+                    });
+                });
+            }
+
+            // 5. Render Chart
+            const layout = {
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(30,41,59,0.5)',
+                font: { color: '#f8fafc', family: 'Tahoma' },
+                title: 'تحلیل رزونانس Price-Time اسپیرال‌ها',
+                xaxis: { title: 'زمان (دقیقه)', gridcolor: '#334155', zerolinecolor: '#475569' },
+                yaxis: { title: 'قیمت (Price)', gridcolor: '#334155', zerolinecolor: '#475569' },
+                margin: { l: 60, r: 20, t: 50, b: 50 },
+                showlegend: true,
+                legend: { orientation: 'h', y: -0.2 }
+            };
+
+            Plotly.newPlot('chartDiv', traces, layout, {responsive: true});
+        }
+
+        // Run calculation on initial load
+        window.onload = calculateAndPlot;
+    </script>
+</body>
+</html>

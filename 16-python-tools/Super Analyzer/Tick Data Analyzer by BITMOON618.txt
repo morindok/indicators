@@ -1,0 +1,1287 @@
+import dash
+from dash import dcc, html, Input, Output, State
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import pandas as pd
+import numpy as np
+import requests
+import time
+from datetime import datetime, timedelta
+import json
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+# ==================== CSS Styles ====================
+
+CUSTOM_CSS = '''
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700;900&display=swap');
+
+* {
+    font-family: 'Vazirmatn', 'Segoe UI', Tahoma, sans-serif;
+    box-sizing: border-box;
+}
+
+body {
+    background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #0a0e27 100%);
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    direction: rtl;
+}
+
+.bitmoon-banner {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 25%, #ffd700 50%, #f5576c 75%, #f093fb 100%);
+    background-size: 400% 400%;
+    animation: gradientShift 8s ease infinite;
+    padding: 20px 30px;
+    border-radius: 20px;
+    margin-bottom: 25px;
+    box-shadow: 0 10px 40px rgba(245, 87, 108, 0.4);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+@keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+.banner-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.banner-left {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.banner-logo {
+    font-size: 50px;
+    animation: moonPulse 2s ease-in-out infinite;
+    display: inline-block;
+}
+
+@keyframes moonPulse {
+    0%, 100% { transform: scale(1) rotate(0deg); }
+    50% { transform: scale(1.15) rotate(10deg); }
+}
+
+.banner-text h2 {
+    margin: 0;
+    color: #fff;
+    font-size: 28px;
+    font-weight: 900;
+    text-shadow: 2px 2px 8px rgba(0,0,0,0.5);
+}
+
+.banner-text p {
+    margin: 5px 0 0 0;
+    color: rgba(255,255,255,0.95);
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.banner-btn {
+    background: #fff;
+    color: #f5576c;
+    padding: 14px 35px;
+    border-radius: 50px;
+    text-decoration: none;
+    font-weight: 900;
+    font-size: 17px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    border: 3px solid rgba(255,255,255,0.5);
+    cursor: pointer;
+}
+
+.banner-btn:hover {
+    transform: scale(1.1);
+    background: #ffd700;
+    color: #000;
+}
+
+.main-header {
+    background: linear-gradient(135deg, rgba(26, 26, 46, 0.95) 0%, rgba(22, 33, 62, 0.95) 100%);
+    padding: 25px;
+    border-radius: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 8px 32px rgba(0, 212, 170, 0.15);
+    border: 1px solid rgba(0, 212, 170, 0.2);
+    text-align: center;
+}
+
+.main-header h1 {
+    margin: 0;
+    background: linear-gradient(135deg, #00d4aa 0%, #00ff88 50%, #ffd700 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-size: 32px;
+    font-weight: 900;
+}
+
+.main-header p {
+    color: #8892b0;
+    margin: 8px 0 0 0;
+    font-size: 14px;
+}
+
+.control-panel {
+    background: linear-gradient(135deg, rgba(22, 33, 62, 0.9) 0%, rgba(26, 26, 46, 0.9) 100%);
+    padding: 20px;
+    border-radius: 18px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: flex-end;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.control-item {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.control-item label {
+    color: #fff;
+    font-weight: 700;
+    font-size: 14px;
+}
+
+.refresh-btn {
+    background: linear-gradient(135deg, #00d4aa 0%, #00ff88 100%);
+    color: #000;
+    border: none;
+    padding: 12px 28px;
+    border-radius: 50px;
+    cursor: pointer;
+    font-weight: 900;
+    font-size: 15px;
+    box-shadow: 0 5px 20px rgba(0, 212, 170, 0.4);
+    transition: all 0.3s ease;
+    height: 45px;
+}
+
+.refresh-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(0, 212, 170, 0.6);
+}
+
+.glass-card {
+    background: linear-gradient(135deg, rgba(26, 26, 46, 0.8) 0%, rgba(22, 33, 62, 0.8) 100%);
+    border-radius: 18px;
+    padding: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.section-title {
+    background: linear-gradient(135deg, rgba(26, 26, 46, 0.95) 0%, rgba(22, 33, 62, 0.95) 100%);
+    padding: 18px 25px;
+    border-radius: 15px;
+    margin-bottom: 15px;
+    border-right: 4px solid #00d4aa;
+}
+
+.section-title h3 {
+    margin: 0;
+    color: #fff;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.signals-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 8px;
+}
+
+.signals-table thead th {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    color: #ffd700;
+    padding: 14px;
+    font-weight: 700;
+    text-align: center;
+    font-size: 14px;
+}
+
+.signals-table thead th:first-child {
+    border-radius: 12px 0 0 12px;
+}
+
+.signals-table thead th:last-child {
+    border-radius: 0 12px 12px 0;
+}
+
+.signals-table tbody tr {
+    background: rgba(255, 255, 255, 0.03);
+    transition: all 0.3s ease;
+}
+
+.signals-table tbody tr:hover {
+    background: rgba(0, 212, 170, 0.1);
+}
+
+.signals-table tbody td {
+    padding: 12px;
+    text-align: center;
+    color: #e0e0e0;
+    font-size: 13px;
+}
+
+.signals-table tbody td:first-child {
+    border-radius: 10px 0 0 10px;
+}
+
+.signals-table tbody td:last-child {
+    border-radius: 0 10px 10px 0;
+}
+
+.signal-badge {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-weight: 900;
+    font-size: 12px;
+}
+
+.badge-strong-buy {
+    background: linear-gradient(135deg, #00ff88 0%, #00d4aa 100%);
+    color: #000;
+    animation: glowGreen 2s ease-in-out infinite;
+}
+
+.badge-buy {
+    background: linear-gradient(135deg, #00d4aa 0%, #00a884 100%);
+    color: #000;
+}
+
+.badge-sell {
+    background: linear-gradient(135deg, #ff8c00 0%, #ff6b00 100%);
+    color: #fff;
+}
+
+.badge-strong-sell {
+    background: linear-gradient(135deg, #ff4757 0%, #c92a2a 100%);
+    color: #fff;
+    animation: glowRed 2s ease-in-out infinite;
+}
+
+@keyframes glowGreen {
+    0%, 100% { box-shadow: 0 0 10px rgba(0, 255, 136, 0.5); }
+    50% { box-shadow: 0 0 25px rgba(0, 255, 136, 0.9); }
+}
+
+@keyframes glowRed {
+    0%, 100% { box-shadow: 0 0 10px rgba(255, 71, 87, 0.5); }
+    50% { box-shadow: 0 0 25px rgba(255, 71, 87, 0.9); }
+}
+
+.summary-card {
+    background: linear-gradient(135deg, rgba(22, 33, 62, 0.9) 0%, rgba(26, 26, 46, 0.9) 100%);
+    padding: 20px;
+    border-radius: 18px;
+    min-width: 190px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+    display: inline-block;
+    margin-right: 12px;
+    text-align: center;
+}
+
+.summary-card:hover {
+    transform: translateY(-5px);
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 6px;
+}
+
+.data-table thead th {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    color: #ffd700;
+    padding: 12px;
+    font-weight: 700;
+    text-align: center;
+    font-size: 13px;
+}
+
+.data-table tbody tr {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.data-table tbody tr:hover {
+    background: rgba(0, 212, 170, 0.08);
+}
+
+.data-table tbody td {
+    padding: 10px;
+    text-align: center;
+    color: #e0e0e0;
+    font-size: 12px;
+}
+
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: #0a0e27;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, #00d4aa 0%, #00ff88 100%);
+    border-radius: 10px;
+}
+
+.error-message {
+    background: linear-gradient(135deg, rgba(255, 71, 87, 0.2) 0%, rgba(201, 42, 42, 0.2) 100%);
+    border: 2px solid #ff4757;
+    border-radius: 15px;
+    padding: 30px;
+    text-align: center;
+    color: #fff;
+    margin: 20px auto;
+    max-width: 600px;
+    animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-10px); }
+    75% { transform: translateX(10px); }
+}
+
+.retry-btn {
+    background: linear-gradient(135deg, #ffd700 0%, #ffaa00 100%);
+    color: #000;
+    border: none;
+    padding: 12px 30px;
+    border-radius: 50px;
+    cursor: pointer;
+    font-weight: 900;
+    font-size: 15px;
+    margin-top: 15px;
+    box-shadow: 0 5px 20px rgba(255, 215, 0, 0.4);
+    transition: all 0.3s ease;
+}
+
+.retry-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(255, 215, 0, 0.6);
+}
+'''
+
+# ==================== Inject CSS ====================
+
+app = dash.Dash(__name__, suppress_callback_exceptions=True)
+app.title = "BITMOON618 | سیستم تحلیل تیک"
+
+app.index_string = f'''
+<!DOCTYPE html>
+<html>
+    <head>
+        {{%metas%}}
+        <title>{{%title%}}</title>
+        {{%favicon%}}
+        {{%css%}}
+        <style>{CUSTOM_CSS}</style>
+    </head>
+    <body>
+        {{%app_entry%}}
+        <footer>
+            {{%config%}}
+            {{%scripts%}}
+            {{%renderer%}}
+        </footer>
+    </body>
+</html>
+'''
+
+# ==================== Bybit API با Retry و Cache ====================
+
+class BybitAPIClient:
+    """کلاینت حرفه‌ای بایبیت با retry و cache"""
+    
+    def __init__(self):
+        self.session = requests.Session()
+        self.last_request_time = 0
+        self.min_request_interval = 1.5  # حداقل فاصله بین درخواست‌ها (ثانیه)
+        self.cache = {}
+        self.cache_expiry = 30  # انقضای کش (ثانیه)
+        
+        # تنظیم retry strategy
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET"]
+        )
+        
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+        
+        # Headers حرفه‌ای
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9,fa;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'cross-site',
+        }
+    
+    def _rate_limit(self):
+        """اعمال rate limiting"""
+        current_time = time.time()
+        time_since_last = current_time - self.last_request_time
+        
+        if time_since_last < self.min_request_interval:
+            sleep_time = self.min_request_interval - time_since_last
+            time.sleep(sleep_time)
+        
+        self.last_request_time = time.time()
+    
+    def _get_cache_key(self, symbol, interval, limit):
+        """تولید کلید کش"""
+        return f"{symbol}_{interval}_{limit}"
+    
+    def _is_cache_valid(self, key):
+        """بررسی اعتبار کش"""
+        if key not in self.cache:
+            return False
+        
+        timestamp, _ = self.cache[key]
+        return (time.time() - timestamp) < self.cache_expiry
+    
+    def get_klines(self, symbol="BTCUSDT", interval="5", limit=200):
+        """دریافت کندل‌ها با retry و cache"""
+        cache_key = self._get_cache_key(symbol, interval, limit)
+        
+        # بررسی کش
+        if self._is_cache_valid(cache_key):
+            print(f"✅ استفاده از کش برای {symbol}")
+            _, cached_data = self.cache[cache_key]
+            return cached_data
+        
+        url = "https://api.bybit.com/v5/market/kline"
+        params = {
+            "category": "linear",
+            "symbol": symbol,
+            "interval": interval,
+            "limit": limit
+        }
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # اعمال rate limiting
+                self._rate_limit()
+                
+                print(f" درخواست به API (تلاش {attempt + 1}/{max_retries})...")
+                
+                response = self.session.get(
+                    url, 
+                    params=params, 
+                    headers=self.headers, 
+                    timeout=15
+                )
+                
+                if response.status_code == 403:
+                    print(f"❌ خطای 403 - IP ممکنه بلاک شده باشه")
+                    print("💡 پیشنهاد: از VPN یا Proxy استفاده کنید")
+                    time.sleep(5)
+                    continue
+                
+                if response.status_code == 429:
+                    print(f"⚠️ Rate limit - صبر کنید...")
+                    retry_after = int(response.headers.get('Retry-After', 5))
+                    time.sleep(retry_after)
+                    continue
+                
+                if response.status_code != 200:
+                    print(f" HTTP Error: {response.status_code}")
+                    print(f"Response: {response.text[:200]}")
+                    time.sleep(2)
+                    continue
+                
+                try:
+                    data = response.json()
+                except json.JSONDecodeError as e:
+                    print(f"❌ JSON Decode Error: {e}")
+                    return pd.DataFrame()
+                
+                if not isinstance(data, dict):
+                    print(f" Unexpected response format")
+                    return pd.DataFrame()
+                
+                if data.get('retCode') != 0:
+                    print(f"❌ API Error: {data.get('retMsg', 'Unknown')}")
+                    return pd.DataFrame()
+                
+                if 'result' not in data or 'list' not in data['result']:
+                    print(f"❌ Missing result/list in response")
+                    return pd.DataFrame()
+                
+                klines = data['result']['list']
+                
+                if not klines:
+                    print("⚠️ No klines data received")
+                    return pd.DataFrame()
+                
+                df = pd.DataFrame(klines, columns=[
+                    'startTime', 'open', 'high', 'low', 'close', 'volume', 'turnover'
+                ])
+                df['startTime'] = pd.to_datetime(df['startTime'].astype(int), unit='ms')
+                for col in ['open', 'high', 'low', 'close', 'volume', 'turnover']:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                df = df.sort_values('startTime').reset_index(drop=True)
+                
+                # ذخیره در کش
+                self.cache[cache_key] = (time.time(), df)
+                
+                print(f"✅ دریافت موفق: {len(df)} کندل")
+                return df
+                
+            except requests.exceptions.RequestException as e:
+                print(f"❌ Request Error (attempt {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 3
+                    print(f" صبر به مدت {wait_time} ثانیه...")
+                    time.sleep(wait_time)
+                else:
+                    print("❌ تمام تلاش‌ها ناموفق بود")
+                    return pd.DataFrame()
+            
+            except Exception as e:
+                print(f"❌ Unexpected Error: {e}")
+                import traceback
+                traceback.print_exc()
+                return pd.DataFrame()
+        
+        return pd.DataFrame()
+
+
+# ایجاد instance کلاینت
+bybit_client = BybitAPIClient()
+
+
+# ==================== Tick Analysis Engine ====================
+
+class TickAnalyzer:
+    
+    def enhanced_analysis(self, klines_df):
+        if klines_df is None or klines_df.empty:
+            return pd.DataFrame()
+        
+        results = []
+        
+        for idx, candle in klines_df.iterrows():
+            start = candle['startTime']
+            
+            estimated_ticks = max(20, int(candle['volume'] / 0.01))
+            estimated_ticks = min(estimated_ticks, 500)
+            
+            np.random.seed(int(candle['startTime'].timestamp()) % 10000)
+            
+            body = abs(candle['close'] - candle['open'])
+            upper_shadow = candle['high'] - max(candle['open'], candle['close'])
+            lower_shadow = min(candle['open'], candle['close']) - candle['low']
+            total_range = candle['high'] - candle['low']
+            
+            if total_range == 0 or pd.isna(total_range):
+                total_range = 0.01
+            
+            if pd.isna(body) or pd.isna(upper_shadow) or pd.isna(lower_shadow):
+                base_bull_ratio = 0.5
+            elif candle['close'] >= candle['open']:
+                base_bull_ratio = 0.55 + (body / total_range) * 0.2
+                if lower_shadow > body:
+                    base_bull_ratio += 0.1
+            else:
+                base_bull_ratio = 0.45 - (body / total_range) * 0.2
+                if upper_shadow > body:
+                    base_bull_ratio -= 0.1
+            
+            base_bull_ratio = np.clip(base_bull_ratio, 0.1, 0.9)
+            
+            pos_ticks = int(estimated_ticks * base_bull_ratio)
+            neg_ticks = estimated_ticks - pos_ticks
+            
+            total_vol = candle['volume'] if not pd.isna(candle['volume']) else 0
+            pos_volume = total_vol * base_bull_ratio * np.random.uniform(0.8, 1.2)
+            neg_volume = total_vol - pos_volume
+            
+            noise = np.random.normal(0, 0.05)
+            pos_ticks = max(0, int(pos_ticks * (1 + noise)))
+            neg_ticks = max(0, estimated_ticks - pos_ticks)
+            
+            tick_ratio = pos_ticks / (pos_ticks + neg_ticks) if (pos_ticks + neg_ticks) > 0 else 0.5
+            volume_ratio = pos_volume / (pos_volume + neg_volume) if (pos_volume + neg_volume) > 0 else 0.5
+            
+            results.append({
+                'time': candle['startTime'],
+                'open': candle['open'],
+                'high': candle['high'],
+                'low': candle['low'],
+                'close': candle['close'],
+                'volume': candle['volume'],
+                'positive_ticks': pos_ticks,
+                'negative_ticks': neg_ticks,
+                'total_ticks': pos_ticks + neg_ticks,
+                'positive_volume': round(pos_volume, 4),
+                'negative_volume': round(neg_volume, 4),
+                'tick_ratio': round(tick_ratio, 4),
+                'volume_ratio': round(volume_ratio, 4),
+                'net_ticks': pos_ticks - neg_ticks,
+                'net_volume': round(pos_volume - neg_volume, 4),
+                'candle_direction': 1 if candle['close'] >= candle['open'] else -1
+            })
+        
+        return pd.DataFrame(results)
+    
+    def generate_signals(self, analysis_df):
+        if analysis_df is None or analysis_df.empty:
+            return pd.DataFrame()
+        
+        df = analysis_df.copy()
+        
+        df['price_sma'] = df['close'].rolling(5).mean()
+        df['volume_pressure'] = df['net_volume'] / df['volume'].replace(0, 1)
+        df['tick_momentum'] = df['net_ticks'].rolling(3).sum()
+        
+        delta = df['net_ticks'].diff()
+        gain = delta.where(delta > 0, 0).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / loss.replace(0, 1)
+        df['tick_rsi'] = 100 - (100 / (1 + rs))
+        
+        df['signal_score'] = 0
+        
+        df.loc[df['tick_ratio'] > 0.60, 'signal_score'] += 2
+        df.loc[df['tick_ratio'] < 0.40, 'signal_score'] -= 2
+        df.loc[df['volume_pressure'] > 0.3, 'signal_score'] += 2
+        df.loc[df['volume_pressure'] < -0.3, 'signal_score'] -= 2
+        df.loc[df['tick_momentum'] > 10, 'signal_score'] += 1
+        df.loc[df['tick_momentum'] < -10, 'signal_score'] -= 1
+        df.loc[df['tick_rsi'] < 30, 'signal_score'] += 2
+        df.loc[df['tick_rsi'] > 70, 'signal_score'] -= 2
+        
+        price_up = df['close'] > df['price_sma']
+        tick_pressure_down = df['volume_pressure'] < 0
+        price_down = df['close'] < df['price_sma']
+        tick_pressure_up = df['volume_pressure'] > 0
+        
+        df.loc[price_down & tick_pressure_up, 'signal_score'] += 3
+        df.loc[price_up & tick_pressure_down, 'signal_score'] -= 3
+        
+        df['signal'] = 'HOLD'
+        
+        # 🔥 خرید قوی: نسبت تیک مثبت >= 70%
+        strong_buy_mask = (df['signal_score'] >= 4) & (df['tick_ratio'] >= 0.70)
+        df.loc[strong_buy_mask, 'signal'] = 'STRONG_BUY'
+        
+        # خرید معمولی
+        buy_mask = (df['signal_score'] >= 2) & (df['signal_score'] < 4) & (df['signal'] == 'HOLD')
+        df.loc[buy_mask, 'signal'] = 'BUY'
+        
+        # 🔥 فروش قوی: نسبت تیک منفی >= 70% (یعنی tick_ratio <= 30%)
+        strong_sell_mask = (df['signal_score'] <= -4) & (df['tick_ratio'] <= 0.30)
+        df.loc[strong_sell_mask, 'signal'] = 'STRONG_SELL'
+        
+        # فروش معمولی
+        sell_mask = (df['signal_score'] <= -2) & (df['signal_score'] > -4) & (df['signal'] == 'HOLD')
+        df.loc[sell_mask, 'signal'] = 'SELL'
+        
+        return df
+
+
+# ==================== Dash Application ====================
+
+analyzer = TickAnalyzer()
+
+app.layout = html.Div([
+    dcc.Store(id='analysis-data'),
+    
+    # ===== بنر BITMOON618 =====
+    html.Div([
+        html.Div([
+            html.Div([
+                html.Span("🌙", className="banner-logo"),
+                html.Div([
+                    html.H2("به کانال BITMOON618 بپیوندید!"),
+                    html.P(" تحلیل‌های حرفه‌ای کریپتو | سیگنال‌های ویژه | آموزش رایگان"),
+                ], className="banner-text"),
+            ], className="banner-left"),
+            html.A(
+                [html.Span("📢"), html.Span("عضویت در کانال")],
+                href="https://t.me/BITMOON618",
+                target="_blank",
+                className="banner-btn"
+            ),
+        ], className="banner-content"),
+    ], className="bitmoon-banner"),
+    
+    # ===== هدر اصلی =====
+    html.Div([
+        html.H1("📊 سیستم تحلیل تیک دیتا بایبیت"),
+        html.P("تحلیل حرفه‌ای تیک‌ها، حجم و سیگنال‌دهی هوشمند | نسخه 3.0"),
+    ], className="main-header"),
+    
+    # ===== کنترل‌ها =====
+    html.Div([
+        html.Div([
+            html.Label("🎯 نماد:"),
+            dcc.Dropdown(
+                id='symbol-dropdown',
+                options=[
+                    {'label': ' BTC/USDT', 'value': 'BTCUSDT'},
+                    {'label': '🔷 ETH/USDT', 'value': 'ETHUSDT'},
+                    {'label': '🟣 SOL/USDT', 'value': 'SOLUSDT'},
+                    {'label': '⚪ XRP/USDT', 'value': 'XRPUSDT'},
+                    {'label': '🟡 DOGE/USDT', 'value': 'DOGEUSDT'},
+                ],
+                value='BTCUSDT',
+                style={'width': '220px', 'backgroundColor': '#0a0e27', 'color': '#fff'}
+            ),
+        ], className="control-item"),
+        
+        html.Div([
+            html.Label("📊 تعداد کندل:"),
+            dcc.Input(id='candle-count', type='number', value=50, min=10, max=200,
+                     style={'width': '120px', 'backgroundColor': '#0a0e27', 'color': '#fff',
+                            'border': '1px solid #00d4aa', 'borderRadius': '10px', 
+                            'padding': '10px', 'fontSize': '14px'}),
+        ], className="control-item"),
+        
+        html.Button('🔄 بروزرسانی', id='refresh-btn', n_clicks=0, className="refresh-btn"),
+        
+        html.Div(id='status-text', style={'color': '#00ff88', 'fontWeight': '700', 'paddingBottom': '10px'}),
+    ], className="control-panel"),
+    
+    # ===== جدول سیگنال‌های ویژه =====
+    html.Div(id='signals-table-section'),
+    
+    # ===== کارت‌های خلاصه =====
+    html.Div(id='summary-cards', style={'marginBottom': '20px', 'textAlign': 'center'}),
+    
+    # ===== نمودار اصلی =====
+    html.Div([
+        html.Div([html.H3(" نمودار کندل‌استیک با تحلیل تیک")], className="section-title"),
+        html.Div([dcc.Graph(id='main-chart', style={'height': '600px'})], className="glass-card"),
+    ], style={'marginBottom': '20px'}),
+    
+    # ===== نمودارهای حجم و نسبت =====
+    html.Div([
+        html.Div([
+            html.Div([html.H3("📊 تحلیل حجم تیک‌ها")], className="section-title"),
+            html.Div([dcc.Graph(id='volume-chart', style={'height': '400px'})], className="glass-card"),
+        ], style={'width': '49%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginRight': '1%'}),
+        
+        html.Div([
+            html.Div([html.H3("📉 نسبت تیک‌های مثبت/منفی")], className="section-title"),
+            html.Div([dcc.Graph(id='ratio-chart', style={'height': '400px'})], className="glass-card"),
+        ], style={'width': '49%', 'display': 'inline-block', 'verticalAlign': 'top'}),
+    ], style={'marginBottom': '20px'}),
+    
+    # ===== نمودار سیگنال =====
+    html.Div([
+        html.Div([html.H3("🎯 سیگنال‌های خرید و فروش")], className="section-title"),
+        html.Div([dcc.Graph(id='signal-chart', style={'height': '400px'})], className="glass-card"),
+    ], style={'marginBottom': '20px'}),
+    
+    # ===== نمودار RSI =====
+    html.Div([
+        html.Div([html.H3("📐 RSI مبتنی بر تیک")], className="section-title"),
+        html.Div([dcc.Graph(id='rsi-chart', style={'height': '300px'})], className="glass-card"),
+    ], style={'marginBottom': '20px'}),
+    
+    # ===== جدول داده‌ها =====
+    html.Div([
+        html.Div([html.H3("📋 جدول کامل داده‌ها")], className="section-title"),
+        html.Div([html.Div(id='data-table', style={'overflowX': 'auto'})], className="glass-card"),
+    ], style={'marginBottom': '20px'}),
+    
+    # ===== فوتر =====
+    html.Div([
+        html.P("💎 ساخته شده با ❤️ برای تریدرهای حرفه‌ای | BITMOON618",
+              style={'color': '#8892b0', 'textAlign': 'center', 'margin': '0', 'fontSize': '14px'}),
+    ], style={'padding': '20px', 'marginTop': '30px'}),
+    
+    dcc.Interval(id='auto-refresh', interval=120000, n_intervals=0),  # هر 2 دقیقه
+], style={'backgroundColor': '#0a0e27', 'padding': '20px', 'minHeight': '100vh'})
+
+
+# ==================== Callbacks ====================
+
+@app.callback(
+    [Output('main-chart', 'figure'),
+     Output('volume-chart', 'figure'),
+     Output('ratio-chart', 'figure'),
+     Output('signal-chart', 'figure'),
+     Output('rsi-chart', 'figure'),
+     Output('summary-cards', 'children'),
+     Output('data-table', 'children'),
+     Output('status-text', 'children'),
+     Output('signals-table-section', 'children')],
+    [Input('refresh-btn', 'n_clicks'),
+     Input('auto-refresh', 'n_intervals')],
+    [State('symbol-dropdown', 'value'),
+     State('candle-count', 'value')]
+)
+def update_dashboard(n_clicks, n_intervals, symbol, candle_count):
+    print(f"\n{'='*60}")
+    print(f" درخواست داده برای {symbol}...")
+    
+    # استفاده از کلاینت حرفه‌ای
+    klines_df = bybit_client.get_klines(symbol=symbol, interval="5", limit=candle_count or 50)
+    
+    # تعریف empty_fig
+    empty_fig = go.Figure()
+    empty_fig.update_layout(
+        template='plotly_dark',
+        paper_bgcolor='#1a1a2e',
+        plot_bgcolor='#16213e',
+        height=400
+    )
+    empty_fig.add_annotation(
+        text="❌ خطا در دریافت داده!", 
+        xref="paper", yref="paper",
+        x=0.5, y=0.5, 
+        showarrow=False, 
+        font=dict(size=20, color="#ff4757")
+    )
+    
+    empty_table = html.Div("داده‌ای موجود نیست", style={'textAlign': 'center', 'color': '#8892b0', 'padding': '30px'})
+    
+    empty_signals = html.Div([
+        html.Div([html.H3("⚡ سیگنال‌های ویژه")], className="section-title", style={'borderRightColor': '#ffd700'}),
+        html.Div([
+            html.P("🕐 در حال حاضر سیگنال فعالی وجود ندارد.",
+                  style={'textAlign': 'center', 'color': '#8892b0', 'padding': '30px', 'fontSize': '16px'})
+        ], className="glass-card"),
+    ], style={'marginBottom': '25px'})
+    
+    if klines_df is None or klines_df.empty:
+        print("❌ No data received!")
+        
+        error_section = html.Div([
+            html.Div([
+                html.H3("⚠️ خطا در دریافت داده از بایبیت", style={'color': '#ff4757', 'marginBottom': '15px'}),
+                html.P("این مشکل ممکنه به دلایل زیر باشه:", style={'textAlign': 'right', 'lineHeight': '2'}),
+                html.Ul([
+                    html.Li(" IP شما توسط بایبیت محدود شده"),
+                    html.Li(" مشکل اتصال به اینترنت"),
+                    html.Li("⏳ درخواست‌های بیش از حد (Rate Limit)"),
+                ], style={'textAlign': 'right', 'marginRight': '20px'}),
+                html.P(" راه‌حل‌ها:", style={'textAlign': 'right', 'marginTop': '15px', 'fontWeight': 'bold'}),
+                html.Ol([
+                    html.Li("از VPN یا Proxy استفاده کنید"),
+                    html.Li("چند دقیقه صبر کنید و دوباره تلاش کنید"),
+                    html.Li("اینترنت خود را بررسی کنید"),
+                ], style={'textAlign': 'right', 'marginRight': '20px'}),
+                html.Button('🔄 تلاش مجدد', id='retry-btn', className="retry-btn"),
+            ], className="error-message"),
+        ])
+        
+        return (
+            empty_fig, empty_fig, empty_fig, empty_fig, empty_fig,
+            [], empty_table, "❌ خطا در دریافت داده", error_section
+        )
+    
+    print(f"✅ Data received: {len(klines_df)} candles")
+    analysis_df = analyzer.enhanced_analysis(klines_df)
+    
+    if analysis_df is None or analysis_df.empty:
+        return (
+            empty_fig, empty_fig, empty_fig, empty_fig, empty_fig,
+            [], empty_table, "❌ خطا در تحلیل", empty_signals
+        )
+    
+    analysis_df = analyzer.generate_signals(analysis_df)
+    print(f"✅ Analysis complete: {len(analysis_df)} rows")
+    
+    # ===== نمودار اصلی =====
+    fig_main = make_subplots(rows=1, cols=1)
+    
+    fig_main.add_trace(go.Candlestick(
+        x=analysis_df['time'],
+        open=analysis_df['open'],
+        high=analysis_df['high'],
+        low=analysis_df['low'],
+        close=analysis_df['close'],
+        name='کندل',
+        increasing_line_color='#00d4aa',
+        decreasing_line_color='#ff4757',
+        increasing_fillcolor='#00d4aa',
+        decreasing_fillcolor='#ff4757',
+    ))
+    
+    for i, row in analysis_df.iterrows():
+        fig_main.add_annotation(
+            x=row['time'], y=row['high'],
+            text=f"▲ {row['positive_ticks']}",
+            showarrow=False, yshift=25,
+            font=dict(size=10, color='#00ff88'),
+            bgcolor='rgba(0,50,30,0.85)',
+            borderpad=4, bordercolor='#00ff88', borderwidth=1
+        )
+        fig_main.add_annotation(
+            x=row['time'], y=row['low'],
+            text=f"▼ {row['negative_ticks']}",
+            showarrow=False, yshift=-25,
+            font=dict(size=10, color='#ff6b6b'),
+            bgcolor='rgba(50,0,0,0.85)',
+            borderpad=4, bordercolor='#ff6b6b', borderwidth=1
+        )
+    
+    fig_main.update_layout(
+        template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(22, 33, 62, 0.5)',
+        xaxis_rangeslider_visible=False,
+        height=600,
+        margin=dict(l=50, r=30, t=30, b=50),
+    )
+    fig_main.update_xaxes(gridcolor='rgba(255,255,255,0.05)', tickangle=45)
+    fig_main.update_yaxes(gridcolor='rgba(255,255,255,0.05)', title="قیمت")
+    
+    # ===== نمودار حجم =====
+    fig_vol = go.Figure()
+    
+    fig_vol.add_trace(go.Bar(
+        x=analysis_df['time'],
+        y=analysis_df['positive_volume'],
+        name='حجم خرید (تیک مثبت)',
+        marker=dict(color='rgba(0, 212, 170, 0.8)', line=dict(color='#00ff88', width=1)),
+    ))
+    
+    fig_vol.add_trace(go.Bar(
+        x=analysis_df['time'],
+        y=-analysis_df['negative_volume'],
+        name='حجم فروش (تیک منفی)',
+        marker=dict(color='rgba(255, 71, 87, 0.8)', line=dict(color='#ff6b6b', width=1)),
+    ))
+    
+    fig_vol.add_trace(go.Scatter(
+        x=analysis_df['time'],
+        y=analysis_df['volume'],
+        name='حجم کل',
+        line=dict(color='#ffd700', width=2.5),
+        yaxis='y2'
+    ))
+    
+    fig_vol.update_layout(
+        template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(22, 33, 62, 0.5)',
+        barmode='relative',
+        height=400,
+        margin=dict(l=50, r=50, t=30, b=30),
+        yaxis2=dict(overlaying='y', side='right', gridcolor='rgba(255,255,255,0.05)'),
+    )
+    fig_vol.update_xaxes(gridcolor='rgba(255,255,255,0.05)')
+    fig_vol.update_yaxes(gridcolor='rgba(255,255,255,0.05)', title="حجم تیک")
+    
+    # ===== نمودار نسبت =====
+    fig_ratio = go.Figure()
+    
+    fig_ratio.add_trace(go.Scatter(
+        x=analysis_df['time'],
+        y=analysis_df['tick_ratio'] * 100,
+        name='نسبت تیک مثبت (%)',
+        line=dict(color='#00d4aa', width=2.5),
+        fill='tozeroy',
+        fillcolor='rgba(0,212,170,0.15)'
+    ))
+    
+    fig_ratio.add_trace(go.Scatter(
+        x=analysis_df['time'],
+        y=analysis_df['volume_ratio'] * 100,
+        name='نسبت حجم مثبت (%)',
+        line=dict(color='#ffd700', width=2.5),
+        fill='tozeroy',
+        fillcolor='rgba(255,215,0,0.1)'
+    ))
+    
+    fig_ratio.add_hline(y=70, line_dash="dash", line_color="#00ff88",
+                        annotation_text="آستانه سیگنال قوی 70%",
+                        annotation_font_color="#00ff88")
+    fig_ratio.add_hline(y=30, line_dash="dash", line_color="#ff4757",
+                        annotation_text="آستانه فروش قوی 30%",
+                        annotation_font_color="#ff4757")
+    fig_ratio.add_hline(y=50, line_dash="dot", line_color="#888")
+    
+    fig_ratio.update_layout(
+        template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(22, 33, 62, 0.5)',
+        height=400,
+        margin=dict(l=50, r=50, t=30, b=30),
+    )
+    fig_ratio.update_xaxes(gridcolor='rgba(255,255,255,0.05)')
+    fig_ratio.update_yaxes(gridcolor='rgba(255,255,255,0.05)', title="درصد", range=[0, 100])
+    
+    # ===== نمودار سیگنال =====
+    fig_signal = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                               vertical_spacing=0.08,
+                               specs=[[{"secondary_y": True}], [{"secondary_y": False}]])
+    
+    fig_signal.add_trace(go.Scatter(
+        x=analysis_df['time'],
+        y=analysis_df['close'],
+        name='قیمت',
+        line=dict(color='#fff', width=2)
+    ), row=1, col=1)
+    
+    buy_signals = analysis_df[analysis_df['signal'].isin(['BUY', 'STRONG_BUY'])]
+    fig_signal.add_trace(go.Scatter(
+        x=buy_signals['time'],
+        y=buy_signals['close'],
+        mode='markers',
+        name='سیگنال خرید',
+        marker=dict(symbol='triangle-up', size=18, color='#00ff88', line=dict(width=2, color='#fff'))
+    ), row=1, col=1)
+    
+    sell_signals = analysis_df[analysis_df['signal'].isin(['SELL', 'STRONG_SELL'])]
+    fig_signal.add_trace(go.Scatter(
+        x=sell_signals['time'],
+        y=sell_signals['close'],
+        mode='markers',
+        name='سیگنال فروش',
+        marker=dict(symbol='triangle-down', size=18, color='#ff4757', line=dict(width=2, color='#fff'))
+    ), row=1, col=1)
+    
+    colors_score = ['#00ff88' if s > 0 else '#ff4757' for s in analysis_df['signal_score']]
+    fig_signal.add_trace(go.Bar(
+        x=analysis_df['time'],
+        y=analysis_df['signal_score'],
+        name='امتیاز سیگنال',
+        marker_color=colors_score,
+        opacity=0.7
+    ), row=2, col=1)
+    
+    fig_signal.add_trace(go.Scatter(
+        x=analysis_df['time'],
+        y=analysis_df['volume_pressure'] * 100,
+        name='فشار حجم (%)',
+        line=dict(color='#ffd700', width=1.5),
+        yaxis='y2'
+    ), row=1, col=1, secondary_y=True)
+    
+    fig_signal.update_layout(
+        template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(22, 33, 62, 0.5)',
+        height=400,
+        margin=dict(l=50, r=50, t=30, b=30),
+    )
+    fig_signal.update_xaxes(gridcolor='rgba(255,255,255,0.05)', row=2, col=1)
+    fig_signal.update_yaxes(gridcolor='rgba(255,255,255,0.05)', title="قیمت", row=1, col=1)
+    fig_signal.update_yaxes(gridcolor='rgba(255,255,255,0.05)', title="امتیاز", row=2, col=1)
+    
+    # ===== نمودار RSI =====
+    fig_rsi = go.Figure()
+    
+    fig_rsi.add_trace(go.Scatter(
+        x=analysis_df['time'],
+        y=analysis_df['tick_rsi'],
+        name='Tick RSI',
+        line=dict(color='#bb86fc', width=2.5),
+        fill='tozeroy',
+        fillcolor='rgba(187,134,252,0.15)'
+    ))
+    
+    fig_rsi.add_hline(y=70, line_dash="dash", line_color="#ff4757", annotation_text="اشباع خرید (70)")
+    fig_rsi.add_hline(y=30, line_dash="dash", line_color="#00d4aa", annotation_text="اشباع فروش (30)")
+    fig_rsi.add_hline(y=50, line_dash="dot", line_color="#888")
+    
+    fig_rsi.add_hrect(y0=70, y1=100, fillcolor="rgba(255,71,87,0.1)", line_width=0)
+    fig_rsi.add_hrect(y0=0, y1=30, fillcolor="rgba(0,212,170,0.1)", line_width=0)
+    
+    fig_rsi.update_layout(
+        template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(22, 33, 62, 0.5)',
+        height=300,
+        margin=dict(l=50, r=50, t=30, b=30),
+        yaxis=dict(range=[0, 100]),
+    )
+    fig_rsi.update_xaxes(gridcolor='rgba(255,255,255,0.05)')
+    fig_rsi.update_yaxes(gridcolor='rgba(255,255,255,0.05)', title="RSI")
+    
+    # ===== کارت‌های خلاصه =====
+    latest = analysis_df.iloc[-1]
+    total_pos_ticks = int(analysis_df['positive_ticks'].sum())
+    total_neg_ticks = int(analysis_df['negative_ticks'].sum())
+    total_pos_vol = analysis_df['positive_volume'].sum()
+    total_neg_vol = analysis_df['negative_volume'].sum()
+    
+    current_signal = latest['signal']
+    signal_color = {
+        'STRONG_BUY': '#00ff88', 'BUY': '#00d4aa', 'HOLD': '#ffd700',
+        'SELL': '#ff8c00', 'STRONG_SELL': '#ff4757'
+    }.get(current_signal, '#fff')
+    
+    signal_text = {
+        'STRONG_BUY': '🟢 خرید قوی', 'BUY': ' خرید', 'HOLD': ' نگهداری',
+        'SELL': '🔴 فروش', 'STRONG_SELL': '🔴 فروش قوی'
+    }.get(current_signal, 'نامشخص')
+    
+    summary_cards = html.Div([
+        html.Div([
+            html.Div(f"💰 قیمت: ${latest['close']:,.2f}", 
+                    style={'fontSize': '18px', 'color': '#fff', 'fontWeight': '900'}),
+            html.Div(f"تغییر: {((latest['close']-latest['open'])/latest['open']*100):+.2f}%",
+                    style={'fontSize': '14px', 'marginTop': '5px',
+                           'color': '#00ff88' if latest['close']>=latest['open'] else '#ff4757',
+                           'fontWeight': '700'})
+        ], className="summary-card"),
+        
+        html.Div([
+            html.Div(f"🟢 تیک مثبت: {total_pos_ticks:,}", 
+                    style={'fontSize': '16px', 'color': '#00d4aa', 'fontWeight': '700'}),
+            html.Div(f"حجم: {total_pos_vol:,.2f}",
+                    style={'fontSize': '13px', 'color': '#8892b0', 'marginTop': '5px'})
+        ], className="summary-card"),
+        
+        html.Div([
+            html.Div(f"🔴 تیک منفی: {total_neg_ticks:,}", 
+                    style={'fontSize': '16px', 'color': '#ff4757', 'fontWeight': '700'}),
+            html.Div(f"حجم: {total_neg_vol:,.2f}",
+                    style={'fontSize': '13px', 'color': '#8892b0', 'marginTop': '5px'})
+        ], className="summary-card"),
+        
+        html.Div([
+            html.Div(f" نسبت تیک: {latest['tick_ratio']*100:.1f}%", 
+                    style={'fontSize': '16px', 'color': '#ffd700', 'fontWeight': '700'}),
+            html.Div(f"Tick RSI: {latest['tick_rsi']:.1f}" if not pd.isna(latest['tick_rsi']) else "RSI: -",
+                    style={'fontSize': '13px', 'color': '#bb86fc', 'marginTop': '5px'})
+        ], className="summary-card"),
+        
+        html.Div([
+            html.Div(f" سیگنال: {signal_text}", 
+                    style={'fontSize': '18px', 'color': signal_color, 'fontWeight': '900'}),
+            html.Div(f"امتیاز: {latest['signal_score']:.0f}",
+                    style={'fontSize': '13px', 'color': '#8892b0', 'marginTop': '5px'})
+        ], className="summary-card", style={'border': f'2px solid {signal_color}'}),
+    ])
+    
+    # ===== جدول داده‌ها =====
+    table_data = analysis_df.tail(20).copy()
+    table_data['time_str'] = table_data['time'].dt.strftime('%Y-%m-%d %H:%M')
+    
+    table_html = html.Table([
+        html.Thead(html.Tr([
+            html.Th('زمان'), html.Th('بستن'), html.Th('تیک+'), html.Th('تیک-'),
+            html.Th('حجم+'), html.Th('حجم-'), html.Th('نسبت%'), html.Th('RSI'), html.Th('سیگنال'),
+        ])),
+        html.Tbody([
+            html.Tr([
+                html.Td(row['time_str']),
+                html.Td(f"${row['close']:,.2f}", style={'fontWeight': '600'}),
+                html.Td(f"{int(row['positive_ticks']):,}", style={'color': '#00ff88'}),
+                html.Td(f"{int(row['negative_ticks']):,}", style={'color': '#ff4757'}),
+                html.Td(f"{row['positive_volume']:,.2f}", style={'color': '#00ff88'}),
+                html.Td(f"{row['negative_volume']:,.2f}", style={'color': '#ff4757'}),
+                html.Td(f"{row['tick_ratio']*100:.1f}%", style={'color': '#ffd700', 'fontWeight': '700'}),
+                html.Td(f"{row['tick_rsi']:.1f}" if not pd.isna(row['tick_rsi']) else "-"),
+                html.Td(row['signal'], style={
+                    'color': {'STRONG_BUY': '#00ff88', 'BUY': '#00d4aa', 'HOLD': '#ffd700',
+                             'SELL': '#ff8c00', 'STRONG_SELL': '#ff4757'}.get(row['signal'], '#fff'),
+                    'fontWeight': '900'
+                }),
+            ]) for _, row in table_data.iterrows()
+        ])
+    ], className="data-table")
+    
+    # ===== جدول سیگنال‌های ویژه =====
+    signal_rows = analysis_df[analysis_df['signal'].isin(['STRONG_BUY', 'BUY', 'SELL', 'STRONG_SELL'])].tail(15)
+    
+    if not signal_rows.empty:
+        signal_rows_display = signal_rows.iloc[::-1]
+        
+        signal_table_rows = []
+        for _, row in signal_rows_display.iterrows():
+            signal_type = row['signal']
+            badge_class = {
+                'STRONG_BUY': 'badge-strong-buy', 'BUY': 'badge-buy',
+                'SELL': 'badge-sell', 'STRONG_SELL': 'badge-strong-sell'
+            }.get(signal_type, '')
+            
+            signal_label = {
+                'STRONG_BUY': '🚀 خرید قوی', 'BUY': '📈 خرید',
+                'SELL': '📉 فروش', 'STRONG_SELL': '💥 فروش قوی'
+            }.get(signal_type, signal_type)
+            
+            signal_table_rows.append(
+                html.Tr([
+                    html.Td(row['time'].strftime('%m-%d %H:%M'), style={'fontWeight': '600'}),
+                    html.Td(f"${row['close']:,.2f}", style={'fontWeight': '700'}),
+                    html.Td(f"{row['tick_ratio']*100:.1f}%", style={'color': '#ffd700', 'fontWeight': '700'}),
+                    html.Td(f"{int(row['positive_ticks']):,} / {int(row['negative_ticks']):,}"),
+                    html.Td(f"{row['tick_rsi']:.1f}" if not pd.isna(row['tick_rsi']) else "-"),
+                    html.Td(f"{row['signal_score']:.0f}", 
+                           style={'color': '#00ff88' if row['signal_score'] > 0 else '#ff4757', 'fontWeight': '700'}),
+                    html.Td(html.Span(signal_label, className=f"signal-badge {badge_class}")),
+                ])
+            )
+        
+        signals_section = html.Div([
+            html.Div([html.H3("⚡ سیگنال‌های ویژه (آخرین سیگنال‌های خرید و فروش)")], 
+                    className="section-title", style={'borderRightColor': '#ffd700'}),
+            html.Div([
+                html.Table([
+                    html.Thead(html.Tr([
+                        html.Th('زمان'), html.Th('قیمت'), html.Th('نسبت تیک'),
+                        html.Th('تیک +/-'), html.Th('RSI'), html.Th('امتیاز'), html.Th('نوع سیگنال'),
+                    ])),
+                    html.Tbody(signal_table_rows)
+                ], className="signals-table"),
+            ], className="glass-card"),
+        ], style={'marginBottom': '25px'})
+    else:
+        signals_section = empty_signals
+    
+    status = f"✅ {datetime.now().strftime('%H:%M:%S')} | {symbol} | {len(analysis_df)} کندل"
+    
+    return (
+        fig_main,
+        fig_vol,
+        fig_ratio,
+        fig_signal,
+        fig_rsi,
+        summary_cards,
+        table_html,
+        status,
+        signals_section
+    )
+
+
+# ==================== Run App ====================
+
+if __name__ == '__main__':
+    print("="*60)
+    print("🚀 Starting Dash Server...")
+    print("📡 Open http://127.0.0.1:8050 in your browser")
+    print("💡 سیستم با کش و retry mechanism راه‌اندازی شد")
+    print("="*60)
+    app.run(debug=True, port=8050, host='127.0.0.1')

@@ -1,0 +1,76 @@
+//@version=5
+indicator("Symmetric Price with MA", overlay=false)
+
+// ---  ‰ŸÌ„«  “„«‰ «‰ Œ«»Ì° “«ÊÌÂ Ê „ﬁÌ«” ---
+anchorTime = input.time(0, "Anchor Time (Select on Chart)", confirm=true, group="Slope Settings")
+angleInput = input.float(0.0, "Angle (Degrees)", minval=-89.9, maxval=89.9, step=1.0, group="Slope Settings")
+priceScale = input.float(1.0, "Price per Bar Scale (for Angle)", step=0.1, group="Slope Settings")
+
+// ---  ‰ŸÌ„«  «’·Ì ---
+length = input.int(20, "Length")
+src = input.source(close, "Source")
+verticalOffset = input.float(0, "Vertical Offset")
+horizontalOffset = input.int(0, "Horizontal Offset")
+useGoldenRatio = input.bool(false, "Use Golden Ratio")
+phi = input.float(1.618, "Golden Ratio Value")
+
+autoGR = input.bool(false, "Auto Golden Ratio Lengths", group="Golden Ratio Lengths")
+reverseGR = input.bool(false, "Reverse (0.618 ? 1.618)", group="Golden Ratio Lengths")
+
+maLengthBase = input.int(20, "MA Length ó Base", group="MA Settings")
+maType1 = input.string("SMA", "MA Type (Blue)", options=["SMA", "EMA", "WMA", "RMA"], group="MA Settings")
+maType2 = input.string("SMA", "MA Type (Red)", options=["SMA", "EMA", "WMA", "RMA"], group="MA Settings")
+maLengthBlue = input.int(20, "MA Length (Blue) ó ignored when Auto ON", group="MA Settings")
+maLengthRed = input.int(20, "MA Length (Red) ó ignored when Auto ON", group="MA Settings")
+
+len1 = autoGR ? (reverseGR ? math.round(maLengthBase * 0.618) : math.round(maLengthBase * 1.618)) : maLengthBlue
+len2 = autoGR ? (reverseGR ? math.round(maLengthBase * 1.618) : math.round(maLengthBase * 0.618)) : maLengthRed
+
+calcMA(s, len, t) =>
+    t == "SMA" ? ta.sma(s, len) : t == "EMA" ? ta.ema(s, len) : t == "WMA" ? ta.wma(s, len) : ta.rma(s, len)
+
+ma1 = calcMA(src, len1, maType1)
+highest1 = ta.highest(ma1, len1)
+lowest1 = ta.lowest(ma1, len1)
+mid1 = useGoldenRatio ? ma1 + (highest1 - ma1) / phi : (highest1 + lowest1) / 2
+
+ma2 = calcMA(src, len2, maType2)
+highest2 = ta.highest(ma2, len2)
+lowest2 = ta.lowest(ma2, len2)
+mid2 = useGoldenRatio ? ma2 + (highest2 - ma2) / phi : (highest2 + lowest2) / 2
+
+// --- „Õ«”»Â “«ÊÌÂ Ê „ÕÊ— ‘Ì»ùœ«— »— «”«” “„«‰ ---
+angleRad = angleInput * math.pi / 180
+slopePerBar = math.tan(angleRad) * priceScale
+
+// „Õ«”»Â ›«’·Â “„«‰Ì Â— ò‰œ·  « ò‰œ· „»œ« (»Â „Ì·ÌùÀ«‰ÌÂ)
+// “„«‰ùÂ«Ì ﬁ»· «“ anchorTime „ﬁœ«— „‰›Ì Ê “„«‰ùÂ«Ì »⁄œ „ﬁœ«— „À»  ŒÊ«Â‰œ œ«‘ 
+msPerBar = timeframe.in_seconds(timeframe.period) * 1000
+barsElapsed = (time - anchorTime) / msPerBar
+slopeOffset = barsElapsed * slopePerBar
+
+// --- „ÕÊ— œ«Ì‰«„Ìò ( —òÌ» ¬›”  ⁄„ÊœÌ Ê ‘Ì») ---
+dynamicOffset = verticalOffset + slopeOffset
+
+// --- „Õ«”»«  ò‰œ·ùÂ« Ê MAÂ« »« „ÕÊ— ÃœÌœ ---
+o_orig = open[horizontalOffset] - mid1[horizontalOffset] + dynamicOffset[horizontalOffset]
+h_orig = high[horizontalOffset] - mid1[horizontalOffset] + dynamicOffset[horizontalOffset]
+l_orig = low[horizontalOffset] - mid1[horizontalOffset] + dynamicOffset[horizontalOffset]
+c_orig = close[horizontalOffset] - mid1[horizontalOffset] + dynamicOffset[horizontalOffset]
+
+o_sym = mid2[horizontalOffset] - open[horizontalOffset] + dynamicOffset[horizontalOffset]
+h_sym = mid2[horizontalOffset] - high[horizontalOffset] + dynamicOffset[horizontalOffset]
+l_sym = mid2[horizontalOffset] - low[horizontalOffset] + dynamicOffset[horizontalOffset]
+c_sym = mid2[horizontalOffset] - close[horizontalOffset] + dynamicOffset[horizontalOffset]
+
+ma_orig = ma1[horizontalOffset] - mid1[horizontalOffset] + dynamicOffset[horizontalOffset]
+ma_sym = mid2[horizontalOffset] - ma2[horizontalOffset] + dynamicOffset[horizontalOffset]
+
+// --- —”„ Œ—ÊÃÌùÂ« ---
+plotcandle(o_sym, h_sym, l_sym, c_sym, "Symmetric Price", color.red, color.green)
+plotcandle(o_orig, h_orig, l_orig, c_orig, "Original Price", color.blue, color.orange)
+plot(ma_orig, "MA Original", color.blue, 2)
+plot(ma_sym, "MA Symmetric", color.red, 2)
+
+// —”„ „ÕÊ— Œ«ò” —Ì »Âù’Ê—  ‘Ì»ùœ«—
+plot(dynamicOffset, "Sloped Axis", color.gray, 2)

@@ -1,0 +1,168 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=5
+indicator("Fractal Geometric Shapes", overlay=true, max_lines_count=500, max_boxes_count=500)
+
+// --- Inputs ---
+grp_main = "Main Settings"
+n = input.int(2, title="Fractal Periods", minval=1, group=grp_main)
+live_time = input.time(0, "Live Time Boundary (Click on Chart)", confirm=true, group=grp_main)
+
+grp_shape = "Shape Settings"
+shape_type = input.string("Circle", "Shape Type", options=["Circle", "Golden Spiral", "Ellipse", "Rectangle", "Fibonacci Arcs", "Triangle", "Sine Wave"], group=grp_shape)
+center_ratio = input.float(0.5, "Center Ratio (0.0 to 1.0)", minval=0.0, maxval=1.0, step=0.1, group=grp_shape)
+segments = input.int(36, "Resolution (Segments)", minval=10, maxval=100, group=grp_shape)
+
+grp_extras = "Extra Tools"
+show_ma = input.bool(false, "Plot MA of Shape Centers", group=grp_extras)
+ma_len = input.int(14, "MA Length", group=grp_extras)
+show_hh_ll = input.bool(false, "Plot HH & LL of Shapes", group=grp_extras)
+
+// --- Fractal Detection ---
+is_up = true
+is_down = true
+for i = 1 to n
+    if high[n] < high[n+i] or high[n] <= high[n-i]
+        is_up := false
+    if low[n] > low[n+i] or low[n] >= low[n-i]
+        is_down := false
+
+fractal_up = is_up ? high[n] : na
+fractal_down = is_down ? low[n] : na
+fractal_time = time[n]
+
+// --- State Variables ---
+var float[] f_prices = array.new_float(3, na)
+var int[] f_times = array.new_int(3, na)
+
+var float[] centers = array.new_float(0)
+var float[] hhs = array.new_float(0)
+var float[] lls = array.new_float(0)
+
+// --- Drawing Logic ---
+if (not na(fractal_up) or not na(fractal_down)) and time < live_time
+    // Store last 3 fractals for triangle
+    array.unshift(f_prices, not na(fractal_up) ? fractal_up : fractal_down)
+    array.unshift(f_times, fractal_time)
+    array.pop(f_prices)
+    array.pop(f_times)
+
+    float p1 = array.get(f_prices, 1)
+    int t1 = array.get(f_times, 1)
+    float p2 = array.get(f_prices, 0)
+    int t2 = array.get(f_times, 0)
+    float p3 = array.get(f_prices, 2)
+    int t3 = array.get(f_times, 2)
+
+    if not na(p1) and not na(p2)
+        float dt = t2 - t1
+        float dp = p2 - p1
+        float cx = t1 + dt * center_ratio
+        float cy = p1 + dp * center_ratio
+        float r = math.sqrt(math.pow(dt, 2) + math.pow(dp, 2))
+        color shape_col = dp > 0 ? color.new(color.teal, 0) : color.new(color.red, 0)
+
+        // Track centers for MA
+        array.push(centers, cy)
+        float current_hh = cy
+        float current_ll = cy
+
+        switch shape_type
+            "Circle" =>
+                for i = 0 to segments - 1
+                    float theta1 = (i / segments) * 2 * math.pi
+                    float theta2 = ((i + 1) / segments) * 2 * math.pi
+                    float x1 = cx + dt * math.cos(theta1) // scaled to time
+                    float y1 = cy + math.abs(dp) * math.sin(theta1) // scaled to price
+                    float x2 = cx + dt * math.cos(theta2)
+                    float y2 = cy + math.abs(dp) * math.sin(theta2)
+                    line.new(math.round(x1), y1, math.round(x2), y2, xloc=xloc.bar_time, color=shape_col)
+                    current_hh := math.max(current_hh, y1, y2)
+                    current_ll := math.min(current_ll, y1, y2)
+
+            "Golden Spiral" =>
+                float b = 0.3063489
+                int dir = dp > 0 ? 1 : -1
+                for i = 0 to segments * 2 // draw two full turns
+                    float theta1 = dir * (i / segments) * 2 * math.pi
+                    float theta2 = dir * ((i + 1) / segments) * 2 * math.pi
+                    float r1 = math.exp(b * math.abs(theta1)) - 1
+                    float r2 = math.exp(b * math.abs(theta2)) - 1
+                    float x1 = cx + (dt/2) * r1 * math.cos(theta1)
+                    float y1 = cy + (math.abs(dp)/2) * r1 * math.sin(theta1)
+                    float x2 = cx + (dt/2) * r2 * math.cos(theta2)
+                    float y2 = cy + (math.abs(dp)/2) * r2 * math.sin(theta2)
+                    line.new(math.round(x1), y1, math.round(x2), y2, xloc=xloc.bar_time, color=shape_col)
+                    current_hh := math.max(current_hh, y1, y2)
+                    current_ll := math.min(current_ll, y1, y2)
+
+            "Ellipse" =>
+                float rx = dt * 1.5
+                float ry = math.abs(dp) * 0.5
+                for i = 0 to segments - 1
+                    float theta1 = (i / segments) * 2 * math.pi
+                    float theta2 = ((i + 1) / segments) * 2 * math.pi
+                    float x1 = cx + rx * math.cos(theta1)
+                    float y1 = cy + ry * math.sin(theta1)
+                    float x2 = cx + rx * math.cos(theta2)
+                    float y2 = cy + ry * math.sin(theta2)
+                    line.new(math.round(x1), y1, math.round(x2), y2, xloc=xloc.bar_time, color=shape_col)
+                    current_hh := math.max(current_hh, y1, y2)
+                    current_ll := math.min(current_ll, y1, y2)
+
+            "Rectangle" =>
+                box.new(left=t1, top=math.max(p1,p2), right=t2, bottom=math.min(p1,p2), xloc=xloc.bar_time, border_color=shape_col, bgcolor=color.new(shape_col, 90))
+                current_hh := math.max(p1, p2)
+                current_ll := math.min(p1, p2)
+
+            "Fibonacci Arcs" =>
+                float[] fibs = array.from(0.382, 0.5, 0.618)
+                for f in fibs
+                    for i = 0 to (segments/2) - 1 // Half circle
+                        float theta1 = (i / (segments/2)) * math.pi
+                        float theta2 = ((i + 1) / (segments/2)) * math.pi
+                        float x1 = t1 + dt * f * math.cos(theta1)
+                        float y1 = p1 + math.abs(dp) * f * math.sin(theta1)
+                        float x2 = t1 + dt * f * math.cos(theta2)
+                        float y2 = p1 + math.abs(dp) * f * math.sin(theta2)
+                        line.new(math.round(x1), y1, math.round(x2), y2, xloc=xloc.bar_time, color=shape_col)
+
+            "Triangle" =>
+                if not na(p3)
+                    line.new(t1, p1, t2, p2, xloc=xloc.bar_time, color=shape_col)
+                    line.new(t2, p2, t3, p3, xloc=xloc.bar_time, color=shape_col)
+                    line.new(t3, p3, t1, p1, xloc=xloc.bar_time, color=shape_col)
+                    current_hh := math.max(p1, p2, p3)
+                    current_ll := math.min(p1, p2, p3)
+
+            "Sine Wave" =>
+                for i = 0 to segments - 1
+                    float phase1 = (i / segments) * 2 * math.pi
+                    float phase2 = ((i + 1) / segments) * 2 * math.pi
+                    float x1 = t1 + (dt * (i / segments))
+                    float x2 = t1 + (dt * ((i+1) / segments))
+                    float y1 = cy + (math.abs(dp)/2) * math.sin(phase1)
+                    float y2 = cy + (math.abs(dp)/2) * math.sin(phase2)
+                    line.new(math.round(x1), y1, math.round(x2), y2, xloc=xloc.bar_time, color=shape_col)
+                    current_hh := math.max(current_hh, y1, y2)
+                    current_ll := math.min(current_ll, y1, y2)
+
+        array.push(hhs, current_hh)
+        array.push(lls, current_ll)
+
+// --- Plotting Extra Tools ---
+float current_ma = na
+if show_ma and array.size(centers) >= ma_len
+    float sum = 0
+    for i = 0 to ma_len - 1
+        sum += array.get(centers, array.size(centers) - 1 - i)
+    current_ma := sum / ma_len
+
+float current_plotted_hh = na
+float current_plotted_ll = na
+if show_hh_ll and array.size(hhs) > 0
+    current_plotted_hh := array.get(hhs, array.size(hhs) - 1)
+    current_plotted_ll := array.get(lls, array.size(lls) - 1)
+
+plot(current_ma, "Shape Center MA", color=color.white, style=plot.style_stepline)
+plot(current_plotted_hh, "Shape HH", color=color.fuchsia, style=plot.style_stepline)
+plot(current_plotted_ll, "Shape LL", color=color.orange, style=plot.style_stepline)

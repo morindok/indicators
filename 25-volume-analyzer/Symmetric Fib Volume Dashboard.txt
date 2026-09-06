@@ -1,0 +1,283 @@
+//@version=6
+indicator("Symmetric Fib Volume Dashboard [Zero-Warning Precision]", overlay=true, max_bars_back=500)
+
+// ==========================================
+// 1. INPUTS & SETUP
+// ==========================================
+maType = input.string("EMA", title="MA Type", options=["EMA", "SMA", "WMA"])
+showZones = input.bool(true, title="Show Symmetric Zones")
+
+adxLen = input.int(14, title="ADX Period", minval=7, maxval=50, group="Trend Detection")
+adxStrong = input.float(25.0, title="ADX Strong Trend Threshold", group="Trend Detection")
+adxTrend = input.float(20.0, title="ADX Trend Existence Threshold", group="Trend Detection")
+useHTF = input.bool(true, title="HTF Confirmation", group="Trend Detection")
+htfTF = input.timeframe("D", title="HTF Timeframe", group="Trend Detection")
+
+// ==========================================
+// 2. CONSISTENT MA HELPER (ZERO WARNING)
+// ==========================================
+// محاسبه همه انواع MA در هر بار برای حفظ سازگاری state
+calcMAFlexible(src, len, maT) =>
+    emaVal = ta.ema(src, len)
+    smaVal = ta.sma(src, len)
+    wmaVal = ta.wma(src, len)
+    maT == "EMA" ? emaVal : maT == "SMA" ? smaVal : wmaVal
+
+// ==========================================
+// 3. MAIN MA CALCULATION
+// ==========================================
+ma1 = calcMAFlexible(close, 8, maType)
+ma2 = calcMAFlexible(close, 13, maType)
+ma3 = calcMAFlexible(close, 21, maType)
+ma4 = calcMAFlexible(close, 34, maType)
+ma5 = calcMAFlexible(close, 55, maType)
+ma6 = calcMAFlexible(close, 89, maType)
+ma7 = calcMAFlexible(close, 144, maType)
+
+// ==========================================
+// 4. SYMMETRIC PRICES
+// ==========================================
+sym1 = 2 * ma1 - close
+sym2 = 2 * ma2 - close
+sym3 = 2 * ma3 - close
+sym4 = 2 * ma4 - close
+sym5 = 2 * ma5 - close
+sym6 = 2 * ma6 - close
+sym7 = 2 * ma7 - close
+
+// ==========================================
+// 5. PLOTS & FILLS
+// ==========================================
+p1 = plot(sym1, color=color.new(color.lime, 0), title="Sym 8")
+p2 = plot(sym2, color=color.new(color.green, 0), title="Sym 13")
+p3 = plot(sym3, color=color.new(color.yellow, 0), title="Sym 21")
+p4 = plot(sym4, color=color.new(color.orange, 0), title="Sym 34")
+p5 = plot(sym5, color=color.new(color.red, 0), title="Sym 55")
+p6 = plot(sym6, color=color.new(color.maroon, 0), title="Sym 89")
+p7 = plot(sym7, color=color.new(color.purple, 0), title="Sym 144")
+
+fill(p1, p2, color=showZones ? color.new(color.lime, 85) : na)
+fill(p2, p3, color=showZones ? color.new(color.green, 85) : na)
+fill(p3, p4, color=showZones ? color.new(color.yellow, 85) : na)
+fill(p4, p5, color=showZones ? color.new(color.orange, 85) : na)
+fill(p5, p6, color=showZones ? color.new(color.red, 85) : na)
+fill(p6, p7, color=showZones ? color.new(color.purple, 85) : na)
+
+// ==========================================
+// 6. VOLUMETRIC GAP (OPTIMIZED)
+// ==========================================
+avg_vol = ta.sma(volume, 50)
+norm_vol = nz(volume / avg_vol, 1)
+
+total_sym_gap = 2 * (ma1 - ma7) * norm_vol
+signal_gap = ta.sma(total_sym_gap, 20)
+short_gap = 2 * (ma1 - ma4) * norm_vol
+long_gap = 2 * (ma4 - ma7) * norm_vol
+
+// ==========================================
+// 7. ULTRA-PRECISION TREND ENGINE
+// ==========================================
+
+// A. ADX Calculation
+[diplus, diminus, adx] = ta.dmi(adxLen, adxLen)
+
+// B. Multi-Layer Analysis
+// Short-Term Layer (8, 13, 21)
+short_up = ma1 > ma2 and ma2 > ma3 and close > ma3
+short_dn = ma1 < ma2 and ma2 < ma3 and close < ma3
+short_part_up = close > ma1 and close > ma2
+short_part_dn = close < ma1 and close < ma2
+
+// Medium-Term Layer (34, 55)
+med_up = ma4 > ma5 and close > ma5
+med_dn = ma4 < ma5 and close < ma5
+
+// Long-Term Layer (89, 144)
+long_up = ma6 > ma7 and close > ma7
+long_dn = ma6 < ma7 and close < ma7
+
+// C. Trend Quality Score (-100 to +100)
+trendScore = 0.0
+trendScore += short_up ? 30 : short_part_up ? 15 : short_dn ? -30 : short_part_dn ? -15 : 0
+trendScore += med_up ? 30 : med_dn ? -30 : 0
+trendScore += long_up ? 30 : long_dn ? -30 : 0
+
+// DI+/DI- momentum contribution
+di_diff = diplus - diminus
+trendScore += math.sign(di_diff) * math.min(math.abs(di_diff) / 5.0, 10)
+
+// D. HTF Confirmation
+htfBullish = true
+htfBearish = true
+if useHTF
+    htfClose = request.security(syminfo.tickerid, htfTF, close, lookahead=barmerge.lookahead_off)
+    htfMA50 = request.security(syminfo.tickerid, htfTF, ta.sma(close, 50), lookahead=barmerge.lookahead_off)
+    htfBullish := htfClose > htfMA50
+    htfBearish := htfClose < htfMA50
+
+// E. Final Classification (7 states)
+var string trend_status = "نامشخص"
+var color trend_color = color.gray
+
+isStrong = adx >= adxStrong
+isTrend = adx >= adxTrend
+
+if trendScore >= 50 and isTrend and (not useHTF or htfBullish)
+    trend_status := trendScore >= 70 and isStrong ? "صعودی بسیار قوی" : trendScore >= 60 ? "صعودی قوی" : "صعودی متوسط"
+    trend_color := trendScore >= 70 and isStrong ? color.new(color.green, 0) : trendScore >= 60 ? color.new(color.lime, 0) : color.new(color.lime, 30)
+else if trendScore <= -50 and isTrend and (not useHTF or htfBearish)
+    trend_status := trendScore <= -70 and isStrong ? "نزولی بسیار قوی" : trendScore <= -60 ? "نزولی قوی" : "نزولی متوسط"
+    trend_color := trendScore <= -70 and isStrong ? color.new(color.red, 0) : trendScore <= -60 ? color.new(color.maroon, 0) : color.new(color.red, 30)
+else if math.abs(trendScore) < 20 or not isTrend
+    trend_status := "رنج / خنثی"
+    trend_color := color.new(color.gray, 0)
+else
+    trend_status := "در حال تغییر روند"
+    trend_color := color.new(color.yellow, 0)
+
+// ==========================================
+// 8. VOLUME ACCUMULATION
+// ==========================================
+symHigh = math.max(sym1, sym7)
+symLow = math.min(sym1, sym7)
+inZone = high >= symLow and low <= symHigh
+
+crossUp = ta.crossover(close, ma4)
+crossDown = ta.crossunder(close, ma4)
+anyCross = crossUp or crossDown
+
+plotshape(crossUp, location=location.belowbar, color=color.lime, style=shape.triangleup, size=size.small)
+plotshape(crossDown, location=location.abovebar, color=color.red, style=shape.triangledown, size=size.small)
+
+var float accSymVol = 0.0
+var float lastCrossSymVol = 0.0
+var bool lastCrossWasUp = false
+
+if not anyCross and inZone
+    accSymVol += volume
+
+if anyCross
+    lastCrossSymVol := accSymVol
+    lastCrossWasUp := crossUp
+    accSymVol := 0.0
+
+// ==========================================
+// 9. MTF TREND ENGINE (ZERO WARNING)
+// ==========================================
+getPreciseTrend(string maT) =>
+    // استفاده از همان helper برای سازگاری کامل
+    m1 = calcMAFlexible(close, 8, maT)
+    m2 = calcMAFlexible(close, 13, maT)
+    m3 = calcMAFlexible(close, 21, maT)
+    m4 = calcMAFlexible(close, 34, maT)
+    m5 = calcMAFlexible(close, 55, maT)
+    m6 = calcMAFlexible(close, 89, maT)
+    m7 = calcMAFlexible(close, 144, maT)
+
+    [dip, dim, adxVal] = ta.dmi(14, 14)
+    
+    s_up = m1 > m2 and m2 > m3 and close > m3
+    s_dn = m1 < m2 and m2 < m3 and close < m3
+    s_part_up = close > m1 and close > m2
+    s_part_dn = close < m1 and close < m2
+    
+    md_up = m4 > m5 and close > m5
+    md_dn = m4 < m5 and close < m5
+    
+    l_up = m6 > m7 and close > m7
+    l_dn = m6 < m7 and close < m7
+    
+    score = 0.0
+    score += s_up ? 30 : s_part_up ? 15 : s_dn ? -30 : s_part_dn ? -15 : 0
+    score += md_up ? 30 : md_dn ? -30 : 0
+    score += l_up ? 30 : l_dn ? -30 : 0
+    
+    diDiff = dip - dim
+    score += math.sign(diDiff) * math.min(math.abs(diDiff) / 5.0, 10)
+    
+    string status = "نامشخص"
+    color clr = color.gray
+    
+    if score >= 50 and adxVal >= 20
+        status := score >= 70 and adxVal >= 25 ? "صعودی بسیار قوی" : score >= 60 ? "صعودی قوی" : "صعودی متوسط"
+        clr := score >= 70 and adxVal >= 25 ? color.green : score >= 60 ? color.lime : color.new(color.lime, 30)
+    else if score <= -50 and adxVal >= 20
+        status := score <= -70 and adxVal >= 25 ? "نزولی بسیار قوی" : score <= -60 ? "نزولی قوی" : "نزولی متوسط"
+        clr := score <= -70 and adxVal >= 25 ? color.red : score <= -60 ? color.maroon : color.new(color.red, 30)
+    else if math.abs(score) < 20 or adxVal < 20
+        status := "رنج"
+        clr := color.gray
+    else
+        status := "تغییر روند"
+        clr := color.yellow
+        
+    [status, clr]
+
+[t_5, c_5] = request.security(syminfo.tickerid, "5", getPreciseTrend(maType), lookahead=barmerge.lookahead_off)
+[t_15, c_15] = request.security(syminfo.tickerid, "15", getPreciseTrend(maType), lookahead=barmerge.lookahead_off)
+[t_60, c_60] = request.security(syminfo.tickerid, "60", getPreciseTrend(maType), lookahead=barmerge.lookahead_off)
+[t_240, c_240] = request.security(syminfo.tickerid, "240", getPreciseTrend(maType), lookahead=barmerge.lookahead_off)
+[t_D, c_D] = request.security(syminfo.tickerid, "D", getPreciseTrend(maType), lookahead=barmerge.lookahead_off)
+
+fc_5 = nz(c_5, color.gray)
+fc_15 = nz(c_15, color.gray)
+fc_60 = nz(c_60, color.gray)
+fc_240 = nz(c_240, color.gray)
+fc_D = nz(c_D, color.gray)
+
+// ==========================================
+// 10. DASHBOARD (TOP RIGHT)
+// ==========================================
+var table dash = table.new(position.top_right, 2, 8, bgcolor=color.new(color.black, 10), border_width=2)
+
+if barstate.islast
+    table.cell(dash, 0, 0, "تحلیل حجم متقارن", text_color=color.yellow, bgcolor=color.black, text_size=size.normal)
+    table.cell(dash, 1, 0, "Zero-Warning", text_color=color.white, bgcolor=color.black, text_size=size.normal)
+
+    table.cell(dash, 0, 1, "روند کلی", text_color=color.gray, bgcolor=color.new(color.black, 50), text_size=size.small)
+    table.cell(dash, 1, 1, trend_status, text_color=color.white, bgcolor=trend_color, text_size=size.normal)
+
+    table.cell(dash, 0, 2, "قدرت روند (ADX)", text_color=color.gray, bgcolor=color.new(color.black, 50), text_size=size.small)
+    table.cell(dash, 1, 2, str.tostring(math.round(adx, 1)), text_color=adx >= 25 ? color.lime : adx >= 20 ? color.yellow : color.gray, bgcolor=color.new(color.black, 50), text_size=size.normal)
+
+    table.cell(dash, 0, 3, "امتیاز کیفیت روند", text_color=color.gray, bgcolor=color.new(color.black, 50), text_size=size.small)
+    table.cell(dash, 1, 3, str.tostring(math.round(trendScore, 1)), text_color=trendScore > 0 ? color.lime : color.red, bgcolor=color.new(color.black, 50), text_size=size.large)
+
+    table.cell(dash, 0, 4, "فشار کوتاه‌مدت", text_color=color.gray, bgcolor=color.new(color.black, 50), text_size=size.small)
+    table.cell(dash, 1, 4, short_gap > 0 ? "صعودی" : "نزولی", text_color=short_gap > 0 ? color.lime : color.red, bgcolor=color.new(color.black, 50), text_size=size.normal)
+
+    table.cell(dash, 0, 5, "فشار بلندمدت", text_color=color.gray, bgcolor=color.new(color.black, 50), text_size=size.small)
+    table.cell(dash, 1, 5, long_gap > 0 ? "صعودی" : "نزولی", text_color=long_gap > 0 ? color.lime : color.red, bgcolor=color.new(color.black, 50), text_size=size.normal)
+
+    accUSD = accSymVol * close
+    table.cell(dash, 0, 6, "حجم انباشته", text_color=color.purple, bgcolor=color.new(color.black, 50), text_size=size.small)
+    table.cell(dash, 1, 6, "$" + str.tostring(accUSD / 1000000, "#.##") + "M", text_color=color.purple, bgcolor=color.new(color.black, 50), text_size=size.normal)
+
+    lastUSD = lastCrossSymVol * close
+    lastColor = lastCrossWasUp ? color.lime : color.red
+    table.cell(dash, 0, 7, "حجم در کراس قبلی", text_color=color.gray, bgcolor=color.new(color.black, 50), text_size=size.small)
+    table.cell(dash, 1, 7, "$" + str.tostring(lastUSD / 1000000, "#.##") + "M", text_color=lastColor, bgcolor=color.new(color.black, 50), text_size=size.normal)
+
+// ==========================================
+// 11. MTF TABLE (BOTTOM RIGHT)
+// ==========================================
+var table mtfTable = table.new(position.bottom_right, 2, 6, bgcolor=color.new(color.black, 10), border_width=2)
+
+if barstate.islast
+    table.cell(mtfTable, 0, 0, "تایم فریم", text_color=color.white, bgcolor=color.new(color.black, 20), text_size=size.normal)
+    table.cell(mtfTable, 1, 0, "روند دقیق", text_color=color.white, bgcolor=color.new(color.black, 20), text_size=size.normal)
+
+    table.cell(mtfTable, 0, 1, "5 دقیقه", text_color=color.gray, bgcolor=color.new(color.black, 50), text_size=size.small)
+    table.cell(mtfTable, 1, 1, t_5, text_color=color.white, bgcolor=fc_5, text_size=size.small)
+
+    table.cell(mtfTable, 0, 2, "15 دقیقه", text_color=color.gray, bgcolor=color.new(color.black, 50), text_size=size.small)
+    table.cell(mtfTable, 1, 2, t_15, text_color=color.white, bgcolor=fc_15, text_size=size.small)
+
+    table.cell(mtfTable, 0, 3, "1 ساعت", text_color=color.gray, bgcolor=color.new(color.black, 50), text_size=size.small)
+    table.cell(mtfTable, 1, 3, t_60, text_color=color.white, bgcolor=fc_60, text_size=size.small)
+
+    table.cell(mtfTable, 0, 4, "4 ساعت", text_color=color.gray, bgcolor=color.new(color.black, 50), text_size=size.small)
+    table.cell(mtfTable, 1, 4, t_240, text_color=color.white, bgcolor=fc_240, text_size=size.small)
+
+    table.cell(mtfTable, 0, 5, "روزانه", text_color=color.gray, bgcolor=color.new(color.black, 50), text_size=size.small)
+    table.cell(mtfTable, 1, 5, t_D, text_color=color.white, bgcolor=fc_D, text_size=size.small)

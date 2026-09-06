@@ -1,0 +1,215 @@
+//@version=6
+indicator("Fractal Spiral{Morindok}", overlay=false, max_polylines_count=100, max_labels_count=500)
+
+center_time = input.time(timestamp("2024-01-01"), title="Spiral Center Time", confirm=true)
+pl_time_1 = input.time(timestamp("2024-01-04"), title="Price Line Time 1 (Snap to Fractal)", confirm=true)
+pl_time_2 = input.time(timestamp("2024-01-05"), title="Price Line Time 2", confirm=true)
+show_cross_points = input.bool(true, "Show Price Line Cross Points")
+
+n_fractals = input.int(20, "Number of Fractals to Check", minval=1, maxval=50)
+spiral_type = input.string("Golden", "Spiral Type", options=["Golden", "Archimedean", "Logarithmic"])
+n_periods = input.int(100, title="Fractal Periods", minval=2)
+steps = input.int(500, "Steps (resolution)", minval=100, maxval=2000)
+turns = input.float(2.0, "Turns")
+x_scale = input.float(1.0, "X-Axis Spread")
+y_scale = input.float(1.0, "Y-Axis Scale")
+
+var int c_idx = na
+var float min_c_dist = 1e15
+if math.abs(time - center_time) < min_c_dist
+    min_c_dist := math.abs(time - center_time)
+    c_idx := bar_index
+
+var int pl2_idx_raw = na
+var float min_p2_dist = 1e15
+if math.abs(time - pl_time_2) < min_p2_dist
+    min_p2_dist := math.abs(time - pl_time_2)
+    pl2_idx_raw := bar_index
+
+bool upflagDownFrontier = true
+bool upflagUpFrontier0 = true
+bool upflagUpFrontier1 = true
+bool upflagUpFrontier2 = true
+bool upflagUpFrontier3 = true
+bool upflagUpFrontier4 = true
+
+for i = 1 to n_periods
+    upflagDownFrontier := upflagDownFrontier and (high[n_periods-i] < high[n_periods])
+    upflagUpFrontier0 := upflagUpFrontier0 and (high[n_periods+i] < high[n_periods])
+    upflagUpFrontier1 := upflagUpFrontier1 and (high[n_periods+1] <= high[n_periods] and high[n_periods+i + 1] < high[n_periods])
+    upflagUpFrontier2 := upflagUpFrontier2 and (high[n_periods+1] <= high[n_periods] and high[n_periods+2] <= high[n_periods] and high[n_periods+i + 2] < high[n_periods])
+    upflagUpFrontier3 := upflagUpFrontier3 and (high[n_periods+1] <= high[n_periods] and high[n_periods+2] <= high[n_periods] and high[n_periods+3] <= high[n_periods] and high[n_periods+i + 3] < high[n_periods])
+    upflagUpFrontier4 := upflagUpFrontier4 and (high[n_periods+1] <= high[n_periods] and high[n_periods+2] <= high[n_periods] and high[n_periods+3] <= high[n_periods] and high[n_periods+4] <= high[n_periods] and high[n_periods+i + 4] < high[n_periods])
+
+bool flagUpFrontier = upflagUpFrontier0 or upflagUpFrontier1 or upflagUpFrontier2 or upflagUpFrontier3 or upflagUpFrontier4
+bool upFractal = (upflagDownFrontier and flagUpFrontier)
+
+bool downflagDownFrontier = true
+bool downflagUpFrontier0 = true
+bool downflagUpFrontier1 = true
+bool downflagUpFrontier2 = true
+bool downflagUpFrontier3 = true
+bool downflagUpFrontier4 = true
+
+for i = 1 to n_periods
+    downflagDownFrontier := downflagDownFrontier and (low[n_periods-i] > low[n_periods])
+    downflagUpFrontier0 := downflagUpFrontier0 and (low[n_periods+i] > low[n_periods])
+    downflagUpFrontier1 := downflagUpFrontier1 and (low[n_periods+1] >= low[n_periods] and low[n_periods+i + 1] > low[n_periods])
+    downflagUpFrontier2 := downflagUpFrontier2 and (low[n_periods+1] >= low[n_periods] and low[n_periods+2] >= low[n_periods] and low[n_periods+i + 2] > low[n_periods])
+    downflagUpFrontier3 := downflagUpFrontier3 and (low[n_periods+1] >= low[n_periods] and low[n_periods+2] >= low[n_periods] and low[n_periods+3] >= low[n_periods] and low[n_periods+i + 3] > low[n_periods])
+    downflagUpFrontier4 := downflagUpFrontier4 and (low[n_periods+1] >= low[n_periods] and low[n_periods+2] >= low[n_periods] and low[n_periods+3] >= low[n_periods] and low[n_periods+4] >= low[n_periods] and low[n_periods+i + 4] > low[n_periods])
+
+bool flagDownFrontier = downflagUpFrontier0 or downflagUpFrontier1 or downflagUpFrontier2 or downflagUpFrontier3 or downflagUpFrontier4
+bool downFractal = (downflagDownFrontier and flagDownFrontier)
+
+bool isFractal = upFractal or downFractal
+float fracPrice = upFractal ? high[n_periods] : downFractal ? low[n_periods] : na
+int fracIndex = isFractal ? bar_index - n_periods : na
+int fracTime = isFractal ? time[n_periods] : na
+
+var array<int> frac_indices = array.new<int>()
+var array<float> frac_prices = array.new<float>()
+var array<int> frac_times = array.new<int>()
+
+if isFractal
+    array.push(frac_indices, fracIndex)
+    array.push(frac_prices, fracPrice)
+    array.push(frac_times, fracTime)
+
+if barstate.islast and not na(c_idx)
+    int pl1_idx_raw = na
+    float min_f_dist = 1e15
+    int size_fracs = array.size(frac_times)
+    for i = 0 to size_fracs - 1
+        int f_time = array.get(frac_times, i)
+        float f_dist = math.abs(f_time - pl_time_1)
+        if f_dist < min_f_dist
+            min_f_dist := f_dist
+            pl1_idx_raw := array.get(frac_indices, i)
+
+    float rot_angle = 0.0
+    int checked_fracs = 0
+    if size_fracs >= 2
+        for i = size_fracs - 1 to 1
+            int f_idx = array.get(frac_indices, i)
+            if f_idx <= c_idx and checked_fracs < n_fractals
+                int prev_idx = array.get(frac_indices, i - 1)
+                float p1 = array.get(frac_prices, i)
+                float p2 = array.get(frac_prices, i - 1)
+                float dx = f_idx - prev_idx
+                float dy = p1 - p2
+                if dx != 0
+                    rot_angle += math.atan(dy / dx)
+                checked_fracs += 1
+            if checked_fracs >= n_fractals
+                break
+
+    float phi = (1.0 + math.sqrt(5.0)) / 2.0
+    float b = math.log(phi) / (math.pi / 2.0)
+    float theta_max = turns * 2.0 * math.pi
+    float max_r_gold = math.exp(b * theta_max)
+    float max_r_arch = theta_max
+    
+    array<chart.point> pts_fwd = array.new<chart.point>()
+    array<chart.point> pts_rev = array.new<chart.point>()
+    
+    array<int> arr_xf = array.new<int>()
+    array<int> arr_xr = array.new<int>()
+    array<float> arr_yf = array.new<float>()
+    array<float> arr_yr = array.new<float>()
+    
+    int pl1_sx = na
+    float pl1_sy = na
+    int pl2_sx = na
+    float pl2_sy = na
+    int thresh_pl = math.max(2, steps / 300)
+    
+    for i = 0 to steps - 1
+        float t = i / (steps - 1.0)
+        float theta = t * theta_max
+        float theta_r = theta + rot_angle
+        
+        float r = 0.0
+        if spiral_type == "Golden"
+            r := math.exp(b * theta) / max_r_gold
+        else if spiral_type == "Archimedean"
+            r := theta / max_r_arch
+        else if spiral_type == "Logarithmic"
+            r := math.exp(0.15 * theta) / math.exp(0.15 * theta_max)
+            
+        float dx_raw = r * math.cos(theta_r) * x_scale * steps
+        float dy_raw = r * math.sin(theta_r) * y_scale
+        
+        int x_fwd = math.round(c_idx + dx_raw)
+        int x_rev = math.round(c_idx - dx_raw)
+        
+        array.push(pts_fwd, chart.point.from_index(x_fwd, dy_raw))
+        array.push(pts_rev, chart.point.from_index(x_rev, -dy_raw))
+        
+        array.push(arr_xf, x_fwd)
+        array.push(arr_xr, x_rev)
+        array.push(arr_yf, dy_raw)
+        array.push(arr_yr, -dy_raw)
+        
+        if not na(pl1_idx_raw) and math.abs(x_fwd - pl1_idx_raw) <= thresh_pl
+            pl1_sx := x_fwd
+            pl1_sy := dy_raw
+        if not na(pl1_idx_raw) and math.abs(x_rev - pl1_idx_raw) <= thresh_pl
+            pl1_sx := x_rev
+            pl1_sy := -dy_raw
+            
+        if not na(pl2_idx_raw) and math.abs(x_fwd - pl2_idx_raw) <= thresh_pl
+            pl2_sx := x_fwd
+            pl2_sy := dy_raw
+        if not na(pl2_idx_raw) and math.abs(x_rev - pl2_idx_raw) <= thresh_pl
+            pl2_sx := x_rev
+            pl2_sy := -dy_raw
+
+    polyline.new(pts_fwd, line_color=color.blue, line_width=2)
+    polyline.new(pts_rev, line_color=color.red, line_width=2)
+    
+    if not na(pl1_sx) and not na(pl2_sx)
+        line.new(x1=pl1_sx, y1=pl1_sy, x2=pl2_sx, y2=pl2_sy, xloc=xloc.bar_index, extend=extend.both, color=color.yellow, width=2)
+        
+        if show_cross_points
+            float dx_line = pl2_sx - pl1_sx
+            float dy_line = pl2_sy - pl1_sy
+            float slope = dx_line == 0 ? na : dy_line / dx_line
+            float intercept = na(slope) ? na : pl1_sy - slope * pl1_sx
+            
+            int cross_cool = math.max(3, steps / 100)
+            int last_cf = -cross_cool
+            int last_cr = -cross_cool
+            
+            for i = 1 to steps - 1
+                int xf_i = array.get(arr_xf, i)
+                float yf_i = array.get(arr_yf, i)
+                float line_yf = na(slope) ? pl1_sy : slope * xf_i + intercept
+                float diff_f = yf_i - line_yf
+                float prev_yf = array.get(arr_yf, i - 1)
+                float prev_line_yf = na(slope) ? pl1_sy : slope * array.get(arr_xf, i - 1) + intercept
+                float prev_diff_f = prev_yf - prev_line_yf
+                
+                if (i - last_cf) >= cross_cool and ((prev_diff_f < 0 and diff_f >= 0) or (prev_diff_f > 0 and diff_f <= 0))
+                    last_cf := i
+                    bool is_future_f = xf_i > bar_index
+                    float chart_price_f = is_future_f ? close : (xf_i >= 0 ? close[bar_index - xf_i] : na)
+                    string lbl_txt_f = "? " + (is_future_f ? "Future" : str.tostring(chart_price_f, "#.##"))
+                    if not na(chart_price_f)
+                        label.new(x=xf_i, y=chart_price_f, text=lbl_txt_f, xloc=xloc.bar_index, yloc=yloc.price, color=color.yellow, textcolor=color.black, style=label.style_label_down, size=size.small, force_overlay=true)
+                    
+                int xr_i = array.get(arr_xr, i)
+                float yr_i = array.get(arr_yr, i)
+                float line_yr = na(slope) ? pl1_sy : slope * xr_i + intercept
+                float diff_r = yr_i - line_yr
+                float prev_yr = array.get(arr_yr, i - 1)
+                float prev_line_yr = na(slope) ? pl1_sy : slope * array.get(arr_xr, i - 1) + intercept
+                float prev_diff_r = prev_yr - prev_line_yr
+                
+                if (i - last_cr) >= cross_cool and ((prev_diff_r < 0 and diff_r >= 0) or (prev_diff_r > 0 and diff_r <= 0))
+                    last_cr := i
+                    bool is_future_r = xr_i > bar_index
+                    float chart_price_r = is_future_r ? close : (xr_i >= 0 ? close[bar_index - xr_i] : na)
+                    string lbl_txt_r = "? " + (is_future_r ? "Future" : str.tostring(chart_price_r, "#.##"))
+                    if not na(chart_price_r)
+                        label.new(x=xr_i, y=chart_price_r, text=lbl_txt_r, xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.yellow, 30), textcolor=color.black, style=label.style_label_down, size=size.small, force_overlay=true)

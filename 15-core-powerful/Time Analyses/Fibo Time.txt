@@ -1,0 +1,74 @@
+//@version=5
+indicator("Detrended Fibo Time {Morindok}", overlay=false)
+
+// Inputs
+x1 = input.time(timestamp("2024-01-01 00:00"), "Start Range", confirm=true)
+x2 = input.time(timestamp("2024-01-02 00:00"), "End Range", confirm=true)
+multiplier = input.float(1.618, "Multiplier")
+inner_ratio = input.float(0.618, "Vertical Line Ratio", step=0.1, tooltip="ÚÏÏí ˜å Øæá İÇÒ ÈÑ Âä ÊŞÓíã ãíÔæÏ ÊÇ ÌÇíÇå ÎØ ÚãæÏí ãÔÎÕ ÔæÏ")
+price_source = input.source(close, "Price Source (Red Line)", group="Price Sources")
+symmetric_source = input.source(close, "Price Source (Blue Line)", group="Price Sources")
+symmetric_enabled = input.bool(false, "Enable Symmetric Line")
+
+// Variables
+var float stepped_price = na
+var float symmetric_price = na
+var float last_stepped_price = na
+var int segment_start_bar = na
+var float current_segment_length = na
+var int bars_in_range = 0
+var bool range_completed = false
+
+// ÔãÇÑÔ ˜äÏáåÇí ÈÇÒå
+in_range = time >= x1 and time <= x2
+if in_range
+    bars_in_range += 1
+
+// ÔÑæÚ İáÊ ÏÑ ÈÇÒå
+if time >= x1 and na(stepped_price)
+    stepped_price := price_source
+    symmetric_price := symmetric_source
+    segment_start_bar := bar_index
+
+// ÊÔÎíÕ ÎÑæÌ ÇÒ ÈÇÒå æ ÔÑæÚ İáÊ ÈÚÏí
+just_exited_range = not in_range and in_range[1]
+if just_exited_range
+    range_completed := true
+    last_stepped_price := stepped_price
+    stepped_price := price_source
+    if symmetric_enabled and not na(last_stepped_price)
+        symmetric_price := last_stepped_price * 2 - symmetric_source
+    else
+        symmetric_price := symmetric_source
+    segment_start_bar := bar_index
+    current_segment_length := bars_in_range * multiplier
+
+// ÂÏíÊ İáÊåÇí ÈÚÏí
+if range_completed and not na(current_segment_length) and bar_index >= segment_start_bar + math.round(current_segment_length)
+    last_stepped_price := stepped_price
+    stepped_price := price_source
+    if symmetric_enabled and not na(last_stepped_price)
+        symmetric_price := last_stepped_price * 2 - symmetric_source
+    else
+        symmetric_price := symmetric_source
+    segment_start_bar := bar_index
+    current_segment_length := current_segment_length * multiplier
+
+// ãÚ˜æÓ ˜ÑÏä ŞíãÊ äÓÈÊ Èå ÎØ ŞÑãÒ
+inverted_price_red = (2 * stepped_price) - price_source
+
+// ãÍÇÓÈÇÊ ÏíÊÑäÏ (Detrend)
+detrended_red = inverted_price_red - stepped_price
+detrended_blue = symmetric_source - symmetric_price
+
+// ÑÓã ÎØæØ ÏíÊÑäÏ ÔÏå
+hline(0, "Zero Line", color=color.gray, linestyle=hline.style_dashed)
+plot(time >= x1 ? detrended_red : na, "Inverted & Detrended Red", color=color.red, linewidth=2, style=plot.style_line)
+plot(symmetric_enabled and time >= x1 ? detrended_blue : na, "Detrended Blue", color=color.blue, linewidth=2, style=plot.style_line)
+
+// ÊÔÎíÕ äŞØå ÊÚííä ÔÏå ÏÑ ÏÇÎá åÑ İÇÒ æ ÑÓã ÎØ ÚãæÏí
+if range_completed and not na(current_segment_length)
+    // ÇÓÊİÇÏå ÇÒ ãÊÛíÑ inner_ratio Èå ÌÇí multiplier
+    inner_golden_bar = segment_start_bar + math.round(current_segment_length * inner_ratio)
+    if bar_index == inner_golden_bar
+        line.new(bar_index, -1, bar_index, 1, extend=extend.both, color=color.new(color.orange, 30), style=line.style_dashed, width=1)

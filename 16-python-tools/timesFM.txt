@@ -1,0 +1,546 @@
+import dash
+from dash import dcc, html, Input, Output, State, dash_table
+import plotly.graph_objects as go
+import numpy as np
+import pandas as pd
+import base64
+import io
+import warnings
+warnings.filterwarnings('ignore')
+
+# ==========================================
+# ?? TimesFM Model Loader (Singleton)
+# ==========================================
+_model = None
+_model_loaded = False
+_model_error = None
+
+def get_timesfm_model():
+    global _model, _model_loaded, _model_error
+    if _model_loaded:
+        return _model, _model_error
+    try:
+        import timesfm
+        from timesfm.timesfm_2p5.timesfm_2p5_torch import TimesFM_2p5_200M_torch
+        print("? Loading TimesFM 2.5 from HuggingFace...")
+        m = TimesFM_2p5_200M_torch.from_pretrained("google/timesfm-2.5-200m-pytorch")
+        m.compile(timesfm.ForecastConfig(
+            max_context=512,
+            max_horizon=48,
+            normalize_inputs=True,
+            use_continuous_quantile_head=True,
+            force_flip_invariance=True,
+            infer_is_positive=True,
+            fix_quantile_crossing=True,
+        ))
+        _model = m
+        _model_error = None
+        print("? TimesFM 2.5 loaded successfully!")
+    except Exception as e:
+        _model = None
+        _model_error = str(e)
+        print(f"?? TimesFM load failed: {e}")
+    _model_loaded = True
+    return _model, _model_error
+
+
+# ==========================================
+# ?? Gann Support/Resistance Overlay
+# ==========================================
+def gann_sr_from_close(close_forecast, atr):
+    """
+     »œÌ· ÅÌ‘ù»Ì‰Ì close »Â support/resistance »« ›—„Ê· Gann Square of 9
+    resistance = (sqrt(close) + 1)^2
+    support    = (sqrt(close) - 1)^2
+    »« ATR scaling »—«Ì ”ÿÊÕ Ê«ﬁ⁄ù»Ì‰«‰Â
+    """
+    sq = np.sqrt(np.maximum(close_forecast, 1e-6))
+    atr_scale = atr / close_forecast * 0.5
+    delta = np.maximum(sq * atr_scale, 0.5)
+    resistance = (sq + delta) ** 2
+    support = (sq - delta) ** 2
+    return resistance, support
+
+
+def fractal_band(high_fc, low_fc, quantile_low, quantile_high):
+    """
+    »«‰œÂ«Ì ›—«ò «·Ì «“ quantileùÂ«Ì TimesFM
+    quantile_low  = »«‰œ ???  (Õ„«Ì  «Õ „«·«)
+    quantile_high = »«‰œ ???  („ﬁ«Ê„  «Õ „«·«)
+    """
+    phi = 1.6180339887
+    R = high_fc - low_fc
+    band_up = high_fc + R * (phi - 1) * (quantile_high - 0.5)
+    band_dn = low_fc - R * (phi - 1) * (0.5 - quantile_low)
+    return band_up, band_dn
+
+
+# ==========================================
+# ?? Fallback Predictor (»œÊ‰ TimesFM)
+# ==========================================
+def statistical_forecast(close_series, n_steps=24):
+    """
+    ›«·ù»ò ÂÊ‘„‰œ:  —òÌ» EMA + Linear Trend + Volatility cone
+    »Â — «“ —Ê‘ ﬁ»·Ì (flat momentum)
+    """
+    arr = np.array(close_series)
+    n = len(arr)
+    if n < 10:
+        return np.full(n_steps, arr[-1]), np.full(n_steps, arr[-1] * 0.99), np.full(n_steps, arr[-1] * 1.01)
+
+    # Linear trend (OLS —ÊÌ ?? ‰ﬁÿÂ ¬Œ—)
+    window = min(48, n)
+    x = np.arange(window)
+    y = arr[-window:]
+    slope, intercept = np.polyfit(x, y, 1)
+
+    # EMA ¬Œ—
+    alpha = 2 / (14 + 1)
+    ema = arr[-1]
+    for v in arr[-14:]:
+        ema = alpha * v + (1 - alpha) * ema
+
+    # Volatility
+    returns = np.diff(np.log(np.maximum(arr[-window:], 1e-6)))
+    vol = np.std(returns) * arr[-1]
+
+    forecasts = []
+    lower = []
+    upper = []
+    for i in range(1, n_steps + 1):
+        trend_val = slope * (window + i) + intercept
+        ema_val = ema
+        blended = 0.4 * trend_val + 0.6 * ema_val
+        conf = vol * np.sqrt(i) * 1.645  # ??? CI
+        forecasts.append(blended)
+        lower.append(blended - conf)
+        upper.append(blended + conf)
+
+    return np.array(forecasts), np.array(lower), np.array(upper)
+
+
+# ==========================================
+# ?? Core Forecasting Engine
+# ==========================================
+def run_forecast(df, start_idx, horizon=24):
+    model, model_err = get_timesfm_model()
+    use_timesfm = (model is not None)
+
+    context_window = min(512, start_idx)
+    context_df = df.iloc[start_idx - context_window: start_idx]
+
+    close_series = context_df['close'].values.astype(float)
+    high_series = context_df['high'].values.astype(float)
+    low_series = context_df['low'].values.astype(float)
+
+    # ATR (14 ò‰œ·)
+    atr_window = min(14, len(context_df))
+    atr = np.mean(high_series[-atr_window:] - low_series[-atr_window:])
+    last_close = close_series[-1]
+
+    # ==========================================
+    # „—Õ·Â ?: ÅÌ‘ù»Ì‰Ì close »« TimesFM Ì« Fallback
+    # ==========================================
+    if use_timesfm:
+        try:
+            # TimesFM —ÊÌ close° high° low »Â ’Ê—  Ãœ«ê«‰Â
+            inputs = [close_series, high_series, low_series]
+            point_fc, quantile_fc = model.forecast(horizon=horizon, inputs=inputs)
+
+            close_fc = point_fc[0]   # ÅÌ‘ù»Ì‰Ì close
+            high_fc  = point_fc[1]   # ÅÌ‘ù»Ì‰Ì high
+            low_fc   = point_fc[2]   # ÅÌ‘ù»Ì‰Ì low
+
+            # quantileùÂ«: [mean, q10, q20, ..., q90] ? ?? „ﬁœ«—
+            q10_close = quantile_fc[0, :, 1]   # ??? quantile »—«Ì close
+            q90_close = quantile_fc[0, :, 9]   # ??? quantile
+
+            use_timesfm_ok = True
+            method = "TimesFM 2.5 ?"
+        except Exception as e:
+            use_timesfm_ok = False
+            method = f"Fallback (TimesFM error: {str(e)[:40]})"
+            close_fc, q10_close, q90_close = statistical_forecast(close_series, horizon)
+            high_fc = close_fc * (1 + atr / last_close * 0.5)
+            low_fc = close_fc * (1 - atr / last_close * 0.5)
+    else:
+        use_timesfm_ok = False
+        method = f"Statistical Fallback (TimesFM unavailable)"
+        close_fc, q10_close, q90_close = statistical_forecast(close_series, horizon)
+        high_fc = close_fc * (1 + atr / last_close * 0.5)
+        low_fc = close_fc * (1 - atr / last_close * 0.5)
+
+    # ==========================================
+    # „—Õ·Â ?: Gann S/R Overlay
+    # ==========================================
+    gann_res, gann_sup = gann_sr_from_close(close_fc, atr)
+
+    # ==========================================
+    # „—Õ·Â ?: Fractal Quantile Bands
+    # ==========================================
+    if use_timesfm and use_timesfm_ok:
+        fractal_up, fractal_dn = fractal_band(high_fc, low_fc, q10_close, q90_close)
+    else:
+        fractal_up = q90_close
+        fractal_dn = q10_close
+
+    # ==========================================
+    # „—Õ·Â ?: ”«Œ ‰ ò‰œ·ùÂ«Ì ¬Ì‰œÂ
+    # ==========================================
+    if start_idx < len(df):
+        last_dt = df['date'].iloc[start_idx - 1]
+    else:
+        last_dt = df['date'].iloc[-1]
+
+    #  ‘ŒÌ’ timeframe (›«’·Â »Ì‰ ò‰œ·ùÂ«)
+    if len(df) > 1:
+        tf_delta = df['date'].iloc[-1] - df['date'].iloc[-2]
+    else:
+        tf_delta = pd.Timedelta(hours=1)
+
+    future_times = [last_dt + tf_delta * (i + 1) for i in range(horizon)]
+
+    # œ«œÂùÂ«Ì Ê«ﬁ⁄Ì »—«Ì „ﬁ«Ì”Â («êÂ „ÊÃÊœ »Êœ)
+    actual_data = []
+    for i in range(horizon):
+        real_idx = start_idx + i
+        if real_idx < len(df):
+            actual_data.append({
+                'high': df['high'].iloc[real_idx],
+                'low': df['low'].iloc[real_idx],
+                'close': df['close'].iloc[real_idx],
+            })
+        else:
+            actual_data.append(None)
+
+    results = []
+    candles = []
+
+    for i in range(horizon):
+        t = future_times[i]
+        c_fc = float(close_fc[i])
+        h_fc = float(high_fc[i])
+        l_fc = float(low_fc[i])
+        g_r = float(gann_res[i])
+        g_s = float(gann_sup[i])
+        f_u = float(fractal_up[i])
+        f_d = float(fractal_dn[i])
+
+        # open ò‰œ· = close ﬁ»·Ì
+        if i == 0:
+            o_fc = last_close
+        else:
+            o_fc = float(close_fc[i - 1])
+
+        # «ÿ„Ì‰«‰ «“ „‰ÿﬁ OHLC
+        h_fc = max(h_fc, c_fc, o_fc)
+        l_fc = min(l_fc, c_fc, o_fc)
+
+        candles.append({
+            'date': t,
+            'open': round(o_fc, 2),
+            'high': round(h_fc, 2),
+            'low': round(l_fc, 2),
+            'close': round(c_fc, 2),
+        })
+
+        act = actual_data[i]
+        act_h = round(act['high'], 2) if act else '-'
+        act_l = round(act['low'], 2) if act else '-'
+        act_c = round(act['close'], 2) if act else '-'
+
+        # Œÿ« «êÂ œ«œÂ Ê«ﬁ⁄Ì œ«—Ì„
+        if act:
+            err_pct = abs(c_fc - act['close']) / act['close'] * 100
+            err_str = f"{err_pct:.2f}%"
+        else:
+            err_str = '-'
+
+        results.append({
+            '“„«‰': t.strftime('%Y-%m-%d %H:%M'),
+            'ÅÌ‘ù»Ì‰Ì Close': round(c_fc, 2),
+            'Gann „ﬁ«Ê„ ': round(g_r, 2),
+            'Gann Õ„«Ì ': round(g_s, 2),
+            '»«‰œ ›—«ò «· »«·«': round(f_u, 2),
+            '»«‰œ ›—«ò «· Å«ÌÌ‰': round(f_d, 2),
+            'High Ê«ﬁ⁄Ì': act_h,
+            'Low Ê«ﬁ⁄Ì': act_l,
+            'Œÿ« %': err_str,
+        })
+
+    return {
+        'candles': candles,
+        'results': results,
+        'gann_res': [float(x) for x in gann_res],
+        'gann_sup': [float(x) for x in gann_sup],
+        'fractal_up': [float(x) for x in fractal_up],
+        'fractal_dn': [float(x) for x in fractal_dn],
+        'times': [t.strftime('%Y-%m-%d %H:%M') for t in future_times],
+        'method': method,
+    }
+
+
+# ==========================================
+# ??? Dash App
+# ==========================================
+app = dash.Dash(__name__)
+
+app.layout = html.Div(
+    style={'backgroundColor': '#0a0a0a', 'color': '#00FF99', 'fontFamily': 'Segoe UI, Tahoma', 'padding': '30px'},
+    children=[
+        html.H1("?? TimesFM 2.5 + Gann Forecasting Engine",
+                style={'textAlign': 'center', 'color': '#FF00FF', 'marginBottom': '5px'}),
+        html.P("Powered by Google's Pretrained Foundation Model + Gann Square of Nine",
+               style={'textAlign': 'center', 'color': '#888', 'marginBottom': '25px', 'fontSize': '13px'}),
+
+        html.Div(id='model-status',
+                 style={'textAlign': 'center', 'marginBottom': '20px', 'color': '#FFAA00', 'fontSize': '13px'}),
+
+        html.Div(style={'display': 'flex', 'justifyContent': 'center', 'gap': '30px', 'flexWrap': 'wrap'}, children=[
+            html.Div(
+                style={'border': '1px solid #1f2937', 'padding': '25px', 'borderRadius': '12px', 'width': '460px',
+                       'backgroundColor': '#111827'},
+                children=[
+                    html.H3("?? »«—ê–«—Ì œÌ « (CSV »« ” Ê‰ùÂ«Ì date,open,high,low,close)",
+                            style={'color': '#FFAA00', 'marginTop': '0', 'fontSize': '14px'}),
+                    dcc.Upload(
+                        id='upload-data',
+                        children=html.Div(['›«Ì· CSV —« »ò‘Ìœ Ì« ', html.A('«‰ Œ«» ò‰Ìœ')]),
+                        style={'width': '100%', 'height': '60px', 'lineHeight': '60px',
+                               'borderWidth': '1px', 'borderStyle': 'dashed', 'borderRadius': '8px',
+                               'textAlign': 'center', 'margin': '12px 0', 'borderColor': '#374151'},
+                    ),
+                    html.Div(id='upload-status', style={'color': '#00FFFF', 'fontSize': '13px', 'marginBottom': '12px'}),
+
+                    html.Label("??  «—ÌŒ ‘—Ê⁄ ÅÌ‘ù»Ì‰Ì:",
+                               style={'color': 'white', 'display': 'block', 'marginBottom': '5px'}),
+                    dcc.Input(
+                        id='target-date', type='text', value='2026-06-29 00:00:00',
+                        placeholder='YYYY-MM-DD HH:MM:SS',
+                        style={'width': '95%', 'padding': '10px', 'backgroundColor': '#1f2937', 'color': 'white',
+                               'border': '1px solid #4b5563', 'borderRadius': '6px'},
+                    ),
+
+                    html.Label("??  ⁄œ«œ ò‰œ· ÅÌ‘ù»Ì‰Ì (?-??):",
+                               style={'color': 'white', 'display': 'block', 'marginTop': '12px', 'marginBottom': '5px'}),
+                    dcc.Slider(id='horizon-slider', min=6, max=48, step=6, value=24,
+                               marks={6: '6', 12: '12', 24: '24', 36: '36', 48: '48'},
+                               tooltip={"placement": "bottom"}),
+
+                    html.Button(
+                        '?? «Ã—«Ì TimesFM Forecast',
+                        id='btn-run', n_clicks=0,
+                        style={'width': '100%', 'marginTop': '18px', 'backgroundColor': '#7C3AED',
+                               'color': 'white', 'fontWeight': 'bold', 'padding': '12px',
+                               'border': 'none', 'borderRadius': '6px', 'cursor': 'pointer', 'fontSize': '15px'},
+                    ),
+
+                    html.Div(id='run-status', style={'color': '#00FF99', 'fontSize': '13px', 'marginTop': '10px',
+                                                      'textAlign': 'center'}),
+                ]
+            ),
+
+            #  Ê÷ÌÕ —Ê‘
+            html.Div(
+                style={'border': '1px solid #1f2937', 'padding': '25px', 'borderRadius': '12px', 'width': '380px',
+                       'backgroundColor': '#111827'},
+                children=[
+                    html.H3("?? „⁄„«—Ì ”Ì” „", style={'color': '#FFAA00', 'marginTop': '0', 'fontSize': '14px'}),
+                    html.Div([
+                        html.Div("? TimesFM 2.5 (Google)", style={'color': '#00FF99', 'fontWeight': 'bold', 'marginBottom': '4px'}),
+                        html.P("„œ· Foundation ¬„Ê“‘ùœÌœÂ —ÊÌ ??? „Ì·Ì«—œ ‰ﬁÿÂ œ«œÂ Ê«ﬁ⁄Ì ó ÅÌ‘ù»Ì‰Ì close° high° low »« quantile intervals", style={'color': '#aaa', 'fontSize': '12px', 'margin': '0 0 12px 0'}),
+
+                        html.Div("? Gann Square of Nine Overlay", style={'color': '#FFD700', 'fontWeight': 'bold', 'marginBottom': '4px'}),
+                        html.P(" »œÌ· close ÅÌ‘ù»Ì‰Ìù‘œÂ »Â ”ÿÊÕ Õ„«Ì /„ﬁ«Ê„  »« ›—„Ê· (?P ± ?)≤ ê«‰", style={'color': '#aaa', 'fontSize': '12px', 'margin': '0 0 12px 0'}),
+
+                        html.Div("? Fractal Quantile Bands", style={'color': '#FF6B6B', 'fontWeight': 'bold', 'marginBottom': '4px'}),
+                        html.P("»«‰œÂ«Ì ›—«ò «·Ì «“ quantile ??? Ê ??? TimesFM ◊ ‰”»  ÿ·«ÌÌ ?", style={'color': '#aaa', 'fontSize': '12px', 'margin': '0 0 12px 0'}),
+
+                        html.Div("? Walk-Forward Validation", style={'color': '#00BFFF', 'fontWeight': 'bold', 'marginBottom': '4px'}),
+                        html.P("„ﬁ«Ì”Â ŒÊœò«— »« œ«œÂ Ê«ﬁ⁄Ì («êÂ „ÊÃÊœ »«‘Â) + ‰„«Ì‘ Œÿ« %", style={'color': '#aaa', 'fontSize': '12px', 'margin': '0'}),
+                    ])
+                ]
+            ),
+        ]),
+
+        html.Div(id='output-container', style={'marginTop': '30px'}, children=[
+            dcc.Graph(id='graph-output', style={'height': '600px'}),
+
+            html.H3("?? ÃœÊ· ÅÌ‘ù»Ì‰Ì œﬁÌﬁ", style={'color': '#FFAA00', 'marginTop': '30px'}),
+            dash_table.DataTable(
+                id='table-output',
+                style_header={'backgroundColor': '#1f2937', 'color': '#00FF99', 'fontWeight': 'bold', 'textAlign': 'center'},
+                style_cell={'backgroundColor': '#111827', 'color': 'white', 'textAlign': 'center', 'padding': '8px', 'fontSize': '12px'},
+                style_data_conditional=[
+                    {'if': {'column_id': 'Œÿ« %', 'filter_query': '{Œÿ« %} < 1'},
+                     'color': '#00FF99', 'fontWeight': 'bold'},
+                    {'if': {'column_id': 'Œÿ« %', 'filter_query': '{Œÿ« %} > 3'},
+                     'color': '#FF4444'},
+                ],
+                page_size=12,
+            ),
+        ])
+    ]
+)
+
+
+@app.callback(
+    Output('model-status', 'children'),
+    Input('btn-run', 'n_clicks'),
+    prevent_initial_call=False,
+)
+def show_model_status(_):
+    _, err = get_timesfm_model()
+    if err:
+        return f"?? TimesFM: {err[:80]} ó Õ«·  Fallback ›⁄«·"
+    return "? TimesFM 2.5 (200M params | ¬„Ê“‘ùœÌœÂ —ÊÌ ???B ‰ﬁÿÂ) ó ¬„«œÂ"
+
+
+@app.callback(
+    Output('graph-output', 'figure'),
+    Output('table-output', 'data'),
+    Output('table-output', 'columns'),
+    Output('upload-status', 'children'),
+    Output('run-status', 'children'),
+    Input('btn-run', 'n_clicks'),
+    State('upload-data', 'contents'),
+    State('target-date', 'value'),
+    State('horizon-slider', 'value'),
+    prevent_initial_call=True,
+)
+def run_forecast_callback(n_clicks, file_contents, target_date_str, horizon):
+    empty_fig = go.Figure()
+    empty_fig.update_layout(
+        plot_bgcolor='#0a0a0a', paper_bgcolor='#0a0a0a', font_color='white',
+        annotations=[dict(text='«» œ« œÌ « ¬Å·Êœ ò‰Ìœ Ê œò„Â —« »“‰Ìœ',
+                         x=0.5, y=0.5, showarrow=False, font=dict(color='#888', size=16))]
+    )
+
+    if file_contents is None:
+        return empty_fig, [], [], "? ›«Ì· ¬Å·Êœ ‰‘œÂ.", ""
+
+    # Å«—” CSV
+    try:
+        content_type, content_string = file_contents.split(',')
+        decoded = base64.b64decode(content_string)
+        df = pd.read_csv(io.StringIO(decoded.decode('utf-8-sig')), sep=None, engine='python')
+        df.columns = df.columns.str.lower().str.strip()
+        df['date'] = pd.to_datetime(df['date'], format='mixed')
+        df = df.sort_values('date').reset_index(drop=True)
+        upload_msg = f"? {len(df)} ò‰œ· »«—ê–«—Ì ‘œ | «“ {df['date'].iloc[0].date()}  « {df['date'].iloc[-1].date()}"
+    except Exception as e:
+        return empty_fig, [], [], f"? Œÿ« œ— Å«—” ›«Ì·: {str(e)}", ""
+
+    # ÅÌœ« ò—œ‰ start_idx
+    try:
+        target_dt = pd.to_datetime(target_date_str, format='mixed')
+        indices = df[df['date'] >= target_dt].index
+        start_idx = int(indices[0]) if len(indices) > 0 else len(df)
+    except Exception:
+        return empty_fig, [], [], upload_msg, "? ›—„   «—ÌŒ «‘ »«Â «” ."
+
+    if start_idx < 20:
+        return empty_fig, [], [], upload_msg, "? œÌ «Ì ò«›Ì ﬁ»· «“  «—ÌŒ ‘—Ê⁄ ÊÃÊœ ‰œ«—œ (Õœ«ﬁ· ?? ò‰œ·)."
+
+    # «Ã—«Ì ÅÌ‘ù»Ì‰Ì
+    try:
+        fc = run_forecast(df, start_idx, horizon=horizon)
+    except Exception as e:
+        return empty_fig, [], [], upload_msg, f"? Œÿ« œ— ÅÌ‘ù»Ì‰Ì: {str(e)}"
+
+    # —”„ ç«— 
+    context_start = max(0, start_idx - 80)
+    plot_df = df.iloc[context_start:start_idx]
+
+    fig = go.Figure()
+
+    # ò‰œ·ùÂ«Ì Ê«ﬁ⁄Ì  «—ÌŒÌ
+    fig.add_trace(go.Candlestick(
+        x=plot_df['date'],
+        open=plot_df['open'], high=plot_df['high'],
+        low=plot_df['low'], close=plot_df['close'],
+        name='œ«œÂ Ê«ﬁ⁄Ì',
+        increasing_line_color='#00FF99',
+        decreasing_line_color='#FF0055',
+    ))
+
+    # ò‰œ·ùÂ«Ì Ê«ﬁ⁄Ì œ— »«“Â ÅÌ‘ù»Ì‰Ì («êÂ „ÊÃÊœ)
+    real_in_fc = df.iloc[start_idx: start_idx + horizon] if start_idx < len(df) else pd.DataFrame()
+    if len(real_in_fc) > 0:
+        fig.add_trace(go.Candlestick(
+            x=real_in_fc['date'],
+            open=real_in_fc['open'], high=real_in_fc['high'],
+            low=real_in_fc['low'], close=real_in_fc['close'],
+            name='Ê«ﬁ⁄Ì (œÊ—Â ÅÌ‘ù»Ì‰Ì)',
+            increasing_line_color='#888',
+            decreasing_line_color='#666',
+            opacity=0.7,
+        ))
+
+    # ò‰œ·ùÂ«Ì ÅÌ‘ù»Ì‰Ì TimesFM
+    fc_df = pd.DataFrame(fc['candles'])
+    fig.add_trace(go.Candlestick(
+        x=fc_df['date'],
+        open=fc_df['open'], high=fc_df['high'],
+        low=fc_df['low'], close=fc_df['close'],
+        name=f'TimesFM Forecast',
+        increasing_line_color='#FFD700',
+        decreasing_line_color='#FFA500',
+    ))
+
+    # Gann Resistance
+    fig.add_trace(go.Scatter(
+        x=fc['times'], y=fc['gann_res'],
+        line=dict(color='rgba(255,60,60,0.9)', dash='dot', width=1.5),
+        name='Gann „ﬁ«Ê„ ',
+    ))
+
+    # Gann Support
+    fig.add_trace(go.Scatter(
+        x=fc['times'], y=fc['gann_sup'],
+        line=dict(color='rgba(0,220,180,0.9)', dash='dot', width=1.5),
+        name='Gann Õ„«Ì ',
+    ))
+
+    # Fractal bands (fill between)
+    fig.add_trace(go.Scatter(
+        x=fc['times'], y=fc['fractal_up'],
+        line=dict(color='rgba(130,80,255,0.4)', dash='dash', width=1),
+        name='»«‰œ ›—«ò «· »«·«',
+        fill=None,
+    ))
+    fig.add_trace(go.Scatter(
+        x=fc['times'], y=fc['fractal_dn'],
+        line=dict(color='rgba(130,80,255,0.4)', dash='dash', width=1),
+        name='»«‰œ ›—«ò «· Å«ÌÌ‰',
+        fill='tonexty',
+        fillcolor='rgba(130,80,255,0.08)',
+    ))
+
+    # Œÿ Ãœ« ò‰‰œÂ  «—ÌŒ ‘—Ê⁄ ó string »—«Ì ”«“ê«—Ì »« plotly 6.x
+    split_time_str = df['date'].iloc[start_idx - 1].strftime('%Y-%m-%d %H:%M:%S') if start_idx > 0 else df['date'].iloc[0].strftime('%Y-%m-%d %H:%M:%S')
+    fig.add_shape(type="line", x0=split_time_str, x1=split_time_str, y0=0, y1=1,
+                  xref="x", yref="paper",
+                  line=dict(color="#888", dash="dash", width=1))
+    fig.add_annotation(x=split_time_str, y=0.97, xref="x", yref="paper",
+                       text="‘—Ê⁄ ÅÌ‘ù»Ì‰Ì", showarrow=False,
+                       font=dict(color="#888", size=11), xanchor="left")
+
+    fig.update_layout(
+        title=f"?? {fc['method']} | {horizon} ò‰œ· ÅÌ‘ù»Ì‰Ì",
+        plot_bgcolor='#0a0a0a', paper_bgcolor='#0a0a0a', font_color='white',
+        xaxis_rangeslider_visible=False, template='plotly_dark',
+        legend=dict(orientation='h', yanchor='bottom', y=1.01, xanchor='right', x=1),
+    )
+
+    res_df = pd.DataFrame(fc['results'])
+    cols = [{"name": c, "id": c} for c in res_df.columns]
+    run_msg = f"? ÅÌ‘ù»Ì‰Ì »« {fc['method']} «‰Ã«„ ‘œ"
+
+    return fig, res_df.to_dict('records'), cols, upload_msg, run_msg
+
+
+if __name__ == '__main__':
+    print("?? Starting TimesFM Forecasting Dashboard...")
+    print("?? Open http://127.0.0.1:8050 in your browser")
+    app.run(debug=False, host='0.0.0.0', port=8050)

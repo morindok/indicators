@@ -1,0 +1,172 @@
+//@version=6
+indicator("Williams Fractals", shorttitle="Fractals", format=format.price, precision=0, overlay=true)
+
+n = input.int(title="Periods", defval=2, minval=2)
+mirrorTime = input.time(0, title="Mirror Time", confirm=true)
+maxLines = input.int(title=" ⁄œ«œ ŒÿÊÿ ‰„«Ì‘", defval=5, minval=1, maxval=50)
+
+// UpFractal
+bool upflagDownFrontier = true
+bool upflagUpFrontier0  = true
+bool upflagUpFrontier1  = true
+bool upflagUpFrontier2  = true
+bool upflagUpFrontier3  = true
+bool upflagUpFrontier4  = true
+
+for i = 1 to n
+    upflagDownFrontier := upflagDownFrontier and (high[n-i] < high[n])
+    upflagUpFrontier0  := upflagUpFrontier0  and (high[n+i] < high[n])
+    upflagUpFrontier1  := upflagUpFrontier1  and (high[n+1] <= high[n] and high[n+i+1] < high[n])
+    upflagUpFrontier2  := upflagUpFrontier2  and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i+2] < high[n])
+    upflagUpFrontier3  := upflagUpFrontier3  and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i+3] < high[n])
+    upflagUpFrontier4  := upflagUpFrontier4  and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i+4] < high[n])
+flagUpFrontier = upflagUpFrontier0 or upflagUpFrontier1 or upflagUpFrontier2 or upflagUpFrontier3 or upflagUpFrontier4
+upFractal = upflagDownFrontier and flagUpFrontier
+
+// DownFractal
+bool downflagDownFrontier = true
+bool downflagUpFrontier0  = true
+bool downflagUpFrontier1  = true
+bool downflagUpFrontier2  = true
+bool downflagUpFrontier3  = true
+bool downflagUpFrontier4  = true
+
+for i = 1 to n
+    downflagDownFrontier := downflagDownFrontier and (low[n-i] > low[n])
+    downflagUpFrontier0  := downflagUpFrontier0  and (low[n+i] > low[n])
+    downflagUpFrontier1  := downflagUpFrontier1  and (low[n+1] >= low[n] and low[n+i+1] > low[n])
+    downflagUpFrontier2  := downflagUpFrontier2  and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i+2] > low[n])
+    downflagUpFrontier3  := downflagUpFrontier3  and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i+3] > low[n])
+    downflagUpFrontier4  := downflagUpFrontier4  and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i+4] > low[n])
+flagDownFrontier = downflagUpFrontier0 or downflagUpFrontier1 or downflagUpFrontier2 or downflagUpFrontier3 or downflagUpFrontier4
+downFractal = downflagDownFrontier and flagDownFrontier
+
+// ¬—«ÌÂùÂ«
+var upArr   = array.new_bool(0)
+var downArr = array.new_bool(0)
+var timeArr = array.new_int(0)
+var highArr = array.new_float(0)
+var lowArr  = array.new_float(0)
+
+pastT = na(time[n]) ? time : time[n]
+pastH = na(high[n]) ? high : high[n]
+pastL = na(low[n])  ? low  : low[n]
+
+array.push(upArr,   upFractal)
+array.push(downArr, downFractal)
+array.push(timeArr, pastT)
+array.push(highArr, pastH)
+array.push(lowArr,  pastL)
+
+var int mirrorBar = -1
+if time[n] == mirrorTime
+    mirrorBar := array.size(upArr) - 1
+
+// —”„ ›—«ò «·ùÂ«Ì «’·Ì
+if upFractal
+    label.new(x=pastT, y=pastH, text="?",
+      xloc=xloc.bar_time, yloc=yloc.abovebar,
+      color=color.new(color.white, 100), textcolor=#009688,
+      style=label.style_none, size=size.small)
+
+if downFractal
+    label.new(x=pastT, y=pastL, text="?",
+      xloc=xloc.bar_time, yloc=yloc.belowbar,
+      color=color.new(color.white, 100), textcolor=#F44336,
+      style=label.style_none, size=size.small)
+
+//  «»⁄ „Õ«”»Â ﬁÌ„  —ÊÌ Œÿ œ— «Ì‰œò” k
+// Œÿ «“ (srcIdx, srcPrice) »Â (dstIdx, dstPrice) ó linear interpolation
+linePrice(srcIdx, dstIdx, srcPrice, dstPrice, k) =>
+    if dstIdx == srcIdx
+        srcPrice
+    else
+        frac = float(k - srcIdx) / float(dstIdx - srcIdx)
+        srcPrice + frac * (dstPrice - srcPrice)
+
+if barstate.islast and mirrorBar != -1
+    total     = array.size(upArr)
+    upCount   = 0
+    downCount = 0
+
+    for d = 1 to mirrorBar
+        srcIdx = mirrorBar - d
+        dstIdx = mirrorBar + d
+
+        if dstIdx >= total
+            break
+
+        srcT  = array.get(timeArr, srcIdx)
+        dstT  = array.get(timeArr, dstIdx)
+
+        // ?? Up Fractal mirror ??
+        if array.get(upArr, srcIdx) and upCount < maxLines
+            srcPrice = array.get(highArr, srcIdx)
+            dstPrice = array.get(highArr, dstIdx)
+
+            line.new(x1=srcT, y1=srcPrice, x2=dstT, y2=dstPrice,
+              xloc=xloc.bar_time, color=color.new(#009688, 50), width=1)
+
+            label.new(x=dstT, y=dstPrice, text="?",
+              xloc=xloc.bar_time, yloc=yloc.abovebar,
+              color=color.new(color.white, 100),
+              textcolor=color.new(#009688, 40),
+              style=label.style_none, size=size.small)
+
+            // Ã” ÃÊÌ «Ê·Ì‰ »—ŒÊ—œ: ò‰œ·Ì òÂ high ¬‰ «“ ﬁÌ„  Œÿ —œ »‘Â
+            firstHitIdx = -1
+            for k = srcIdx + 1 to dstIdx - 1
+                lp = linePrice(srcIdx, dstIdx, srcPrice, dstPrice, k)
+                if array.get(highArr, k) >= lp
+                    firstHitIdx := k
+                    break
+
+            if firstHitIdx != -1
+                hitT     = array.get(timeArr, firstHitIdx)
+                hitHigh  = array.get(highArr, firstHitIdx)
+                hitLow   = array.get(lowArr,  firstHitIdx)
+                boxTop   = math.max(hitHigh, linePrice(srcIdx, dstIdx, srcPrice, dstPrice, firstHitIdx)) * 1.0002
+                boxBot   = hitLow * 0.9998
+                box.new(left=hitT, top=boxTop, right=last_bar_time,
+                  bottom=boxBot, xloc=xloc.bar_time,
+                  border_color=color.new(#009688, 30),
+                  bgcolor=color.new(#009688, 88),
+                  border_width=1, extend=extend.right)
+
+            upCount += 1
+
+        // ?? Down Fractal mirror ??
+        if array.get(downArr, srcIdx) and downCount < maxLines
+            srcPrice = array.get(lowArr, srcIdx)
+            dstPrice = array.get(lowArr, dstIdx)
+
+            line.new(x1=srcT, y1=srcPrice, x2=dstT, y2=dstPrice,
+              xloc=xloc.bar_time, color=color.new(#F44336, 50), width=1)
+
+            label.new(x=dstT, y=dstPrice, text="?",
+              xloc=xloc.bar_time, yloc=yloc.belowbar,
+              color=color.new(color.white, 100),
+              textcolor=color.new(#F44336, 40),
+              style=label.style_none, size=size.small)
+
+            // Ã” ÃÊÌ «Ê·Ì‰ »—ŒÊ—œ: ò‰œ·Ì òÂ low ¬‰ «“ ﬁÌ„  Œÿ Å«ÌÌ‰ù — »—Â
+            firstHitIdx = -1
+            for k = srcIdx + 1 to dstIdx - 1
+                lp = linePrice(srcIdx, dstIdx, srcPrice, dstPrice, k)
+                if array.get(lowArr, k) <= lp
+                    firstHitIdx := k
+                    break
+
+            if firstHitIdx != -1
+                hitT    = array.get(timeArr, firstHitIdx)
+                hitHigh = array.get(highArr, firstHitIdx)
+                hitLow  = array.get(lowArr,  firstHitIdx)
+                boxTop  = hitHigh * 1.0002
+                boxBot  = math.min(hitLow, linePrice(srcIdx, dstIdx, srcPrice, dstPrice, firstHitIdx)) * 0.9998
+                box.new(left=dstT, top=boxTop, right=last_bar_time,
+                  bottom=boxBot, xloc=xloc.bar_time,
+                  border_color=color.new(#F44336, 30),
+                  bgcolor=color.new(#F44336, 88),
+                  border_width=1, extend=extend.right)
+
+            downCount += 1

@@ -1,0 +1,63 @@
+//@version=5
+indicator("Mirrored Pivots [Time Reflection Formula]", overlay=true, max_bars_back=1000)
+
+// œ—Ì«›  “„«‰ „ÕÊ— Ê ‰”»   ﬁ«—‰ “„«‰Ì «“ ò«—»—
+targetTime = input.time(0, "«‰ Œ«» “„«‰ „ÕÊ—  ﬁ«—‰", confirm=true)
+timeRatio = input.float(1.0, "‰”»  »«“ «» “„«‰Ì (Ratio)", step=0.1)
+
+//  ‰ŸÌ„«  ÅÌÊÊ 
+leftLen = input.int(5, "ÿÊ· çÅ ÅÌÊÊ ")
+rightLen = input.int(5, "ÿÊ· —«”  ÅÌÊÊ ")
+
+// ¬—«ÌÂùÂ« »—«Ì –ŒÌ—Â «Ì‰œò” ò‰œ·ùÂ«Ì ÅÌÊÊ  Ê ‰Ê⁄ ¬‰ùÂ«
+var int[] pivotBars = array.new_int()
+var int[] pivotTypes = array.new_int()
+var int targetBarIndex = na
+
+// ÅÌœ« ò—œ‰ ò‰œ· „ÕÊ— Ê —”„ Œÿ çÌ‰ ⁄„ÊœÌ
+if time >= targetTime and time[1] < targetTime
+    if na(targetBarIndex)
+        targetBarIndex := bar_index
+        line.new(bar_index, low, bar_index, high, extend=extend.both, color=color.blue, width=2, style=line.style_dashed)
+
+// ‘‰«”«ÌÌ ÅÌÊÊ ùÂ«
+ph = ta.pivothigh(high, leftLen, rightLen)
+pl = ta.pivotlow(low, leftLen, rightLen)
+
+// À»  ÅÌÊÊ ùÂ«Ì ﬁ»· «“ „ÕÊ—  ﬁ«—‰
+if not na(ph)
+    pBar = bar_index - rightLen
+    if time[rightLen] < targetTime
+        array.push(pivotBars, pBar)
+        array.push(pivotTypes, 1)
+
+if not na(pl)
+    pBar = bar_index - rightLen
+    if time[rightLen] < targetTime
+        array.push(pivotBars, pBar)
+        array.push(pivotTypes, -1)
+
+// »——”Ì  ﬁ«—‰ “„«‰Ì »« «⁄„«· ›—„Ê· »«“ «» (÷—Ì» Ratio)
+bool isMirroredHigh = false
+bool isMirroredLow = false
+
+if not na(targetBarIndex) and bar_index > targetBarIndex
+    int size = array.size(pivotBars)
+    if size > 0
+        for i = 0 to size - 1
+            pBar = array.get(pivotBars, i)
+            pType = array.get(pivotTypes, i)
+            
+            // «⁄„«· ›—„Ê· »«“ «» —ÊÌ “„«‰ (‘„«—Â ò‰œ·)
+            mirroredBar = targetBarIndex + math.round((targetBarIndex - pBar) * timeRatio)
+            
+            // »——”Ì «Ì‰òÂ ¬Ì« ò‰œ· ›⁄·Ì »« ò‰œ· „Õ«”»Â ‘œÂ œ— ›—„Ê· »—«»— «”  Ì« ŒÌ—
+            if bar_index == mirroredBar
+                if pType == 1
+                    isMirroredHigh := true
+                else if pType == -1
+                    isMirroredLow := true
+
+// —”„ ”Ìê‰«·ùÂ« „” ﬁÌ„« —ÊÌ ò‰œ·ùÂ«Ì «’·Ì
+plotshape(isMirroredHigh, title="Mirrored Pivot High", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small, text="?", textcolor=color.red)
+plotshape(isMirroredLow, title="Mirrored Pivot Low", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small, text="?", textcolor=color.green)

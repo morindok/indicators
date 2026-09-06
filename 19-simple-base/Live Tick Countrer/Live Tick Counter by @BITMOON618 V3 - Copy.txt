@@ -1,0 +1,332 @@
+//@version=5
+indicator("Live Tick Counter{Morindok} by @BITMOON618 V3", overlay=true, max_labels_count=500)
+
+// ==================== INPUTS ====================
+grpG = "General"
+lookback  = input.int(50,  "History Lookback (bars)",       minval=5, maxval=480, group=grpG)
+minTicks  = input.int(10,  "Min Ticks Before Valid Signal", minval=1,             group=grpG)
+useSeed   = input.bool(true, "Seed Pattern Memory From Chart History",            group=grpG)
+showTable = input.bool(true, "Show Factor Dashboard",                             group=grpG)
+
+grpW = "Base Factor Weights"
+wTick   = input.float(0.16, "W1: Tick Count Ratio",      minval=0, step=0.05, group=grpW)
+wVol    = input.float(0.20, "W2: Volume Ratio",          minval=0, step=0.05, group=grpW)
+wBig    = input.float(0.13, "W3: Big Player Volume",     minval=0, step=0.05, group=grpW)
+wMom    = input.float(0.13, "W4: Recent Delta Momentum", minval=0, step=0.05, group=grpW)
+wStreak = input.float(0.08, "W5: Tick Streak",           minval=0, step=0.05, group=grpW)
+wKnn    = input.float(0.15, "W6: Pattern Match (KNN)",   minval=0, step=0.05, group=grpW)
+wCtx    = input.float(0.15, "W7: Trend Context",         minval=0, step=0.05, group=grpW)
+
+grpF = "Filtering"
+strongUp = input.float(65,  "Strong Bull Threshold %",                            group=grpF)
+strongDn = input.float(35,  "Strong Bear Threshold %",                            group=grpF)
+zTh      = input.float(1.3, "Dynamic Z-Score Threshold", minval=0.5, step=0.1,    group=grpF)
+minAgree = input.int(4,     "Min Factor Agreement (of 7)", minval=1, maxval=7,    group=grpF)
+useDiv   = input.bool(true, "Price/Delta Divergence Penalty",                     group=grpF)
+useAdapt = input.bool(true, "Adaptive Accuracy Scaling",                          group=grpF)
+useAutoW = input.bool(true, "Auto-Weight + Factor Inversion",                     group=grpF)
+useCalib = input.bool(true, "Probability Calibration (bins)",                     group=grpF)
+knnK     = input.int(8,     "KNN Neighbors",            minval=3, maxval=30,      group=grpF)
+momWin   = input.int(20,    "Momentum Window (ticks)",  minval=5, maxval=100,     group=grpF)
+bigMult  = input.float(1.5, "Big Tick Multiplier (x avg size)", minval=1.0, step=0.1, group=grpF)
+
+// ==================== GLOBAL SERIES ====================
+emaF = ta.ema(close, 20)
+emaS = ta.ema(close, 50)
+atrV = ta.atr(14)
+
+// ==================== HELPERS ====================
+f_ratio(a, b) => a + b > 0 ? a / (a + b) : 0.5
+
+f_sumLast(arr, n) =>
+    s  = 0.0
+    sz = array.size(arr)
+    c  = math.min(n, sz)
+    if c > 0
+        for i = sz - c to sz - 1
+            s += array.get(arr, i)
+    s
+
+f_avgLast(arr, n) =>
+    sz = array.size(arr)
+    c  = math.min(n, sz)
+    c > 0 ? f_sumLast(arr, n) / c : 0.5
+
+f_fcol(v) => v > 0.55 ? color.new(color.green, 40) : v < 0.45 ? color.new(color.red, 40) : color.new(color.gray, 40)
+
+f_hit(r, up, dn) => (r > 0.5 and up) or (r < 0.5 and dn) ? 1.0 : up or dn ? 0.0 : 0.5
+
+// Auto-weight: strength from factor accuracy, inversion if anti-predictive
+f_effw(bw, arr, n, enable) =>
+    acc = array.size(arr) >= 20 ? f_avgLast(arr, n) : 0.5
+    dir = acc >= 0.5 ? 1.0 : -1.0
+    st  = math.min(math.abs(acc - 0.5) * 4.0, 1.0)
+    ew  = enable ? bw * math.max(st, 0.15) : bw
+    ed  = enable ? dir : 1.0
+    [ew, ed, acc]
+
+f_cap(arr) =>
+    if array.size(arr) > 490
+        array.shift(arr)
+
+// ==================== STATE ====================
+varip float lastPrice = na
+varip float lastVol   = na
+varip int   upTicks   = 0
+varip int   dnTicks   = 0
+varip float upVol     = 0.0
+varip float dnVol     = 0.0
+varip float bigUpVol  = 0.0
+varip float bigDnVol  = 0.0
+varip int   streak    = 0
+varip float[] tickDeltas = array.new_float()
+
+// Raw factors (for learning) + adjusted factors (after inversion, for signal)
+varip float rrT = 0.5, varip float rrV = 0.5, varip float rrB = 0.5, varip float rrM = 0.5
+varip float rrS = 0.5, varip float rrK = 0.5, varip float rrX = 0.5
+varip float rT = 0.5,  varip float rV = 0.5,  varip float rB = 0.5,  varip float rM = 0.5
+varip float rS = 0.5,  varip float rK = 0.5,  varip float rX = 0.5
+varip float aT = 0.5,  varip float aV = 0.5,  varip float aB = 0.5,  varip float aM = 0.5
+varip float aS = 0.5,  varip float aK = 0.5,  varip float aX = 0.5
+varip float pPreV = 0.5
+varip float pUp   = 50.0
+
+// History memory
+var float[] hUpTicks = array.new_float()
+var float[] hDnTicks = array.new_float()
+var float[] hUpVol   = array.new_float()
+var float[] hDnVol   = array.new_float()
+var float[] hTR      = array.new_float()
+var float[] hVR      = array.new_float()
+var float[] hOut     = array.new_float()
+var float[] hHit     = array.new_float()
+var float[] hP       = array.new_float()
+var float   pendTR   = na
+var float   pendVR   = na
+var label[] history_labels = array.new_label()
+var label   live_lbl = na
+
+// Per-factor hit memory (7 factors)
+var float[] fhT = array.new_float(), var float[] fhV = array.new_float()
+var float[] fhB = array.new_float(), var float[] fhM = array.new_float()
+var float[] fhS = array.new_float(), var float[] fhK = array.new_float()
+var float[] fhX = array.new_float()
+
+// Calibration bins (10 buckets, with recency decay)
+var float[] binS = array.new_float(10, 0.0)
+var float[] binC = array.new_float(10, 0.0)
+
+// KNN pattern matcher
+f_knn(tr, vr, k) =>
+    n = array.size(hTR)
+    res = 0.5
+    if n >= k + 2 and not na(tr)
+        d = array.new_float(n)
+        for i = 0 to n - 1
+            array.set(d, i, math.abs(tr - array.get(hTR, i)) + math.abs(vr - array.get(hVR, i)))
+        s = 0.0
+        for j = 1 to k
+            mi = 0
+            mv = array.get(d, 0)
+            for i = 1 to n - 1
+                if array.get(d, i) < mv
+                    mv := array.get(d, i)
+                    mi := i
+            s += array.get(hOut, mi)
+            array.set(d, mi, 1e20)
+        res := s / k
+    res
+
+// ==================== REALTIME TICK ENGINE ====================
+if barstate.isrealtime
+    if barstate.isnew
+        upTicks := 0, dnTicks := 0, upVol := 0.0, dnVol := 0.0
+        bigUpVol := 0.0, bigDnVol := 0.0, streak := 0
+        array.clear(tickDeltas)
+        lastPrice := close[1]
+        lastVol   := 0.0
+
+    dVol = math.max(volume - nz(lastVol), 0.0)
+    if not na(lastPrice)
+        if close > lastPrice
+            upTicks += 1
+            upVol   += dVol
+            streak  := streak > 0 ? streak + 1 : 1
+            array.push(tickDeltas, dVol)
+        else if close < lastPrice
+            dnTicks += 1
+            dnVol   += dVol
+            streak  := streak < 0 ? streak - 1 : -1
+            array.push(tickDeltas, -dVol)
+        tot     = upTicks + dnTicks
+        avgSize = tot > 0 ? (upVol + dnVol) / tot : 0.0
+        if avgSize > 0 and dVol > avgSize * bigMult
+            if close > lastPrice
+                bigUpVol += dVol
+            else if close < lastPrice
+                bigDnVol += dVol
+        if array.size(tickDeltas) > momWin
+            array.shift(tickDeltas)
+    lastPrice := close
+    lastVol   := volume
+
+    // --- raw factors ---
+    rrT := f_ratio(f_sumLast(hUpTicks, lookback) + upTicks, f_sumLast(hDnTicks, lookback) + dnTicks)
+    rrV := f_ratio(f_sumLast(hUpVol, lookback) + upVol,     f_sumLast(hDnVol, lookback) + dnVol)
+    rrB := f_ratio(bigUpVol, bigDnVol)
+    posD = 0.0
+    negD = 0.0
+    if array.size(tickDeltas) > 0
+        for i = 0 to array.size(tickDeltas) - 1
+            v = array.get(tickDeltas, i)
+            if v > 0
+                posD += v
+            else
+                negD -= v
+    rrM := f_ratio(posD, negD)
+    rrS := 0.5 + math.max(math.min(streak / 20.0, 0.45), -0.45)
+    rrK := f_knn(f_ratio(upTicks, dnTicks), f_ratio(upVol, dnVol), knnK)
+    rrX := atrV > 0 ? 0.5 + math.max(math.min((emaF - emaS) / (2 * atrV), 0.45), -0.45) : 0.5
+
+    // --- auto-weight + inversion per factor ---
+    [eT, dT_, accT] = f_effw(wTick,   fhT, lookback, useAutoW)
+    [eV, dV_, accV] = f_effw(wVol,    fhV, lookback, useAutoW)
+    [eB, dB_, accB] = f_effw(wBig,    fhB, lookback, useAutoW)
+    [eM, dM_, accM] = f_effw(wMom,    fhM, lookback, useAutoW)
+    [eS, dS_, accS] = f_effw(wStreak, fhS, lookback, useAutoW)
+    [eK, dK_, accK] = f_effw(wKnn,    fhK, lookback, useAutoW)
+    [eX, dX_, accX] = f_effw(wCtx,    fhX, lookback, useAutoW)
+    rT := dT_ > 0 ? rrT : 1 - rrT
+    rV := dV_ > 0 ? rrV : 1 - rrV
+    rB := dB_ > 0 ? rrB : 1 - rrB
+    rM := dM_ > 0 ? rrM : 1 - rrM
+    rS := dS_ > 0 ? rrS : 1 - rrS
+    rK := dK_ > 0 ? rrK : 1 - rrK
+    rX := dX_ > 0 ? rrX : 1 - rrX
+    aT := accT, aV := accV, aB := accB, aM := accM, aS := accS, aK := accK, aX := accX
+
+    wSum = eT + eV + eB + eM + eS + eK + eX
+    pPre = wSum > 0 ? (eT*rT + eV*rV + eB*rB + eM*rM + eS*rS + eK*rK + eX*rX) / wSum : 0.5
+
+    // Layer 1: divergence penalty
+    if useDiv and (close - open) * (upVol - dnVol) < 0
+        pPre := 0.5 + (pPre - 0.5) * 0.6
+
+    // Layer 2: adaptive accuracy scaling
+    if useAdapt and array.size(hHit) >= 10
+        acc = f_avgLast(hHit, lookback)
+        sc  = math.max(math.min(acc * 2.0 - 0.2, 1.0), 0.3)
+        pPre := 0.5 + (pPre - 0.5) * sc
+    pPreV := pPre
+
+    // Layer 3: probability calibration
+    pFin = pPre
+    if useCalib
+        bi  = int(math.max(math.min(pPre * 10, 9), 0))
+        cnt = array.get(binC, bi)
+        if cnt >= 8
+            pFin := (array.get(binS, bi) + pPre * 6) / (cnt + 6)
+    pUp := pFin * 100
+
+// ==================== DYNAMIC Z-SCORE ====================
+float zScore = 0.0
+szP = array.size(hP)
+nP  = math.min(szP, lookback)
+if nP >= 10
+    mu = 0.0
+    for i = szP - nP to szP - 1
+        mu += array.get(hP, i)
+    mu /= nP
+    va = 0.0
+    for i = szP - nP to szP - 1
+        va += math.pow(array.get(hP, i) - mu, 2)
+    sd = math.max(math.sqrt(va / nP), 3.0)
+    zScore := (pUp - mu) / sd
+
+// ==================== SIGNALS (LAYER 4: AGREEMENT + DYNAMIC THRESHOLD) ====================
+bullCnt = (rT > 0.55 ? 1 : 0) + (rV > 0.55 ? 1 : 0) + (rB > 0.55 ? 1 : 0) + (rM > 0.55 ? 1 : 0) + (rS > 0.55 ? 1 : 0) + (rK > 0.55 ? 1 : 0) + (rX > 0.55 ? 1 : 0)
+bearCnt = (rT < 0.45 ? 1 : 0) + (rV < 0.45 ? 1 : 0) + (rB < 0.45 ? 1 : 0) + (rM < 0.45 ? 1 : 0) + (rS < 0.45 ? 1 : 0) + (rK < 0.45 ? 1 : 0) + (rX < 0.45 ? 1 : 0)
+totTicksG  = upTicks + dnTicks
+valid      = barstate.isrealtime and totTicksG >= minTicks
+strongBull = valid and bullCnt >= minAgree and (pUp >= strongUp or (zScore >=  zTh and pUp >= 55))
+strongBear = valid and bearCnt >= minAgree and (pUp <= strongDn or (zScore <= -zTh and pUp <= 45))
+
+// ==================== LIVE LABEL ====================
+if barstate.isrealtime
+    sig = strongBull ? "STRONG BULL" : strongBear ? "STRONG BEAR" : totTicksG < minTicks ? "COLLECTING" : "NEUTRAL"
+    txt = "P(Up): " + str.tostring(pUp, "#.#") + "% | P(Dn): " + str.tostring(100 - pUp, "#.#") + "%" +
+          "\nZ: " + str.tostring(zScore, "0.00") + " | Agree B" + str.tostring(bullCnt) + "/S" + str.tostring(bearCnt) + " of 7" +
+          "\nTicks " + str.tostring(upTicks) + "u/" + str.tostring(dnTicks) + "d | " + sig
+    col = strongBull ? color.new(color.green, 55) : strongBear ? color.new(color.red, 55) : pUp > 55 ? color.new(color.teal, 70) : pUp < 45 ? color.new(color.maroon, 70) : color.new(color.gray, 70)
+    label.delete(live_lbl)
+    live_lbl := label.new(bar_index, high, txt, color=col, textcolor=color.white, style=label.style_label_down)
+
+// ==================== COMMIT ON BAR CLOSE ====================
+if barstate.isconfirmed
+    if not na(pendTR)
+        array.push(hTR, pendTR)
+        array.push(hVR, pendVR)
+        array.push(hOut, close > open ? 1.0 : close < open ? 0.0 : 0.5)
+    if barstate.isrealtime
+        up = close > open
+        dn = close < open
+        array.push(hUpTicks, float(upTicks)), array.push(hDnTicks, float(dnTicks))
+        array.push(hUpVol, upVol),            array.push(hDnVol, dnVol)
+        pendTR := f_ratio(upTicks, dnTicks)
+        pendVR := f_ratio(upVol, dnVol)
+        // Overall + per-factor hit tracking (on RAW factors, so inversion learns correctly)
+        array.push(hHit, (pUp > 50 and up) or (pUp < 50 and dn) ? 1.0 : up or dn ? 0.0 : 0.5)
+        array.push(fhT, f_hit(rrT, up, dn)), array.push(fhV, f_hit(rrV, up, dn))
+        array.push(fhB, f_hit(rrB, up, dn)), array.push(fhM, f_hit(rrM, up, dn))
+        array.push(fhS, f_hit(rrS, up, dn)), array.push(fhK, f_hit(rrK, up, dn))
+        array.push(fhX, f_hit(rrX, up, dn))
+        array.push(hP, pUp)
+        // Calibration bin update (with decay for recency)
+        bi = int(math.max(math.min(pPreV * 10, 9), 0))
+        array.set(binS, bi, array.get(binS, bi) * 0.995 + (up ? 1.0 : dn ? 0.0 : 0.5))
+        array.set(binC, bi, array.get(binC, bi) * 0.995 + 1.0)
+        // Saved label
+        color savedCol = pUp > 55 ? color.new(color.green, 40) : pUp < 45 ? color.new(color.red, 40) : color.new(color.gray, 20)
+        array.push(history_labels, label.new(bar_index, high, "P " + str.tostring(pUp, "#.#") + "%\n" + str.tostring(upTicks) + "u/" + str.tostring(dnTicks) + "d", color=savedCol, textcolor=color.white, style=label.style_label_down))
+        if array.size(history_labels) > 490
+            label.delete(array.shift(history_labels))
+    else if useSeed
+        rng = high - low
+        bp  = rng > 0 ? (close - low) / rng : 0.5
+        pendTR := bp
+        pendVR := bp
+    f_cap(hUpTicks), f_cap(hDnTicks), f_cap(hUpVol), f_cap(hDnVol)
+    f_cap(hTR), f_cap(hVR), f_cap(hOut), f_cap(hHit), f_cap(hP)
+    f_cap(fhT), f_cap(fhV), f_cap(fhB), f_cap(fhM), f_cap(fhS), f_cap(fhK), f_cap(fhX)
+
+// ==================== DASHBOARD ====================
+var table dash = table.new(position.top_right, 2, 13, border_width=1)
+if showTable and barstate.isrealtime
+    hdrBg = color.new(color.blue, 30)
+    rowBg = color.new(color.black, 50)
+    names = array.from("Tick Ratio", "Volume Ratio", "Big Players", "Momentum", "Streak", "Pattern KNN", "Trend Ctx")
+    vals  = array.from(rT, rV, rB, rM, rS, rK, rX)
+    accs  = array.from(aT, aV, aB, aM, aS, aK, aX)
+    table.cell(dash, 0, 0, "FACTOR", text_color=color.white, bgcolor=hdrBg)
+    table.cell(dash, 1, 0, "VAL | ACC", text_color=color.white, bgcolor=hdrBg)
+    for i = 0 to 6
+        v = array.get(vals, i)
+        table.cell(dash, 0, i + 1, array.get(names, i), text_color=color.white, bgcolor=rowBg)
+        table.cell(dash, 1, i + 1, str.tostring(v, "0.00") + " | " + str.tostring(array.get(accs, i) * 100, "#") + "%", text_color=color.white, bgcolor=f_fcol(v))
+    table.cell(dash, 0, 8, "Sys Accuracy", text_color=color.white, bgcolor=rowBg)
+    table.cell(dash, 1, 8, str.tostring(f_avgLast(hHit, lookback) * 100, "#.#") + "%", text_color=color.white, bgcolor=rowBg)
+    table.cell(dash, 0, 9, "P(Up)", text_color=color.white, bgcolor=hdrBg)
+    table.cell(dash, 1, 9, str.tostring(pUp, "#.#") + "%", text_color=color.white, bgcolor=pUp > 55 ? color.new(color.green, 30) : color.new(color.gray, 30))
+    table.cell(dash, 0, 10, "P(Down)", text_color=color.white, bgcolor=hdrBg)
+    table.cell(dash, 1, 10, str.tostring(100 - pUp, "#.#") + "%", text_color=color.white, bgcolor=pUp < 45 ? color.new(color.red, 30) : color.new(color.gray, 30))
+    table.cell(dash, 0, 11, "Z-Score", text_color=color.white, bgcolor=rowBg)
+    table.cell(dash, 1, 11, str.tostring(zScore, "0.00"), text_color=color.white, bgcolor=zScore >= zTh ? color.new(color.green, 30) : zScore <= -zTh ? color.new(color.red, 30) : rowBg)
+    sigTxt = strongBull ? "STRONG BULL" : strongBear ? "STRONG BEAR" : "NEUTRAL"
+    table.cell(dash, 0, 12, "SIGNAL", text_color=color.white, bgcolor=hdrBg)
+    table.cell(dash, 1, 12, sigTxt, text_color=color.white, bgcolor=strongBull ? color.new(color.green, 10) : strongBear ? color.new(color.red, 10) : color.new(color.gray, 30))
+
+// ==================== SHAPES & ALERTS ====================
+plotshape(strongBull, style=shape.triangleup,   location=location.belowbar, color=color.green, size=size.tiny, title="Strong Bull")
+plotshape(strongBear, style=shape.triangledown, location=location.abovebar, color=color.red,   size=size.tiny, title="Strong Bear")
+alertcondition(strongBull, "Strong Bull Signal", "Filtered STRONG BULL - agreement + dynamic threshold confirmed")
+alertcondition(strongBear, "Strong Bear Signal", "Filtered STRONG BEAR - agreement + dynamic threshold confirmed")

@@ -1,0 +1,66 @@
+//@version=5
+indicator("Break of Structure (BoS) Boxes", shorttitle="BoS Boxes", overlay=true)
+
+// --- Inputs ---
+leftBars  = input.int(5, title="Pivot Left Bars", minval=1)
+rightBars = input.int(5, title="Pivot Right Bars", minval=1)
+
+// --- Pivot Calculation ---
+// íÏÇ ˜ÑÏä ÓÞÝåÇ æ ˜ÝåÇí ãÇŽæÑ (íæÊåÇ)
+ph = ta.pivothigh(high, leftBars, rightBars)
+pl = ta.pivotlow(low, leftBars, rightBars)
+
+// ãÊÛíÑåÇíí ÈÑÇí ÐÎíÑå ÂÎÑíä ÓÞÝ æ ˜Ý ãÚÊÈÑ
+var float lastPH = na
+var float lastPL = na
+
+if not na(ph)
+    lastPH := ph
+if not na(pl)
+    lastPL := pl
+
+// --- State Logic ---
+// æÖÚíÊ ÇÓíáÇÊæÑ: 1 = ÕÚæÏí (ÈÇáÇí ÎØ)¡ -1 = äÒæáí (Çííä ÎØ)
+var int trendState = 0 
+
+// ÔÑÇíØ Ô˜ÓÊ ÓÇÎÊÇÑ (BoS)
+bullish_bos = close > lastPH
+bearish_bos = close < lastPL
+
+// ÂÏíÊ ˜ÑÏä æÖÚíÊ ÈÑ ÇÓÇÓ Ô˜ÓÊ ÓÇÎÊÇÑ
+if bullish_bos
+    trendState := 1
+else if bearish_bos
+    trendState := -1
+
+// --- Box Drawing Logic ---
+var box currentBox = na
+var float maxTop = na
+var float minBot = na
+
+// ÊÔÎíÕ ÊÛííÑ ÝÇÒ (ÊÛííÑ Ñä ÇÓíáÇÊæÑ)
+stateChanged = trendState != trendState[1]
+
+if stateChanged and trendState != 0
+    // ÇÑ ÑæäÏ ÊÛííÑ ˜ÑÏ¡ í˜ ÈÇ˜Ó ÌÏíÏ ÔÑæÚ ˜ä
+    maxTop := high
+    minBot := low
+    
+    // ÊÚííä Ñä ÈÇ˜Ó
+    boxBgColor = trendState == 1 ? color.new(color.green, 85) : color.new(color.red, 85)
+    boxBorderColor = trendState == 1 ? color.green : color.red
+    
+    // ÑÓã ÈÇ˜Ó Çæáíå
+    currentBox := box.new(left=bar_index, top=maxTop, right=bar_index, bottom=minBot, border_color=boxBorderColor, bgcolor=boxBgColor)
+
+else if trendState == trendState[1] and trendState != 0
+    // ÇÑ ÏÑ åãÇä ÑæäÏ åÓÊíã¡ ÓÞÝ æ ˜Ý ÈÇ˜Ó æ ÖáÚ ÓãÊ ÑÇÓÊ Âä ÑÇ ÂÏíÊ ˜ä ÊÇ ÊãÇã ˜äÏáåÇ ÑÇ ÏÑ ÈÑ ÈíÑÏ
+    maxTop := math.max(maxTop, high)
+    minBot := math.min(minBot, low)
+    
+    if not na(currentBox)
+        box.set_top(currentBox, maxTop)
+        box.set_bottom(currentBox, minBot)
+        box.set_right(currentBox, bar_index)
+
+// (ÈÎÔ ÑÓã ÇÓíáÇÊæÑ áåÇí ÍÐÝ ÔÏ ÊÇ Ñæí ÇÑÊ ÇÕáí ÊÏÇÎáí ÇíÌÇÏ ä˜äÏ)

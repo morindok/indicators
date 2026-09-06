@@ -1,0 +1,265 @@
+//@version=5
+indicator("Symmetric Range Spiral System v13", overlay = true, max_polylines_count = 100)
+
+sym_level = input.price(0.0, "Symmetric Level", confirm = true)
+start_time_in = input.time(0, "Start Time", confirm = true)
+end_time_in = input.time(0, "End Time", confirm = true)
+
+opt_length_mult = input.float(0.001, "Spiral Length Multiplier", step=0.1)
+
+opt_color_based = input.bool(true, "Spiral 1: Red Sum, Spiral 2: Green Sum")
+opt_swap_pos = input.bool(true, "Swap Spirals Positions")
+opt_show_sym = input.bool(true, "Show ONLY Symmetric (Mirrored) Spirals")
+opt_cross = input.bool(true, "Crossed Spirals (1x CCW, 1x CW)")
+opt_multi_sym = input.bool(false, "Symmetrize Price to Spiral Extrema (Turns)")
+
+// --- ê“Ì‰Â ÃœÌœ  ﬁ«—‰ ---
+opt_mirror_price = input.bool(true, "Mirror Price (Polyline) to Diagonal Lines")
+
+opt_center1_ratio = input.float(0.382, "Spiral 1 Center Ratio (0=Start, 1=End)", minval=0.0, maxval=1.0, step=0.1)
+opt_center2_ratio = input.float(0.618, "Spiral 2 Center Ratio (0=Start, 1=End)", minval=0.0, maxval=1.0, step=0.1)
+
+var all_t = array.new_int()
+var all_o = array.new_float()
+var all_c = array.new_float()
+var all_h = array.new_float()
+var all_l = array.new_float()
+
+array.push(all_t, time)
+array.push(all_o, open)
+array.push(all_c, close)
+array.push(all_h, high)
+array.push(all_l, low)
+
+// ---  «»⁄ ”—«”—Ì »—«Ì —”„ „”Ì— ﬁ—Ì‰Â ---
+draw_mirrored_path(float m, float b, color col, int start_idx, int end_idx, array<int> t_arr, array<float> c_arr) =>
+    pts = array.new<chart.point>()
+    for i = start_idx to end_idx - 1
+        int t_i = array.get(t_arr, i)
+        float c_i = array.get(c_arr, i)
+        float line_y = (m * t_i) + b
+        float mirrored_y = (2 * line_y) - c_i
+        array.push(pts, chart.point.from_time(t_i, mirrored_y))
+    polyline.new(pts, xloc = xloc.bar_time, line_color = color.new(col, 20), line_width = 1)
+
+
+if barstate.islast
+    int total_bars = array.size(all_t)
+    int start_idx = 0
+    int end_idx = total_bars - 1
+    
+    for i = 0 to total_bars - 1
+        if array.get(all_t, i) >= start_time_in
+            start_idx := i
+            break
+            
+    for i = total_bars - 1 to 0
+        if array.get(all_t, i) <= end_time_in
+            end_idx := i
+            break
+
+    float total_distance = 0.0
+    float red_distance = 0.0
+    float green_distance = 0.0
+    
+    if start_idx <= end_idx
+        for i = start_idx to end_idx
+            float c_val = array.get(all_c, i)
+            float o_val = array.get(all_o, i)
+            float dist = math.abs(c_val - (2 * sym_level - c_val))
+            total_distance += dist
+            if c_val < o_val
+                red_distance += dist
+            else
+                green_distance += dist
+
+    int plot_start_idx = math.max(0, total_bars - 9990)
+    pts_c = array.new<chart.point>()
+    pts_h = array.new<chart.point>()
+    pts_l = array.new<chart.point>()
+    
+    for i = plot_start_idx to total_bars - 1
+        int t_i = array.get(all_t, i)
+        array.push(pts_c, chart.point.from_time(t_i, 2 * sym_level - array.get(all_c, i)))
+        array.push(pts_h, chart.point.from_time(t_i, 2 * sym_level - array.get(all_l, i)))
+        array.push(pts_l, chart.point.from_time(t_i, 2 * sym_level - array.get(all_h, i)))
+        
+    polyline.new(pts_c, xloc = xloc.bar_time, line_color = color.new(color.blue, 30))
+    polyline.new(pts_h, xloc = xloc.bar_time, line_color = color.new(color.blue, 60))
+    polyline.new(pts_l, xloc = xloc.bar_time, line_color = color.new(color.blue, 60))
+
+    float dt = timeframe.in_seconds("") * 1000.0 * 10.0
+    float dp = sym_level * 0.05
+    if dp == 0
+        dp := 1.0
+
+    float b_coeff = math.log(1.618) / (math.pi / 2)
+    float a = 0.02
+
+    float dist1 = (opt_color_based ? red_distance : total_distance) * opt_length_mult
+    float dist2 = (opt_color_based ? green_distance : total_distance) * opt_length_mult
+    
+    int range_len = end_idx - start_idx
+    int base_idx1 = start_idx + math.round(range_len * opt_center1_ratio)
+    int base_idx2 = start_idx + math.round(range_len * opt_center2_ratio)
+
+    int idx1 = opt_swap_pos ? base_idx2 : base_idx1
+    int idx2 = opt_swap_pos ? base_idx1 : base_idx2
+
+    // --- Spiral 1 (Counter-Clockwise) ---
+    int t1 = array.get(all_t, idx1)
+    float p1 = array.get(all_c, idx1)
+    pts_sp1 = array.new<chart.point>()
+    pts_sp1_sym = array.new<chart.point>()
+    array.push(pts_sp1, chart.point.from_time(t1, p1))
+    array.push(pts_sp1_sym, chart.point.from_time(t1, 2 * sym_level - p1))
+    
+    float acc_len1 = 0.0
+    float prev_t1 = t1
+    float prev_p1 = p1
+    
+    float sp1_max = p1
+    float sp1_min = p1
+    
+    for i = 1 to 5000
+        float theta = i * 0.02
+        float r = a * math.exp(b_coeff * theta)
+        int curr_t = math.round(t1 + r * dt * math.cos(theta))
+        float curr_p = p1 + r * dp * math.sin(theta)
+        float seg = math.sqrt(math.pow(((curr_t - prev_t1) / dt) * dp, 2) + math.pow(curr_p - prev_p1, 2))
+        
+        if acc_len1 <= dist1 and array.size(pts_sp1) < 9990
+            array.push(pts_sp1, chart.point.from_time(curr_t, curr_p))
+            array.push(pts_sp1_sym, chart.point.from_time(curr_t, 2 * sym_level - curr_p))
+            sp1_max := math.max(sp1_max, curr_p)
+            sp1_min := math.min(sp1_min, curr_p)
+            acc_len1 += seg
+        else
+            break
+        prev_t1 := curr_t
+        prev_p1 := curr_p
+        
+    if opt_show_sym
+        polyline.new(pts_sp1_sym, xloc = xloc.bar_time, line_color = color.green)
+    else
+        polyline.new(pts_sp1, xloc = xloc.bar_time, line_color = color.green)
+
+    // --- Spiral 2 (Clockwise if opt_cross is true) ---
+    int t2 = array.get(all_t, idx2)
+    float p2 = array.get(all_c, idx2)
+    pts_sp2 = array.new<chart.point>()
+    pts_sp2_sym = array.new<chart.point>()
+    array.push(pts_sp2, chart.point.from_time(t2, p2))
+    array.push(pts_sp2_sym, chart.point.from_time(t2, 2 * sym_level - p2))
+    
+    float acc_len2 = 0.0
+    float prev_t2 = t2
+    float prev_p2 = p2
+    
+    float sp2_max = p2
+    float sp2_min = p2
+    
+    for i = 1 to 5000
+        float theta_base = i * 0.02
+        float theta = opt_cross ? -theta_base : theta_base
+        float r = a * math.exp(b_coeff * theta_base)
+        int curr_t = math.round(t2 + r * dt * math.cos(theta))
+        float curr_p = p2 + r * dp * math.sin(theta)
+        float seg = math.sqrt(math.pow(((curr_t - prev_t2) / dt) * dp, 2) + math.pow(curr_p - prev_p2, 2))
+        
+        if acc_len2 <= dist2 and array.size(pts_sp2) < 9990
+            array.push(pts_sp2, chart.point.from_time(curr_t, curr_p))
+            array.push(pts_sp2_sym, chart.point.from_time(curr_t, 2 * sym_level - curr_p))
+            sp2_max := math.max(sp2_max, curr_p)
+            sp2_min := math.min(sp2_min, curr_p)
+            acc_len2 += seg
+        else
+            break
+        prev_t2 := curr_t
+        prev_p2 := curr_p
+        
+    if opt_show_sym
+        polyline.new(pts_sp2_sym, xloc = xloc.bar_time, line_color = color.red)
+    else
+        polyline.new(pts_sp2, xloc = xloc.bar_time, line_color = color.red)
+
+
+    // --- Connect and Extend Ends ---
+    float final_p1 = opt_show_sym ? (2 * sym_level - prev_p1) : prev_p1
+    float final_p2 = opt_show_sym ? (2 * sym_level - prev_p2) : prev_p2
+    
+    int end_time1 = int(math.round(prev_t1))
+    int end_time2 = int(math.round(prev_t2))
+
+    if end_time1 != end_time2 
+        // 1. Œÿ “—œ («’·Ì) òÂ œÊ «‰ Â«Ì «”ÅÌ—«· —« »Â Â„ Ê’· „Ìùò‰œ
+        line.new(x1 = end_time1, y1 = final_p1, 
+                 x2 = end_time2, y2 = final_p2, 
+                 xloc = xloc.bar_time, 
+                 extend = extend.both, 
+                 color = color.yellow,  
+                 width = 2)
+                 
+        // --- ŒÿÊÿ ÷—»œ—Ì (ﬁ—Ì‰Â) ---
+
+        // „Õ«”»Â ‰ﬁÿÂ ‘—Ê⁄ »—«Ì Œÿ ¬»Ì ( ﬁ«ÿ⁄ —ÊÌ «‰ Â«Ì «”ÅÌ—«· œÊ„)
+        float blue_y1 = (2 * final_p2) - final_p1
+        
+        // 2. Œÿ ¬»Ì ( ﬁ«ÿ⁄ œ— ”„  —«” )
+        line.new(x1 = end_time1, y1 = blue_y1, 
+                 x2 = end_time2, y2 = final_p2, // ‰ﬁÿÂ  ﬁ«ÿ⁄
+                 xloc = xloc.bar_time, 
+                 extend = extend.both, 
+                 color = color.blue,  
+                 width = 2)
+
+        // „Õ«”»Â ‰ﬁÿÂ Å«Ì«‰ »—«Ì Œÿ ”»“ ( ﬁ«ÿ⁄ —ÊÌ «‰ Â«Ì «”ÅÌ—«· «Ê·)
+        float green_y2 = (2 * final_p1) - final_p2
+
+        // 3. Œÿ ”»“ ( ﬁ«ÿ⁄ œ— ”„  çÅ)
+        line.new(x1 = end_time1, y1 = final_p1, // ‰ﬁÿÂ  ﬁ«ÿ⁄
+                 x2 = end_time2, y2 = green_y2, 
+                 xloc = xloc.bar_time, 
+                 extend = extend.both, 
+                 color = color.green,  
+                 width = 2)
+
+        // --- »Œ‘ ÃœÌœ: ﬁ—Ì‰Âù”«“Ì ﬁÌ„  ‰”»  »Â ŒÿÊÿ —”„ ‘œÂ ---
+        if opt_mirror_price
+            float time_diff = end_time2 - end_time1
+            if time_diff != 0
+                // Yellow Line Mirror
+                float m_yellow = (final_p2 - final_p1) / time_diff
+                float b_yellow = final_p1 - (m_yellow * end_time1)
+                draw_mirrored_path(m_yellow, b_yellow, color.yellow, plot_start_idx, total_bars, all_t, all_c)
+                
+                // Blue Line Mirror
+                float m_blue = (final_p2 - blue_y1) / time_diff
+                float b_blue = blue_y1 - (m_blue * end_time1)
+                draw_mirrored_path(m_blue, b_blue, color.blue, plot_start_idx, total_bars, all_t, all_c)
+                
+                // Green Line Mirror
+                float m_green = (green_y2 - final_p1) / time_diff
+                float b_green = final_p1 - (m_green * end_time1)
+                draw_mirrored_path(m_green, b_green, color.green, plot_start_idx, total_bars, all_t, all_c)
+
+    // --- Multi Symmetry to Spiral Extrema (Turns) ---
+    if opt_multi_sym
+        pts_sym_sp1_max = array.new<chart.point>()
+        pts_sym_sp1_min = array.new<chart.point>()
+        pts_sym_sp2_max = array.new<chart.point>()
+        pts_sym_sp2_min = array.new<chart.point>()
+        
+        for i = plot_start_idx to total_bars - 1
+            int t_i = array.get(all_t, i)
+            float c_i = array.get(all_c, i)
+            
+            array.push(pts_sym_sp1_max, chart.point.from_time(t_i, 2 * sp1_max - c_i))
+            array.push(pts_sym_sp1_min, chart.point.from_time(t_i, 2 * sp1_min - c_i))
+            array.push(pts_sym_sp2_max, chart.point.from_time(t_i, 2 * sp2_max - c_i))
+            array.push(pts_sym_sp2_min, chart.point.from_time(t_i, 2 * sp2_min - c_i))
+            
+        polyline.new(pts_sym_sp1_max, xloc = xloc.bar_time, line_color = color.new(color.fuchsia, 50))
+        polyline.new(pts_sym_sp1_min, xloc = xloc.bar_time, line_color = color.new(color.orange, 50))
+        polyline.new(pts_sym_sp2_max, xloc = xloc.bar_time, line_color = color.new(color.teal, 50))
+        polyline.new(pts_sym_sp2_min, xloc = xloc.bar_time, line_color = color.new(color.yellow, 50))

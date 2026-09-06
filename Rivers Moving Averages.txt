@@ -1,0 +1,151 @@
+//@version=5
+indicator("Symmetric Price - 5 Stages MAs", overlay=true)
+
+referenceLevel = input.price(0, "Reference Level", confirm=true)
+startTime = input.time(timestamp("01 Jan 2024 00:00"), "Start Time", confirm=true)
+endTime = input.time(timestamp("01 Jan 2024 00:00"), "End Time", confirm=true)
+showSymmetricCandles = input.bool(false, "Show Symmetric Candles to MAs")
+useAdaptiveMA = input.bool(false, "Use Adaptive MA (Smoother for Larger Ranges)")
+smoothnessFactor = input.float(0.5, "Smoothness Factor", minval=0.1, maxval=2.0, step=0.1)
+showCombinedMA = input.bool(false, "Show Combined MA of All MAs")
+
+// „Õ«”»Â  ⁄œ«œ ò‰œ·ùÂ«Ì »Ì‰ œÊ “„«‰
+var int barCount = 0
+var int barsAfterEnd = 0
+
+if time >= startTime and time <= endTime
+    barCount += 1
+    barsAfterEnd := 0
+else if time > endTime
+    barsAfterEnd += 1
+
+// «” ›«œÂ «“  ⁄œ«œ ò‰œ·ùÂ« »Â ⁄‰Ê«‰ ÿÊ· MA
+baseMaLength = barCount > 0 ? barCount : 20
+
+// „Õ«”»Â ÿÊ· MA  ÿ»ÌﬁÌ
+additionalLength = useAdaptiveMA and barsAfterEnd > 0 ? int(math.pow(barsAfterEnd, smoothnessFactor)) : 0
+maLength = useAdaptiveMA ? int(math.pow(baseMaLength, smoothnessFactor)) + additionalLength : baseMaLength
+
+// „—Õ·Â 0: ﬁÌ„  «’·Ì
+price0 = close
+ma0 = ta.sma(price0, maLength)
+
+// „—Õ·Â 1: ﬁÌ„  „ ﬁ«—‰ ‰”»  »Â reference level
+symmetricOpen = 2 * referenceLevel - open
+symmetricHigh = 2 * referenceLevel - high
+symmetricLow = 2 * referenceLevel - low
+symmetricClose = 2 * referenceLevel - close
+
+plotcandle(symmetricOpen, symmetricHigh, symmetricLow, symmetricClose, color=color.blue, wickcolor=color.blue, bordercolor=color.blue)
+
+price1 = symmetricClose
+ma1 = ta.sma(price1, maLength)
+
+// „—Õ·Â 2:  ﬁ«—‰ ‰”»  »Â MA „—Õ·Â ﬁ»·
+price0_sym2 = 2 * ma0 - price0
+price1_sym2 = 2 * ma1 - price1
+
+ma0_sym2 = ta.sma(price0_sym2, maLength)
+ma1_sym2 = ta.sma(price1_sym2, maLength)
+
+// ò‰œ·ùÂ«Ì „ ﬁ«—‰ „—Õ·Â 2
+sym2_open_0 = 2 * ma0 - open
+sym2_high_0 = 2 * ma0 - low
+sym2_low_0 = 2 * ma0 - high
+sym2_close_0 = 2 * ma0 - close
+plotcandle(showSymmetricCandles ? sym2_open_0 : na, showSymmetricCandles ? sym2_high_0 : na, showSymmetricCandles ? sym2_low_0 : na, showSymmetricCandles ? sym2_close_0 : na, color=color.new(color.purple, 50), wickcolor=color.new(color.purple, 50), bordercolor=color.new(color.purple, 50))
+
+sym2_open_1 = 2 * ma1 - symmetricOpen
+sym2_high_1 = 2 * ma1 - symmetricLow
+sym2_low_1 = 2 * ma1 - symmetricHigh
+sym2_close_1 = 2 * ma1 - symmetricClose
+plotcandle(showSymmetricCandles ? sym2_open_1 : na, showSymmetricCandles ? sym2_high_1 : na, showSymmetricCandles ? sym2_low_1 : na, showSymmetricCandles ? sym2_close_1 : na, color=color.new(color.yellow, 50), wickcolor=color.new(color.yellow, 50), bordercolor=color.new(color.yellow, 50))
+
+// „—Õ·Â 3:  ﬁ«—‰ ‰”»  »Â MA „—Õ·Â ﬁ»·
+price0_sym3 = 2 * ma0_sym2 - price0_sym2
+price1_sym3 = 2 * ma1_sym2 - price1_sym2
+
+ma0_sym3 = ta.sma(price0_sym3, maLength)
+ma1_sym3 = ta.sma(price1_sym3, maLength)
+
+// ò‰œ·ùÂ«Ì „ ﬁ«—‰ „—Õ·Â 3
+sym3_open_0 = 2 * ma0_sym2 - sym2_open_0
+sym3_high_0 = 2 * ma0_sym2 - sym2_low_0
+sym3_low_0 = 2 * ma0_sym2 - sym2_high_0
+sym3_close_0 = 2 * ma0_sym2 - sym2_close_0
+plotcandle(showSymmetricCandles ? sym3_open_0 : na, showSymmetricCandles ? sym3_high_0 : na, showSymmetricCandles ? sym3_low_0 : na, showSymmetricCandles ? sym3_close_0 : na, color=color.new(color.orange, 60), wickcolor=color.new(color.orange, 60), bordercolor=color.new(color.orange, 60))
+
+sym3_open_1 = 2 * ma1_sym2 - sym2_open_1
+sym3_high_1 = 2 * ma1_sym2 - sym2_low_1
+sym3_low_1 = 2 * ma1_sym2 - sym2_high_1
+sym3_close_1 = 2 * ma1_sym2 - sym2_close_1
+plotcandle(showSymmetricCandles ? sym3_open_1 : na, showSymmetricCandles ? sym3_high_1 : na, showSymmetricCandles ? sym3_low_1 : na, showSymmetricCandles ? sym3_close_1 : na, color=color.new(color.aqua, 60), wickcolor=color.new(color.aqua, 60), bordercolor=color.new(color.aqua, 60))
+
+// „—Õ·Â 4:  ﬁ«—‰ ‰”»  »Â MA „—Õ·Â ﬁ»·
+price0_sym4 = 2 * ma0_sym3 - price0_sym3
+price1_sym4 = 2 * ma1_sym3 - price1_sym3
+
+ma0_sym4 = ta.sma(price0_sym4, maLength)
+ma1_sym4 = ta.sma(price1_sym4, maLength)
+
+// ò‰œ·ùÂ«Ì „ ﬁ«—‰ „—Õ·Â 4
+sym4_open_0 = 2 * ma0_sym3 - sym3_open_0
+sym4_high_0 = 2 * ma0_sym3 - sym3_low_0
+sym4_low_0 = 2 * ma0_sym3 - sym3_high_0
+sym4_close_0 = 2 * ma0_sym3 - sym3_close_0
+plotcandle(showSymmetricCandles ? sym4_open_0 : na, showSymmetricCandles ? sym4_high_0 : na, showSymmetricCandles ? sym4_low_0 : na, showSymmetricCandles ? sym4_close_0 : na, color=color.new(color.fuchsia, 70), wickcolor=color.new(color.fuchsia, 70), bordercolor=color.new(color.fuchsia, 70))
+
+sym4_open_1 = 2 * ma1_sym3 - sym3_open_1
+sym4_high_1 = 2 * ma1_sym3 - sym3_low_1
+sym4_low_1 = 2 * ma1_sym3 - sym3_high_1
+sym4_close_1 = 2 * ma1_sym3 - sym3_close_1
+plotcandle(showSymmetricCandles ? sym4_open_1 : na, showSymmetricCandles ? sym4_high_1 : na, showSymmetricCandles ? sym4_low_1 : na, showSymmetricCandles ? sym4_close_1 : na, color=color.new(color.lime, 70), wickcolor=color.new(color.lime, 70), bordercolor=color.new(color.lime, 70))
+
+// „—Õ·Â 5:  ﬁ«—‰ ‰”»  »Â MA „—Õ·Â ﬁ»·
+price0_sym5 = 2 * ma0_sym4 - price0_sym4
+price1_sym5 = 2 * ma1_sym4 - price1_sym4
+
+ma0_sym5 = ta.sma(price0_sym5, maLength)
+ma1_sym5 = ta.sma(price1_sym5, maLength)
+
+// ò‰œ·ùÂ«Ì „ ﬁ«—‰ „—Õ·Â 5
+sym5_open_0 = 2 * ma0_sym4 - sym4_open_0
+sym5_high_0 = 2 * ma0_sym4 - sym4_low_0
+sym5_low_0 = 2 * ma0_sym4 - sym4_high_0
+sym5_close_0 = 2 * ma0_sym4 - sym4_close_0
+plotcandle(showSymmetricCandles ? sym5_open_0 : na, showSymmetricCandles ? sym5_high_0 : na, showSymmetricCandles ? sym5_low_0 : na, showSymmetricCandles ? sym5_close_0 : na, color=color.new(color.maroon, 80), wickcolor=color.new(color.maroon, 80), bordercolor=color.new(color.maroon, 80))
+
+sym5_open_1 = 2 * ma1_sym4 - sym4_open_1
+sym5_high_1 = 2 * ma1_sym4 - sym4_low_1
+sym5_low_1 = 2 * ma1_sym4 - sym4_high_1
+sym5_close_1 = 2 * ma1_sym4 - sym4_close_1
+plotcandle(showSymmetricCandles ? sym5_open_1 : na, showSymmetricCandles ? sym5_high_1 : na, showSymmetricCandles ? sym5_low_1 : na, showSymmetricCandles ? sym5_close_1 : na, color=color.new(color.navy, 80), wickcolor=color.new(color.navy, 80), bordercolor=color.new(color.navy, 80))
+
+// —”„ ›ﬁÿ MA Â«
+plot(ma0, "MA Original", color.green, 2)
+plot(ma1, "MA Symmetric", color.red, 2)
+
+plot(ma0_sym2, "MA Original Sym-2", color.purple, 2)
+plot(ma1_sym2, "MA Symmetric Sym-2", color.yellow, 2)
+
+plot(ma0_sym3, "MA Original Sym-3", color.orange, 2)
+plot(ma1_sym3, "MA Symmetric Sym-3", color.aqua, 2)
+
+plot(ma0_sym4, "MA Original Sym-4", color.fuchsia, 2)
+plot(ma1_sym4, "MA Symmetric Sym-4", color.lime, 2)
+
+plot(ma0_sym5, "MA Original Sym-5", color.maroon, 2)
+plot(ma1_sym5, "MA Symmetric Sym-5", color.navy, 2)
+
+// „Ì«‰êÌ‰ ò·Ì œÊ MA «’·Ì
+maCombined = (ma0 + ma1) / 2
+plot(maCombined, "MA Combined", color.orange, 3)
+
+// „Ì«‰êÌ‰ ò·Ì  „«„ MA Â«Ì »«·«ÌÌ (‘«ŒÂ «’·Ì)
+maUpperCombined = (ma0 + ma0_sym2 + ma0_sym3 + ma0_sym4 + ma0_sym5) / 5
+
+// „Ì«‰êÌ‰ ò·Ì  „«„ MA Â«Ì Å«ÌÌ‰Ì (‘«ŒÂ „ ﬁ«—‰)
+maLowerCombined = (ma1 + ma1_sym2 + ma1_sym3 + ma1_sym4 + ma1_sym5) / 5
+
+plot(showCombinedMA ? maUpperCombined : na, "MA Upper Combined", color.black, 4)
+plot(showCombinedMA ? maLowerCombined : na, "MA Lower Combined", color.black, 4)

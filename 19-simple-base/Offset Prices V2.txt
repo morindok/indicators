@@ -1,0 +1,151 @@
+//@version=5
+indicator("Continuous Price Curve Offset (9 Levels)", overlay=true, max_bars_back=5000)
+
+// --- Settings ---
+startTime = input.time(0, "äÞØå ÔÑæÚ ÈÇÒå", confirm=true)
+endTime = input.time(0, "äÞØå ÇíÇä ÈÇÒå", confirm=true)
+
+useRatio = input.bool(true, "ÇÓÊÝÇÏå ÇÒ ÖÑíÈ ÓÝÇÑÔí")
+ratioVal = input.float(1.618, "ãÞÏÇÑ ÖÑíÈ", step=0.001)
+
+// --- MA & Symmetry Settings ---
+maLength = input.int(20, "Øæá ãææíä ÇæÑíÌ (MA) ÏÓÊí", group="ÊäÙíãÇÊ ãææíä æ ÞÑíäå")
+useRangeForMA = input.bool(false, "Øæá MA ÈÑÇÈÑ ÈÇ Øæá ÈÇÒå ÈÇÔÏ¿", group="ÊäÙíãÇÊ ãææíä æ ÞÑíäå")
+enableSymmetry = input.bool(false, "äãÇíÔ ÞíãÊ ÞÑíäå (Symmetry)", group="ÊäÙíãÇÊ ãææíä æ ÞÑíäå")
+
+// --- Time & Range Logic ---
+realStart = math.min(startTime, endTime)
+realEnd = math.max(startTime, endTime)
+
+// ãÍÇÓÈå Øæá ÈÇÒå ÒãÇäí (ÊÚÏÇÏ ˜äÏá)
+float tfMs = timeframe.in_seconds(timeframe.period) * 1000
+int expectedBars = math.max(1, math.round((realEnd - realStart) / tfMs))
+
+inRange = time >= realStart and time <= realEnd
+
+var float rangeHigh = na
+var float rangeLow = na
+var int endIdx = na
+
+if inRange
+    rangeHigh := na(rangeHigh) ? high : math.max(rangeHigh, high)
+    rangeLow  := na(rangeLow) ? low : math.min(rangeLow, low)
+
+var float finalHeight = na
+if time == realEnd
+    endIdx := bar_index
+    finalHeight := rangeHigh - rangeLow
+
+// --- Calculate MA ---
+// ÊÚííä Øæá äåÇíí ãææíä (ÏÓÊí íÇ ÈÑ ÇÓÇÓ Øæá ÈÇÒå)
+int finalMaLength = useRangeForMA ? expectedBars : maLength
+int safeMaLength = int(math.max(1, math.min(finalMaLength, 4999))) // ÌáæíÑí ÇÒ ÎØÇí Øæá ÛíÑãÌÇÒ
+
+// ãÍÇÓÈå ãææíä ÇæÑíÌ Çíå
+baseMA = ta.sma(close, safeMaLength)
+
+// --- Multipliers ---
+float m1 = useRatio ? math.pow(ratioVal, 1) : 1
+float m2 = useRatio ? math.pow(ratioVal, 2) : 2
+float m3 = useRatio ? math.pow(ratioVal, 3) : 3
+float m4 = useRatio ? math.pow(ratioVal, 4) : 4
+float m5 = useRatio ? math.pow(ratioVal, 5) : 5
+float m6 = useRatio ? math.pow(ratioVal, 6) : 6
+float m7 = useRatio ? math.pow(ratioVal, 7) : 7
+float m8 = useRatio ? math.pow(ratioVal, 8) : 8
+float m9 = useRatio ? math.pow(ratioVal, 9) : 9
+
+// --- Offsets ---
+int off1 = math.round(expectedBars * m1)
+int off2 = math.round(expectedBars * m2)
+int off3 = math.round(expectedBars * m3)
+int off4 = math.round(expectedBars * m4)
+int off5 = math.round(expectedBars * m5)
+int off6 = math.round(expectedBars * m6)
+int off7 = math.round(expectedBars * m7)
+int off8 = math.round(expectedBars * m8)
+int off9 = math.round(expectedBars * m9)
+
+// --- Shift Function (using MA) ---
+getContinuousShiftMA(off, m, isUp) =>
+    canPlot = not na(endIdx) and (bar_index > endIdx)
+    safeOff = int(math.min(math.max(0, off), 4999))
+    validOff = int(math.min(safeOff, bar_index))
+    
+    // ÇÓÊÝÇÏå ÇÒ ãææíä ÇæÑíÌ
+    pastMA = baseMA[validOff] 
+    val = canPlot ? (isUp ? pastMA + (finalHeight * m) : pastMA - (finalHeight * m)) : na
+    val
+
+// --- Symmetry Function ---
+getSymmetry(targetLine) =>
+    enableSymmetry ? (2 * targetLine - close) : na
+
+bgcolor(inRange ? color.new(color.blue, 90) : na)
+
+// --- Calculate Target Lines ---
+// UP
+up1 = getContinuousShiftMA(off1, m1, true)
+up2 = getContinuousShiftMA(off2, m2, true)
+up3 = getContinuousShiftMA(off3, m3, true)
+up4 = getContinuousShiftMA(off4, m4, true)
+up5 = getContinuousShiftMA(off5, m5, true)
+up6 = getContinuousShiftMA(off6, m6, true)
+up7 = getContinuousShiftMA(off7, m7, true)
+up8 = getContinuousShiftMA(off8, m8, true)
+up9 = getContinuousShiftMA(off9, m9, true)
+
+// DOWN
+dn1 = getContinuousShiftMA(off1, m1, false)
+dn2 = getContinuousShiftMA(off2, m2, false)
+dn3 = getContinuousShiftMA(off3, m3, false)
+dn4 = getContinuousShiftMA(off4, m4, false)
+dn5 = getContinuousShiftMA(off5, m5, false)
+dn6 = getContinuousShiftMA(off6, m6, false)
+dn7 = getContinuousShiftMA(off7, m7, false)
+dn8 = getContinuousShiftMA(off8, m8, false)
+dn9 = getContinuousShiftMA(off9, m9, false)
+
+// --- Plot Lines (UP) ---
+plot(up1, color=color.green,   style=plot.style_line, title="Up 1")
+plot(up2, color=color.orange,  style=plot.style_line, title="Up 2")
+plot(up3, color=color.red,     style=plot.style_line, title="Up 3")
+plot(up4, color=color.purple,  style=plot.style_line, title="Up 4")
+plot(up5, color=color.fuchsia, style=plot.style_line, title="Up 5")
+plot(up6, color=color.aqua,    style=plot.style_line, title="Up 6")
+plot(up7, color=color.yellow,  style=plot.style_line, title="Up 7")
+plot(up8, color=color.maroon,  style=plot.style_line, title="Up 8")
+plot(up9, color=color.teal,    style=plot.style_line, title="Up 9")
+
+// --- Plot Lines (DOWN) ---
+plot(dn1, color=color.new(color.green, 40),   style=plot.style_line, title="Dn 1")
+plot(dn2, color=color.new(color.orange, 40),  style=plot.style_line, title="Dn 2")
+plot(dn3, color=color.new(color.red, 40),     style=plot.style_line, title="Dn 3")
+plot(dn4, color=color.new(color.purple, 40),  style=plot.style_line, title="Dn 4")
+plot(dn5, color=color.new(color.fuchsia, 40), style=plot.style_line, title="Dn 5")
+plot(dn6, color=color.new(color.aqua, 40),    style=plot.style_line, title="Dn 6")
+plot(dn7, color=color.new(color.yellow, 40),  style=plot.style_line, title="Dn 7")
+plot(dn8, color=color.new(color.maroon, 40),  style=plot.style_line, title="Dn 8")
+plot(dn9, color=color.new(color.teal, 40),    style=plot.style_line, title="Dn 9")
+
+// --- Plot Symmetries (UP) ---
+plot(getSymmetry(up1), color=color.new(color.green, 50),   style=plot.style_cross, title="Sym Up 1")
+plot(getSymmetry(up2), color=color.new(color.orange, 50),  style=plot.style_cross, title="Sym Up 2")
+plot(getSymmetry(up3), color=color.new(color.red, 50),     style=plot.style_cross, title="Sym Up 3")
+plot(getSymmetry(up4), color=color.new(color.purple, 50),  style=plot.style_cross, title="Sym Up 4")
+plot(getSymmetry(up5), color=color.new(color.fuchsia, 50), style=plot.style_cross, title="Sym Up 5")
+plot(getSymmetry(up6), color=color.new(color.aqua, 50),    style=plot.style_cross, title="Sym Up 6")
+plot(getSymmetry(up7), color=color.new(color.yellow, 50),  style=plot.style_cross, title="Sym Up 7")
+plot(getSymmetry(up8), color=color.new(color.maroon, 50),  style=plot.style_cross, title="Sym Up 8")
+plot(getSymmetry(up9), color=color.new(color.teal, 50),    style=plot.style_cross, title="Sym Up 9")
+
+// --- Plot Symmetries (DOWN) ---
+plot(getSymmetry(dn1), color=color.new(color.green, 60),   style=plot.style_cross, title="Sym Dn 1")
+plot(getSymmetry(dn2), color=color.new(color.orange, 60),  style=plot.style_cross, title="Sym Dn 2")
+plot(getSymmetry(dn3), color=color.new(color.red, 60),     style=plot.style_cross, title="Sym Dn 3")
+plot(getSymmetry(dn4), color=color.new(color.purple, 60),  style=plot.style_cross, title="Sym Dn 4")
+plot(getSymmetry(dn5), color=color.new(color.fuchsia, 60), style=plot.style_cross, title="Sym Dn 5")
+plot(getSymmetry(dn6), color=color.new(color.aqua, 60),    style=plot.style_cross, title="Sym Dn 6")
+plot(getSymmetry(dn7), color=color.new(color.yellow, 60),  style=plot.style_cross, title="Sym Dn 7")
+plot(getSymmetry(dn8), color=color.new(color.maroon, 60),  style=plot.style_cross, title="Sym Dn 8")
+plot(getSymmetry(dn9), color=color.new(color.teal, 60),    style=plot.style_cross, title="Sym Dn 9")

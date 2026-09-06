@@ -1,0 +1,627 @@
+import dash
+from dash import dcc, html, Input, Output, State, callback_context
+import plotly.graph_objects as go
+import numpy as np
+import math
+from datetime import datetime
+
+app = dash.Dash(__name__, suppress_callback_exceptions=True)
+
+app.index_string = '''
+<!DOCTYPE html>
+<html>
+<head>
+    {%metas%}
+    <title>Gann Time Machine</title>
+    {%favicon%}
+    {%css%}
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+        html, body {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background: #0a0e1a;
+            font-family: monospace;
+        }
+        #react-entry-point, ._dash-loading, #_dash-app-content {
+            height: 100%; width: 100%;
+        }
+        .js-plotly-plot, .plot-container { height: 100% !important; }
+        input[type=number]::-webkit-inner-spin-button { opacity: 0.4; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #0a0e1a; }
+        ::-webkit-scrollbar-thumb { background: #7a6030; border-radius: 2px; }
+    </style>
+</head>
+<body>
+    {%app_entry%}
+    <footer>{%config%}{%scripts%}{%renderer%}</footer>
+</body>
+</html>
+'''
+
+# ??? —‰êù»‰œÌ ????????????????????????????????????????????
+DARK_BG    = "#0a0e1a"
+PANEL_BG   = "#0f1523"
+GOLD       = "#c9a84c"
+GOLD_LIGHT = "#f0d080"
+GOLD_DIM   = "#7a6030"
+RED_ZONE   = "#ff3a3a"
+GREEN_ZONE = "#00e676"
+BLUE_ACC   = "#1a78c2"
+TEXT_MAIN  = "#e8dcc8"
+TEXT_DIM   = "#6a7090"
+RING_COL   = "#1e2a45"
+
+# ??? “Ê«Ì«Ì ê«‰ ??????????????????????????????????????????
+GANN_ANGLES = {
+    0:   {"label": "0∞",   "type": "major", "weight": 5, "desc": "Å«ÌÂ ç—ŒÂ"},
+    45:  {"label": "45∞",  "type": "major", "weight": 5, "desc": "1◊1 ê«‰"},
+    90:  {"label": "90∞",  "type": "major", "weight": 4, "desc": "—»⁄ ç—ŒÂ"},
+    135: {"label": "135∞", "type": "mid",   "weight": 3, "desc": "3◊1 ê«‰"},
+    180: {"label": "180∞", "type": "major", "weight": 5, "desc": "‰Ì„Â ç—ŒÂ"},
+    225: {"label": "225∞", "type": "mid",   "weight": 3, "desc": "5◊1 ê«‰"},
+    270: {"label": "270∞", "type": "major", "weight": 4, "desc": "”ÂùçÂ«—„"},
+    315: {"label": "315∞", "type": "mid",   "weight": 3, "desc": "7◊1 ê«‰"},
+    30:  {"label": "30∞",  "type": "minor", "weight": 2, "desc": "1/12"},
+    60:  {"label": "60∞",  "type": "minor", "weight": 2, "desc": "1/6"},
+    120: {"label": "120∞", "type": "minor", "weight": 2, "desc": "1/3"},
+    150: {"label": "150∞", "type": "minor", "weight": 1, "desc": "5/12"},
+    210: {"label": "210∞", "type": "minor", "weight": 1, "desc": "7/12"},
+    240: {"label": "240∞", "type": "minor", "weight": 1, "desc": "2/3"},
+    300: {"label": "300∞", "type": "minor", "weight": 1, "desc": "5/6"},
+    330: {"label": "330∞", "type": "minor", "weight": 1, "desc": "11/12"},
+}
+ANGLE_COLORS = {"major": GOLD, "mid": "#e06030", "minor": "#3a5a8a"}
+FIBO_LEVELS  = [0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.272, 1.618]
+FIBO_WEIGHTS = {0.236:1, 0.382:3, 0.5:3, 0.618:4, 0.786:2, 1.0:2, 1.272:1.5, 1.618:3}
+
+# ???????????????????????????????????????????????????????????
+#  Ê«»⁄  Õ·Ì·
+# ???????????????????????????????????????????????????????????
+
+def gann_confluence(price, base, step, n_rings=6, tol=0.9):
+    score = 0; hits = []
+    if base <= 0 or step <= 0: return 0, []
+    for ring in range(1, n_rings+1):
+        rw = 6 / (ring + 1)
+        for ang, info in GANN_ANGLES.items():
+            gp = base + (ang / 360) * step * ring
+            dp = abs(gp - price) / price * 100
+            if dp <= tol:
+                prox = 1 - dp / tol
+                s = info["weight"] * rw * prox
+                score += s
+                hits.append({"angle": ang, "ring": ring, "label": info["label"],
+                              "gann_p": gp, "diff_pct": dp, "score": s,
+                              "type": info["type"]})
+    return score, hits
+
+def fibo_confluence(price, swing_lo, swing_hi, tol=0.9):
+    score = 0; hits = []
+    if swing_lo <= 0 or swing_hi <= swing_lo: return 0, []
+    rng = swing_hi - swing_lo
+    for fib in FIBO_LEVELS:
+        ret_p = swing_hi - rng * fib
+        dp = abs(ret_p - price) / price * 100
+        if dp <= tol:
+            w = FIBO_WEIGHTS.get(fib, 1)
+            prox = 1 - dp / tol
+            score += w * prox
+            hits.append({"level": fib, "price": ret_p, "diff": dp})
+    return score, hits
+
+def signal_label(total):
+    if total >= 15: return ("STRONG REVERSAL", RED_ZONE)
+    if total >= 8:  return ("LIKELY ZONE",     "#ff9900")
+    if total >= 4:  return ("WATCH",           BLUE_ACC)
+    return ("",     TEXT_DIM)
+
+def scan_reversal_zones(base, step, swing_lo, swing_hi, price_min, price_max):
+    zones = []
+    step_sz = max(100, int((price_max - price_min) / 400))
+    for price in range(int(price_min), int(price_max), step_sz):
+        gs, gh = gann_confluence(price, base, step)
+        fs, fh = fibo_confluence(price, swing_lo, swing_hi)
+        total = gs + fs * 1.5
+        if total >= 3:
+            zones.append({"price": price, "gann": gs, "fibo": fs,
+                           "total": total, "gann_hits": gh, "fib_hits": fh})
+    # «œ€«„ clusterùÂ«Ì ‰“œÌò
+    zones.sort(key=lambda x: x["price"])
+    merged = []
+    i = 0
+    while i < len(zones):
+        cluster = [zones[i]]
+        j = i + 1
+        while j < len(zones) and zones[j]["price"] - zones[j-1]["price"] < 800:
+            cluster.append(zones[j]); j += 1
+        best = max(cluster, key=lambda x: x["total"])
+        merged.append(best); i = j
+    return sorted(merged, key=lambda x: -x["total"])
+
+def price_to_angle(price, base, step):
+    if base <= 0 or step <= 0: return 0
+    return ((price - base) / step * 360) % 360
+
+def get_wheel_prices(base, step, rotation, n_rings=3):
+    results = []
+    for ring in range(1, n_rings+1):
+        for ang, info in GANN_ANGLES.items():
+            eff = (ang - rotation) % 360
+            price = base + (eff / 360) * step * ring
+            results.append({"ring": ring, "angle": ang, "price": price,
+                             "label": info["label"], "type": info["type"],
+                             "desc": info["desc"]})
+    return results
+
+# ???????????????????????????????????????????????????????????
+# ”«Œ  ‰„Êœ«—Â«
+# ???????????????????????????????????????????????????????????
+
+def build_wheel(base, step, rotation, current=None, swing_lo=None, swing_hi=None):
+    fig = go.Figure()
+    R_INNER = 0.15
+    R_RINGS = [0.35, 0.58, 0.80]
+    R_LABEL = 0.93
+    theta = np.linspace(0, 2*np.pi, 300)
+
+    for r in R_RINGS:
+        fig.add_trace(go.Scatter(x=r*np.cos(theta), y=r*np.sin(theta),
+            mode="lines", line=dict(color=RING_COL, width=1.5),
+            hoverinfo="skip", showlegend=False))
+
+    fig.add_trace(go.Scatter(x=R_INNER*np.cos(theta), y=R_INNER*np.sin(theta),
+        mode="lines", line=dict(color=GOLD_DIM, width=2),
+        fill="toself", fillcolor="rgba(201,168,76,0.08)",
+        hoverinfo="skip", showlegend=False))
+
+    for ang, info in GANN_ANGLES.items():
+        rad = math.radians(90 - (ang + rotation))
+        c, s = math.cos(rad), math.sin(rad)
+        col = ANGLE_COLORS[info["type"]]
+        w   = 2 if info["type"]=="major" else (1.5 if info["type"]=="mid" else 0.7)
+        dk  = "dot" if info["type"]=="minor" else "solid"
+        fig.add_trace(go.Scatter(x=[R_INNER*c, R_RINGS[-1]*c],
+            y=[R_INNER*s, R_RINGS[-1]*s], mode="lines",
+            line=dict(color=col, width=w, dash=dk),
+            hoverinfo="skip", showlegend=False))
+        fig.add_trace(go.Scatter(x=[R_LABEL*c], y=[R_LABEL*s], mode="text",
+            text=[f"{ang}∞"],
+            textfont=dict(color=col, size=8 if info["type"]=="minor" else 10,
+                          family="monospace"),
+            hoverinfo="skip", showlegend=False))
+
+    for item in get_wheel_prices(base, step, rotation):
+        r   = R_RINGS[item["ring"]-1]
+        rad = math.radians(90 - (item["angle"] + rotation))
+        c, s = math.cos(rad), math.sin(rad)
+        col = ANGLE_COLORS[item["type"]]
+        sz  = 10 if item["type"]=="major" else (8 if item["type"]=="mid" else 6)
+        # »——”Ì confluence
+        gs, _ = gann_confluence(item["price"], base, step)
+        fs, _ = fibo_confluence(item["price"], swing_lo or 0, swing_hi or 0)
+        total = gs + fs * 1.5
+        marker_col = RED_ZONE if total >= 15 else ("#ff9900" if total >= 8 else col)
+        fig.add_trace(go.Scatter(x=[r*c], y=[r*s],
+            mode="markers+text",
+            marker=dict(color=marker_col, size=sz*1.4, symbol="circle",
+                        line=dict(color=DARK_BG, width=1)),
+            text=[f"${item['price']:,.0f}"],
+            textposition="middle center",
+            textfont=dict(color=DARK_BG, size=6, family="monospace"),
+            hovertemplate=(f"<b>{item['label']}</b><br>"
+                           f"Õ·ﬁÂ {item['ring']}<br>"
+                           f"ﬁÌ„ : ${item['price']:,.0f}<br>"
+                           f"Confluence: {total:.1f}<br>"
+                           f"{item['desc']}<extra></extra>"),
+            showlegend=False))
+
+    if current and base > 0:
+        curr_ang = price_to_angle(current, base, step)
+        rad = math.radians(90 - (curr_ang + rotation))
+        c, s = math.cos(rad), math.sin(rad)
+        for r in R_RINGS:
+            fig.add_trace(go.Scatter(x=[r*c], y=[r*s], mode="markers",
+                marker=dict(color=GREEN_ZONE, size=11, symbol="diamond",
+                            line=dict(color="white", width=1.5)),
+                hoverinfo="skip", showlegend=False))
+        fig.add_trace(go.Scatter(x=[0, R_RINGS[-1]*c], y=[0, R_RINGS[-1]*s],
+            mode="lines", line=dict(color=GREEN_ZONE, width=2.5),
+            hoverinfo="skip", showlegend=False))
+
+    fig.add_trace(go.Scatter(x=[0,0], y=[0.02, R_RINGS[-1]+0.05],
+        mode="lines", line=dict(color=RED_ZONE, width=3),
+        hoverinfo="skip", showlegend=False))
+    fig.add_trace(go.Scatter(x=[0], y=[R_RINGS[-1]+0.05], mode="markers",
+        marker=dict(color=RED_ZONE, size=8, symbol="triangle-up"),
+        hoverinfo="skip", showlegend=False))
+    fig.add_trace(go.Scatter(x=[0], y=[0], mode="text",
+        text=[f"{rotation:.0f}∞"],
+        textfont=dict(color=GOLD_LIGHT, size=13, family="monospace"),
+        hoverinfo="skip", showlegend=False))
+
+    fig.update_layout(paper_bgcolor=PANEL_BG, plot_bgcolor=PANEL_BG,
+        margin=dict(l=5,r=5,t=5,b=5), autosize=True, showlegend=False,
+        xaxis=dict(range=[-1.12,1.12], showgrid=False, zeroline=False,
+                   showticklabels=False, scaleanchor="y"),
+        yaxis=dict(range=[-1.12,1.12], showgrid=False, zeroline=False,
+                   showticklabels=False),
+        hoverlabel=dict(bgcolor=PANEL_BG, font_color=TEXT_MAIN, font_family="monospace"))
+    return fig
+
+def build_heatmap(zones, current=None):
+    if not zones:
+        fig = go.Figure()
+        fig.update_layout(paper_bgcolor=PANEL_BG, plot_bgcolor=PANEL_BG,
+            margin=dict(l=5,r=5,t=30,b=5), autosize=True,
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            annotations=[dict(text="”Ê∆Ì‰ê —« Ê«—œ ò‰Ìœ", x=0.5, y=0.5,
+                              xref="paper", yref="paper", showarrow=False,
+                              font=dict(color=TEXT_DIM, size=13, family="monospace"))])
+        return fig
+
+    prices = [z["price"] for z in zones]
+    totals = [z["total"] for z in zones]
+    gann_s = [z["gann"] for z in zones]
+    fibo_s = [z["fibo"] for z in zones]
+    labels = []
+    for z in zones:
+        sig, _ = signal_label(z["total"])
+        gh = sorted(z["gann_hits"], key=lambda x: -x["score"])[:2]
+        fh = z["fib_hits"][:1]
+        gstr = " ".join([f"{h['angle']}∞R{h['ring']}" for h in gh])
+        fstr = " ".join([f"Fib{h['level']}" for h in fh])
+        labels.append(f"${z['price']:,}<br>{sig}<br>{gstr} {fstr}<br>«„ Ì«“: {z['total']:.1f}")
+
+    fig = go.Figure()
+
+    # ‰Ê«— confluence
+    fig.add_trace(go.Bar(x=prices, y=totals, name="«„ Ì«“ ò·",
+        marker=dict(
+            color=totals,
+            colorscale=[[0,"#1e2a45"],[0.3,BLUE_ACC],[0.6,"#ff9900"],[1.0,RED_ZONE]],
+            showscale=False),
+        text=labels, hovertemplate="%{text}<extra></extra>",
+        showlegend=False))
+
+    # Œÿ ﬁÌ„  Ã«—Ì
+    if current:
+        fig.add_vline(x=current, line=dict(color=GREEN_ZONE, width=2, dash="dot"),
+                      annotation=dict(text=f"${current:,}", font=dict(color=GREEN_ZONE, size=10)))
+
+    fig.update_layout(
+        paper_bgcolor=PANEL_BG, plot_bgcolor=PANEL_BG,
+        margin=dict(l=40,r=10,t=10,b=40), autosize=True,
+        xaxis=dict(title="ﬁÌ„ ", title_font=dict(color=TEXT_DIM, size=10),
+                   tickfont=dict(color=TEXT_DIM, size=9), gridcolor=RING_COL,
+                   tickformat="$,.0f"),
+        yaxis=dict(title="«„ Ì«“", title_font=dict(color=TEXT_DIM, size=10),
+                   tickfont=dict(color=TEXT_DIM, size=9), gridcolor=RING_COL),
+        showlegend=False, bargap=0.1,
+        hoverlabel=dict(bgcolor=PANEL_BG, font_color=TEXT_MAIN, font_family="monospace"))
+    return fig
+
+# ???????????????????????????????????????????????????????????
+# «” «Ì·ùÂ«Ì „‘ —ò
+# ???????????????????????????????????????????????????????????
+INP_STYLE = {
+    "width": "100%", "background": DARK_BG, "border": f"1px solid {GOLD_DIM}",
+    "color": GOLD_LIGHT, "padding": "7px 10px", "fontFamily": "monospace",
+    "fontSize": "0.95rem", "borderRadius": "4px", "outline": "none",
+    "boxSizing": "border-box",
+}
+LBL_STYLE = {
+    "color": TEXT_DIM, "fontSize": "0.65rem", "letterSpacing": "1.5px",
+    "display": "block", "marginBottom": "4px",
+}
+SEC_STYLE = {"marginBottom": "14px"}
+BTN_BASE  = {
+    "border": "none", "padding": "6px 12px", "fontFamily": "monospace",
+    "fontSize": "0.8rem", "borderRadius": "4px", "cursor": "pointer",
+    "fontWeight": 700,
+}
+
+# ???????????????????????????????????????????????????????????
+# ·«ÌÂù«Ê 
+# ???????????????????????????????????????????????????????????
+app.layout = html.Div([
+    html.Div(style={"position":"fixed","inset":0,
+        "background":f"radial-gradient(ellipse at 30% 20%, #0d1a2e 0%, {DARK_BG} 60%)",
+        "zIndex":-1}),
+
+    # ??? Âœ— ?????????????????????????????????????????????
+    html.Div([
+        html.Div([
+            html.Span("?", style={"fontSize":"1.6rem","color":GOLD,"marginRight":"10px"}),
+            html.Div([
+                html.Span("GANN TIME MACHINE", style={"fontSize":"1.1rem",
+                    "letterSpacing":"5px","color":GOLD_LIGHT,"fontWeight":700}),
+                html.Span("  ∑  Bitcoin Reversal Engine", style={"fontSize":"0.7rem",
+                    "color":TEXT_DIM,"letterSpacing":"2px"}),
+            ]),
+        ], style={"display":"flex","alignItems":"center"}),
+        html.Div(id="live-clock", style={"fontSize":"0.95rem","color":GOLD,
+                                          "letterSpacing":"2px"}),
+    ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
+              "padding":"8px 20px","borderBottom":f"1px solid {GOLD_DIM}",
+              "background":"rgba(10,14,26,0.9)","flexShrink":0}),
+
+    # ??? »œ‰Â «’·Ì ???????????????????????????????????????
+    html.Div([
+
+        # ?? Å‰· çÅ ??????????????????????????????????????
+        html.Div([
+            # Ê—ÊœÌùÂ«Ì «’·Ì
+            html.Div([
+                html.Div([
+                    html.Label("ﬁÌ„  Å«ÌÂ", style=LBL_STYLE),
+                    dcc.Input(id="base-price", type="number", value=74000,
+                              debounce=True, style=INP_STYLE),
+                ], style=SEC_STYLE),
+                html.Div([
+                    html.Label("ê«„ ç—ŒÂ (Step)", style=LBL_STYLE),
+                    dcc.Input(id="step-size", type="number", value=10000,
+                              debounce=True, style=INP_STYLE),
+                ], style=SEC_STYLE),
+                html.Div([
+                    html.Label("ﬁÌ„  Ã«—Ì BTC", style={**LBL_STYLE,"color":GREEN_ZONE}),
+                    dcc.Input(id="current-price", type="number", value=None,
+                              debounce=True,
+                              style={**INP_STYLE,"border":f"1px solid {BLUE_ACC}",
+                                     "color":GREEN_ZONE}),
+                ], style=SEC_STYLE),
+            ], style={"borderBottom":f"1px solid {GOLD_DIM}33","paddingBottom":"12px","marginBottom":"12px"}),
+
+            # ”Ê∆Ì‰ê
+            html.Div([
+                html.P("”Ê∆Ì‰ê «ŒÌ—", style={"color":GOLD,"fontSize":"0.7rem",
+                    "letterSpacing":"2px","margin":"0 0 8px","fontWeight":700}),
+                html.Div([
+                    html.Label("ò› ”Ê∆Ì‰ê (Lo)", style=LBL_STYLE),
+                    dcc.Input(id="swing-lo", type="number", value=74000,
+                              debounce=True, style={**INP_STYLE,"borderColor":GREEN_ZONE}),
+                ], style=SEC_STYLE),
+                html.Div([
+                    html.Label("”ﬁ› ”Ê∆Ì‰ê (Hi)", style=LBL_STYLE),
+                    dcc.Input(id="swing-hi", type="number", value=109000,
+                              debounce=True, style={**INP_STYLE,"borderColor":RED_ZONE}),
+                ], style=SEC_STYLE),
+            ], style={"borderBottom":f"1px solid {GOLD_DIM}33","paddingBottom":"12px","marginBottom":"12px"}),
+
+            # ç—Œ‘
+            html.Div([
+                html.Label("ç—Œ‘ œ” Ì (∞)", style=LBL_STYLE),
+                dcc.Slider(id="manual-rotation", min=0, max=359, step=1, value=0,
+                    marks={0:"0∞",90:"90∞",180:"180∞",270:"270∞"},
+                    tooltip={"placement":"bottom","always_visible":True},
+                    updatemode="drag"),
+            ], style={**SEC_STYLE,"marginTop":"4px"}),
+
+            #  «Ì„—
+            html.Div([
+                html.Label(" «Ì„— ŒÊœò«— (5min=5∞)", style=LBL_STYLE),
+                html.Div([
+                    html.Button("?", id="btn-start", n_clicks=0,
+                        style={**BTN_BASE,"background":f"linear-gradient(135deg,{GOLD_DIM},{GOLD})",
+                               "color":DARK_BG,"marginRight":"6px"}),
+                    html.Button("?", id="btn-stop", n_clicks=0,
+                        style={**BTN_BASE,"background":"transparent",
+                               "color":RED_ZONE,"border":f"1px solid {RED_ZONE}",
+                               "marginRight":"6px"}),
+                    html.Button("?", id="btn-reset", n_clicks=0,
+                        style={**BTN_BASE,"background":"transparent",
+                               "color":TEXT_DIM,"border":f"1px solid {TEXT_DIM}"}),
+                ], style={"display":"flex","marginBottom":"6px"}),
+                html.Div(id="timer-status", style={"fontSize":"0.75rem","color":TEXT_DIM,
+                                                    "minHeight":"18px"}),
+            ], style={**SEC_STYLE,"borderBottom":f"1px solid {GOLD_DIM}33",
+                      "paddingBottom":"12px","marginBottom":"12px"}),
+
+            # —«Â‰„«
+            html.Div([
+                html.Div([html.Span("? ",style={"color":RED_ZONE}),
+                    html.Span("Strong Reversal (?15)",style={"color":TEXT_DIM,"fontSize":"0.72rem"})]),
+                html.Div([html.Span("? ",style={"color":"#ff9900"}),
+                    html.Span("Likely Zone (?8)",style={"color":TEXT_DIM,"fontSize":"0.72rem"})]),
+                html.Div([html.Span("? ",style={"color":BLUE_ACC}),
+                    html.Span("Watch (?4)",style={"color":TEXT_DIM,"fontSize":"0.72rem"})]),
+                html.Div([html.Span("? ",style={"color":GREEN_ZONE}),
+                    html.Span("ﬁÌ„  Ã«—Ì",style={"color":TEXT_DIM,"fontSize":"0.72rem"})]),
+            ], style={"lineHeight":"1.7"}),
+
+        ], style={"width":"230px","flexShrink":0,"padding":"14px","background":PANEL_BG,
+                  "borderRight":f"1px solid {GOLD_DIM}","overflowY":"auto","minHeight":0}),
+
+        # ?? Ê”ÿ: ç—Œ + heatmap ??????????????????????????
+        html.Div([
+            # ç—Œ
+            html.Div([
+                dcc.Graph(id="wheel-graph", config={"displayModeBar":False},
+                          style={"height":"100%","width":"100%"}),
+            ], style={"flex":"1 1 0","minHeight":0,"overflow":"hidden"}),
+
+            # heatmap
+            html.Div([
+                html.P("‰ﬁ‘Â confluence »«“ê‘ ùÂ«",
+                       style={"color":GOLD,"fontSize":"0.65rem","letterSpacing":"2px",
+                              "margin":"4px 8px 2px","fontWeight":700}),
+                dcc.Graph(id="heatmap-graph", config={"displayModeBar":False},
+                          style={"height":"calc(100% - 28px)","width":"100%"}),
+            ], style={"height":"30%","flexShrink":0,"borderTop":f"1px solid {GOLD_DIM}"}),
+
+        ], style={"flex":1,"display":"flex","flexDirection":"column",
+                  "minWidth":0,"background":PANEL_BG,"overflow":"hidden"}),
+
+        # ?? Å‰· —«” : ”Ìê‰«·ùÂ« ?????????????????????????
+        html.Div([
+            html.P("‰“œÌòù —Ì‰ ‰ﬁ«ÿ »«“ê‘ ",
+                   style={"color":GOLD,"fontSize":"0.7rem","letterSpacing":"2px",
+                          "margin":"0 0 10px","fontWeight":700}),
+            html.Div(id="signal-table"),
+        ], style={"width":"230px","flexShrink":0,"padding":"14px","background":PANEL_BG,
+                  "borderLeft":f"1px solid {GOLD_DIM}","overflowY":"auto","minHeight":0}),
+
+    ], style={"display":"flex","flex":1,"overflow":"hidden","minHeight":0}),
+
+    # state
+    dcc.Store(id="rotation-store", data=0),
+    dcc.Store(id="timer-running",  data=False),
+    dcc.Interval(id="wheel-interval", interval=5*60*1000, n_intervals=0, disabled=True),
+    dcc.Interval(id="clock-interval", interval=1000, n_intervals=0),
+
+], style={"display":"flex","flexDirection":"column","height":"100vh","maxHeight":"100vh",
+           "width":"100vw","maxWidth":"100vw","overflow":"hidden","margin":0,"padding":0})
+
+
+# ???????????????????????????????????????????????????????????
+# ò«·ù»òùÂ«
+# ???????????????????????????????????????????????????????????
+
+@app.callback(Output("live-clock","children"), Input("clock-interval","n_intervals"))
+def update_clock(_):
+    return datetime.now().strftime("%H:%M:%S  ∑  %Y/%m/%d")
+
+
+@app.callback(
+    Output("wheel-interval","disabled"), Output("timer-running","data"),
+    Output("timer-status","children"),
+    Input("btn-start","n_clicks"), Input("btn-stop","n_clicks"),
+    State("timer-running","data"), prevent_initial_call=True)
+def toggle_timer(s, st, running):
+    ctx = callback_context.triggered[0]["prop_id"]
+    if "start" in ctx:
+        return False, True, html.Span([html.Span("? ",style={"color":GREEN_ZONE}),
+                                        "›⁄«· ó Â— ? œﬁÌﬁÂ ?∞"])
+    return True, False, html.Span([html.Span("? ",style={"color":RED_ZONE}),"„ Êﬁ›"])
+
+
+@app.callback(
+    Output("rotation-store","data"), Output("manual-rotation","value"),
+    Input("wheel-interval","n_intervals"), Input("btn-reset","n_clicks"),
+    Input("manual-rotation","value"),
+    State("rotation-store","data"), State("timer-running","data"),
+    prevent_initial_call=True)
+def update_rotation(ni, reset, manual, cur, running):
+    ctx = callback_context.triggered[0]["prop_id"]
+    if "reset" in ctx:   return 0, 0
+    if "manual" in ctx:  return manual, manual
+    if "interval" in ctx and running:
+        nr = (cur + 5) % 360
+        return nr, nr
+    return cur, manual
+
+
+@app.callback(
+    Output("wheel-graph","figure"),
+    Output("heatmap-graph","figure"),
+    Output("signal-table","children"),
+    Input("rotation-store","data"),
+    Input("base-price","value"), Input("step-size","value"),
+    Input("current-price","value"),
+    Input("swing-lo","value"), Input("swing-hi","value"))
+def update_all(rotation, base, step, current, sw_lo, sw_hi):
+    bp = base    or 0
+    st = step    or 1
+    cp = current
+    sl = sw_lo   or 0
+    sh = sw_hi   or 0
+    rot = rotation or 0
+
+    # ?? ç—Œ ?????????????????????????????????????????????
+    wheel_fig = build_wheel(bp, st, rot, cp, sl, sh)
+
+    # ?? «”ò‰ confluence ??????????????????????????????????
+    if bp > 0 and st > 0:
+        p_min = min(bp, sl, cp or bp) * 0.95
+        p_max = max(bp + st*6, sh, cp or bp) * 1.05
+        zones = scan_reversal_zones(bp, st, sl, sh, p_min, p_max)
+    else:
+        zones = []
+
+    heat_fig = build_heatmap(zones, cp)
+
+    # ?? ÃœÊ· ”Ìê‰«· ??????????????????????????????????????
+    if not zones:
+        table = html.P("œ«œÂ Ê«—œ ò‰Ìœ", style={"color":TEXT_DIM,"fontSize":"0.8rem"})
+    else:
+        # ‰“œÌòù —Ì‰ »Â ﬁÌ„  Ã«—Ì
+        if cp:
+            z_sorted = sorted(zones, key=lambda x: abs(x["price"] - cp))
+        else:
+            z_sorted = zones
+
+        cards = []
+        for z in z_sorted[:10]:
+            sig, sig_col = signal_label(z["total"])
+            if not sig:
+                continue
+            is_hot = z["total"] >= 15
+            dist = f"${abs(z['price']-(cp or bp)):,.0f}" if cp else ""
+            dir_s = ("?" if z["price"] > cp else "?") if cp else ""
+            dir_c = GREEN_ZONE if dir_s == "?" else RED_ZONE
+
+            # »— —Ì‰ “Ê«Ì«Ì ê«‰
+            top_g = sorted(z["gann_hits"], key=lambda x: -x["score"])[:3]
+            # »— —Ì‰ ›Ì»Ê
+            top_f = z["fib_hits"][:2]
+
+            cards.append(html.Div([
+                # ”— ò«— 
+                html.Div([
+                    html.Span(f"${z['price']:,}",
+                              style={"color":sig_col,"fontWeight":700,"fontSize":"0.95rem"}),
+                    html.Span(sig, style={"color":sig_col,"fontSize":"0.62rem",
+                                          "border":f"1px solid {sig_col}","borderRadius":"3px",
+                                          "padding":"1px 4px"}),
+                ], style={"display":"flex","justifyContent":"space-between",
+                          "alignItems":"center","marginBottom":"4px"}),
+
+                # «„ Ì«“ »«—
+                html.Div(style={"background":RING_COL,"borderRadius":"2px",
+                                "height":"3px","marginBottom":"6px","overflow":"hidden"},
+                    children=[html.Div(style={"height":"100%","borderRadius":"2px",
+                        "background":sig_col,
+                        "width":f"{min(100, z['total']/20*100):.0f}%"})]),
+
+                # “Ê«Ì«Ì ê«‰
+                html.Div([
+                    html.Span("ê«‰: ",style={"color":TEXT_DIM,"fontSize":"0.65rem"}),
+                    *[html.Span(f"{h['angle']}∞R{h['ring']} ",
+                                style={"color":ANGLE_COLORS[h['type']],"fontSize":"0.7rem"})
+                      for h in top_g],
+                ], style={"marginBottom":"2px"}),
+
+                # ›Ì»Ê‰«çÌ
+                html.Div([
+                    html.Span("›Ì»Ê: ",style={"color":TEXT_DIM,"fontSize":"0.65rem"}),
+                    *[html.Span(f"{h['level']} ",
+                                style={"color":BLUE_ACC,"fontSize":"0.7rem"})
+                      for h in top_f],
+                ] if top_f else [], style={"marginBottom":"4px"}),
+
+                # ›«’·Â «“ ﬁÌ„  Ã«—Ì
+                html.Div([
+                    html.Span(dir_s+" ", style={"color":dir_c}),
+                    html.Span(dist, style={"color":TEXT_DIM,"fontSize":"0.72rem"}),
+                    html.Span(f"  «„ Ì«“: {z['total']:.1f}",
+                              style={"color":TEXT_DIM,"fontSize":"0.68rem"}),
+                ] if cp else [html.Span(f"«„ Ì«“: {z['total']:.1f}",
+                              style={"color":TEXT_DIM,"fontSize":"0.68rem"})]),
+
+            ], style={
+                "background":"rgba(255,58,58,0.05)" if is_hot else "rgba(201,168,76,0.03)",
+                "border":f"1px solid {sig_col}44",
+                "borderRadius":"4px","padding":"8px 10px","marginBottom":"8px",
+            }))
+
+        table = html.Div(cards) if cards else html.P("“Ê‰ ﬁÊÌ ÅÌœ« ‰‘œ",
+            style={"color":TEXT_DIM,"fontSize":"0.8rem"})
+
+    return wheel_fig, heat_fig, table
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=8050)

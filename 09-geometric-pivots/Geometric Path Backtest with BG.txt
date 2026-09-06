@@ -1,0 +1,147 @@
+//@version=5
+strategy("Geometric Path Backtest with BG", overlay=true, initial_capital=1000, default_qty_type=strategy.cash, default_qty_value=1000, currency=currency.USD, max_lines_count=500, max_labels_count=500)
+
+// ==========================================
+// --- تنظیمات ورودی (Inputs) ---
+// ==========================================
+grp_pivot = "تنظیمات هندسی پیووت"
+leftBars = input.int(5, title="پایه‌های چپ پیووت", group=grp_pivot)
+rightBars = input.int(5, title="پایه‌های راست پیووت", group=grp_pivot)
+pathLength = input.int(50, title="تعداد نقاط ذخیره شده مسیر", group=grp_pivot)
+
+grp_angle = "تنظیمات زاویه و پیش‌بینی"
+atrPeriod = input.int(14, title="دوره ATR (برای نرمال‌سازی)", group=grp_angle)
+predLength = input.int(30, title="طول خط پیش‌بینی آینده", group=grp_angle)
+angleThreshold = input.float(10.0, title="حد آستانه زاویه نهایی (درجه)", minval=0.0, group=grp_angle)
+
+// ==========================================
+// --- شناسایی و ذخیره نقاط مسیر (Pathfinding) ---
+// ==========================================
+// استفاده از nz برای جلوگیری از صفر یا na شدن سگمنت‌ها در لایو
+float safe_atr = nz(ta.atr(atrPeriod), syminfo.mintick)
+
+float p_high = ta.pivothigh(high, leftBars, rightBars)
+float p_low = ta.pivotlow(low, leftBars, rightBars)
+
+var int last_ph_bar = na
+var float last_ph_price = na
+var int last_pl_bar = na
+var float last_pl_price = na
+
+if not na(p_high)
+    last_ph_bar := bar_index - rightBars
+    last_ph_price := p_high
+if not na(p_low)
+    last_pl_bar := bar_index - rightBars
+    last_pl_price := p_low
+
+var pointArrayIntersection = array.new<chart.point>()
+
+int end_x_l = na
+float end_y_l = na
+int end_x_h = na
+float end_y_h = na
+
+if not na(last_pl_bar) and not na(last_pl_price)
+    int dx_l = bar_index - last_pl_bar
+    float dy_l = low - last_pl_price
+    end_x_l := last_pl_bar + math.round(1.618 * dx_l)
+    end_y_l := last_pl_price + 1.618 * dy_l
+
+if not na(last_ph_bar) and not na(last_ph_price)
+    int dx_h = bar_index - last_ph_bar
+    float dy_h = high - last_ph_price
+    end_x_h := last_ph_bar + math.round(1.618 * dx_h)
+    end_y_h := last_ph_price + 1.618 * dy_h
+
+if not na(last_pl_bar) and not na(last_pl_price) and not na(last_ph_bar) and not na(last_ph_price)
+    float denom_l = bar_index - last_pl_bar
+    float denom_h = bar_index - last_ph_bar
+    if denom_l != 0 and denom_h != 0
+        float m_l = (low - last_pl_price) / denom_l
+        float m_h = (high - last_ph_price) / denom_h
+        if m_l != m_h
+            float inter_x_float = ((m_l * last_pl_bar - last_pl_price) - (m_h * last_ph_bar - last_ph_price)) / (m_l - m_h)
+            float inter_y = m_l * (inter_x_float - last_pl_bar) + last_pl_price
+            int inter_x = math.round(inter_x_float)
+            bool is_duplicate = false
+            if array.size(pointArrayIntersection) > 0
+                chart.point last_pt = array.get(pointArrayIntersection, array.size(pointArrayIntersection) - 1)
+                if last_pt.index == inter_x and last_pt.price == inter_y
+                    is_duplicate := true
+            if not is_duplicate
+                array.push(pointArrayIntersection, chart.point.from_index(index = inter_x, price = inter_y))
+                if array.size(pointArrayIntersection) > pathLength
+                    array.shift(pointArrayIntersection)
+
+// ==========================================
+// --- تجمیع زوایا در بعد ۱۸۰ درجه (Core Logic) ---
+// ==========================================
+float sum_of_angles = 0.0
+float mapped_final_angle = na
+int path_size = array.size(pointArrayIntersection)
+
+if path_size >= 2
+    for i = 1 to path_size - 1
+        chart.point pt_prev = array.get(pointArrayIntersection, i - 1)
+        chart.point pt_curr = array.get(pointArrayIntersection, i)
+        float d_x = pt_curr.index - pt_prev.index
+        float d_y = pt_curr.price - pt_prev.price
+        if d_x != 0
+            float seg_slope_norm = (d_y / safe_atr) / d_x
+            float seg_angle = math.atan(seg_slope_norm) * 180 / math.pi
+            sum_of_angles := sum_of_angles + seg_angle
+            
+    mapped_final_angle := sum_of_angles - (180.0 * math.round(sum_of_angles / 180.0))
+
+// ==========================================
+// --- منطق استراتژی و بک‌تست (Strategy Logic) ---
+// ==========================================
+bool longCondition  = not na(mapped_final_angle) and mapped_final_angle > angleThreshold
+bool shortCondition = not na(mapped_final_angle) and mapped_final_angle < -angleThreshold
+bool exitCondition  = not na(mapped_final_angle) and not longCondition and not shortCondition
+
+if longCondition
+    strategy.entry("Long Path", strategy.long, comment="L")
+if shortCondition
+    strategy.entry("Short Path", strategy.short, comment="S")
+if exitCondition and strategy.position_size != 0
+    strategy.close_all(comment="Exit")
+
+// ==========================================
+// --- رنگ‌بندی پس‌زمینه و رسم بصری (Visuals) ---
+// ==========================================
+color bgColor = na
+if longCondition
+    bgColor := color.new(color.green, 90)
+else if shortCondition
+    bgColor := color.new(color.red, 90)
+    
+bgcolor(bgColor, title="پس‌زمینه وضعیت هندسی")
+
+var line prediction_line = line.new(na, na, na, na, width=2, style=line.style_dashed)
+var label angle_label = label.new(na, na, na, style=label.style_label_left, textcolor=color.white, size=size.normal)
+var polyline intersection_poly = na
+
+// رسم ایستا برای جلوگیری از ریپینت
+if barstate.islast
+    if not na(intersection_poly)
+        polyline.delete(intersection_poly)
+    intersection_poly := polyline.new(pointArrayIntersection, line_color = color.orange, line_style = line.style_solid, line_width = 2)
+    
+    if not na(mapped_final_angle)
+        color pred_color = longCondition ? color.lime : shortCondition ? color.red : color.yellow
+        float mapped_slope = math.tan(mapped_final_angle * math.pi / 180)
+        
+        int start_x_pred = bar_index
+        float start_y_pred = nz(close[1], close)
+        int end_x_pred = start_x_pred + predLength
+        float end_y_pred = start_y_pred + (mapped_slope * safe_atr * predLength)
+        
+        line.set_xy1(prediction_line, start_x_pred, start_y_pred)
+        line.set_xy2(prediction_line, end_x_pred, end_y_pred)
+        line.set_color(prediction_line, pred_color)
+        
+        label.set_xy(angle_label, end_x_pred, end_y_pred)
+        label.set_text(angle_label, "Energy: " + str.tostring(sum_of_angles, "#.##") + "°\nVector: " + str.tostring(mapped_final_angle, "#.##") + "°")
+        label.set_color(angle_label, pred_color)

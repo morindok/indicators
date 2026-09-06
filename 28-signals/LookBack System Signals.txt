@@ -1,0 +1,75 @@
+//@version=5
+indicator("Auto Symmetric Reversal & Area", overlay=true, max_bars_back=500)
+
+// ---  ‰ŸÌ„«  »«“Â Ê ·Êòù»ò ---
+stepSize = input.int(20, "Window Step Size", minval=1)
+maxLookback = input.int(200, "Max Lookback to Check", minval=20, maxval=500)
+signalThreshold = input.int(2, "Signal Threshold", minval=1)
+areaTolerance = input.float(0.3, "Area Tolerance (0.1 to 1.0)", minval=0.1, step=0.1, tooltip="„Ì“«‰ œ—’œ «Œ ·«› „Ã«“ »Ì‰ „”«Õ  ›⁄·Ì Ê ·Êòù»ò")
+
+// --- „Õ«”»Â ”ÿÊÕ ŒÊœò«— (œ«‰çÌ«‰ ?? œÊ—Âù«Ì) ---
+dynamicLevel = (ta.highest(high, 50) + ta.lowest(low, 50)) / 2
+
+// --- »——”Ì ‘—«Ìÿ »«“ê‘ Ì (Reversal) ---
+rsiVal = ta.rsi(close, 14)
+isBullishReversalZone = rsiVal < 40 and close > close[1] and close[1] < close[2] // «‘»«⁄ ›—Ê‘ Ê ‘—Ê⁄ »—ê‘  »Â »«·«
+isBearishReversalZone = rsiVal > 60 and close < close[1] and close[1] > close[2] // «‘»«⁄ Œ—Ìœ Ê ‘—Ê⁄ »—ê‘  »Â Å«ÌÌ‰
+
+// ---  «»⁄ „Õ«”»Â „”«Õ  (Area) ---
+// „Õ«”»Â „Ã„Ê⁄ ﬁœ— „ÿ·ﬁ ›Ê«’· ﬁÌ„   « ”ÿÕ œ«Ì‰«„Ìò œ— Ìò »«“Â
+calcArea(len) =>
+    sum = 0.0
+    for j = 0 to len - 1
+        sum += math.abs(close[j] - dynamicLevel[j])
+    sum
+
+currentArea = calcArea(stepSize)
+
+// --- „ €Ì—Â«Ì ‘„«—‘ê— ---
+bullScore = 0
+bearScore = 0
+
+// --- Õ·ﬁÂ »——”Ì ŒÊœò«— ---
+for i = stepSize to maxLookback by stepSize
+    if bar_index >= i + stepSize
+        // „Õ«”»Â ”ÿÕ  ﬁ«—‰ ·Êòù»ò
+        symLookbackClose = 2 * dynamicLevel - close[i]
+        
+        // „Õ«”»Â „”«Õ  »—«Ì œÊ—Â ·Êòù»ò
+        lookbackArea = 0.0
+        for j = 0 to stepSize - 1
+            lookbackArea += math.abs(close[i + j] - dynamicLevel[i + j])
+            
+        // »——”Ì  ﬁ«—‰ „”«Õ ùÂ« (‰”»  „”«Õ ùÂ« œ— „ÕœÊœÂ „Ã«“ »«‘œ)
+        areaRatio = lookbackArea == 0 ? 0 : currentArea / lookbackArea
+        isAreaSymmetric = areaRatio > (1.0 - areaTolerance) and areaRatio < (1.0 + areaTolerance)
+        
+        // »——”Ì  ﬁ«—‰ ﬁÌ„ 
+        if isAreaSymmetric
+            // ”Ìê‰«· Œ—Ìœ: ﬁÌ„  ·Êòù»ò —« —Ê »Â »«·« ò—«” ò‰œ
+            if close > symLookbackClose and close[1] <= symLookbackClose[1]
+                bullScore += 1
+                
+            // ”Ìê‰«· ›—Ê‘: ﬁÌ„  ·Êòù»ò —« —Ê »Â Å«ÌÌ‰ ò—«” ò‰œ
+            if close < symLookbackClose and close[1] >= symLookbackClose[1]
+                bearScore += 1
+
+// ---  —òÌ» ‘—Êÿ ’œÊ— ”Ìê‰«· ‰Â«ÌÌ ---
+bullSignal = (bullScore >= signalThreshold) and isBullishReversalZone
+bearSignal = (bearScore >= signalThreshold) and isBearishReversalZone
+
+// ›Ì· — ”Ìê‰«·ùÂ«Ì  ò—«—Ì
+var int lastSignal = 0
+if bullSignal
+    lastSignal := 1
+else if bearSignal
+    lastSignal := -1
+
+validBull = bullSignal and lastSignal[1] != 1
+validBear = bearSignal and lastSignal[1] != -1
+
+// --- —”„ ”Ìê‰«·ùÂ« Ê ”ÿÊÕ ---
+plot(dynamicLevel, color=color.new(color.blue, 70), title="Auto Dynamic Level")
+
+plotshape(validBull, title="Buy Signal", location=location.belowbar, color=color.green, style=shape.triangleup, size=size.normal, text="BUY", textcolor=color.green)
+plotshape(validBear, title="Sell Signal", location=location.abovebar, color=color.red, style=shape.triangledown, size=size.normal, text="SELL", textcolor=color.red)

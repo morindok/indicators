@@ -1,0 +1,184 @@
+//@version=5
+indicator("ÇÓíÑÇá ØáÇíí", overlay=true, max_polylines_count=100)
+
+// --- ÏÑíÇİÊ æÑæÏíåÇ ---
+t1 = input.time(0, title="ÇäÊÎÇÈ äŞØå ?", confirm=true, inline="p1")
+p1 = input.price(0, title="", confirm=true, inline="p1")
+
+t2 = input.time(0, title="ÇäÊÎÇÈ äŞØå ?", confirm=true, inline="p2")
+p2 = input.price(0, title="", confirm=true, inline="p2")
+
+reverseDir = input.bool(title="ãÚ˜æÓ ˜ÑÏä ÌåÊ ÑÏÔ ÇÓíÑÇáåÇ", defval=false)
+extendSpirals = input.bool(title="ÇÏÇãå íÇİÊä ÇÓíÑÇáåÇ (ÈÏæä ãÍÏæÏíÊ Øæá)", defval=false) // <--- Òíäå ÌÏíÏ
+
+divisorMode = input.string(title="ãÈäÇí ÊŞÓíã Øæá ÇÓíÑÇáåÇ", 
+     defval="ÊÚÏÇÏ: Êİ˜í˜ÔÏå (ÈÇáÇ:ÓÈÒ¡ Çííä:ŞÑãÒ)", 
+     options=[
+         "ÊÚÏÇÏ: Êİ˜í˜ÔÏå (ÈÇáÇ:ÓÈÒ¡ Çííä:ŞÑãÒ)", 
+         "ÊÚÏÇÏ: ˜á ˜äÏáåÇ", 
+         "ÊÚÏÇÏ: ˜äÏáåÇí ÓÈÒ", 
+         "ÊÚÏÇÏ: ˜äÏáåÇí ŞÑãÒ",
+         "ÇÑÊİÇÚ: Êİ˜í˜ÔÏå (ÈÇáÇ:ÓÈÒ¡ Çííä:ŞÑãÒ)",
+         "ÇÑÊİÇÚ: ˜á ˜äÏáåÇ",
+         "ÇÑÊİÇÚ: ˜äÏáåÇí ÓÈÒ",
+         "ÇÑÊİÇÚ: ˜äÏáåÇí ŞÑãÒ"
+     ])
+
+multUp   = input.float(title="ÖÑíÈ Øæá ÇÓíÑÇá ÈÇáÇ", defval=1.0, step=0.1)
+multDown = input.float(title="ÖÑíÈ Øæá ÇÓíÑÇá Çííä", defval=1.0, step=0.1)
+
+showSymSpirals  = input.bool(title="ÑÓã ÇÓíÑÇáåÇí ãÊŞÇÑä", defval=true)
+
+// ÊäÙíã ÎæÏ˜ÇÑ ÓØæÍ
+upperLevel = math.max(p1, p2)
+lowerLevel = math.min(p1, p2)
+centerLevel = (upperLevel + lowerLevel) / 2.0
+
+// --- ãÊÛíÑåÇí ãÍÇÓÈÇÊí ---
+var int totalBarCount = 0
+var int greenBarCount = 0 
+var int redBarCount   = 0 
+var float totalHeight = 0.0
+var float greenHeight = 0.0
+var float redHeight   = 0.0
+
+var float max_p = na
+var float min_p = na
+var int   end_t = na
+var float end_p = na
+var int   start_t = na
+var float start_p = na
+
+var all_t = array.new_int()
+var all_c = array.new_float()
+array.push(all_t, time)
+array.push(all_c, close)
+
+time_start = math.min(t1, t2)
+time_end   = math.max(t1, t2)
+in_range   = time >= time_start and time <= time_end
+
+plot(upperLevel, color=color.new(color.blue, 50), title="ãÍæÑ ÈÇáÇ", linewidth=2)
+plot(lowerLevel, color=color.new(color.red, 50), title="ãÍæÑ Çííä", linewidth=2)
+
+if in_range
+    float c_height = high - low
+    totalBarCount += 1
+    totalHeight   += c_height
+    if close > open
+        greenBarCount += 1
+        greenHeight   += c_height
+    else if close < open
+        redBarCount   += 1
+        redHeight     += c_height
+    
+    max_p := na(max_p) ? high : math.max(max_p, high)
+    min_p := na(min_p) ? low : math.min(min_p, low)
+    end_t := time
+    end_p := hl2
+    if na(start_t)
+        start_t := time
+        start_p := hl2
+
+if barstate.islast
+    float dt = math.abs(t2 - t1)
+    float dp = math.abs(max_p - min_p)
+    if dt == 0
+        dt := timeframe.in_seconds("") * 1000.0
+    if dp == 0
+        dp := 1.0
+
+    float totalDistanceUp   = 0.0
+    float totalDistanceDown = 0.0
+    int size = array.size(all_t)
+    int start_idx = math.max(0, size - 9000)
+    
+    for i = start_idx to size - 1
+        int t_i = array.get(all_t, i)
+        float c_i = array.get(all_c, i)
+        if t_i >= time_start and t_i <= time_end
+            float m_center = 2 * centerLevel - c_i
+            totalDistanceUp   += math.abs((2 * upperLevel - m_center) - c_i)
+            totalDistanceDown += math.abs((2 * lowerLevel - m_center) - c_i)
+
+    float divUp   = 1.0
+    float divDown = 1.0
+    
+    if divisorMode == "ÊÚÏÇÏ: ˜á ˜äÏáåÇ"
+        divUp := totalBarCount, divDown := totalBarCount
+    else if divisorMode == "ÊÚÏÇÏ: ˜äÏáåÇí ÓÈÒ"
+        divUp := greenBarCount, divDown := greenBarCount
+    else if divisorMode == "ÊÚÏÇÏ: ˜äÏáåÇí ŞÑãÒ"
+        divUp := redBarCount, divDown := redBarCount
+    else if divisorMode == "ÊÚÏÇÏ: Êİ˜í˜ÔÏå (ÈÇáÇ:ÓÈÒ¡ Çííä:ŞÑãÒ)"
+        divUp := greenBarCount, divDown := redBarCount
+    else if divisorMode == "ÇÑÊİÇÚ: ˜á ˜äÏáåÇ"
+        divUp := totalHeight, divDown := totalHeight
+    else if divisorMode == "ÇÑÊİÇÚ: ˜äÏáåÇí ÓÈÒ"
+        divUp := greenHeight, divDown := greenHeight
+    else if divisorMode == "ÇÑÊİÇÚ: ˜äÏáåÇí ŞÑãÒ"
+        divUp := redHeight, divDown := redHeight
+    else if divisorMode == "ÇÑÊİÇÚ: Êİ˜í˜ÔÏå (ÈÇáÇ:ÓÈÒ¡ Çííä:ŞÑãÒ)"
+        divUp := greenHeight, divDown := redHeight
+
+    float baseLenUp   = divUp > 0 ? totalDistanceUp / divUp : totalDistanceUp
+    float baseLenDown = divDown > 0 ? totalDistanceDown / divDown : totalDistanceDown
+    float targetLenUp   = baseLenUp * multUp
+    float targetLenDown = baseLenDown * multDown
+
+    float b_coeff = math.log(1.6180339887) / (math.pi / 2)
+    float a = 0.02
+    int dir = reverseDir ? -1 : 1 
+    int chart_start_t = time_start
+
+    // ÑÓã ÇÓíÑÇá ÈÇáÇ
+    if targetLenUp > 0 or extendSpirals
+        pts_spiral_up = array.new<chart.point>(), pts_sym_spiral_up = array.new<chart.point>()
+        array.push(pts_spiral_up, chart.point.from_time(end_t, end_p)), array.push(pts_sym_spiral_up, chart.point.from_time(end_t, end_p))
+        float acc_len_up = 0.0, float prev_t_up = end_t, float prev_p_up = end_p
+        
+        for i = 1 to 3000
+            float theta = i * 0.1, float r = a * math.exp(b_coeff * theta)
+            int curr_t = math.round(end_t + r * dt * math.cos(theta))
+            float curr_p = end_p + (dir * r * dp * math.sin(theta)), float sym_curr_p = end_p - (dir * r * dp * math.sin(theta))
+            float seg = math.sqrt(math.pow(((curr_t - prev_t_up) / dt) * dp, 2) + math.pow(curr_p - prev_p_up, 2))
+            
+            if acc_len_up <= targetLenUp or extendSpirals // <--- ÇÚãÇá ÔÑØ ÇãÊÏÇÏ
+                array.push(pts_spiral_up, chart.point.from_time(curr_t, curr_p))
+                array.push(pts_sym_spiral_up, chart.point.from_time(curr_t, sym_curr_p))
+                acc_len_up += seg, prev_t_up := curr_t, prev_p_up := curr_p
+            else
+                break
+                
+        polyline.new(pts_spiral_up, xloc=xloc.bar_time, line_color=color.fuchsia, line_width=2)
+        if showSymSpirals
+            polyline.new(pts_sym_spiral_up, xloc=xloc.bar_time, line_color=color.new(color.fuchsia, 40), line_width=2, line_style=line.style_dashed)
+        
+        if not extendSpirals
+            line.new(chart_start_t, prev_p_up, time, prev_p_up, xloc=xloc.bar_time, color=color.new(color.fuchsia, 50), style=line.style_dashed, width=2)
+
+    // ÑÓã ÇÓíÑÇá Çííä
+    if (targetLenDown > 0 or extendSpirals) and not na(start_t)
+        pts_spiral_down = array.new<chart.point>(), pts_sym_spiral_down = array.new<chart.point>()
+        array.push(pts_spiral_down, chart.point.from_time(start_t, start_p)), array.push(pts_sym_spiral_down, chart.point.from_time(start_t, start_p))
+        float acc_len_down = 0.0, float prev_t_down = start_t, float prev_p_down = start_p
+        
+        for i = 1 to 3000
+            float theta = i * 0.1, float r = a * math.exp(b_coeff * theta)
+            int curr_t = math.round(start_t + r * dt * math.cos(theta))
+            float curr_p = start_p - (dir * r * dp * math.sin(theta)), float sym_curr_p = start_p + (dir * r * dp * math.sin(theta))
+            float seg = math.sqrt(math.pow(((curr_t - prev_t_down) / dt) * dp, 2) + math.pow(curr_p - prev_p_down, 2))
+            
+            if acc_len_down <= targetLenDown or extendSpirals // <--- ÇÚãÇá ÔÑØ ÇãÊÏÇÏ
+                array.push(pts_spiral_down, chart.point.from_time(curr_t, curr_p))
+                array.push(pts_sym_spiral_down, chart.point.from_time(curr_t, sym_curr_p))
+                acc_len_down += seg, prev_t_down := curr_t, prev_p_down := curr_p
+            else
+                break
+                
+        polyline.new(pts_spiral_down, xloc=xloc.bar_time, line_color=color.yellow, line_width=2)
+        if showSymSpirals
+            polyline.new(pts_sym_spiral_down, xloc=xloc.bar_time, line_color=color.new(color.yellow, 40), line_width=2, line_style=line.style_dashed)
+            
+        if not extendSpirals
+            line.new(chart_start_t, prev_p_down, time, prev_p_down, xloc=xloc.bar_time, color=color.new(color.yellow, 50), style=line.style_dashed, width=2)

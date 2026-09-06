@@ -1,0 +1,9 @@
+//@version=5
+indicator("Time-Normalized Price", overlay=false)
+t = (time - ta.lowest(time, 500)) / (ta.highest(time, 500) - ta.lowest(time, 500))
+p = (close - ta.lowest(close, 500)) / (ta.highest(close, 500) - ta.lowest(close, 500))
+val = p / t
+plot(val, color=color.blue)
+hline(0.5, "Middle", color=color.gray, linestyle=hline.style_dashed)
+hline(1, "Overbought", color=color.red, linestyle=hline.style_dashed)
+hline(0, "Oversold", color=color.green, linestyle=hline.style_dashed)

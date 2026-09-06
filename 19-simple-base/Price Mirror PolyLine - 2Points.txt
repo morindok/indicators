@@ -1,0 +1,32 @@
+//@version=5
+indicator("Mirrored Price Polyline", overlay=true)
+
+// ÏÑíÇİÊ äŞÇØ ÇÒ ˜ÇÑÈÑ
+t1 = input.time(0, title="Point 1", confirm=true, inline="p1")
+p1 = input.price(0, title="", confirm=true, inline="p1")
+t2 = input.time(0, title="Point 2", confirm=true, inline="p2")
+p2 = input.price(0, title="", confirm=true, inline="p2")
+
+// ÊÚÑíİ ÂÑÇíå ÏŞíŞÇğ ãÔÇÈå ÓÇÎÊÇÑ äãæäå ÔãÇ
+var chart.point[] pts = array.new<chart.point>()
+
+// Ç˜ ˜ÑÏä ÂÑÇíå ÏÑ Çæáíä ˜äÏá (ÌåÊ ÇØãíäÇä)
+if bar_index == 0
+    array.clear(pts)
+
+// ãÍÇÓÈå ÊŞÇÑä æ ÇÖÇİå ˜ÑÏä Èå ÂÑÇíå
+if t1 != 0 and t2 != 0 and t1 != t2
+    slope = (p2 - p1) / (t2 - t1)
+    line_value = p1 + slope * (time - t1)
+    mirrored_price = 2 * line_value - close
+    
+    // ÇÖÇİå ˜ÑÏä äŞØå Èå ÂÑÇíå Èå ÓÇÏí
+    array.push(pts, chart.point.from_time(time, mirrored_price))
+
+// ÑÓã ÎØ ÇÕáí æ áíáÇíä ãÊŞÇÑä ÏÑ ˜äÏá ÂÎÑ
+if barstate.islast and array.size(pts) >= 2
+    // ÑÓã ÎØ ÂÈí Ñäö Çíå
+    line.new(t1, p1, t2, p2, xloc.bar_time, extend.both, color.blue, line.style_solid, 2)
+    
+    // ÑÓã áíáÇíä ŞÑãÒ Ñäö ãÊŞÇÑä
+    polyline.new(pts, xloc=xloc.bar_time, line_color=color.red, line_width=2)

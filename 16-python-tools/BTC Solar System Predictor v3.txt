@@ -1,0 +1,307 @@
+import dash
+from dash import dcc, html
+from dash.dependencies import Input, Output, State
+import plotly.graph_objs as go
+import yfinance as yf
+import numpy as np
+import pandas as pd
+from scipy.fft import fft, fftfreq
+
+#  ‰ŸÌ„«  „‰ŸÊ„Â òÌÂ«‰Ì
+PLANET_COUNT = 6  #  ⁄œ«œ ”Ì«—«  (ç—ŒÂùÂ«Ì Â«—„Ê‰Ìò)
+PREDICT_STEPS = 50  #  ⁄œ«œ ò‰œ·ùÂ«Ì ¬Ì‰œÂ »—«Ì ÅÌ‘ù»Ì‰Ì
+
+# ·Ì”  œ«—«ÌÌùÂ« (30 ò—ÌÅ Ê + ÿ·«)
+ASSETS = [
+    {'label': 'ò—Â “„Ì‰ - »Ì ùòÊÌ‰ (BTC)', 'value': 'BTC-USD'},
+    {'label': 'ŒÊ—‘Ìœ - ÿ·« «‰” ÃÂ«‰Ì (XAU)', 'value': 'GC=F'},  # ‰„«œ ›ÌÊç—“ ÿ·«
+    {'label': '« —ÌÊ„ (ETH)', 'value': 'ETH-USD'},
+    {'label': '»«Ì‰‰” òÊÌ‰ (BNB)', 'value': 'BNB-USD'},
+    {'label': '”Ê·«‰« (SOL)', 'value': 'SOL-USD'},
+    {'label': '—ÌÅ· (XRP)', 'value': 'XRP-USD'},
+    {'label': 'ò«—œ«‰Ê (ADA)', 'value': 'ADA-USD'},
+    {'label': 'œÊÃùòÊÌ‰ (DOGE)', 'value': 'DOGE-USD'},
+    {'label': '¬Ê«·«‰ç (AVAX)', 'value': 'AVAX-USD'},
+    {'label': 'ÅÊ·ò«œ«  (DOT)', 'value': 'DOT-USD'},
+    {'label': ' —Ê‰ (TRX)', 'value': 'TRX-USD'},
+    {'label': 'Å«·Ìê«‰ (MATIC)', 'value': 'MATIC-USD'},
+    {'label': '·«Ì ùòÊÌ‰ (LTC)', 'value': 'LTC-USD'},
+    {'label': 'çÌ‰ù·Ì‰ò (LINK)', 'value': 'LINK-USD'},
+    {'label': '»Ì ùòÊÌ‰ ò‘ (BCH)', 'value': 'BCH-USD'},
+    {'label': '«” ·«— (XLM)', 'value': 'XLM-USD'},
+    {'label': 'ÌÊ‰Ìù”Ê¬Å (UNI)', 'value': 'UNI-USD'},
+    {'label': 'ò«“„«” (ATOM)', 'value': 'ATOM-USD'},
+    {'label': '„Ê‰—Ê (XMR)', 'value': 'XMR-USD'},
+    {'label': '« —ÌÊ„ ò·«”Ìò (ETC)', 'value': 'ETC-USD'},
+    {'label': '«Ì‰ —‰  ò«„ÅÌÊ — (ICP)', 'value': 'ICP-USD'},
+    {'label': '›«Ì·ùòÊÌ‰ (FIL)', 'value': 'FIL-USD'},
+    {'label': '‰Ì— Å—Ê ò· (NEAR)', 'value': 'NEAR-USD'},
+    {'label': '”‰œ»«ò” (SAND)', 'value': 'SAND-USD'},
+    {'label': '¬ÊÂ (AAVE)', 'value': 'AAVE-USD'},
+    {'label': '  « (THETA)', 'value': 'THETA-USD'},
+    {'label': '«·—Ê‰œ (EGLD)', 'value': 'EGLD-USD'},
+    {'label': ' “Ê” (XTZ)', 'value': 'XTZ-USD'},
+    {'label': '«Ì«” (EOS)', 'value': 'EOS-USD'},
+    {'label': '„«‰« (MANA)', 'value': 'MANA-USD'},
+    {'label': '«·êÊ—‰œ (ALGO)', 'value': 'ALGO-USD'},
+]
+
+app = dash.Dash(__name__)
+app.title = "Universal Cosmic Quant Simulator"
+
+app.layout = html.Div(
+    style={'backgroundColor': '#050508', 'color': '#00ffcc', 'fontFamily': 'Segoe UI, sans-serif', 'padding': '20px'},
+    children=[
+        html.H1("„Ê Ê— ÅÌ‘ù»Ì‰Ì òÌÂ«‰Ì Ê ç‰œ-œ«—«ÌÌ (Multi-Asset)",
+                style={'textAlign': 'center', 'fontWeight': 'bold'}),
+        html.P("‘»ÌÂù”«“Ì ê—«‰‘Ì œ— ›÷«Ì ? »⁄œÌ »« ﬁ«»·Ì   €ÌÌ— ”Ì«—Â (œ«—«ÌÌ)",
+               style={'textAlign': 'center', 'color': '#8888aa'}),
+
+        html.Div([
+            html.Div([
+                dcc.Dropdown(
+                    id='asset-selector',
+                    options=ASSETS,
+                    value='BTC-USD',  # ÅÌ‘ù›—÷
+                    clearable=False,
+                    style={'width': '300px', 'color': 'black', 'textAlign': 'left', 'fontWeight': 'bold'}
+                )
+            ], style={'display': 'inline-block', 'verticalAlign': 'middle', 'marginRight': '15px'}),
+
+            html.Button('«Ã—«Ì „œ· Ê «” Œ—«Ã ¬„«—Ì', id='update-button', n_clicks=0,
+                        style={'padding': '10px 25px', 'fontSize': '16px', 'backgroundColor': '#0f172a',
+                               'color': '#00ffcc', 'border': '1px solid #00ffcc', 'cursor': 'pointer',
+                               'borderRadius': '5px', 'fontWeight': 'bold', 'verticalAlign': 'middle'}),
+        ], style={'textAlign': 'center', 'margin': '20px'}),
+
+        # Å‰· ¬„«—Ì
+        dcc.Loading(
+            type="circle",
+            color="#ff007f",
+            children=[html.Div(id='stats-panel')]
+        ),
+
+        # ò«‰ Ì‰— ‰„Êœ«—Â«
+        dcc.Loading(
+            id="loading-graphs",
+            type="circle",
+            color="#00ffcc",
+            children=[
+                dcc.Graph(id='price-time-graph', style={'height': '50vh', 'marginBottom': '20px'}),
+                dcc.Graph(id='cosmic-orbit-graph', style={'height': '75vh'})
+            ]
+        )
+    ])
+
+
+def extract_cosmic_forces(prices):
+    x = np.arange(len(prices))
+    poly_coeffs = np.polyfit(x, prices, deg=2)
+    black_hole_gravity = np.polyval(poly_coeffs, x)
+    detrended = prices - black_hole_gravity
+
+    N = len(detrended)
+    yf_fft = fft(detrended)
+    xf_fft = fftfreq(N, 1)
+
+    pos_idx = np.where(xf_fft > 0)[0]
+    xf_pos = xf_fft[pos_idx]
+    yf_pos = np.abs(yf_fft[pos_idx])
+    phases = np.angle(yf_fft[pos_idx])
+
+    top_indices = np.argsort(yf_pos)[-PLANET_COUNT:]
+
+    planets = []
+    max_price = np.max(prices)
+    for i, idx in enumerate(top_indices):
+        inclination = (i + 1) * (np.pi / (PLANET_COUNT + 1)) - (np.pi / 2)
+        planets.append({
+            'mass': yf_pos[idx] / (N / 2),
+            'frequency': xf_pos[idx],
+            'phase': phases[idx],
+            'radius': max_price * (0.3 + (i + 1) * 0.15),
+            'inclination': inclination
+        })
+
+    return poly_coeffs, planets
+
+
+def calc_trajectory(poly_coeffs, planets, start_t, steps):
+    t_array = np.arange(start_t, start_t + steps)
+    trend = np.polyval(poly_coeffs, t_array)
+
+    harmonics = np.zeros(steps)
+    for planet in planets:
+        harmonics += planet['mass'] * np.cos(2 * np.pi * planet['frequency'] * t_array + planet['phase'])
+
+    return t_array, trend + harmonics
+
+
+def calculate_statistics(actual, fitted):
+    # „Õ«”»«  ò·«”Ìò Œÿ«
+    mae = np.mean(np.abs(actual - fitted))
+    rmse = np.sqrt(np.mean((actual - fitted) ** 2))
+
+    ss_res = np.sum((actual - fitted) ** 2)
+    ss_tot = np.sum((actual - np.mean(actual)) ** 2)
+    r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+    correlation = np.corrcoef(actual, fitted)[0, 1]
+
+    # „Õ«”»Â Win Rate (œﬁ  ÃÂ ùêÌ—Ì ”Ìê‰«·)
+    actual_diff = np.diff(actual)
+    fitted_diff = np.diff(fitted)
+
+    actual_dir = np.sign(actual_diff)
+    fitted_dir = np.sign(fitted_diff)
+
+    # ›ﬁÿ “„«‰ùÂ«ÌÌ òÂ ﬁÌ„  Ê«ﬁ⁄«  €ÌÌ— ò—œÂ —« »—«Ì »—œ Õ”«» „Ìùò‰Ì„
+    valid_moves = actual_dir != 0
+    wins = np.sum((actual_dir[valid_moves] == fitted_dir[valid_moves]))
+    total_valid = np.sum(valid_moves)
+
+    win_rate = (wins / total_valid) * 100 if total_valid > 0 else 0
+
+    return mae, rmse, r_squared, correlation, win_rate
+
+
+@app.callback(
+    [Output('cosmic-orbit-graph', 'figure'),
+     Output('price-time-graph', 'figure'),
+     Output('stats-panel', 'children')],
+    [Input('update-button', 'n_clicks')],
+    [State('asset-selector', 'value')]
+)
+def update_models(n_clicks, selected_asset):
+    try:
+        # »—«Ì ÿ·« „„ò‰ «”  êÅùÂ«Ì “„«‰Ì »«“«—Â«Ì ”‰ Ì ÊÃÊœ œ«‘ Â »«‘œ òÂ »« dropna Â‰œ· „Ìù‘Êœ
+        df = yf.download(tickers=selected_asset, period='5d', interval='5m', progress=False)
+        if df.empty:
+            raise ValueError("œÌ « »—«Ì «Ì‰ ‰„«œ Ì«›  ‰‘œ.")
+
+        if isinstance(df.columns, pd.MultiIndex):
+            prices = df['Close'][selected_asset].dropna().values
+        else:
+            prices = df['Close'].dropna().values
+
+        timestamps = df.dropna().index[-len(prices):]
+    except Exception as e:
+        err_fig = go.Figure().update_layout(title=str(e), paper_bgcolor='#050508', plot_bgcolor='#050508',
+                                            font=dict(color='white'))
+        return err_fig, err_fig, html.Div(f"Œÿ« œ— œ—Ì«›  «ÿ·«⁄« : {str(e)}", style={'color': 'red'})
+
+    N_current = len(prices)
+
+    poly_coeffs, planets = extract_cosmic_forces(prices)
+    _, fitted_prices = calc_trajectory(poly_coeffs, planets, 0, N_current)
+    _, future_prices = calc_trajectory(poly_coeffs, planets, N_current, PREDICT_STEPS)
+
+    last_time = timestamps[-1]
+    future_timestamps = [last_time + pd.Timedelta(minutes=5 * i) for i in range(1, PREDICT_STEPS + 1)]
+
+    mae, rmse, r2, corr, win_rate = calculate_statistics(prices, fitted_prices)
+
+    stats_ui = html.Div([
+        html.Div([html.H4("Win Rate (œﬁ  „”Ì—)", style={'color': '#8888aa'}),
+                  html.H2(f"{win_rate:.1f}%", style={'color': '#10b981'})],
+                 style={'border': '1px solid #10b981', 'padding': '15px', 'borderRadius': '10px', 'flex': '1',
+                        'margin': '5px', 'backgroundColor': '#0f172a'}),
+        html.Div([html.H4("÷—Ì»  ⁄ÌÌ‰ (R≤)", style={'color': '#8888aa'}), html.H2(f"{r2:.4f}")],
+                 style={'border': '1px solid #00ffcc', 'padding': '15px', 'borderRadius': '10px', 'flex': '1',
+                        'margin': '5px', 'backgroundColor': '#0f172a'}),
+        html.Div([html.H4("Â„»” êÌ ”Ìê‰«·", style={'color': '#8888aa'}), html.H2(f"{corr * 100:.1f}%")],
+                 style={'border': '1px solid #a855f7', 'padding': '15px', 'borderRadius': '10px', 'flex': '1',
+                        'margin': '5px', 'backgroundColor': '#0f172a'}),
+        html.Div([html.H4("Œÿ«Ì RMSE", style={'color': '#8888aa'}), html.H2(f"${rmse:.4f}")],
+                 style={'border': '1px solid #ff007f', 'padding': '15px', 'borderRadius': '10px', 'flex': '1',
+                        'margin': '5px', 'backgroundColor': '#0f172a'}),
+    ], style={'display': 'flex', 'justifyContent': 'space-between', 'textAlign': 'center', 'marginBottom': '20px'})
+
+    # ==========================================
+    # ‰„Êœ«— œÊ»⁄œÌ ﬁÌ„ -“„«‰
+    # ==========================================
+    fig_2d = go.Figure()
+    fig_2d.add_trace(go.Scatter(x=timestamps, y=prices, mode='lines', name=f'ﬁÌ„  Ê«ﬁ⁄Ì {selected_asset}',
+                                line=dict(color='#00ffcc', width=2)))
+    fig_2d.add_trace(go.Scatter(x=timestamps, y=fitted_prices, mode='lines', name='„”Ì— »«“”«“Ì ‘œÂ',
+                                line=dict(color='#f59e0b', width=2, dash='dot')))
+    fig_2d.add_trace(go.Scatter(x=future_timestamps, y=future_prices, mode='lines', name='ÅÌ‘ù»Ì‰Ì ¬Ì‰œÂ',
+                                line=dict(color='#ff007f', width=3, dash='dash')))
+
+    fig_2d.update_layout(
+        title=f" Õ·Ì· Â«—„Ê‰Ìò {selected_asset} »— —ÊÌ ‰„Êœ«— ? »⁄œÌ",
+        paper_bgcolor='#050508', plot_bgcolor='#0a0a12', font=dict(color='#8888aa'),
+        xaxis=dict(showgrid=True, gridcolor='#1e1e2d'), yaxis=dict(showgrid=True, gridcolor='#1e1e2d'),
+        hovermode="x unified", margin=dict(l=40, r=40, b=40, t=40)
+    )
+
+    # ==========================================
+    # ‰„Êœ«— ”Âù»⁄œÌ òÌÂ«‰Ì
+    # ==========================================
+    theta_current = np.linspace(0, 8 * np.pi, N_current)
+    z_current = np.arange(N_current)
+    x_current = prices * np.cos(theta_current)
+    y_current = prices * np.sin(theta_current)
+
+    theta_future = np.linspace(8 * np.pi, 8 * np.pi + (8 * np.pi / N_current) * PREDICT_STEPS, PREDICT_STEPS)
+    z_future = np.arange(N_current, N_current + PREDICT_STEPS)
+    x_future = future_prices * np.cos(theta_future)
+    y_future = future_prices * np.sin(theta_future)
+
+    fig_3d = go.Figure()
+    z_center = np.linspace(0, N_current + PREDICT_STEPS, 100)
+    fig_3d.add_trace(go.Scatter3d(x=[0] * 100, y=[0] * 100, z=z_center, mode='lines', name='„ÕÊ— ê—«‰‘',
+                                  line=dict(color='#a855f7', width=6), hoverinfo='none'))
+    fig_3d.add_trace(go.Scatter3d(x=[0], y=[0], z=[N_current], mode='markers', name='“„«‰ Õ«·',
+                                  marker=dict(size=12, color='#6b21a8', symbol='diamond'), hoverinfo='none'))
+
+    colors = ['#f59e0b', '#ef4444', '#3b82f6', '#10b981', '#ec4899', '#00ffcc']
+    for i, planet in enumerate(planets):
+        orbit_angles = np.linspace(0, 2 * np.pi, 100)
+        r, inc = planet['radius'], planet['inclination']
+        ox = r * np.cos(orbit_angles)
+        oy = r * np.sin(orbit_angles) * np.cos(inc)
+        oz = N_current + r * np.sin(orbit_angles) * np.sin(inc) * 0.02
+
+        fig_3d.add_trace(go.Scatter3d(x=ox, y=oy, z=oz, mode='lines', name=f'„œ«— ”Ì«—Â {i + 1}',
+                                      line=dict(color=colors[i], width=2, dash='dot'), hoverinfo='none'))
+
+        px = r * np.cos(planet['phase'])
+        py = r * np.sin(planet['phase']) * np.cos(inc)
+        pz = N_current + r * np.sin(planet['phase']) * np.sin(inc) * 0.02
+
+        p_size = 8 + int(planet['mass'] / np.max([p['mass'] for p in planets]) * 10)
+        fig_3d.add_trace(go.Scatter3d(x=[px], y=[py], z=[pz], mode='markers+text', name=f'”Ì«—Â {i + 1}',
+                                      marker=dict(size=p_size, color=colors[i]), text=[f"P{i + 1}"],
+                                      textposition="top center", hoverinfo='name'))
+
+    hover_hist = [f" «—ÌŒ: {ts.strftime('%m-%d %H:%M')}<br>ﬁÌ„ : {p:,.4f}" for ts, p in zip(timestamps, prices)]
+    fig_3d.add_trace(go.Scatter3d(
+        x=x_current, y=y_current, z=z_current, mode='lines', name='„”Ì— ›⁄·Ì',
+        line=dict(color='#00ffcc', width=4), text=hover_hist, hoverinfo='text'
+    ))
+
+    hover_pred = [f"ÅÌ‘ù»Ì‰Ì: {ts.strftime('%m-%d %H:%M')}<br>ﬁÌ„ : {p:,.4f}" for ts, p in
+                  zip(future_timestamps, future_prices)]
+    fig_3d.add_trace(go.Scatter3d(
+        x=x_future, y=y_future, z=z_future, mode='lines+markers', name='„”Ì— ¬Ì‰œÂ',
+        line=dict(color='#ff007f', width=5, dash='dash'), marker=dict(size=3, color='#ff007f'), text=hover_pred,
+        hoverinfo='text'
+    ))
+
+    fig_3d.update_layout(
+        scene=dict(
+            xaxis=dict(showbackground=False, visible=False),
+            yaxis=dict(showbackground=False, visible=False),
+            zaxis=dict(showbackground=False, showgrid=True, gridcolor='#222233', title='ê«„ùÂ«Ì ? œﬁÌﬁÂù«Ì'),
+            bgcolor='#050508', camera=dict(eye=dict(x=1.6, y=1.6, z=1.0))
+        ),
+        paper_bgcolor='#050508', plot_bgcolor='#050508',
+        legend=dict(font=dict(color="white"), yanchor="top", y=0.95, xanchor="left", x=0.02),
+        margin=dict(l=0, r=0, b=0, t=30)
+    )
+
+    return fig_3d, fig_2d, stats_ui
+
+
+if __name__ == '__main__':
+    app.run(debug=True)

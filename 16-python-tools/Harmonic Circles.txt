@@ -1,0 +1,125 @@
+import dash
+from dash import dcc, html
+from dash.dependencies import Input, Output
+import plotly.graph_objects as go
+import numpy as np
+
+app = dash.Dash(__name__)
+
+# äÓÈÊ ØáÇíí
+PHI = 1.618
+
+# ÔÚÇÚ ÏÇíÑå ˜æ˜ÊÑíä
+BASE_RADIUS = 1
+
+# ãÍÇÓÈå ÔÚÇÚ 8 ÏÇíÑå
+radii = [BASE_RADIUS * (PHI ** i) for i in range(8)]
+
+# ÑäåÇí ÑÇÏíÇä ÈÑÇí ÏÇíÑååÇ
+colors = ['#00ffff', '#00ccff', '#0099ff', '#0066ff',
+          '#6600ff', '#9900ff', '#cc00ff', '#ff00ff']
+
+app.layout = html.Div([
+    html.H1('ÏÇíÑååÇí åÇÑãæäí˜ ØáÇíí',
+            style={'textAlign': 'center', 'color': 'white',
+                   'fontFamily': 'Arial'}),
+
+    dcc.Graph(id='harmonic-circles'),
+
+    dcc.Interval(
+        id='interval-component',
+        interval=50,  # åÑ 50 ãíáíËÇäíå ÈåÑæÒÑÓÇäí
+        n_intervals=0
+    ),
+
+    html.Div(id='angle-display',
+             style={'textAlign': 'center', 'color': 'white',
+                    'marginTop': '20px'})
+], style={'backgroundColor': '#0a0a0a', 'padding': '20px'})
+
+
+@app.callback(
+    [Output('harmonic-circles', 'figure'),
+     Output('angle-display', 'children')],
+    [Input('interval-component', 'n_intervals')]
+)
+def update_circles(n):
+    # ÒÇæíå ÑÎÔ ÈÑ ÇÓÇÓ ÒãÇä
+    angle = n * 0.05
+
+    # ãÍÇÓÈå ãæŞÚíÊ ãÑ˜Ò ÏÇíÑå ÈÒÑÊÑ Ñæí ÇÓíÑÇá
+    # ÇÓíÑÇá ÂÑ˜íãÏÓ: r = a + b*theta
+    spiral_a = 0
+    spiral_b = 0.5
+    spiral_r = spiral_a + spiral_b * angle
+
+    # ãÑ˜Ò ÏÇíÑå ÈÒÑÊÑ
+    center_x = spiral_r * np.cos(angle)
+    center_y = spiral_r * np.sin(angle)
+
+    # ãÍÇÓÈå ãæŞÚíÊ ÒäÌíÑæÇÑ ÏÇíÑååÇ
+    positions = [(center_x, center_y)]
+
+    for i in range(7):  # 7 ÏÇíÑå ÈÚÏí
+        prev_x, prev_y = positions[-1]
+        prev_r = radii[7 - i]  # ÔÚÇÚ ÏÇíÑå ŞÈáí (ÇÒ ÈÒÑ Èå ˜æ˜)
+        curr_r = radii[6 - i]  # ÔÚÇÚ ÏÇíÑå İÚáí
+
+        # ãÑ˜Ò ÏÇíÑå ÈÚÏí Ñæí ãÍíØ ÏÇíÑå ŞÈáí
+        # ÒÇæíå äÓÈí ÈÑÇí åÑ ÏÇíÑå
+        rel_angle = angle * (i + 1) * 0.3
+
+        new_x = prev_x + prev_r * np.cos(rel_angle)
+        new_y = prev_y + prev_r * np.sin(rel_angle)
+        positions.append((new_x, new_y))
+
+    # ÇíÌÇÏ figure
+    fig = go.Figure()
+
+    # ÑÓã ÏÇíÑååÇ ÇÒ ÈÒÑ Èå ˜æ˜
+    for i in range(8):
+        x_pos, y_pos = positions[i]
+        r = radii[7 - i]  # ÔÚÇÚ (ÇÒ ÈÒÑ Èå ˜æ˜)
+
+        # ÇíÌÇÏ äŞÇØ ÏÇíÑå
+        theta = np.linspace(0, 2 * np.pi, 100)
+        circle_x = x_pos + r * np.cos(theta)
+        circle_y = y_pos + r * np.sin(theta)
+
+        # ÇÖÇİå ˜ÑÏä ÏÇíÑå
+        fig.add_trace(go.Scatter(
+            x=circle_x,
+            y=circle_y,
+            mode='lines',
+            line=dict(color=colors[i], width=3),
+            name=f'ÏÇíÑå {i + 1}'
+        ))
+
+        # ÇÖÇİå ˜ÑÏä ãÑ˜Ò ÏÇíÑå
+        fig.add_trace(go.Scatter(
+            x=[x_pos],
+            y=[y_pos],
+            mode='markers',
+            marker=dict(color=colors[i], size=10),
+            showlegend=False
+        ))
+
+    # ÊäÙíãÇÊ äãæÏÇÑ
+    fig.update_layout(
+        plot_bgcolor='#0a0a0a',
+        paper_bgcolor='#0a0a0a',
+        xaxis=dict(showgrid=False, zeroline=False,
+                   range=[-20, 20], scaleanchor="y", scaleratio=1),
+        yaxis=dict(showgrid=False, zeroline=False,
+                   range=[-20, 20]),
+        showlegend=False,
+        margin=dict(l=20, r=20, t=20, b=20)
+    )
+
+    angle_text = f'ÒÇæíå ÑÎÔ: {angle:.2f} ÑÇÏíÇä'
+
+    return fig, angle_text
+
+
+if __name__ == '__main__':
+    app.run(debug=True, port=8050)

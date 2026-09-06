@@ -1,0 +1,382 @@
+import dash
+from dash import dcc, html
+from dash.dependencies import Input, Output, State
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
+import yfinance as yf
+import pandas as pd
+import numpy as np
+
+# ---  ‰ŸÌ„«  «Ê·ÌÂ ---
+INTERVAL = "5m"
+PERIOD = "5d"
+TIME_STEP_DEG = 2.0
+
+# »—«Ì ò‘ ò—œ‰ œ«œÂùÂ« »— «”«” ‰«„ «—“
+GLOBAL_DF_CACHE = {}
+
+
+def fetch_data(symbol, force_update=False):
+    global GLOBAL_DF_CACHE
+
+    # «ê— œ«œÂùÂ« «“ ﬁ»· „ÊÃÊœ «”  Ê ¬ÅœÌ  «Ã»«—Ì ‰Ì” ° Â„«‰ —« »—ê—œ«‰
+    if not force_update and symbol in GLOBAL_DF_CACHE:
+        return GLOBAL_DF_CACHE[symbol]
+
+    # œ—Ì«›  œ«œÂùÂ«Ì ÃœÌœ (progress=False »—«Ì Ã·ÊêÌ—Ì «“ ç«Å Œ—ÊÃÌ œ— ò‰”Ê·)
+    df = yf.download(symbol, period=PERIOD, interval=INTERVAL, progress=False)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.droplevel(1)
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    df.reset_index(inplace=True)
+    time_col = 'Datetime' if 'Datetime' in df.columns else 'Date'
+
+    if pd.api.types.is_datetime64_any_dtype(df[time_col]):
+        if df[time_col].dt.tz is not None:
+            df[time_col] = df[time_col].dt.tz_convert('UTC')
+        else:
+            df[time_col] = df[time_col].dt.tz_localize('UTC')
+
+    df['Time_UTC_Str'] = df[time_col].dt.strftime('%Y-%m-%d %H:%M:%S UTC')
+    df.dropna(subset=['Close'], inplace=True)
+
+    time_indices = np.arange(len(df))
+    df['Raw_Angle'] = time_indices * TIME_STEP_DEG
+    df['Angle'] = df['Raw_Angle'] % 360
+    df['Lap'] = (df['Raw_Angle'] // 360).astype(int)
+
+    GLOBAL_DF_CACHE[symbol] = df
+    return df
+
+
+def build_figure(symbol, angle1=None, angle2=None, rotate_active=False, align_pivots=False, force_update=False):
+    df = fetch_data(symbol, force_update)
+
+    if df.empty:
+        fig = go.Figure()
+        fig.add_annotation(text=f"Œÿ« œ— œ—Ì«›  œ«œÂùÂ« »—«Ì {symbol}.", xref="paper", yref="paper", x=0.5, y=0.5,
+                           showarrow=False,
+                           font=dict(size=16, color="red"))
+        fig.update_layout(template="plotly_dark", plot_bgcolor='#111', paper_bgcolor='#111')
+        return fig
+
+    min_price = df['Close'].min() * 0.98
+    max_price = df['Close'].max() * 1.02
+
+    fig = make_subplots(
+        rows=2, cols=2,
+        specs=[
+            [{"type": "polar"}, {"type": "xy"}],
+            [{"colspan": 2, "type": "xy"}, None]
+        ],
+        subplot_titles=(f"{symbol} Polar View", "Angle vs Price", "Time vs Price & Signals"),
+        row_heights=[0.6, 0.4],
+        column_widths=[0.55, 0.45],
+        vertical_spacing=0.1
+    )
+
+    polar_rotation = 0
+    if rotate_active:
+        total_price_change = df['Close'].diff().fillna(0).abs().sum()
+        polar_rotation = (total_price_change * 1.618) % 360
+
+    hover_template = (
+        "<b>Time (UTC):</b> %{customdata[1]}<br>"
+        "<b>Price:</b> $%{customdata[0]:.2f}<br>"
+        "<b>Angle:</b> %{customdata[2]:.1f}∞<extra></extra>"
+    )
+
+    color_palette = px.colors.qualitative.Light24
+    laps = df['Lap'].unique()
+    target_angle = 90.0
+
+    # ?. „Õ«”»Â “«ÊÌÂ ‰Â«ÌÌ »« Ã·ÊêÌ—Ì «“ —ÌÅÌ‰  œ— Â„ù›«“”«“Ì
+    df['Final_Angle'] = df['Angle']
+    if align_pivots:
+        for i, lap in enumerate(laps):
+            mask = df['Lap'] == lap
+            if not df[mask].empty:
+                if i == len(laps) - 1:
+                    # === Ã·ÊêÌ—Ì «“ —ÌÅÌ‰  œ— ·Å Ã«—Ì ===
+                    if i > 0:
+                        # «” ›«œÂ «“ ¬›”  ·Å ﬁ»·Ì òÂ ﬁÿ⁄Ì Ê »” Â ‘œÂ «” 
+                        prev_lap = laps[i - 1]
+                        prev_mask = df['Lap'] == prev_lap
+                        prev_pivot_idx = df.loc[prev_mask, 'Close'].idxmax()
+                        prev_pivot_raw_angle = df.loc[prev_pivot_idx, 'Raw_Angle']
+                        offset = target_angle - prev_pivot_raw_angle
+                    else:
+                        # «ê—  ‰Â« Ìò ·Å œ«—Ì„° ¬›”  —« 0 œ— ‰Ÿ— „ÌùêÌ—Ì„  « “«ÊÌÂ  €ÌÌ— ‰ò‰œ
+                        offset = 0.0
+                else:
+                    # ·ÅùÂ«Ì »” Âù‘œÂùÌ ﬁœÌ„Ì „Ìù Ê«‰‰œ »— «”«” ÅÌÊÊ  ŒÊœ‘«‰ Â„ù›«“ ‘Ê‰œ
+                    pivot_idx = df.loc[mask, 'Close'].idxmax()
+                    pivot_raw_angle = df.loc[pivot_idx, 'Raw_Angle']
+                    offset = target_angle - pivot_raw_angle
+
+                df.loc[mask, 'Final_Angle'] = (df.loc[mask, 'Raw_Angle'] + offset) % 360
+
+    # ?. ÅÌœ« ò—œ‰ ‰ﬁ«ÿ  ﬁ«ÿ⁄ (⁄»Ê— “«ÊÌÂ «“ 90 œ—ÃÂ)
+    prev_angle = df['Final_Angle'].shift(1)
+    curr_angle = df['Final_Angle']
+
+    angle_cross_mask = (prev_angle < target_angle) & (curr_angle >= target_angle) & ((curr_angle - prev_angle) < 180)
+
+    # ?. ›Ì· — ò—œ‰ ”Ìê‰«·ùÂ«ÌÌ òÂ »« Å—‘ ‰«êÂ«‰Ì ﬁÌ„  Â„—«Â Â” ‰œ (»« „Õ«”»Â Å«Ìœ«— »—«Ì Ã·ÊêÌ—Ì «“ —ÌÅÌ‰ )
+    price_diff = df['Close'].diff()
+    if len(price_diff.dropna()) > 10:
+        # „Õ«”»Â ¬” «‰Â »— «”«” œ«œÂùÂ«Ì  «—ÌŒÌ (»Â Ã“ ?? ò‰œ· ¬Œ—) »—«Ì À»«  »Ì‘ —
+        stable_price_diff = price_diff.iloc[:-10].dropna()
+        if len(stable_price_diff) > 1:
+            price_jump_threshold = 3 * stable_price_diff.std()
+        else:
+            price_jump_threshold = 3 * price_diff.std()
+        no_break_mask = price_diff.abs() < price_jump_threshold
+    else:
+        no_break_mask = pd.Series(True, index=df.index)
+
+    # ?.  —òÌ» ‘—Êÿ »—«Ì »Â œ”  ¬Ê—œ‰ ”Ìê‰«·ùÂ«Ì ‰Â«ÌÌ
+    final_signal_mask = angle_cross_mask & no_break_mask
+
+    # Ã·ÊêÌ—Ì «“ —ÌÅÌ‰ : €Ì—›⁄«· ò—œ‰ ﬁÿ⁄Ì ”Ìê‰«· »—«Ì ò‰œ· Ã«—Ì (¬Œ—Ì‰ —œÌ›)
+    if not final_signal_mask.empty:
+        final_signal_mask.iloc[-1] = False
+
+    signals = df[final_signal_mask]
+    last_shifted_row = None
+
+    for i, lap in enumerate(laps):
+        lap_df_original = df[df['Lap'] == lap].copy()
+        lap_df_original['Angle'] = lap_df_original['Final_Angle']
+        lap_df_polar = lap_df_original.copy()
+
+        if lap < laps[-1]:
+            next_points = df[df['Lap'] == lap + 1]
+            if not next_points.empty:
+                next_point = next_points.iloc[0:1].copy()
+                next_point['Angle'] = next_point['Final_Angle']
+                lap_df_polar = pd.concat([lap_df_polar, next_point])
+
+        if lap == laps[-1] and not lap_df_original.empty:
+            last_shifted_row = lap_df_original.iloc[-1]
+
+        color = color_palette[i % len(color_palette)]
+
+        # —”„ ﬁÿ»Ì
+        fig.add_trace(go.Scatterpolar(
+            r=lap_df_polar['Close'], theta=lap_df_polar['Angle'], mode='lines',
+            line=dict(width=1.5, color=color), name=f'Lap {lap + 1}',
+            customdata=np.stack((lap_df_polar['Close'], lap_df_polar['Time_UTC_Str'], lap_df_polar['Angle']), axis=-1),
+            hovertemplate=hover_template, legendgroup=f'Lap {lap + 1}'
+        ), row=1, col=1)
+
+        # —”„ ŒÿÌ œò«— Ì »« ò‰ —· Å—‘ “«ÊÌÂ
+        x_xy = lap_df_original['Angle'].astype(float).values
+        y_xy = lap_df_original['Close'].astype(float).values
+        custom_xy = np.stack((lap_df_original['Close'], lap_df_original['Time_UTC_Str'], lap_df_original['Angle']),
+                             axis=-1)
+
+        diffs = np.diff(x_xy)
+        wrap_indices = np.where(diffs < -180)[0]
+        if len(wrap_indices) > 0:
+            x_xy = np.insert(x_xy, wrap_indices + 1, np.nan)
+            y_xy = np.insert(y_xy, wrap_indices + 1, np.nan)
+            custom_xy = np.insert(custom_xy, wrap_indices + 1, np.nan, axis=0)
+
+        fig.add_trace(go.Scatter(
+            x=x_xy, y=y_xy, mode='lines', line=dict(width=1.5, color=color),
+            name=f'Lap {lap + 1}', customdata=custom_xy, hovertemplate=hover_template,
+            legendgroup=f'Lap {lap + 1}', showlegend=False
+        ), row=1, col=2)
+
+        # —”„ ‰„Êœ«— ﬁÌ„ -“„«‰
+        fig.add_trace(go.Scatter(
+            x=lap_df_original['Time_UTC_Str'], y=lap_df_original['Close'],
+            mode='lines', line=dict(width=1.5, color=color),
+            name=f'Lap {lap + 1}', customdata=custom_xy, hovertemplate=hover_template,
+            legendgroup=f'Lap {lap + 1}', showlegend=False
+        ), row=2, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=[90, 90], y=[min_price, max_price], mode='lines',
+        line=dict(width=2, dash='dash', color='red'), showlegend=False, hoverinfo='skip'
+    ), row=1, col=2)
+
+    if not signals.empty:
+        fig.add_trace(go.Scatter(
+            x=signals['Time_UTC_Str'], y=signals['Close'], mode='markers',
+            marker=dict(color='yellow', size=12, symbol='star', line=dict(width=1, color='black')),
+            name='Signal (Smooth Cross 90∞)', showlegend=True
+        ), row=2, col=1)
+
+        fig.add_trace(go.Scatter(
+            x=signals['Final_Angle'], y=signals['Close'], mode='markers',
+            marker=dict(color='yellow', size=10, symbol='star', line=dict(width=1, color='black')),
+            showlegend=False
+        ), row=1, col=2)
+
+    if last_shifted_row is not None:
+        fig.add_trace(go.Scatterpolar(
+            r=[last_shifted_row['Close']], theta=[last_shifted_row['Final_Angle']], mode='markers+text',
+            marker=dict(color='yellow', size=10), text=[f"Live: ${last_shifted_row['Close']:.2f}"],
+            textposition="top center", textfont=dict(color='yellow', size=12), showlegend=False
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=[last_shifted_row['Final_Angle']], y=[last_shifted_row['Close']], mode='markers+text',
+            marker=dict(color='yellow', size=10), text=["Live"],
+            textposition="top center", textfont=dict(color='yellow', size=12), showlegend=False
+        ), row=1, col=2)
+
+    if angle1 is not None and angle2 is not None:
+        fig.add_trace(go.Scatterpolar(
+            r=[max_price, max_price], theta=[angle1, angle2], mode='lines+markers',
+            line=dict(color='white', width=3, dash='dash'), marker=dict(size=8, color='white'), showlegend=False
+        ), row=1, col=1)
+
+    fig.update_layout(
+        template="plotly_dark", title=f"{symbol} Interactive Gannzilla View",
+        plot_bgcolor='#111', paper_bgcolor='#111',
+        polar=dict(
+            radialaxis=dict(visible=True, range=[min_price, max_price], gridcolor='rgba(255, 255, 255, 0.1)'),
+            angularaxis=dict(direction="counterclockwise", period=360, dtick=30, gridcolor='rgba(255, 255, 255, 0.2)',
+                             rotation=polar_rotation)
+        ),
+        margin=dict(l=40, r=40, t=60, b=40), legend=dict(x=0.01, y=0.99), hovermode='closest'
+    )
+
+    fig.update_xaxes(title_text="Angle (∞)", range=[0, 360], dtick=30, row=1, col=2)
+    fig.update_yaxes(title_text="Price ($)", range=[min_price, max_price], row=1, col=2)
+    fig.update_xaxes(title_text="Time (UTC)", row=2, col=1)
+    fig.update_yaxes(title_text="Price ($)", range=[min_price, max_price], row=2, col=1)
+    for row in [1, 2]:
+        for col in [1, 2]:
+            fig.update_xaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)', row=row, col=col)
+            fig.update_yaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)', row=row, col=col)
+
+    return fig
+
+
+# --- «” «Ì·ùÂ«Ì „‘ —ò ---
+input_style = {'width': '80px', 'borderRadius': '5px', 'border': '1px solid #444', 'padding': '5px',
+               'backgroundColor': '#222', 'color': 'white', 'textAlign': 'center'}
+label_style = {'color': '#aaa', 'marginRight': '10px', 'fontSize': '14px', 'fontWeight': 'bold'}
+
+app = dash.Dash(__name__)
+
+app.layout = html.Div([
+    # »‰—  »·Ì€« Ì  ·ê—«„
+    html.Div([
+        html.A("?? ⁄÷ÊÌ  œ— ò«‰«·  ·ê—«„ „«: BITMOON618@ ??", href="https://t.me/BITMOON618", target="_blank",
+               style={'color': '#fff', 'textDecoration': 'none', 'fontWeight': 'bold', 'fontSize': '18px'})
+    ], style={
+        'backgroundColor': '#2AABEE', 'padding': '12px', 'textAlign': 'center',
+        'borderRadius': '8px', 'marginBottom': '20px', 'boxShadow': '0 4px 6px rgba(0,0,0,0.3)'
+    }),
+
+    # Å‰·  ‰ŸÌ„« 
+    html.Div([
+        # «‰ Œ«» «—“
+        html.Div([
+            html.Label("«‰ Œ«» «—“:", style=label_style),
+            dcc.Dropdown(
+                id='symbol-dropdown',
+                options=[
+                    {'label': 'Gold / ÿ·« (GC=F)', 'value': 'GC=F'},
+                    {'label': 'Bitcoin (BTC)', 'value': 'BTC-USD'},
+                    {'label': 'Ethereum (ETH)', 'value': 'ETH-USD'},
+                    {'label': 'Solana (SOL)', 'value': 'SOL-USD'},
+                    {'label': 'Binance Coin (BNB)', 'value': 'BNB-USD'},
+                    {'label': 'XRP (XRP)', 'value': 'XRP-USD'},
+                    {'label': 'Cardano (ADA)', 'value': 'ADA-USD'},
+                    {'label': 'Dogecoin (DOGE)', 'value': 'DOGE-USD'},
+                    {'label': 'Tron (TRX)', 'value': 'TRX-USD'},
+                    {'label': 'Polkadot (DOT)', 'value': 'DOT-USD'},
+                    {'label': 'Polygon (MATIC)', 'value': 'MATIC-USD'},
+                    {'label': 'Shiba Inu (SHIB)', 'value': 'SHIB-USD'},
+                    {'label': 'Litecoin (LTC)', 'value': 'LTC-USD'},
+                    {'label': 'Avalanche (AVAX)', 'value': 'AVAX-USD'},
+                    {'label': 'Chainlink (LINK)', 'value': 'LINK-USD'},
+                    {'label': 'Stellar (XLM)', 'value': 'XLM-USD'},
+                    {'label': 'Uniswap (UNI)', 'value': 'UNI-USD'},
+                    {'label': 'Bitcoin Cash (BCH)', 'value': 'BCH-USD'},
+                    {'label': 'Cosmos (ATOM)', 'value': 'ATOM-USD'},
+                    {'label': 'Monero (XMR)', 'value': 'XMR-USD'},
+                    {'label': 'Ethereum Classic (ETC)', 'value': 'ETC-USD'},
+                    {'label': 'Filecoin (FIL)', 'value': 'FIL-USD'},
+                    {'label': 'Lido DAO (LDO)', 'value': 'LDO-USD'},
+                    {'label': 'NEAR Protocol (NEAR)', 'value': 'NEAR-USD'},
+                    {'label': 'Aptos (APT)', 'value': 'APT-USD'},
+                    {'label': 'Arbitrum (ARB)', 'value': 'ARB-USD'},
+                    {'label': 'Optimism (OP)', 'value': 'OP-USD'},
+                    {'label': 'Injective (INJ)', 'value': 'INJ-USD'},
+                    {'label': 'Render (RNDR)', 'value': 'RNDR-USD'},
+                    {'label': 'Fetch.ai (FET)', 'value': 'FET-USD'},
+                    {'label': 'Maker (MKR)', 'value': 'MKR-USD'},
+                ],
+                value='BTC-USD',
+                clearable=False,
+                style={'width': '220px', 'color': 'black', 'display': 'inline-block', 'verticalAlign': 'middle'}
+            ),
+        ], style={'display': 'inline-flex', 'alignItems': 'center', 'marginRight': '30px'}),
+
+        # “Ê«Ì«
+        html.Div([
+            html.Label("“«ÊÌÂ «Ê· (∞):", style=label_style),
+            dcc.Input(id='input-angle1', type='number', value=120, style=input_style),
+        ], style={'display': 'inline-flex', 'alignItems': 'center', 'marginRight': '20px'}),
+
+        html.Div([
+            html.Label("“«ÊÌÂ œÊ„ (∞):", style=label_style),
+            dcc.Input(id='input-angle2', type='number', value=300, style=input_style),
+        ], style={'display': 'inline-flex', 'alignItems': 'center', 'marginRight': '30px'}),
+
+        # çòù»«ò”ùÂ«
+        dcc.Checklist(
+            id='rotate-circle-checkbox', options=[{'label': ' ç—Œ‘ »— «”«” ﬁÌ„ ', 'value': 'active'}],
+            value=[], style={'display': 'inline-block', 'color': '#ffcc00', 'fontWeight': 'bold', 'marginRight': '20px',
+                             'cursor': 'pointer'}
+        ),
+        dcc.Checklist(
+            id='align-pivots-checkbox', options=[{'label': ' Â„ù›«“”«“Ì ÅÌÊÊ ùÂ«', 'value': 'active'}],
+            value=[], style={'display': 'inline-block', 'color': '#00e5ff', 'fontWeight': 'bold', 'cursor': 'pointer'}
+        )
+    ], style={
+        'padding': '20px', 'display': 'flex', 'flexWrap': 'wrap', 'alignItems': 'center', 'justifyContent': 'center',
+        'backgroundColor': '#1a1a1a', 'borderRadius': '10px', 'boxShadow': '0 2px 10px rgba(0,0,0,0.5)',
+        'marginBottom': '20px'
+    }),
+
+    # ‰„Êœ«— «’·Ì
+    dcc.Graph(id='front-view-graph', style={'height': '80vh'}),
+
+    dcc.Interval(id='update-interval', interval=300000, n_intervals=0)
+], style={'backgroundColor': '#111', 'fontFamily': 'Tahoma, sans-serif', 'padding': '20px', 'minHeight': '100vh'})
+
+
+@app.callback(
+    Output('front-view-graph', 'figure'),
+    [Input('symbol-dropdown', 'value'),
+     Input('input-angle1', 'value'),
+     Input('input-angle2', 'value'),
+     Input('rotate-circle-checkbox', 'value'),
+     Input('align-pivots-checkbox', 'value'),
+     Input('update-interval', 'n_intervals')]
+)
+def update_graph(symbol, angle1, angle2, rotate_active, align_pivots, n_intervals):
+    is_rotate = 'active' in (rotate_active or [])
+    is_align = 'active' in (align_pivots or [])
+    force_update = False
+
+    # «ê—  —Ìê— «“ ”„   «Ì„— »Êœ° œ«œÂùÂ«Ì ÃœÌœ —« œ«‰·Êœ ò‰œ
+    if dash.ctx.triggered_id == 'update-interval':
+        force_update = True
+
+    return build_figure(symbol, angle1, angle2, rotate_active=is_rotate, align_pivots=is_align,
+                        force_update=force_update)
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
