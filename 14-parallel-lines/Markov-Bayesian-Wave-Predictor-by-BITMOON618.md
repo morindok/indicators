@@ -25,4 +25,4 @@ Live parallel lines and a Markov-Bayesian harmonic network.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

@@ -25,4 +25,4 @@ Quantitative tools and prediction models.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

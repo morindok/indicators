@@ -8,10 +8,10 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| Quant-Space-Predictor-by-BITMOON618 | [Guide](Quant-Space-Predictor-by-BITMOON618.md) | `Quant-Space-Predictor-by-BITMOON618.txt` |
-| Quantum-Fractal-Probability-Grid-Liquidity-Engine | [Guide](Quantum-Fractal-Probability-Grid-Liquidity-Engine.md) | `Quantum-Fractal-Probability-Grid-Liquidity-Engine.txt` |
-| Quantum-Spider-Web-Matrix-by-BITMOON618 | [Guide](Quantum-Spider-Web-Matrix-by-BITMOON618.md) | `Quantum-Spider-Web-Matrix-by-BITMOON618.txt` |
-| Quantum-Spider-Web-Operational-Path | [Guide](Quantum-Spider-Web-Operational-Path.md) | `Quantum-Spider-Web-Operational-Path.txt` |
+| Quant Space Predictor by BITMOON618 | [Guide](Quant-Space-Predictor-by-BITMOON618.md) | `Quant-Space-Predictor-by-BITMOON618.txt` |
+| Quantum Fractal Probability Grid Liquidity Engine | [Guide](Quantum-Fractal-Probability-Grid-Liquidity-Engine.md) | `Quantum-Fractal-Probability-Grid-Liquidity-Engine.txt` |
+| Quantum Spider Web Matrix by BITMOON618 | [Guide](Quantum-Spider-Web-Matrix-by-BITMOON618.md) | `Quantum-Spider-Web-Matrix-by-BITMOON618.txt` |
+| Quantum Spider Web Operational Path | [Guide](Quantum-Spider-Web-Operational-Path.md) | `Quantum-Spider-Web-Operational-Path.txt` |
 
 ## Installation
 

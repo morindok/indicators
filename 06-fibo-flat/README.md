@@ -8,8 +8,8 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| Cum-Line | [Guide](Cum-Line.md) | `Cum-Line.txt` |
-| Fibo-Flat-Volatility-Synchronized | [Guide](Fibo-Flat-Volatility-Synchronized.md) | `Fibo-Flat-Volatility-Synchronized.txt` |
+| Cum Line | [Guide](Cum-Line.md) | `Cum-Line.txt` |
+| Fibo Flat Volatility Synchronized | [Guide](Fibo-Flat-Volatility-Synchronized.md) | `Fibo-Flat-Volatility-Synchronized.txt` |
 
 ## Installation
 

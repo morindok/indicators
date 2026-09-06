@@ -25,4 +25,4 @@ Magic ruler for price projection measurement.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

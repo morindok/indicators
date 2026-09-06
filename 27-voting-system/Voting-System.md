@@ -25,4 +25,4 @@ Multi-indicator voting system for signal confirmation.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

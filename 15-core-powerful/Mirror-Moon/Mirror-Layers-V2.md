@@ -25,4 +25,4 @@ Core toolkit: mirror, spiral and system indicators.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

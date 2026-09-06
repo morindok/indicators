@@ -8,10 +8,10 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| Time-Machine-Pro | [Guide](Time-Machine-Pro.md) | `Time-Machine-Pro.txt` |
-| Time-Machine-V2 | [Guide](Time-Machine-V2.md) | `Time-Machine-V2.txt` |
-| Time-Machine-other-v | [Guide](Time-Machine-other-v.md) | `Time-Machine-other-v.txt` |
-| Time-Machine | [Guide](Time-Machine.md) | `Time-Machine.txt` |
+| Time Machine Pro | [Guide](Time-Machine-Pro.md) | `Time-Machine-Pro.txt` |
+| Time Machine V2 | [Guide](Time-Machine-V2.md) | `Time-Machine-V2.txt` |
+| Time Machine other v | [Guide](Time-Machine-other-v.md) | `Time-Machine-other-v.txt` |
+| Time Machine | [Guide](Time-Machine.md) | `Time-Machine.txt` |
 | morindok_footprint_pro_v2 | [Guide](morindok_footprint_pro_v2.md) | `morindok_footprint_pro_v2.pine` |
 
 ## Installation

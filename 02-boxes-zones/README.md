@@ -8,7 +8,7 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| BOS-Clustering | [Guide](BOS-Clustering.md) | `BOS-Clustering.txt` |
+| BOS Clustering | [Guide](BOS-Clustering.md) | `BOS-Clustering.txt` |
 
 ## Installation
 

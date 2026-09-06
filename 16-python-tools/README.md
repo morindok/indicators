@@ -8,86 +8,86 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| 3D-Analyzer-by-BITMOON618 | [Guide](3D-Analyzer/3D-Analyzer-by-BITMOON618.md) | `3D-Analyzer/3D-Analyzer-by-BITMOON618.txt` |
-| 3D-net | [Guide](3D-Price/3D-net.md) | `3D-Price/3D-net.txt` |
-| 3D-price | [Guide](3D-price.md) | `3D-price.txt` |
-| BTC-Solar-System-Predictor-v2-by-BITMOON618 | [Guide](BTC-Solar-System-Predictor-v2-by-BITMOON618.md) | `BTC-Solar-System-Predictor-v2-by-BITMOON618.txt` |
-| BTC-Solar-System-Predictor-v3 | [Guide](BTC-Solar-System-Predictor-v3.md) | `BTC-Solar-System-Predictor-v3.txt` |
-| BTC-Solar-System-Predictor-v4 | [Guide](BTC-Solar-System-Predictor-v4.md) | `BTC-Solar-System-Predictor-v4.txt` |
-| BTC-Solar-System-Predictor | [Guide](BTC-Solar-System-Predictor.md) | `BTC-Solar-System-Predictor.txt` |
-| BTC-Solar-System | [Guide](BTC-Solar-System.md) | `BTC-Solar-System.txt` |
-| Btc-Orelation-Predictor-System | [Guide](Btc-Orelation-Predictor-System.md) | `Btc-Orelation-Predictor-System.txt` |
-| Circle-Price | [Guide](Circle-Price.md) | `Circle-Price.txt` |
-| Circle-System-by-BITMOON618 | [Guide](Circle-System-by-BITMOON618.md) | `Circle-System-by-BITMOON618.txt` |
-| Advanced-Bybit-Chrono-Analyzer | [Guide](Clock/Advanced-Bybit-Chrono-Analyzer.md) | `Clock/Advanced-Bybit-Chrono-Analyzer.py` |
-| Chrono-Clock-Pro-v2-Cycle-of-Orbits | [Guide](Clock/Chrono-Clock-Pro-v2-Cycle-of-Orbits.md) | `Clock/Chrono-Clock-Pro-v2-Cycle-of-Orbits.txt` |
-| Chrono-Clock-Pro-v2 | [Guide](Clock/Chrono-Clock-Pro-v2.md) | `Clock/Chrono-Clock-Pro-v2.py` |
-| Chrono-Clock-Pro | [Guide](Clock/Chrono-Clock-Pro.md) | `Clock/Chrono-Clock-Pro.txt` |
-| Chrono-Clock-with-Winrate | [Guide](Clock/Chrono-Clock-with-Winrate.md) | `Clock/Chrono-Clock-with-Winrate.py` |
-| Chrono-Gravitas-v2.0 | [Guide](Clock/Chrono-Gravitas-v2.0.md) | `Clock/Chrono-Gravitas-v2.0.txt` |
-| Chrono-Gravitas-v3.0 | [Guide](Clock/Chrono-Gravitas-v3.0.md) | `Clock/Chrono-Gravitas-v3.0.py` |
-| Chrono-Gravitas-v4.0 | [Guide](Clock/Chrono-Gravitas-v4.0.md) | `Clock/Chrono-Gravitas-v4.0.py` |
-| Chrono-Gravitas-v5.0 | [Guide](Clock/Chrono-Gravitas-v5.0.md) | `Clock/Chrono-Gravitas-v5.0.py` |
-| Multi-Disk-Timeline-Pro-Live-Scanner | [Guide](Clock/Crono-Disk/Multi-Disk-Timeline-Pro-Live-Scanner.md) | `Clock/Crono-Disk/Multi-Disk-Timeline-Pro-Live-Scanner.txt` |
+| 3D Analyzer by BITMOON618 | [Guide](3D-Analyzer/3D-Analyzer-by-BITMOON618.md) | `3D-Analyzer/3D-Analyzer-by-BITMOON618.txt` |
+| 3D net | [Guide](3D-Price/3D-net.md) | `3D-Price/3D-net.txt` |
+| 3D price | [Guide](3D-price.md) | `3D-price.txt` |
+| BTC Solar System Predictor v2 by BITMOON618 | [Guide](BTC-Solar-System-Predictor-v2-by-BITMOON618.md) | `BTC-Solar-System-Predictor-v2-by-BITMOON618.txt` |
+| BTC Solar System Predictor v3 | [Guide](BTC-Solar-System-Predictor-v3.md) | `BTC-Solar-System-Predictor-v3.txt` |
+| BTC Solar System Predictor v4 | [Guide](BTC-Solar-System-Predictor-v4.md) | `BTC-Solar-System-Predictor-v4.txt` |
+| BTC Solar System Predictor | [Guide](BTC-Solar-System-Predictor.md) | `BTC-Solar-System-Predictor.txt` |
+| BTC Solar System | [Guide](BTC-Solar-System.md) | `BTC-Solar-System.txt` |
+| Btc Orelation Predictor System | [Guide](Btc-Orelation-Predictor-System.md) | `Btc-Orelation-Predictor-System.txt` |
+| Circle Price | [Guide](Circle-Price.md) | `Circle-Price.txt` |
+| Circle System by BITMOON618 | [Guide](Circle-System-by-BITMOON618.md) | `Circle-System-by-BITMOON618.txt` |
+| Advanced Bybit Chrono Analyzer | [Guide](Clock/Advanced-Bybit-Chrono-Analyzer.md) | `Clock/Advanced-Bybit-Chrono-Analyzer.py` |
+| Chrono Clock Pro v2 Cycle of Orbits | [Guide](Clock/Chrono-Clock-Pro-v2-Cycle-of-Orbits.md) | `Clock/Chrono-Clock-Pro-v2-Cycle-of-Orbits.txt` |
+| Chrono Clock Pro v2 | [Guide](Clock/Chrono-Clock-Pro-v2.md) | `Clock/Chrono-Clock-Pro-v2.py` |
+| Chrono Clock Pro | [Guide](Clock/Chrono-Clock-Pro.md) | `Clock/Chrono-Clock-Pro.txt` |
+| Chrono Clock with Winrate | [Guide](Clock/Chrono-Clock-with-Winrate.md) | `Clock/Chrono-Clock-with-Winrate.py` |
+| Chrono Gravitas v2.0 | [Guide](Clock/Chrono-Gravitas-v2.0.md) | `Clock/Chrono-Gravitas-v2.0.txt` |
+| Chrono Gravitas v3.0 | [Guide](Clock/Chrono-Gravitas-v3.0.md) | `Clock/Chrono-Gravitas-v3.0.py` |
+| Chrono Gravitas v4.0 | [Guide](Clock/Chrono-Gravitas-v4.0.md) | `Clock/Chrono-Gravitas-v4.0.py` |
+| Chrono Gravitas v5.0 | [Guide](Clock/Chrono-Gravitas-v5.0.md) | `Clock/Chrono-Gravitas-v5.0.py` |
+| Multi Disk Timeline Pro Live Scanner | [Guide](Clock/Crono-Disk/Multi-Disk-Timeline-Pro-Live-Scanner.md) | `Clock/Crono-Disk/Multi-Disk-Timeline-Pro-Live-Scanner.txt` |
 | chrono_disc_timeline | [Guide](Clock/Crono-Disk/chrono_disc_timeline.md) | `Clock/Crono-Disk/chrono_disc_timeline.py` |
 | chrono_matrix_3d | [Guide](Clock/Crono-Disk/chrono_matrix_3d.md) | `Clock/Crono-Disk/chrono_matrix_3d.py` |
 | earth_disk_timeline_sr | [Guide](Clock/Crono-Disk/earth_disk_timeline_sr.md) | `Clock/Crono-Disk/earth_disk_timeline_sr.py` |
 | earth_disk_timeline_v2 | [Guide](Clock/Crono-Disk/earth_disk_timeline_v2.md) | `Clock/Crono-Disk/earth_disk_timeline_v2.py` |
-| Bybit-Multi-Timeframe-Spiral-Mechanics-Chart-Dash-Plotly | [Guide](Clock/New-folder/Bybit-Multi-Timeframe-Spiral-Mechanics-Chart-Dash-Plotly.md) | `Clock/New-folder/Bybit-Multi-Timeframe-Spiral-Mechanics-Chart-Dash-Plotly.txt` |
-| Temporal-Resonance-Engine-v8 | [Guide](Clock/New-folder/Temporal-Resonance-Engine-v8.md) | `Clock/New-folder/Temporal-Resonance-Engine-v8.py` |
-| Price-Clock | [Guide](Clock/Price-Clock.md) | `Clock/Price-Clock.txt` |
-| Spiral-Clock-v1 | [Guide](Clock/Spiral-Clock-v1.md) | `Clock/Spiral-Clock-v1.txt` |
-| Spiral-Clock-v2 | [Guide](Clock/Spiral-Clock-v2.md) | `Clock/Spiral-Clock-v2.py` |
-| Spiral-Clock-v3-Backtest | [Guide](Clock/Spiral-Clock-v3-Backtest.md) | `Clock/Spiral-Clock-v3-Backtest.py` |
-| Spiral-Clock-v3 | [Guide](Clock/Spiral-Clock-v3.md) | `Clock/Spiral-Clock-v3.py` |
-| Temporal-Resonance-Engine-v4-by-BITMOON618 | [Guide](Clock/Temporal-Resonance-Engine-v4-by-BITMOON618.md) | `Clock/Temporal-Resonance-Engine-v4-by-BITMOON618.py` |
-| Temporal-Resonance-Engine-v5-by-BITMOON618 | [Guide](Clock/Temporal-Resonance-Engine-v5-by-BITMOON618.md) | `Clock/Temporal-Resonance-Engine-v5-by-BITMOON618.py` |
-| Temporal-Resonance-Engine-v7-by-BITMOON618 | [Guide](Clock/Temporal-Resonance-Engine-v7-by-BITMOON618.md) | `Clock/Temporal-Resonance-Engine-v7-by-BITMOON618.py` |
-| chrono_clock_pro-winrate | [Guide](Clock/chrono_clock_pro-winrate.md) | `Clock/chrono_clock_pro-winrate.py` |
+| Bybit Multi Timeframe Spiral Mechanics Chart Dash Plotly | [Guide](Clock/New-folder/Bybit-Multi-Timeframe-Spiral-Mechanics-Chart-Dash-Plotly.md) | `Clock/New-folder/Bybit-Multi-Timeframe-Spiral-Mechanics-Chart-Dash-Plotly.txt` |
+| Temporal Resonance Engine v8 | [Guide](Clock/New-folder/Temporal-Resonance-Engine-v8.md) | `Clock/New-folder/Temporal-Resonance-Engine-v8.py` |
+| Price Clock | [Guide](Clock/Price-Clock.md) | `Clock/Price-Clock.txt` |
+| Spiral Clock v1 | [Guide](Clock/Spiral-Clock-v1.md) | `Clock/Spiral-Clock-v1.txt` |
+| Spiral Clock v2 | [Guide](Clock/Spiral-Clock-v2.md) | `Clock/Spiral-Clock-v2.py` |
+| Spiral Clock v3 Backtest | [Guide](Clock/Spiral-Clock-v3-Backtest.md) | `Clock/Spiral-Clock-v3-Backtest.py` |
+| Spiral Clock v3 | [Guide](Clock/Spiral-Clock-v3.md) | `Clock/Spiral-Clock-v3.py` |
+| Temporal Resonance Engine v4 by BITMOON618 | [Guide](Clock/Temporal-Resonance-Engine-v4-by-BITMOON618.md) | `Clock/Temporal-Resonance-Engine-v4-by-BITMOON618.py` |
+| Temporal Resonance Engine v5 by BITMOON618 | [Guide](Clock/Temporal-Resonance-Engine-v5-by-BITMOON618.md) | `Clock/Temporal-Resonance-Engine-v5-by-BITMOON618.py` |
+| Temporal Resonance Engine v7 by BITMOON618 | [Guide](Clock/Temporal-Resonance-Engine-v7-by-BITMOON618.md) | `Clock/Temporal-Resonance-Engine-v7-by-BITMOON618.py` |
+| chrono_clock_pro winrate | [Guide](Clock/chrono_clock_pro-winrate.md) | `Clock/chrono_clock_pro-winrate.py` |
 | chrono_clock_pro | [Guide](Clock/chrono_clock_pro.md) | `Clock/chrono_clock_pro.py` |
-| Bybit-Chrono-Orbital-Solar-System-Time-Travel-Edition | [Guide](Clock/orbitals/Bybit-Chrono-Orbital-Solar-System-Time-Travel-Edition.md) | `Clock/orbitals/Bybit-Chrono-Orbital-Solar-System-Time-Travel-Edition.txt` |
-| Bybit-Chrono-Orbital-Solar-System | [Guide](Clock/orbitals/Bybit-Chrono-Orbital-Solar-System.md) | `Clock/orbitals/Bybit-Chrono-Orbital-Solar-System.txt` |
-| Ma-Orbitals-V2 | [Guide](Clock/orbitals/Ma-Orbitals-V2.md) | `Clock/orbitals/Ma-Orbitals-V2.py` |
-| Ma-Orbitals | [Guide](Clock/orbitals/Ma-Orbitals.md) | `Clock/orbitals/Ma-Orbitals.py` |
-| Timeframe-Spiral-Resonance | [Guide](Clock/orbitals/Timeframe-Spiral-Resonance.md) | `Clock/orbitals/Timeframe-Spiral-Resonance.txt` |
-| Annual-Spiral-Golden-Angle-Turn-Signal-System | [Guide](Clock/spiral/Annual-Spiral-Golden-Angle-Turn-Signal-System.md) | `Clock/spiral/Annual-Spiral-Golden-Angle-Turn-Signal-System.txt` |
-| Bybit-Multi-Timeframe-Circle-Analyzer-Time-Travel-Edition | [Guide](Clock/spiral/Bybit-Multi-Timeframe-Circle-Analyzer-Time-Travel-Edition.md) | `Clock/spiral/Bybit-Multi-Timeframe-Circle-Analyzer-Time-Travel-Edition.txt` |
-| Bybit-Multi-Timeframe-Spiral-Analyzer-Time-Travel-Edition | [Guide](Clock/spiral/Bybit-Multi-Timeframe-Spiral-Analyzer-Time-Travel-Edition.md) | `Clock/spiral/Bybit-Multi-Timeframe-Spiral-Analyzer-Time-Travel-Edition.txt` |
-| Bybit-Spiral-Timeframes-Dashboard | [Guide](Clock/spiral/Bybit-Spiral-Timeframes-Dashboard.md) | `Clock/spiral/Bybit-Spiral-Timeframes-Dashboard.txt` |
-| Golden-Fractal-Spiral | [Guide](Clock/spiral/Golden-Fractal-Spiral.md) | `Clock/spiral/Golden-Fractal-Spiral.py` |
-| Golden-Spiral-Chain-by-BITMOON618 | [Guide](Clock/spiral/Golden-Spiral-Chain-by-BITMOON618.md) | `Clock/spiral/Golden-Spiral-Chain-by-BITMOON618.py` |
-| Golden-Spiral-Fractal-SR-Backtest | [Guide](Clock/spiral/Golden-Spiral-Fractal-SR-Backtest.md) | `Clock/spiral/Golden-Spiral-Fractal-SR-Backtest.py` |
-| Golden-Spiral-Fractal-SR-v2 | [Guide](Clock/spiral/Golden-Spiral-Fractal-SR-v2.md) | `Clock/spiral/Golden-Spiral-Fractal-SR-v2.py` |
-| Golden-Spiral-Fractal-SR | [Guide](Clock/spiral/Golden-Spiral-Fractal-SR.md) | `Clock/spiral/Golden-Spiral-Fractal-SR.py` |
-| Golden-Spiral-Fractal-Timeframe-Analyzer | [Guide](Clock/spiral/Golden-Spiral-Fractal-Timeframe-Analyzer.md) | `Clock/spiral/Golden-Spiral-Fractal-Timeframe-Analyzer.txt` |
-| Hierarchical-Spiral-Fibonacci-Orbits | [Guide](Clock/spiral/Hierarchical-Spiral-Fibonacci-Orbits.md) | `Clock/spiral/Hierarchical-Spiral-Fibonacci-Orbits.txt` |
-| Hierarchical-Spiral-Signals-Cross-Signals | [Guide](Clock/spiral/Hierarchical-Spiral-Signals-Cross-Signals.md) | `Clock/spiral/Hierarchical-Spiral-Signals-Cross-Signals.txt` |
-| Time-Frame-Orbits-v2 | [Guide](Clock/spiral/Time-Frame-Orbits-v2.md) | `Clock/spiral/Time-Frame-Orbits-v2.txt` |
-| TimeFrame-Orbit-System | [Guide](Clock/spiral/TimeFrame-Orbit-System.md) | `Clock/spiral/TimeFrame-Orbit-System.py` |
-| Bybit-Footprint-Chart-2 | [Guide](Footprinting/Bybit-Footprint-Chart-2.md) | `Footprinting/Bybit-Footprint-Chart-2.txt` |
-| Bybit-Footprint-Chart-3 | [Guide](Footprinting/Bybit-Footprint-Chart-3.md) | `Footprinting/Bybit-Footprint-Chart-3.py` |
-| Bybit-Footprint-Chart-4 | [Guide](Footprinting/Bybit-Footprint-Chart-4.md) | `Footprinting/Bybit-Footprint-Chart-4.py` |
-| Bybit-Footprint-Chart | [Guide](Footprinting/Bybit-Footprint-Chart.md) | `Footprinting/Bybit-Footprint-Chart.txt` |
-| Footprint-System-V1-Trade-System | [Guide](Footprinting/Footprint-System-V1-Trade-System.md) | `Footprinting/Footprint-System-V1-Trade-System.py` |
-| Footprinting-System-Morindok-by-BITMOON618 | [Guide](Footprinting/Footprinting-System-Morindok-by-BITMOON618.md) | `Footprinting/Footprinting-System-Morindok-by-BITMOON618.txt` |
-| Footprinting-System-v2-Morindok-by-BITMOON618 | [Guide](Footprinting/Footprinting-System-v2-Morindok-by-BITMOON618.md) | `Footprinting/Footprinting-System-v2-Morindok-by-BITMOON618.txt` |
-| Footprinting-System-v3 | [Guide](Footprinting/Footprinting-System-v3.md) | `Footprinting/Footprinting-System-v3.txt` |
-| Volume-Profile-v2 | [Guide](Footprinting/Volume-Profile-v2.md) | `Footprinting/Volume-Profile-v2.txt` |
-| Volume-Profile | [Guide](Footprinting/Volume-Profile.md) | `Footprinting/Volume-Profile.txt` |
-| Cube-Gann | [Guide](Gann/Cube-Gann.md) | `Gann/Cube-Gann.txt` |
-| Gann-Tagnet-Spirals-V2 | [Guide](Gann/Gann-Tagnet-Spirals-V2.md) | `Gann/Gann-Tagnet-Spirals-V2.txt` |
-| Gann-Tagnet-Spirals-v3 | [Guide](Gann/Gann-Tagnet-Spirals-v3.md) | `Gann/Gann-Tagnet-Spirals-v3.txt` |
-| Gann-Tagnet-Spirals-v4 | [Guide](Gann/Gann-Tagnet-Spirals-v4.md) | `Gann/Gann-Tagnet-Spirals-v4.txt` |
-| Gann-Tagnet-Spirals-v5 | [Guide](Gann/Gann-Tagnet-Spirals-v5.md) | `Gann/Gann-Tagnet-Spirals-v5.txt` |
-| Gann-Tagnet-Spirals | [Guide](Gann/Gann-Tagnet-Spirals.md) | `Gann/Gann-Tagnet-Spirals.txt` |
-| Gann-Time-Machine-Back | [Guide](Gann/Gann-Time-Machine-Back.md) | `Gann/Gann-Time-Machine-Back.txt` |
-| Gann-Time-Machine-Live | [Guide](Gann/Gann-Time-Machine-Live.md) | `Gann/Gann-Time-Machine-Live.txt` |
-| Multiplier-Finder | [Guide](Gann/Multiplier-Finder.md) | `Gann/Multiplier-Finder.txt` |
-| Quantum-Gann-R.S | [Guide](Gann/Quantum-Gann-R.S.md) | `Gann/Quantum-Gann-R.S.txt` |
-| Time-Price-Tagnet-Machine | [Guide](Gann/Time-Price-Tagnet-Machine.md) | `Gann/Time-Price-Tagnet-Machine.txt` |
+| Bybit Chrono Orbital Solar System Time Travel Edition | [Guide](Clock/orbitals/Bybit-Chrono-Orbital-Solar-System-Time-Travel-Edition.md) | `Clock/orbitals/Bybit-Chrono-Orbital-Solar-System-Time-Travel-Edition.txt` |
+| Bybit Chrono Orbital Solar System | [Guide](Clock/orbitals/Bybit-Chrono-Orbital-Solar-System.md) | `Clock/orbitals/Bybit-Chrono-Orbital-Solar-System.txt` |
+| Ma Orbitals V2 | [Guide](Clock/orbitals/Ma-Orbitals-V2.md) | `Clock/orbitals/Ma-Orbitals-V2.py` |
+| Ma Orbitals | [Guide](Clock/orbitals/Ma-Orbitals.md) | `Clock/orbitals/Ma-Orbitals.py` |
+| Timeframe Spiral Resonance | [Guide](Clock/orbitals/Timeframe-Spiral-Resonance.md) | `Clock/orbitals/Timeframe-Spiral-Resonance.txt` |
+| Annual Spiral Golden Angle Turn Signal System | [Guide](Clock/spiral/Annual-Spiral-Golden-Angle-Turn-Signal-System.md) | `Clock/spiral/Annual-Spiral-Golden-Angle-Turn-Signal-System.txt` |
+| Bybit Multi Timeframe Circle Analyzer Time Travel Edition | [Guide](Clock/spiral/Bybit-Multi-Timeframe-Circle-Analyzer-Time-Travel-Edition.md) | `Clock/spiral/Bybit-Multi-Timeframe-Circle-Analyzer-Time-Travel-Edition.txt` |
+| Bybit Multi Timeframe Spiral Analyzer Time Travel Edition | [Guide](Clock/spiral/Bybit-Multi-Timeframe-Spiral-Analyzer-Time-Travel-Edition.md) | `Clock/spiral/Bybit-Multi-Timeframe-Spiral-Analyzer-Time-Travel-Edition.txt` |
+| Bybit Spiral Timeframes Dashboard | [Guide](Clock/spiral/Bybit-Spiral-Timeframes-Dashboard.md) | `Clock/spiral/Bybit-Spiral-Timeframes-Dashboard.txt` |
+| Golden Fractal Spiral | [Guide](Clock/spiral/Golden-Fractal-Spiral.md) | `Clock/spiral/Golden-Fractal-Spiral.py` |
+| Golden Spiral Chain by BITMOON618 | [Guide](Clock/spiral/Golden-Spiral-Chain-by-BITMOON618.md) | `Clock/spiral/Golden-Spiral-Chain-by-BITMOON618.py` |
+| Golden Spiral Fractal SR Backtest | [Guide](Clock/spiral/Golden-Spiral-Fractal-SR-Backtest.md) | `Clock/spiral/Golden-Spiral-Fractal-SR-Backtest.py` |
+| Golden Spiral Fractal SR v2 | [Guide](Clock/spiral/Golden-Spiral-Fractal-SR-v2.md) | `Clock/spiral/Golden-Spiral-Fractal-SR-v2.py` |
+| Golden Spiral Fractal SR | [Guide](Clock/spiral/Golden-Spiral-Fractal-SR.md) | `Clock/spiral/Golden-Spiral-Fractal-SR.py` |
+| Golden Spiral Fractal Timeframe Analyzer | [Guide](Clock/spiral/Golden-Spiral-Fractal-Timeframe-Analyzer.md) | `Clock/spiral/Golden-Spiral-Fractal-Timeframe-Analyzer.txt` |
+| Hierarchical Spiral Fibonacci Orbits | [Guide](Clock/spiral/Hierarchical-Spiral-Fibonacci-Orbits.md) | `Clock/spiral/Hierarchical-Spiral-Fibonacci-Orbits.txt` |
+| Hierarchical Spiral Signals Cross Signals | [Guide](Clock/spiral/Hierarchical-Spiral-Signals-Cross-Signals.md) | `Clock/spiral/Hierarchical-Spiral-Signals-Cross-Signals.txt` |
+| Time Frame Orbits v2 | [Guide](Clock/spiral/Time-Frame-Orbits-v2.md) | `Clock/spiral/Time-Frame-Orbits-v2.txt` |
+| TimeFrame Orbit System | [Guide](Clock/spiral/TimeFrame-Orbit-System.md) | `Clock/spiral/TimeFrame-Orbit-System.py` |
+| Bybit Footprint Chart 2 | [Guide](Footprinting/Bybit-Footprint-Chart-2.md) | `Footprinting/Bybit-Footprint-Chart-2.txt` |
+| Bybit Footprint Chart 3 | [Guide](Footprinting/Bybit-Footprint-Chart-3.md) | `Footprinting/Bybit-Footprint-Chart-3.py` |
+| Bybit Footprint Chart 4 | [Guide](Footprinting/Bybit-Footprint-Chart-4.md) | `Footprinting/Bybit-Footprint-Chart-4.py` |
+| Bybit Footprint Chart | [Guide](Footprinting/Bybit-Footprint-Chart.md) | `Footprinting/Bybit-Footprint-Chart.txt` |
+| Footprint System V1 Trade System | [Guide](Footprinting/Footprint-System-V1-Trade-System.md) | `Footprinting/Footprint-System-V1-Trade-System.py` |
+| Footprinting System Morindok by BITMOON618 | [Guide](Footprinting/Footprinting-System-Morindok-by-BITMOON618.md) | `Footprinting/Footprinting-System-Morindok-by-BITMOON618.txt` |
+| Footprinting System v2 Morindok by BITMOON618 | [Guide](Footprinting/Footprinting-System-v2-Morindok-by-BITMOON618.md) | `Footprinting/Footprinting-System-v2-Morindok-by-BITMOON618.txt` |
+| Footprinting System v3 | [Guide](Footprinting/Footprinting-System-v3.md) | `Footprinting/Footprinting-System-v3.txt` |
+| Volume Profile v2 | [Guide](Footprinting/Volume-Profile-v2.md) | `Footprinting/Volume-Profile-v2.txt` |
+| Volume Profile | [Guide](Footprinting/Volume-Profile.md) | `Footprinting/Volume-Profile.txt` |
+| Cube Gann | [Guide](Gann/Cube-Gann.md) | `Gann/Cube-Gann.txt` |
+| Gann Tagnet Spirals V2 | [Guide](Gann/Gann-Tagnet-Spirals-V2.md) | `Gann/Gann-Tagnet-Spirals-V2.txt` |
+| Gann Tagnet Spirals v3 | [Guide](Gann/Gann-Tagnet-Spirals-v3.md) | `Gann/Gann-Tagnet-Spirals-v3.txt` |
+| Gann Tagnet Spirals v4 | [Guide](Gann/Gann-Tagnet-Spirals-v4.md) | `Gann/Gann-Tagnet-Spirals-v4.txt` |
+| Gann Tagnet Spirals v5 | [Guide](Gann/Gann-Tagnet-Spirals-v5.md) | `Gann/Gann-Tagnet-Spirals-v5.txt` |
+| Gann Tagnet Spirals | [Guide](Gann/Gann-Tagnet-Spirals.md) | `Gann/Gann-Tagnet-Spirals.txt` |
+| Gann Time Machine Back | [Guide](Gann/Gann-Time-Machine-Back.md) | `Gann/Gann-Time-Machine-Back.txt` |
+| Gann Time Machine Live | [Guide](Gann/Gann-Time-Machine-Live.md) | `Gann/Gann-Time-Machine-Live.txt` |
+| Multiplier Finder | [Guide](Gann/Multiplier-Finder.md) | `Gann/Multiplier-Finder.txt` |
+| Quantum Gann R.S | [Guide](Gann/Quantum-Gann-R.S.md) | `Gann/Quantum-Gann-R.S.txt` |
+| Time Price Tagnet Machine | [Guide](Gann/Time-Price-Tagnet-Machine.md) | `Gann/Time-Price-Tagnet-Machine.txt` |
 | lW | [Guide](Gann/lW.md) | `Gann/lW.txt` |
 | chronogann_square | [Guide](Gann/new-gann/v1/chronogann_square.md) | `Gann/new-gann/v1/chronogann_square.py` |
-| ChronoGann-Dynamic-Square | [Guide](Gann/new-gann/v2/ChronoGann-Dynamic-Square.md) | `Gann/new-gann/v2/ChronoGann-Dynamic-Square.py` |
+| ChronoGann Dynamic Square | [Guide](Gann/new-gann/v2/ChronoGann-Dynamic-Square.md) | `Gann/new-gann/v2/ChronoGann-Dynamic-Square.py` |
 | bybit_connector | [Guide](Gann/new-gann/v3/bybit_connector.md) | `Gann/new-gann/v3/bybit_connector.py` |
 | chrono_engine | [Guide](Gann/new-gann/v3/chrono_engine.md) | `Gann/new-gann/v3/chrono_engine.py` |
 | config | [Guide](Gann/new-gann/v3/config.md) | `Gann/new-gann/v3/config.py` |
@@ -95,60 +95,60 @@
 | main | [Guide](Gann/new-gann/v3/main.md) | `Gann/new-gann/v3/main.py` |
 | quantum_gann_dash | [Guide](Gann/new-gann/v4/quantum_gann_dash.md) | `Gann/new-gann/v4/quantum_gann_dash.py` |
 | note | [Guide](Gann/note.md) | `Gann/note.txt` |
-| Gravity-Surface | [Guide](Gravity-Surface.md) | `Gravity-Surface.txt` |
-| HFT-Model | [Guide](HFT-Model.md) | `HFT-Model.py` |
-| Harmonic-Circles | [Guide](Harmonic-Circles.md) | `Harmonic-Circles.txt` |
-| Kelly-Cartesion | [Guide](Kelly-Cartesion.md) | `Kelly-Cartesion.txt` |
+| Gravity Surface | [Guide](Gravity-Surface.md) | `Gravity-Surface.txt` |
+| HFT Model | [Guide](HFT-Model.md) | `HFT-Model.py` |
+| Harmonic Circles | [Guide](Harmonic-Circles.md) | `Harmonic-Circles.txt` |
+| Kelly Cartesion | [Guide](Kelly-Cartesion.md) | `Kelly-Cartesion.txt` |
 | add_backtest | [Guide](Living-Brain/3.2/add_backtest.md) | `Living-Brain/3.2/add_backtest.py` |
 | living_brain | [Guide](Living-Brain/3.2/living_brain.md) | `Living-Brain/3.2/living_brain.py` |
-| Living-Brain | [Guide](Living-Brain/Living-Brain.md) | `Living-Brain/Living-Brain.py` |
+| Living Brain | [Guide](Living-Brain/Living-Brain.md) | `Living-Brain/Living-Brain.py` |
 | living_brain | [Guide](Living-Brain/v1.1/living_brain.md) | `Living-Brain/v1.1/living_brain.py` |
-| Living-Brain | [Guide](Living-Brain/v1/Living-Brain.md) | `Living-Brain/v1/Living-Brain.py` |
-| Living-Brain | [Guide](Living-Brain/v10/10.4/Living-Brain.md) | `Living-Brain/v10/10.4/Living-Brain.py` |
+| Living Brain | [Guide](Living-Brain/v1/Living-Brain.md) | `Living-Brain/v1/Living-Brain.py` |
+| Living Brain | [Guide](Living-Brain/v10/10.4/Living-Brain.md) | `Living-Brain/v10/10.4/Living-Brain.py` |
 | hive_dna_state | [Guide](Living-Brain/v10/10.4/hive_dna_state.md) | `Living-Brain/v10/10.4/hive_dna_state.json` |
-| HIVE-SCALPER-SNIPER-PRO | [Guide](Living-Brain/v10/HIVE-SCALPER-SNIPER-PRO.md) | `Living-Brain/v10/HIVE-SCALPER-SNIPER-PRO.py` |
-| HIVE_SCALPER-SNIPER_PRO | [Guide](Living-Brain/v10/v10.1/HIVE_SCALPER-SNIPER_PRO.md) | `Living-Brain/v10/v10.1/HIVE_SCALPER-SNIPER_PRO.py` |
+| HIVE SCALPER SNIPER PRO | [Guide](Living-Brain/v10/HIVE-SCALPER-SNIPER-PRO.md) | `Living-Brain/v10/HIVE-SCALPER-SNIPER-PRO.py` |
+| HIVE_SCALPER SNIPER_PRO | [Guide](Living-Brain/v10/v10.1/HIVE_SCALPER-SNIPER_PRO.md) | `Living-Brain/v10/v10.1/HIVE_SCALPER-SNIPER_PRO.py` |
 | HIVE_PRO_V3_10K | [Guide](Living-Brain/v10/v10.2/HIVE_PRO_V3_10K.md) | `Living-Brain/v10/v10.2/HIVE_PRO_V3_10K.py` |
 | hive_dna_state | [Guide](Living-Brain/v10/v10.2/hive_dna_state.md) | `Living-Brain/v10/v10.2/hive_dna_state.json` |
-| HIVE-SCALPER-SNIPER-PRO-GENETIC-EDITION | [Guide](Living-Brain/v10/v10.3/HIVE-SCALPER-SNIPER-PRO-GENETIC-EDITION.md) | `Living-Brain/v10/v10.3/HIVE-SCALPER-SNIPER-PRO-GENETIC-EDITION.py` |
+| HIVE SCALPER SNIPER PRO GENETIC EDITION | [Guide](Living-Brain/v10/v10.3/HIVE-SCALPER-SNIPER-PRO-GENETIC-EDITION.md) | `Living-Brain/v10/v10.3/HIVE-SCALPER-SNIPER-PRO-GENETIC-EDITION.py` |
 | hive_dna_state | [Guide](Living-Brain/v10/v10.5/hive_dna_state.md) | `Living-Brain/v10/v10.5/hive_dna_state.json` |
 | hive_scalper_sniper_pro | [Guide](Living-Brain/v10/v10.5/hive_scalper_sniper_pro.md) | `Living-Brain/v10/v10.5/hive_scalper_sniper_pro.py` |
 | hive_scalper_sniper_pro_v4 | [Guide](Living-Brain/v10/v10.6/hive_scalper_sniper_pro_v4.md) | `Living-Brain/v10/v10.6/hive_scalper_sniper_pro_v4.py` |
-| HIVE-QUANTUM-SCALPER-PRO-v6-GENERATIONAL-CONSCIOUSNESS | [Guide](Living-Brain/v10/v10.7/10.7.1/HIVE-QUANTUM-SCALPER-PRO-v6-GENERATIONAL-CONSCIOUSNESS.md) | `Living-Brain/v10/v10.7/10.7.1/HIVE-QUANTUM-SCALPER-PRO-v6-GENERATIONAL-CONSCIOUSNESS.py` |
-| HIVE-PREDATOR-v9.1 | [Guide](Living-Brain/v10/v10.7/10.7.1/v1/HIVE-PREDATOR-v9.1.md) | `Living-Brain/v10/v10.7/10.7.1/v1/HIVE-PREDATOR-v9.1.py` |
+| HIVE QUANTUM SCALPER PRO v6 GENERATIONAL CONSCIOUSNESS | [Guide](Living-Brain/v10/v10.7/10.7.1/HIVE-QUANTUM-SCALPER-PRO-v6-GENERATIONAL-CONSCIOUSNESS.md) | `Living-Brain/v10/v10.7/10.7.1/HIVE-QUANTUM-SCALPER-PRO-v6-GENERATIONAL-CONSCIOUSNESS.py` |
+| HIVE PREDATOR v9.1 | [Guide](Living-Brain/v10/v10.7/10.7.1/v1/HIVE-PREDATOR-v9.1.md) | `Living-Brain/v10/v10.7/10.7.1/v1/HIVE-PREDATOR-v9.1.py` |
 | hive_predator_v12_fixed | [Guide](Living-Brain/v10/v10.7/10.7.1/v2/hive_predator_v12_fixed.md) | `Living-Brain/v10/v10.7/10.7.1/v2/hive_predator_v12_fixed.py` |
 | hive_institutional_config | [Guide](Living-Brain/v10/v10.7/10.7.2/hive_institutional_config.md) | `Living-Brain/v10/v10.7/10.7.2/hive_institutional_config.json` |
 | hive_institutional_v7 | [Guide](Living-Brain/v10/v10.7/10.7.2/hive_institutional_v7.md) | `Living-Brain/v10/v10.7/10.7.2/hive_institutional_v7.py` |
-| HIVE-INSTITUTIONAL-SCALPER | [Guide](Living-Brain/v10/v10.7/10.7.3/HIVE-INSTITUTIONAL-SCALPER.md) | `Living-Brain/v10/v10.7/10.7.3/HIVE-INSTITUTIONAL-SCALPER.py` |
+| HIVE INSTITUTIONAL SCALPER | [Guide](Living-Brain/v10/v10.7/10.7.3/HIVE-INSTITUTIONAL-SCALPER.md) | `Living-Brain/v10/v10.7/10.7.3/HIVE-INSTITUTIONAL-SCALPER.py` |
 | hive_synapse_v10 | [Guide](Living-Brain/v10/v10.7/10.7.4/hive_synapse_v10.md) | `Living-Brain/v10/v10.7/10.7.4/hive_synapse_v10.py` |
 | hive_alpha_v11 | [Guide](Living-Brain/v10/v10.7/10.7.5/hive_alpha_v11.md) | `Living-Brain/v10/v10.7/10.7.5/hive_alpha_v11.py` |
 | hive_alpha_v11_fixed | [Guide](Living-Brain/v10/v10.7/10.7.6/hive_alpha_v11_fixed.md) | `Living-Brain/v10/v10.7/10.7.6/hive_alpha_v11_fixed.py` |
 | hive_quantum_consciousness_v5 | [Guide](Living-Brain/v10/v10.7/hive_quantum_consciousness_v5.md) | `Living-Brain/v10/v10.7/hive_quantum_consciousness_v5.py` |
 | hive_quantum_v5_state | [Guide](Living-Brain/v10/v10.7/hive_quantum_v5_state.md) | `Living-Brain/v10/v10.7/hive_quantum_v5_state.json` |
-| Living-Digital-Trading-Organism | [Guide](Living-Brain/v11/Living-Digital-Trading-Organism.md) | `Living-Brain/v11/Living-Digital-Trading-Organism.py` |
-| HIVE-SCALPER-SNIPER-PRO | [Guide](Living-Brain/v12/HIVE-SCALPER-SNIPER-PRO.md) | `Living-Brain/v12/HIVE-SCALPER-SNIPER-PRO.py` |
-| Digital-trading-organism | [Guide](Living-Brain/v13/Digital-trading-organism.md) | `Living-Brain/v13/Digital-trading-organism.py` |
+| Living Digital Trading Organism | [Guide](Living-Brain/v11/Living-Digital-Trading-Organism.md) | `Living-Brain/v11/Living-Digital-Trading-Organism.py` |
+| HIVE SCALPER SNIPER PRO | [Guide](Living-Brain/v12/HIVE-SCALPER-SNIPER-PRO.md) | `Living-Brain/v12/HIVE-SCALPER-SNIPER-PRO.py` |
+| Digital trading organism | [Guide](Living-Brain/v13/Digital-trading-organism.md) | `Living-Brain/v13/Digital-trading-organism.py` |
 | digital_organism_trader | [Guide](Living-Brain/v14/digital_organism_trader.md) | `Living-Brain/v14/digital_organism_trader.py` |
 | digital_organism_trader | [Guide](Living-Brain/v15/digital_organism_trader.md) | `Living-Brain/v15/digital_organism_trader.py` |
-| Living-Brain | [Guide](Living-Brain/v2/Living-Brain.md) | `Living-Brain/v2/Living-Brain.py` |
+| Living Brain | [Guide](Living-Brain/v2/Living-Brain.md) | `Living-Brain/v2/Living-Brain.py` |
 | living_brain | [Guide](Living-Brain/v3.1/living_brain.md) | `Living-Brain/v3.1/living_brain.py` |
 | living_brain | [Guide](Living-Brain/v3.3/living_brain.md) | `Living-Brain/v3.3/living_brain.py` |
-| Living-Brain | [Guide](Living-Brain/v3/Living-Brain.md) | `Living-Brain/v3/Living-Brain.py` |
-| Living-Brain | [Guide](Living-Brain/v4-nahadi/Living-Brain.md) | `Living-Brain/v4-nahadi/Living-Brain.py` |
-| Living-Brain | [Guide](Living-Brain/v5/Living-Brain.md) | `Living-Brain/v5/Living-Brain.py` |
-| Living-Brain | [Guide](Living-Brain/v6/Living-Brain.md) | `Living-Brain/v6/Living-Brain.py` |
-| Living-Brain | [Guide](Living-Brain/v7/Living-Brain.md) | `Living-Brain/v7/Living-Brain.py` |
-| Living-Brain | [Guide](Living-Brain/v8-smart-money/Living-Brain.md) | `Living-Brain/v8-smart-money/Living-Brain.py` |
-| Living-Brain | [Guide](Living-Brain/v9/Living-Brain.md) | `Living-Brain/v9/Living-Brain.py` |
-| 3D-Divergence | [Guide](MA/3D-Divergence.md) | `MA/3D-Divergence.py` |
-| HH-LL-3D | [Guide](MA/HH-LL-3D.md) | `MA/HH-LL-3D.py` |
-| MA-RSI-3D-Analyzer-V2-by-BITMOON618 | [Guide](MA/MA-RSI-3D-Analyzer-V2-by-BITMOON618.md) | `MA/MA-RSI-3D-Analyzer-V2-by-BITMOON618.py` |
-| MA-RSI-3D-Analyzer-V3-by-BITMOON618 | [Guide](MA/MA-RSI-3D-Analyzer-V3-by-BITMOON618.md) | `MA/MA-RSI-3D-Analyzer-V3-by-BITMOON618.py` |
-| MA-RSI-3D-Analyzer-V4-by-BITMOON618 | [Guide](MA/MA-RSI-3D-Analyzer-V4-by-BITMOON618.md) | `MA/MA-RSI-3D-Analyzer-V4-by-BITMOON618.py` |
-| MA-RSI-3D-Analyzer-by-BITMOON618-Copy | [Guide](MA/MA-RSI-3D-Analyzer-by-BITMOON618-Copy.md) | `MA/MA-RSI-3D-Analyzer-by-BITMOON618-Copy.py` |
-| MFI-System-v1 | [Guide](MFI-System-v1.md) | `MFI-System-v1.txt` |
-| MFI-System-v2 | [Guide](MFI-System-v2.md) | `MFI-System-v2.txt` |
-| Money-Flow-System-v3-by-BITMOON618 | [Guide](Money-Flow-System-v3-by-BITMOON618.md) | `Money-Flow-System-v3-by-BITMOON618.txt` |
+| Living Brain | [Guide](Living-Brain/v3/Living-Brain.md) | `Living-Brain/v3/Living-Brain.py` |
+| Living Brain | [Guide](Living-Brain/v4-nahadi/Living-Brain.md) | `Living-Brain/v4-nahadi/Living-Brain.py` |
+| Living Brain | [Guide](Living-Brain/v5/Living-Brain.md) | `Living-Brain/v5/Living-Brain.py` |
+| Living Brain | [Guide](Living-Brain/v6/Living-Brain.md) | `Living-Brain/v6/Living-Brain.py` |
+| Living Brain | [Guide](Living-Brain/v7/Living-Brain.md) | `Living-Brain/v7/Living-Brain.py` |
+| Living Brain | [Guide](Living-Brain/v8-smart-money/Living-Brain.md) | `Living-Brain/v8-smart-money/Living-Brain.py` |
+| Living Brain | [Guide](Living-Brain/v9/Living-Brain.md) | `Living-Brain/v9/Living-Brain.py` |
+| 3D Divergence | [Guide](MA/3D-Divergence.md) | `MA/3D-Divergence.py` |
+| HH LL 3D | [Guide](MA/HH-LL-3D.md) | `MA/HH-LL-3D.py` |
+| MA RSI 3D Analyzer V2 by BITMOON618 | [Guide](MA/MA-RSI-3D-Analyzer-V2-by-BITMOON618.md) | `MA/MA-RSI-3D-Analyzer-V2-by-BITMOON618.py` |
+| MA RSI 3D Analyzer V3 by BITMOON618 | [Guide](MA/MA-RSI-3D-Analyzer-V3-by-BITMOON618.md) | `MA/MA-RSI-3D-Analyzer-V3-by-BITMOON618.py` |
+| MA RSI 3D Analyzer V4 by BITMOON618 | [Guide](MA/MA-RSI-3D-Analyzer-V4-by-BITMOON618.md) | `MA/MA-RSI-3D-Analyzer-V4-by-BITMOON618.py` |
+| MA RSI 3D Analyzer by BITMOON618 Copy | [Guide](MA/MA-RSI-3D-Analyzer-by-BITMOON618-Copy.md) | `MA/MA-RSI-3D-Analyzer-by-BITMOON618-Copy.py` |
+| MFI System v1 | [Guide](MFI-System-v1.md) | `MFI-System-v1.txt` |
+| MFI System v2 | [Guide](MFI-System-v2.md) | `MFI-System-v2.txt` |
+| Money Flow System v3 by BITMOON618 | [Guide](Money-Flow-System-v3-by-BITMOON618.md) | `Money-Flow-System-v3-by-BITMOON618.txt` |
 | app | [Guide](Neural-Network/app.md) | `Neural-Network/app.py` |
 | app_state | [Guide](Neural-Network/app_state.md) | `Neural-Network/app_state.py` |
 | config | [Guide](Neural-Network/config.md) | `Neural-Network/config.py` |
@@ -158,10 +158,10 @@
 | neural_net | [Guide](Neural-Network/neural_net.md) | `Neural-Network/neural_net.py` |
 | path_simulator | [Guide](Neural-Network/path_simulator.md) | `Neural-Network/path_simulator.py` |
 | requirements | [Guide](Neural-Network/requirements.md) | `Neural-Network/requirements.txt` |
-| SPY-Vol-Surface-Stress-Simulation | [Guide](SPY-Vol-Surface-Stress-Simulation.md) | `SPY-Vol-Surface-Stress-Simulation.txt` |
-| Spiral-Analyzer | [Guide](Spiral-Analyzer.md) | `Spiral-Analyzer.txt` |
-| Spiral-Predictor-v2 | [Guide](Spiral-Predictor-v2.md) | `Spiral-Predictor-v2.txt` |
-| Spiral-Predictor | [Guide](Spiral-Predictor.md) | `Spiral-Predictor.txt` |
+| SPY Vol Surface Stress Simulation | [Guide](SPY-Vol-Surface-Stress-Simulation.md) | `SPY-Vol-Surface-Stress-Simulation.txt` |
+| Spiral Analyzer | [Guide](Spiral-Analyzer.md) | `Spiral-Analyzer.txt` |
+| Spiral Predictor v2 | [Guide](Spiral-Predictor-v2.md) | `Spiral-Predictor-v2.txt` |
+| Spiral Predictor | [Guide](Spiral-Predictor.md) | `Spiral-Predictor.txt` |
 | Start | [Guide](Super-Analyzer/Morindok_VolumeFlow/Start.md) | `Super-Analyzer/Morindok_VolumeFlow/Start.bat` |
 | app | [Guide](Super-Analyzer/Morindok_VolumeFlow/app.md) | `Super-Analyzer/Morindok_VolumeFlow/app.py` |
 | requirements | [Guide](Super-Analyzer/Morindok_VolumeFlow/requirements.md) | `Super-Analyzer/Morindok_VolumeFlow/requirements.txt` |
@@ -176,18 +176,18 @@
 | requirements | [Guide](Super-Analyzer/Scalping-System-V1/requirements.md) | `Super-Analyzer/Scalping-System-V1/requirements.txt` |
 | start | [Guide](Super-Analyzer/Scalping-System-V1/start.md) | `Super-Analyzer/Scalping-System-V1/start.sh` |
 | untitled | [Guide](Super-Analyzer/Scalping-System-V1/untitled.md) | `Super-Analyzer/Scalping-System-V1/untitled.txt` |
-| Smart-Volume-Flow-V1 | [Guide](Super-Analyzer/Smart-Volume-Flow-V1.md) | `Super-Analyzer/Smart-Volume-Flow-V1.txt` |
-| Super-OrderFlow-Analyzer-System-by-BITMOON618 | [Guide](Super-Analyzer/Super-OrderFlow-Analyzer-System-by-BITMOON618.md) | `Super-Analyzer/Super-OrderFlow-Analyzer-System-by-BITMOON618.txt` |
-| Super-Scalping-System-V1 | [Guide](Super-Analyzer/Super-Scalping-System-V1.md) | `Super-Analyzer/Super-Scalping-System-V1.txt` |
-| Tick-Data-Analyzer-by-BITMOON618 | [Guide](Super-Analyzer/Tick-Data-Analyzer-by-BITMOON618.md) | `Super-Analyzer/Tick-Data-Analyzer-by-BITMOON618.txt` |
-| Tick-Data-Analyzer-v2-by-BITMOON618-Copy | [Guide](Super-Analyzer/Tick-Data-Analyzer-v2-by-BITMOON618-Copy.md) | `Super-Analyzer/Tick-Data-Analyzer-v2-by-BITMOON618-Copy.py` |
-| Tick-Data-Analyzer-v3-by-BITMOON618 | [Guide](Super-Analyzer/Tick-Data-Analyzer-v3-by-BITMOON618.md) | `Super-Analyzer/Tick-Data-Analyzer-v3-by-BITMOON618.py` |
+| Smart Volume Flow V1 | [Guide](Super-Analyzer/Smart-Volume-Flow-V1.md) | `Super-Analyzer/Smart-Volume-Flow-V1.txt` |
+| Super OrderFlow Analyzer System by BITMOON618 | [Guide](Super-Analyzer/Super-OrderFlow-Analyzer-System-by-BITMOON618.md) | `Super-Analyzer/Super-OrderFlow-Analyzer-System-by-BITMOON618.txt` |
+| Super Scalping System V1 | [Guide](Super-Analyzer/Super-Scalping-System-V1.md) | `Super-Analyzer/Super-Scalping-System-V1.txt` |
+| Tick Data Analyzer by BITMOON618 | [Guide](Super-Analyzer/Tick-Data-Analyzer-by-BITMOON618.md) | `Super-Analyzer/Tick-Data-Analyzer-by-BITMOON618.txt` |
+| Tick Data Analyzer v2 by BITMOON618 Copy | [Guide](Super-Analyzer/Tick-Data-Analyzer-v2-by-BITMOON618-Copy.md) | `Super-Analyzer/Tick-Data-Analyzer-v2-by-BITMOON618-Copy.py` |
+| Tick Data Analyzer v3 by BITMOON618 | [Guide](Super-Analyzer/Tick-Data-Analyzer-v3-by-BITMOON618.md) | `Super-Analyzer/Tick-Data-Analyzer-v3-by-BITMOON618.py` |
 | Start | [Guide](Super-Analyzer/Volume-Flow-V2/Start.md) | `Super-Analyzer/Volume-Flow-V2/Start.bat` |
 | app | [Guide](Super-Analyzer/Volume-Flow-V2/app.md) | `Super-Analyzer/Volume-Flow-V2/app.py` |
 | requirements | [Guide](Super-Analyzer/Volume-Flow-V2/requirements.md) | `Super-Analyzer/Volume-Flow-V2/requirements.txt` |
 | start | [Guide](Super-Analyzer/Volume-Flow-V2/start.md) | `Super-Analyzer/Volume-Flow-V2/start.sh` |
 | untitled | [Guide](Super-Analyzer/Volume-Flow-V2/untitled.md) | `Super-Analyzer/Volume-Flow-V2/untitled.txt` |
-| Volume-Flow-by-BITMOON618 | [Guide](Super-Analyzer/Volume-Flow-by-BITMOON618.md) | `Super-Analyzer/Volume-Flow-by-BITMOON618.txt` |
+| Volume Flow by BITMOON618 | [Guide](Super-Analyzer/Volume-Flow-by-BITMOON618.md) | `Super-Analyzer/Volume-Flow-by-BITMOON618.txt` |
 | trendline_volume_analyzer | [Guide](Volume/trendline_volume_analyzer.md) | `Volume/trendline_volume_analyzer.py` |
 | app | [Guide](bio-trader/bio-trader-v2/app.md) | `bio-trader/bio-trader-v2/app.py` |
 | style | [Guide](bio-trader/bio-trader-v2/assets/style.md) | `bio-trader/bio-trader-v2/assets/style.css` |
@@ -207,14 +207,14 @@
 | test_biotrader | [Guide](bio-trader/bio-trader/test_biotrader.md) | `bio-trader/bio-trader/test_biotrader.py` |
 | bybit_whale_scalper | [Guide](bybit_whale_scalper.md) | `bybit_whale_scalper.py` |
 | jins | [Guide](jins/jins.md) | `jins/jins.py` |
-| Nostradamus-Digital-Organism | [Guide](nostradamoos/Nostradamus-Digital-Organism.md) | `nostradamoos/Nostradamus-Digital-Organism.py` |
+| Nostradamus Digital Organism | [Guide](nostradamoos/Nostradamus-Digital-Organism.md) | `nostradamoos/Nostradamus-Digital-Organism.py` |
 | Dockerfile | [Guide](organism/Kimi_Agent_Untitled-Chat/app/Dockerfile.md) | `organism/Kimi_Agent_Untitled-Chat/app/Dockerfile` |
 | app | [Guide](organism/Kimi_Agent_Untitled-Chat/app/app.md) | `organism/Kimi_Agent_Untitled-Chat/app/app.py` |
 | index | [Guide](organism/Kimi_Agent_Untitled-Chat/app/index.md) | `organism/Kimi_Agent_Untitled-Chat/app/index.html` |
-| package-lock | [Guide](organism/Kimi_Agent_Untitled-Chat/app/package-lock.md) | `organism/Kimi_Agent_Untitled-Chat/app/package-lock.json` |
+| package lock | [Guide](organism/Kimi_Agent_Untitled-Chat/app/package-lock.md) | `organism/Kimi_Agent_Untitled-Chat/app/package-lock.json` |
 | requirements | [Guide](organism/Kimi_Agent_Untitled-Chat/app/requirements.md) | `organism/Kimi_Agent_Untitled-Chat/app/requirements.txt` |
 | untitled | [Guide](organism/Kimi_Agent_Untitled-Chat/untitled.md) | `organism/Kimi_Agent_Untitled-Chat/untitled.py` |
-| Smart-Organism | [Guide](organism/v1/Smart-Organism.md) | `organism/v1/Smart-Organism.py` |
+| Smart Organism | [Guide](organism/v1/Smart-Organism.md) | `organism/v1/Smart-Organism.py` |
 | document | [Guide](organism/v10/document.md) | `organism/v10/document.pdf` |
 | organism_2500 | [Guide](organism/v10/organism_2500.md) | `organism/v10/organism_2500.py` |
 | organism_2500_identity | [Guide](organism/v10/organism_2500_identity.md) | `organism/v10/organism_2500_identity.json` |
@@ -257,7 +257,7 @@
 | run_chat | [Guide](organism/v15/run_chat.md) | `organism/v15/run_chat.bat` |
 | run_chat_dashboard | [Guide](organism/v15/run_chat_dashboard.md) | `organism/v15/run_chat_dashboard.bat` |
 | run_organism | [Guide](organism/v15/run_organism.md) | `organism/v15/run_organism.bat` |
-| Living-Brain | [Guide](organism/v16/Living-Brain.md) | `organism/v16/Living-Brain.py` |
+| Living Brain | [Guide](organism/v16/Living-Brain.md) | `organism/v16/Living-Brain.py` |
 | cognition | [Guide](organism/v18/cognition/cognition.md) | `organism/v18/cognition/cognition.py` |
 | config | [Guide](organism/v18/config.md) | `organism/v18/config.yaml` |
 | neural_substrate | [Guide](organism/v18/core/neural_substrate.md) | `organism/v18/core/neural_substrate.py` |
@@ -280,21 +280,21 @@
 | requirements | [Guide](organism/v18/requirements.md) | `organism/v18/requirements.txt` |
 | run | [Guide](organism/v18/run.md) | `organism/v18/run.py` |
 | dash_app | [Guide](organism/v18/web_ui/dash_app.md) | `organism/v18/web_ui/dash_app.py` |
-| Smart-Organism | [Guide](organism/v2/Smart-Organism.md) | `organism/v2/Smart-Organism.py` |
-| Smart-Organism | [Guide](organism/v3/Smart-Organism.md) | `organism/v3/Smart-Organism.py` |
+| Smart Organism | [Guide](organism/v2/Smart-Organism.md) | `organism/v2/Smart-Organism.py` |
+| Smart Organism | [Guide](organism/v3/Smart-Organism.md) | `organism/v3/Smart-Organism.py` |
 | AGI | [Guide](organism/v4/AGI.md) | `organism/v4/AGI.py` |
 | brain | [Guide](organism/v5/brain.md) | `organism/v5/brain.py` |
 | index | [Guide](organism/v7/app/index.md) | `organism/v7/app/index.html` |
 | revolutionary_digital_organism | [Guide](organism/v8/revolutionary_digital_organism.md) | `organism/v8/revolutionary_digital_organism.py` |
 | zendeh_maghz | [Guide](organism/v9/zendeh_maghz.md) | `organism/v9/zendeh_maghz.py` |
-| Golden-Spiral-Fractal-v7-Golden-Angle-Engine | [Guide](profitable/137.5/Golden-Spiral-Fractal-v7-Golden-Angle-Engine.md) | `profitable/137.5/Golden-Spiral-Fractal-v7-Golden-Angle-Engine.txt` |
-| Golden-Spiral-Fractal-LIVE-Trader-v3 | [Guide](profitable/Golden-Spiral-Fractal-LIVE-Trader-v3.md) | `profitable/Golden-Spiral-Fractal-LIVE-Trader-v3.py` |
-| Golden-Spiral-Fractal-v5.1 | [Guide](profitable/Quantum-Spiral/Golden-Spiral-Fractal-v5.1.md) | `profitable/Quantum-Spiral/Golden-Spiral-Fractal-v5.1.txt` |
-| Regime-Aware-Pro-Trader-V2 | [Guide](profitable/Regime-Aware-Pro-Trader-V2.md) | `profitable/Regime-Aware-Pro-Trader-V2.txt` |
-| Regime-Aware-Pro-Trader | [Guide](profitable/Regime-Aware-Pro-Trader.md) | `profitable/Regime-Aware-Pro-Trader.txt` |
-| Trading-System | [Guide](profitable/Secret/Trading-System.md) | `profitable/Secret/Trading-System.py` |
-| Golden-Spiral-Chain | [Guide](profitable/Spiral-Chain/Golden-Spiral-Chain.md) | `profitable/Spiral-Chain/Golden-Spiral-Chain.txt` |
-| Quantum-Fibonacci-Cycle | [Guide](profitable/quant/Quantum-Fibonacci-Cycle.md) | `profitable/quant/Quantum-Fibonacci-Cycle.txt` |
+| Golden Spiral Fractal v7 Golden Angle Engine | [Guide](profitable/137.5/Golden-Spiral-Fractal-v7-Golden-Angle-Engine.md) | `profitable/137.5/Golden-Spiral-Fractal-v7-Golden-Angle-Engine.txt` |
+| Golden Spiral Fractal LIVE Trader v3 | [Guide](profitable/Golden-Spiral-Fractal-LIVE-Trader-v3.md) | `profitable/Golden-Spiral-Fractal-LIVE-Trader-v3.py` |
+| Golden Spiral Fractal v5.1 | [Guide](profitable/Quantum-Spiral/Golden-Spiral-Fractal-v5.1.md) | `profitable/Quantum-Spiral/Golden-Spiral-Fractal-v5.1.txt` |
+| Regime Aware Pro Trader V2 | [Guide](profitable/Regime-Aware-Pro-Trader-V2.md) | `profitable/Regime-Aware-Pro-Trader-V2.txt` |
+| Regime Aware Pro Trader | [Guide](profitable/Regime-Aware-Pro-Trader.md) | `profitable/Regime-Aware-Pro-Trader.txt` |
+| Trading System | [Guide](profitable/Secret/Trading-System.md) | `profitable/Secret/Trading-System.py` |
+| Golden Spiral Chain | [Guide](profitable/Spiral-Chain/Golden-Spiral-Chain.md) | `profitable/Spiral-Chain/Golden-Spiral-Chain.txt` |
+| Quantum Fibonacci Cycle | [Guide](profitable/quant/Quantum-Fibonacci-Cycle.md) | `profitable/quant/Quantum-Fibonacci-Cycle.txt` |
 | main | [Guide](projects/main.md) | `projects/main.py` |
 | corpus | [Guide](projects/organism_memory/corpus.md) | `projects/organism_memory/corpus.txt` |
 | organism_state | [Guide](projects/organism_memory/organism_state.md) | `projects/organism_memory/organism_state.json` |

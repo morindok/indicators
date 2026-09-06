@@ -8,7 +8,7 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| Moving-Average-Trend-Line-by-BITMOON618 | [Guide](Moving-Average-Trend-Line-by-BITMOON618.md) | `Moving-Average-Trend-Line-by-BITMOON618.txt` |
+| Moving Average Trend Line by BITMOON618 | [Guide](Moving-Average-Trend-Line-by-BITMOON618.md) | `Moving-Average-Trend-Line-by-BITMOON618.txt` |
 
 ## Installation
 

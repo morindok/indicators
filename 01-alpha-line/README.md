@@ -8,7 +8,7 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| alpha-line | [Guide](alpha-line.md) | `alpha-line.txt` |
+| alpha line | [Guide](alpha-line.md) | `alpha-line.txt` |
 
 ## Installation
 

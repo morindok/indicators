@@ -25,4 +25,4 @@ Fibonacci flat levels and a cumulative line for reversal points.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

@@ -42,6 +42,7 @@ A comprehensive collection of **28 categories** and **hundreds of technical anal
 | 26 | [Volume](26-volume/) | Volume candles and volume-MA profile tools. | 2 |
 | 27 | [Voting System](27-voting-system/) | Multi-indicator voting system for signal confirmation. | 1 |
 | 28 | [Signals](28-signals/) | Signal indicators: mirror reversal and LookBack systems. | 3 |
+| 29 | [Root Indicators](ROOT-INDICATORS.md) | Standalone indicators at the repository root. | 55 |
 
 ## Keywords
 

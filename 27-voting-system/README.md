@@ -8,7 +8,7 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| Voting-System | [Guide](Voting-System.md) | `Voting-System.txt` |
+| Voting System | [Guide](Voting-System.md) | `Voting-System.txt` |
 
 ## Installation
 

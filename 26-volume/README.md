@@ -8,8 +8,8 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| Volume-Candles-by-BITMOON618 | [Guide](Volume-Candles-by-BITMOON618.md) | `Volume-Candles-by-BITMOON618.txt` |
-| Volume-vs-MA-Profile-by-BITMOON618 | [Guide](Volume-vs-MA-Profile-by-BITMOON618.md) | `Volume-vs-MA-Profile-by-BITMOON618.txt` |
+| Volume Candles by BITMOON618 | [Guide](Volume-Candles-by-BITMOON618.md) | `Volume-Candles-by-BITMOON618.txt` |
+| Volume vs MA Profile by BITMOON618 | [Guide](Volume-vs-MA-Profile-by-BITMOON618.md) | `Volume-vs-MA-Profile-by-BITMOON618.txt` |
 
 ## Installation
 

@@ -8,8 +8,8 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| Ruler-V2-by-BITMOON618 | [Guide](Ruler-V2-by-BITMOON618.md) | `Ruler-V2-by-BITMOON618.txt` |
-| Volume-Meter-Ruller-by-BITMOON618 | [Guide](Volume-Meter-Ruller-by-BITMOON618.md) | `Volume-Meter-Ruller-by-BITMOON618.txt` |
+| Ruler V2 by BITMOON618 | [Guide](Ruler-V2-by-BITMOON618.md) | `Ruler-V2-by-BITMOON618.txt` |
+| Volume Meter Ruller by BITMOON618 | [Guide](Volume-Meter-Ruller-by-BITMOON618.md) | `Volume-Meter-Ruller-by-BITMOON618.txt` |
 
 ## Installation
 

@@ -8,9 +8,9 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| Diamond-System-Trend-Analyzer-by-BITMOON618 | [Guide](Diamond-System-Trend-Analyzer-by-BITMOON618.md) | `Diamond-System-Trend-Analyzer-by-BITMOON618.txt` |
-| Dragon-Strength-Pro | [Guide](Dragon-Strength-Pro.md) | `Dragon-Strength-Pro.txt` |
-| POT-by-BITMOON618 | [Guide](POT-by-BITMOON618.md) | `POT-by-BITMOON618.txt` |
+| Diamond System Trend Analyzer by BITMOON618 | [Guide](Diamond-System-Trend-Analyzer-by-BITMOON618.md) | `Diamond-System-Trend-Analyzer-by-BITMOON618.txt` |
+| Dragon Strength Pro | [Guide](Dragon-Strength-Pro.md) | `Dragon-Strength-Pro.txt` |
+| POT by BITMOON618 | [Guide](POT-by-BITMOON618.md) | `POT-by-BITMOON618.txt` |
 
 ## Installation
 

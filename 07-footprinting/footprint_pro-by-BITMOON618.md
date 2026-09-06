@@ -25,4 +25,4 @@ Order-flow footprint and market microstructure analysis.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

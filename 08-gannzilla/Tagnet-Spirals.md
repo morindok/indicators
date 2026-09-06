@@ -25,4 +25,4 @@ W.D. Gann tools: Square of 9, Gann Machine and Atomic Models.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

@@ -8,8 +8,8 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| Magical-Ruller-v2 | [Guide](Magical-Ruller-v2.md) | `Magical-Ruller-v2.txt` |
-| Magical-Ruller | [Guide](Magical-Ruller.md) | `Magical-Ruller.txt` |
+| Magical Ruller v2 | [Guide](Magical-Ruller-v2.md) | `Magical-Ruller-v2.txt` |
+| Magical Ruller | [Guide](Magical-Ruller.md) | `Magical-Ruller.txt` |
 
 ## Installation
 

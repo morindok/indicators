@@ -25,4 +25,4 @@ Spiral analyzer for logarithmic spiral pivot forecasting.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

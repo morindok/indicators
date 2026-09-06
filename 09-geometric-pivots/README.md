@@ -8,8 +8,8 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| Geometric-Path-Backtest-with-BG | [Guide](Geometric-Path-Backtest-with-BG.md) | `Geometric-Path-Backtest-with-BG.txt` |
-| Painting-Of-Price-by-BITMOON618 | [Guide](Painting-Of-Price-by-BITMOON618.md) | `Painting-Of-Price-by-BITMOON618.txt` |
+| Geometric Path Backtest with BG | [Guide](Geometric-Path-Backtest-with-BG.md) | `Geometric-Path-Backtest-with-BG.txt` |
+| Painting Of Price by BITMOON618 | [Guide](Painting-Of-Price-by-BITMOON618.md) | `Painting-Of-Price-by-BITMOON618.txt` |
 
 ## Installation
 

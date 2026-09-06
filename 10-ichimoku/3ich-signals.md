@@ -25,4 +25,4 @@ Golden Ichimoku system and signal versions.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

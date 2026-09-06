@@ -8,7 +8,7 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| Ichi-Moving-V1-by-BITMOON618 | [Guide](Ichi-Moving-V1-by-BITMOON618.md) | `Ichi-Moving-V1-by-BITMOON618.txt` |
+| Ichi Moving V1 by BITMOON618 | [Guide](Ichi-Moving-V1-by-BITMOON618.md) | `Ichi-Moving-V1-by-BITMOON618.txt` |
 
 ## Installation
 

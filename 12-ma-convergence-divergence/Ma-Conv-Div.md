@@ -25,4 +25,4 @@ Moving average convergence and divergence analysis.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

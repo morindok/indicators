@@ -8,8 +8,8 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| Bmoon-System-Zigzag-Fractals-Copy | [Guide](Bmoon-System-Zigzag-Fractals-Copy.md) | `Bmoon-System-Zigzag-Fractals-Copy.txt` |
-| Bmoon-System-Zigzag-Fractals-v2 | [Guide](Bmoon-System-Zigzag-Fractals-v2.md) | `Bmoon-System-Zigzag-Fractals-v2.txt` |
+| Bmoon System Zigzag Fractals Copy | [Guide](Bmoon-System-Zigzag-Fractals-Copy.md) | `Bmoon-System-Zigzag-Fractals-Copy.txt` |
+| Bmoon System Zigzag Fractals v2 | [Guide](Bmoon-System-Zigzag-Fractals-v2.md) | `Bmoon-System-Zigzag-Fractals-v2.txt` |
 
 ## Installation
 

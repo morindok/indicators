@@ -25,4 +25,4 @@ Complete Bitmoon system combining mirror, signals and oscillators.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

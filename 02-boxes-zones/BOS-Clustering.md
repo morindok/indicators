@@ -25,4 +25,4 @@ Key market boxes and zones for accumulation and distribution areas.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

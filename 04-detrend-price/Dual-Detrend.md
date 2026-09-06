@@ -25,4 +25,4 @@ Removing the trend from price to reveal pure market cycles.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

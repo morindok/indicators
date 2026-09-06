@@ -25,4 +25,4 @@ Volume candles and volume-MA profile tools.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

@@ -25,4 +25,4 @@ Historical price reflection and projection.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

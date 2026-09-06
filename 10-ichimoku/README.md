@@ -8,10 +8,10 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| 3ich-signals | [Guide](3ich-signals.md) | `3ich-signals.txt` |
-| Golden-Ichimoku-Pro-by-BITMOON618 | [Guide](Golden-Ichimoku-Pro-by-BITMOON618.md) | `Golden-Ichimoku-Pro-by-BITMOON618.txt` |
-| Golden-Ichimoku-by-BITMOON618 | [Guide](Golden-Ichimoku-by-BITMOON618.md) | `Golden-Ichimoku-by-BITMOON618.txt` |
-| Golden-Ichimoku | [Guide](Golden-Ichimoku.md) | `Golden-Ichimoku.txt` |
+| 3ich signals | [Guide](3ich-signals.md) | `3ich-signals.txt` |
+| Golden Ichimoku Pro by BITMOON618 | [Guide](Golden-Ichimoku-Pro-by-BITMOON618.md) | `Golden-Ichimoku-Pro-by-BITMOON618.txt` |
+| Golden Ichimoku by BITMOON618 | [Guide](Golden-Ichimoku-by-BITMOON618.md) | `Golden-Ichimoku-by-BITMOON618.txt` |
+| Golden Ichimoku | [Guide](Golden-Ichimoku.md) | `Golden-Ichimoku.txt` |
 
 ## Installation
 

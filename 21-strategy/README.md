@@ -8,7 +8,7 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| Smart-Money-Liquidity-Alpha-Engine-by-BITMOON618 | [Guide](Smart-Money-Liquidity-Alpha-Engine-by-BITMOON618.md) | `Smart-Money-Liquidity-Alpha-Engine-by-BITMOON618.txt` |
+| Smart Money Liquidity Alpha Engine by BITMOON618 | [Guide](Smart-Money-Liquidity-Alpha-Engine-by-BITMOON618.md) | `Smart-Money-Liquidity-Alpha-Engine-by-BITMOON618.txt` |
 
 ## Installation
 

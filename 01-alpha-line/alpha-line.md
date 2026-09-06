@@ -25,4 +25,4 @@ Dynamic support/resistance line based on Fibonacci mathematics.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

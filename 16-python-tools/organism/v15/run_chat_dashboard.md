@@ -25,4 +25,4 @@ Python utilities: clock, spiral, footprint, Gann and neural tools.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

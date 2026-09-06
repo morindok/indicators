@@ -25,4 +25,4 @@ Signal indicators: mirror reversal and LookBack systems.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

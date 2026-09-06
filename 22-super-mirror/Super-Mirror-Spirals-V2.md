@@ -25,4 +25,4 @@ Price reflection, oscillator and time analysis.
 
 Educational purposes only. This is not financial advice.
 
-[All categories](../README.md)
+[All categories](README.md)

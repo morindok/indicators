@@ -8,9 +8,9 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| Auto-Mirror-Reversal-Signals | [Guide](Auto-Mirror-Reversal-Signals.md) | `Auto-Mirror-Reversal-Signals.txt` |
-| LookBack-System-Signals | [Guide](LookBack-System-Signals.md) | `LookBack-System-Signals.txt` |
-| Symmetric-MAs-Reversal | [Guide](Symmetric-MAs-Reversal.md) | `Symmetric-MAs-Reversal.txt` |
+| Auto Mirror Reversal Signals | [Guide](Auto-Mirror-Reversal-Signals.md) | `Auto-Mirror-Reversal-Signals.txt` |
+| LookBack System Signals | [Guide](LookBack-System-Signals.md) | `LookBack-System-Signals.txt` |
+| Symmetric MAs Reversal | [Guide](Symmetric-MAs-Reversal.md) | `Symmetric-MAs-Reversal.txt` |
 
 ## Installation
 

@@ -8,10 +8,10 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| Spiral-Analyzer-V1 | [Guide](Spiral-Analyzer-V1.md) | `Spiral-Analyzer-V1.txt` |
-| Spiral-Analyzer-V2 | [Guide](Spiral-Analyzer-V2.md) | `Spiral-Analyzer-V2.txt` |
-| Spiral-Analyzer-V3 | [Guide](Spiral-Analyzer-V3.md) | `Spiral-Analyzer-V3.txt` |
-| pivot_forecaster-by-BITMOON618 | [Guide](pivot_forecaster-by-BITMOON618.md) | `pivot_forecaster-by-BITMOON618.html` |
+| Spiral Analyzer V1 | [Guide](Spiral-Analyzer-V1.md) | `Spiral-Analyzer-V1.txt` |
+| Spiral Analyzer V2 | [Guide](Spiral-Analyzer-V2.md) | `Spiral-Analyzer-V2.txt` |
+| Spiral Analyzer V3 | [Guide](Spiral-Analyzer-V3.md) | `Spiral-Analyzer-V3.txt` |
+| pivot_forecaster by BITMOON618 | [Guide](pivot_forecaster-by-BITMOON618.md) | `pivot_forecaster-by-BITMOON618.html` |
 
 ## Installation
 

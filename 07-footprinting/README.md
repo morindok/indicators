@@ -8,8 +8,8 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| foot-printing | [Guide](foot-printing.md) | `foot-printing.txt` |
-| footprint_pro-by-BITMOON618 | [Guide](footprint_pro-by-BITMOON618.md) | `footprint_pro-by-BITMOON618.txt` |
+| foot printing | [Guide](foot-printing.md) | `foot-printing.txt` |
+| footprint_pro by BITMOON618 | [Guide](footprint_pro-by-BITMOON618.md) | `footprint_pro-by-BITMOON618.txt` |
 
 ## Installation
 

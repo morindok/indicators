@@ -8,7 +8,7 @@
 
 | Indicator | Tutorial | Source |
 |-----------|----------|--------|
-| Ma-Conv-Div | [Guide](Ma-Conv-Div.md) | `Ma-Conv-Div.txt` |
+| Ma Conv Div | [Guide](Ma-Conv-Div.md) | `Ma-Conv-Div.txt` |
 
 ## Installation
 
